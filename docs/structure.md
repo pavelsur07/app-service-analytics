@@ -11,6 +11,8 @@ app-service-analytics/
 ├── CLAUDE.md
 ├── README.md
 ├── docker-compose.yml
+├── traefik/
+│   └── dynamic.yml       статическая маршрутизация по доменам (file provider)
 ├── docs/
 │   ├── adr/
 │   ├── structure.md
@@ -55,6 +57,12 @@ api/
 ├── phpstan.neon
 └── composer.json
 ```
+
+Стандартной папки `src/Controller/` из шаблона Symfony нет: маршруты
+находятся по тегу автоконфигурации сервиса (атрибут `#[Route]`), а не
+по пути к файлу, поэтому контроллер всегда лежит в `Ui/` своего модуля —
+сейчас это `Shared/Ui/Controller/` для двух эндпоинтов-заглушек, ничьей
+предметной логики не касающихся.
 
 Модули — только спроектированные. Catalog, Costing, Finance, Planning,
 Inventory обсуждались, но решения по ним не приняты и папок под них нет.
