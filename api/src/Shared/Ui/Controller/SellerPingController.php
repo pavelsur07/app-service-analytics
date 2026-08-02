@@ -23,7 +23,7 @@ final class SellerPingController
         return new JsonResponse(new AppInfoResponse(
             app: 'conwix-seller-api',
             version: $this->version,
-            respondedAt: (new \DateTimeImmutable())->format(DATE_ATOM),
+            respondedAt: (new \DateTimeImmutable())->format(\DATE_ATOM),
         ));
     }
 }

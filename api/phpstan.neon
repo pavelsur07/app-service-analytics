@@ -1,0 +1,15 @@
+includes:
+    - vendor/phpstan/phpstan-doctrine/extension.neon
+    - vendor/phpstan/phpstan-doctrine/rules.neon
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - phpstan-baseline.neon
+
+parameters:
+    level: 9
+    paths:
+        - src
+        - tests
+    # bootstrap.php — recipe-managed Symfony boilerplate, not application code.
+    excludePaths:
+        - tests/bootstrap.php
+    tmpDir: var/phpstan

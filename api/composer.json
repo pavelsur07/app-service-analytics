@@ -7,14 +7,25 @@
         "php": ">=8.4",
         "ext-ctype": "*",
         "ext-iconv": "*",
+        "brick/money": "^0.14.1",
+        "doctrine/dbal": "^4.4",
+        "doctrine/doctrine-bundle": "^3.3",
+        "doctrine/orm": "^3.6",
+        "nelmio/api-doc-bundle": "^5.10",
+        "pagerfanta/core": "^4.8",
+        "pagerfanta/doctrine-dbal-adapter": "^4.8",
         "symfony/console": "7.4.*",
         "symfony/dotenv": "7.4.*",
         "symfony/flex": "^2",
         "symfony/framework-bundle": "7.4.*",
+        "symfony/http-client": "7.4.*",
+        "symfony/lock": "7.4.*",
+        "symfony/mailer": "7.4.*",
+        "symfony/messenger": "7.4.*",
+        "symfony/rate-limiter": "7.4.*",
         "symfony/runtime": "7.4.*",
+        "symfony/uid": "7.4.*",
         "symfony/yaml": "7.4.*"
-    },
-    "require-dev": {
     },
     "config": {
         "allow-plugins": {
@@ -55,7 +66,15 @@
         ],
         "post-update-cmd": [
             "@auto-scripts"
-        ]
+        ],
+        "test:unit": "phpunit --testsuite=unit",
+        "test:integration": "phpunit --testsuite=integration",
+        "test:functional": "phpunit --testsuite=functional",
+        "test:e2e": "phpunit --testsuite=e2e",
+        "stan": "phpstan analyse",
+        "cs-fix": "php-cs-fixer fix",
+        "cs-check": "php-cs-fixer fix --dry-run --diff",
+        "deptrac": "deptrac analyse"
     },
     "conflict": {
         "symfony/symfony": "*"
@@ -65,5 +84,15 @@
             "allow-contrib": false,
             "require": "7.4.*"
         }
+    },
+    "require-dev": {
+        "dama/doctrine-test-bundle": "^8.6",
+        "deptrac/deptrac": "^4.7",
+        "friendsofphp/php-cs-fixer": "^3.95",
+        "phpstan/phpstan": "^2.2",
+        "phpstan/phpstan-doctrine": "^2.0",
+        "phpstan/phpstan-strict-rules": "^2.0",
+        "phpunit/phpunit": "^13.2",
+        "symfony/browser-kit": "7.4.*"
     }
 }

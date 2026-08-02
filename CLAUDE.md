@@ -514,13 +514,15 @@ Baseline PHPStan пустой. Добавление подавления — с�
 
 ## Команды
 
-<!-- Заполнить после инициализации проекта -->
+Backend — рабочие с Stage 2, шаг 1. Frontend — заполнить, когда появятся
+зависимости и проверки (Stage 2, шаг 2/3).
 
 ```
 # Backend
 composer test:unit
 composer test:integration
 composer test:functional
+composer test:e2e      # заглушка, реальный e2e — Playwright, Stage 2 шаг 2
 composer stan
 composer cs-fix
 composer deptrac

@@ -23,7 +23,7 @@ final class AdminPingController
         return new JsonResponse(new AppInfoResponse(
             app: 'conwix-admin-api',
             version: $this->version,
-            respondedAt: (new \DateTimeImmutable())->format(DATE_ATOM),
+            respondedAt: (new \DateTimeImmutable())->format(\DATE_ATOM),
         ));
     }
 }
