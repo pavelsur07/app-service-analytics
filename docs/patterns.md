@@ -384,7 +384,7 @@ app/        ← импортирует что угодно; из него не �
 | SQL (чтение) | `doctrine/dbal` | все списки и витрины |
 | Идентификаторы | `symfony/uid` | UUIDv7, нативно |
 | Деньги | `brick/money` | внутри Value Object, наружу не торчит |
-| Offset-пагинация | `pagerfanta/pagerfanta` | с DBAL-адаптером, не с ORM |
+| Offset-пагинация | `pagerfanta/core` | с DBAL-адаптером, не с ORM; `pagerfanta/pagerfanta` — версия 2.0.1 для PHP 5.3, после 3.x пакет разделён на `core` + адаптеры |
 | Keyset-пагинация | своё | 50 строк; готовые решения навязывают модель |
 | HTTP-клиент | `symfony/http-client` | ретраи и таймауты штатно |
 | Лимиты запросов | `symfony/rate-limiter` | хранилище — Redis |
@@ -394,7 +394,7 @@ app/        ← импортирует что угодно; из него не �
 | OpenAPI | `nelmio/api-doc-bundle` | схема генерируется из кода |
 | Тесты | `phpunit/phpunit`, `dama/doctrine-test-bundle` | второй даёт откат транзакции между тестами |
 | Анализ | `phpstan/phpstan` + `phpstan-doctrine` + `phpstan-strict-rules` | level 9 |
-| Границы | `qossmic/deptrac` | проверяет зависимости модулей |
+| Границы | `deptrac/deptrac` | проверяет зависимости модулей; пакет переименован с `qossmic/deptrac` — старое имя объявлено abandoned на момент установки (Stage 2) |
 | Стиль | `friendsofphp/php-cs-fixer` | |
 
 **Чего не берём**
