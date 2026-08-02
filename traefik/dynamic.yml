@@ -1,0 +1,17 @@
+http:
+  routers:
+    app:
+      rule: "Host(`app.conwix.localhost`)"
+      entryPoints: ["web"]
+      service: nginx
+
+    admin:
+      rule: "Host(`admin.conwix.localhost`)"
+      entryPoints: ["web"]
+      service: nginx
+
+  services:
+    nginx:
+      loadBalancer:
+        servers:
+          - url: "http://nginx:80"
