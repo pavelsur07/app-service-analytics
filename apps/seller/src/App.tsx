@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react'
 import { apiGet } from './api/client'
+import type { components } from './api/schema'
 
-interface AppInfo {
-  app: string
-  version: string
-  respondedAt: string
-}
+type AppInfoResponse = components['schemas']['AppInfoResponse']
 
 type PingState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'data'; info: AppInfo }
+  | { status: 'data'; info: AppInfoResponse }
 
 function usePing(url: string): PingState {
   const [state, setState] = useState<PingState>({ status: 'loading' })
@@ -20,7 +17,7 @@ function usePing(url: string): PingState {
     // no cache/retry needed yet. Query wiring is a later step.
     let cancelled = false
 
-    apiGet<AppInfo>(url)
+    apiGet<AppInfoResponse>(url)
       .then((info) => {
         if (!cancelled) {
           setState({ status: 'data', info })

@@ -368,6 +368,7 @@ app/        ← импортирует что угодно; из него не �
 | Компонент React | PascalCase | `UnitEconomicsTable.tsx` |
 | Хук | camelCase с `use` | `useUnitEconomics.ts` |
 | Файл типов | camelCase с `.types` | `unit-economics.types.ts` |
+| Тип ответа API (frontend) | суффикс `Response` или `Dto` | `AppInfoResponse` |
 | Схема валидации | camelCase с `.schema` | `cost-upload.schema.ts` |
 | Папка фичи и модуля | kebab-case | `unit-economics/` |
 | Маршрут API | kebab-case | `/api/companies/{companyId}/unit-economics` |
@@ -419,7 +420,7 @@ app/        ← импортирует что угодно; из него не �
 | Таблицы | `@tanstack/react-table` | headless |
 | Виртуализация | `@tanstack/react-virtual` | при необходимости, не по умолчанию |
 | Маршрутизация | `react-router` | |
-| Типы API | `openapi-typescript` | генерация в CI |
+| Типы API | `openapi-typescript` | установлен один раз в `packages/api-schema` (devDependency), не в оба приложения — потребителей два, генерация всё равно идёт из одного места; `apps/*/src/api/schema.ts` реэкспортирует относительным путём |
 | Формы | `react-hook-form` + `zod` | схема валидации переиспользуется в типах |
 | Даты | `date-fns` | древовидно шейкается, в отличие от moment |
 | Графики | `recharts` | достаточно для дашбордов; ECharts при упоре в возможности |
@@ -511,6 +512,43 @@ npm 11 по умолчанию не запускает postinstall-скрипт�
 альтернатив не сравнивали. `migrations/` — одна папка на весь проект
 (см. `structure.md`), путь задан в
 `config/packages/doctrine_migrations.yaml`.
+
+## Контракт API (OpenAPI)
+
+`nelmio/api-doc-bundle` был в `composer.json` с ранней стадии, но не
+зарегистрирован: `composer.json` → `extra.symfony.allow-contrib: false`
+запрещает Flex применять неофициальные рецепты, а у этого пакета рецепт
+контрибный. Поэтому регистрация бундла (`config/bundles.php`)
+и `config/packages/nelmio_api_doc.yaml` (заголовок документации,
+`path_patterns: ['^/api(?!/doc$)']`, чтобы не попадали служебные роуты
+вроде `/_error/{code}`) написаны руками — это конфигурация бундла,
+не описание самой схемы. Схему по-прежнему целиком генерирует код:
+атрибут `#[OA\Response(content: new Model(type: ...::class))]` на методе
+контроллера ссылается на readonly DTO ответа, конкретные поля схемы
+выводятся `ObjectModelDescriber` через PropertyInfo (конструкторная
+экстракция уже включена в `config/packages/property_info.yaml`).
+
+`make api-doc-export` вызывает `nelmio:apidoc:dump` — консольную
+команду, не HTTP-роут: не нужен ни поднятый веб-сервер, ни маршруты
+`/api/doc`, `/api/doc.json` (не регистрировались за ненадобностью).
+
+**Запрет ручных типов ответа на фронтенде (CLAUDE.md §10)** проверяется
+ESLint-правилом по имени: `interface`/`type` с суффиксом `Response`
+или `Dto` (см. «Именование») запрещены везде, кроме реэкспорта
+из `packages/api-schema` (`type X = components['schemas']['X']` —
+индексированный доступ к типу, не собственное описание полей,
+под правило не попадает). Это защита по конвенции имени, не структурная:
+тип без суффикса из списка её не встретит, а обратная гарантия —
+`make api-types-check` в `ci-local`, требующий соответствия
+закоммиченного `schema.d.ts` файлу, сгенерированному из кода.
+
+## Покрытие тестов
+
+Драйвер — `pcov` (только в образе `php-cli`, `docker/php/Dockerfile`;
+`php-fpm` его не видит и не должен — это инструмент разработки, не
+рантайма). Выбран вместо Xdebug: pcov написан специально для подсчёта
+покрытия, без накладных расходов на пошаговую отладку, которая здесь
+не нужна.
 
 ---
 

@@ -80,6 +80,9 @@ services:
     working_dir: /var/www/apps/seller
     volumes:
       - ./apps:/var/www/apps
+      # packages/api-schema — относительные импорты из apps/*/src ведут туда
+      # (та же глубина пути, что и на хосте); генерация схемы — тоже отсюда.
+      - ./packages:/var/www/packages
     ports:
       - "5173:5173"
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
@@ -92,6 +95,7 @@ services:
     working_dir: /var/www/apps/admin
     volumes:
       - ./apps:/var/www/apps
+      - ./packages:/var/www/packages
     ports:
       - "5174:5174"
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5174"]

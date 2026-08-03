@@ -1,0 +1,9 @@
+nelmio_api_doc:
+    documentation:
+        info:
+            title: Conwix API
+            version: '%app.version%'
+    areas:
+        default:
+            path_patterns:
+                - ^/api(?!/doc$)

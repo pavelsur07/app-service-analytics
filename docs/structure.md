@@ -216,7 +216,8 @@ apps/seller/
 │   ├── main.tsx                       точка входа
 │   ├── index.css                      @import "tailwindcss"
 │   ├── api/
-│   │   └── client.ts                  единственное место с fetch — apiGet()
+│   │   ├── client.ts                  единственное место с fetch — apiGet()
+│   │   └── schema.ts                  реэкспорт типов из packages/api-schema
 │   └── shared/
 │       └── lib/
 │           └── formatMinorAmount.ts   копейки → отображаемая сумма
@@ -241,10 +242,25 @@ apps/seller/
 
 ```
 packages/api-schema/
-├── openapi.json      выгружается из Symfony
-└── src/schema.d.ts   генерируется из openapi.json
+├── package.json      devDependency openapi-typescript, скрипт generate
+├── openapi.json      выгружается из Symfony (make api-doc-export)
+└── src/schema.d.ts   генерируется из openapi.json (make api-types)
 ```
 
-Оба файла в репозитории. CI перегенерирует и проверяет отсутствие разницы.
+Оба файла (`openapi.json`, `src/schema.d.ts`) — в репозитории.
+`make api-types-check` перегенерирует оба заново и проверяет отсутствие
+разницы: сначала `openapi.json` против кода контроллеров, потом
+`schema.d.ts` против `openapi.json` — расхождение на любом из двух шагов
+роняет проверку.
+
 Отдельный пакет, а не папка внутри приложения, потому что потребителей два
-и ни один не главнее.
+и ни один не главнее — `openapi-typescript` ставится один раз сюда,
+не в оба приложения.
+
+**`openapi-typescript` не установлен в оба приложения.** `npm workspaces`
+для одного реэкспорта — избыточная перестройка окружения (у каждого
+приложения свой контейнер и свой `node_modules`, п. «Node-окружение»
+`patterns.md`); вместо этого `apps/*/src/api/schema.ts` реэкспортирует
+типы относительным путём (`../../../../packages/api-schema/src/schema`),
+для чего `packages/` домонтирован в `node-seller`/`node-admin` рядом
+с `apps/`.

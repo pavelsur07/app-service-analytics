@@ -11,6 +11,18 @@
 # отдельный бинарник docker-compose (v1), где плагина ещё нет.
 COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
 
+# front-* цели гоняют оба приложения по умолчанию; make front-test APP=seller
+# сужает до одного. Один цикл по $(APPS) в каждой цели, а не по строке
+# на приложение — третье приложение не потребует правки целей.
+APPS := seller admin
+APPS := $(if $(APP),$(APP),$(APPS))
+
+# Согласовано с docker-compose.yml (postgres: POSTGRES_USER/POSTGRES_DB)
+# и api/config/packages/doctrine.yaml (when@test: dbname_suffix: '_test').
+DB_USER := app
+DB_NAME := app
+DB_TEST_NAME := $(DB_NAME)_test
+
 .PHONY: help \
 	init up down down-clear build pull ps logs \
 	api-shell api-install api-migrate api-migrate-test api-console \
@@ -75,19 +87,19 @@ api-console: ## произвольная консольная команда: ma
 db-wait: ## ожидание готовности Postgres
 	@echo "Ожидание Postgres..."
 	@for i in $$(seq 1 30); do \
-		$(COMPOSE) exec -T postgres pg_isready -U app >/dev/null 2>&1 && exit 0; \
+		$(COMPOSE) exec -T postgres pg_isready -U $(DB_USER) >/dev/null 2>&1 && exit 0; \
 		sleep 1; \
 	done; \
 	echo "Postgres не готов за 30с" >&2; exit 1
 
 db-test-create: db-wait ## создание тестовой базы (идемпотентно)
-	@$(COMPOSE) exec -T postgres psql -U app -d app -tAc \
-		"SELECT 1 FROM pg_database WHERE datname = 'app_test'" | grep -q 1 || \
-		$(COMPOSE) exec -T postgres psql -U app -d app -c "CREATE DATABASE app_test"
+	@$(COMPOSE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -tAc \
+		"SELECT 1 FROM pg_database WHERE datname = '$(DB_TEST_NAME)'" | grep -q 1 || \
+		$(COMPOSE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE DATABASE $(DB_TEST_NAME)"
 
 db-test-rebuild: db-wait ## полное пересоздание тестовой базы
-	$(COMPOSE) exec -T postgres psql -U app -d app -c "DROP DATABASE IF EXISTS app_test"
-	$(COMPOSE) exec -T postgres psql -U app -d app -c "CREATE DATABASE app_test"
+	$(COMPOSE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP DATABASE IF EXISTS $(DB_TEST_NAME)"
+	$(COMPOSE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE DATABASE $(DB_TEST_NAME)"
 	$(MAKE) api-migrate-test
 
 # --- Тесты -------------------------------------------------------------
@@ -111,7 +123,7 @@ test-func: ## тесты через HTTP (тестовая база должна
 test-e2e: ## Playwright, через контейнер playwright
 	$(COMPOSE) exec playwright sh -c "cd /var/www/apps/seller && npx playwright test"
 
-test-cov: ## покрытие (нужен установленный coverage-драйвер — pcov/xdebug, сейчас в образе нет)
+test-cov: ## покрытие (драйвер pcov в php-cli, docker/php/Dockerfile)
 	$(COMPOSE) exec php-cli composer test:cov
 
 # --- Проверки ------------------------------------------------------------
@@ -131,48 +143,66 @@ deptrac: ## границы модулей
 structure-check: ## api/src содержит только Shared/Identity/Ingestion/Kernel.php
 	$(COMPOSE) exec php-cli sh bin/check-src-structure.sh
 
-audit: ## composer audit + npm audit (оба приложения)
+audit: ## composer audit + npm audit (оба приложения и packages/api-schema)
 	$(COMPOSE) exec php-cli composer audit
 	$(COMPOSE) exec node-seller npm audit
 	$(COMPOSE) exec node-admin npm audit
+	$(COMPOSE) exec -w /var/www/packages/api-schema node-seller npm audit
 
-front-typecheck: ## tsc --noEmit (оба приложения)
-	$(COMPOSE) exec node-seller npm run typecheck
-	$(COMPOSE) exec node-admin npm run typecheck
+front-typecheck: ## tsc --noEmit (APP=seller|admin, по умолчанию — оба)
+	@for app in $(APPS); do $(COMPOSE) exec node-$$app npm run typecheck || exit 1; done
 
-front-lint: ## ESLint + Prettier --check (оба приложения)
-	$(COMPOSE) exec node-seller npm run lint
-	$(COMPOSE) exec node-seller npm run format:check
-	$(COMPOSE) exec node-admin npm run lint
-	$(COMPOSE) exec node-admin npm run format:check
+front-lint: ## ESLint + Prettier --check (APP=seller|admin, по умолчанию — оба)
+	@for app in $(APPS); do \
+		$(COMPOSE) exec node-$$app npm run lint || exit 1; \
+		$(COMPOSE) exec node-$$app npm run format:check || exit 1; \
+	done
 
-front-knip: ## неиспользуемый код (оба приложения)
-	$(COMPOSE) exec node-seller npm run knip
-	$(COMPOSE) exec node-admin npm run knip
+front-knip: ## неиспользуемый код (APP=seller|admin, по умолчанию — оба)
+	@for app in $(APPS); do $(COMPOSE) exec node-$$app npm run knip || exit 1; done
 
-front-test: ## Vitest (оба приложения) — не в списке плана, но обязателен по CLAUDE.md (CI: Vitest)
-	$(COMPOSE) exec node-seller npm run test
-	$(COMPOSE) exec node-admin npm run test
+front-test: ## Vitest (APP=seller|admin, по умолчанию — оба) — не в списке плана, но обязателен по CLAUDE.md (CI: Vitest)
+	@for app in $(APPS); do $(COMPOSE) exec node-$$app npm run test || exit 1; done
 
 # --- Контракт API ------------------------------------------------------
-# ponytail: NelmioApiDocBundle уже в composer.json, но не зарегистрирован
-# в bundles.php; openapi-typescript не установлен ни в одном из front-end
-# приложений; packages/api-schema/ ещё не существует. Генерация контракта —
-# Stage 2, шаг 3, им не покрыт этим изменением. Цели существуют по составу
-# из плана и вызывают правильные (будущие) команды, но сейчас честно
-# падают — это ожидаемо, см. отчёт по задаче.
+# Схема выгружается консольной командой Nelmio (не по HTTP — не нужен
+# поднятый веб-сервер и авторизация) прямо в packages/api-schema/openapi.json;
+# TS-типы генерируются оттуда же openapi-typescript. Оба файла — в репозитории
+# (docs/structure.md, packages/api-schema).
+#
+# api-types / api-types-check используют exec, не run --rm (в отличие
+# от front-install) — требуют уже поднятого node-seller. Как и остальные
+# front-* цели, рассчитаны на то, что make init уже отработал.
 
-api-doc-export: ## выгрузка OpenAPI в файл (не работает до Stage 2, шаг 3)
-	@mkdir -p var
-	$(COMPOSE) exec -T php-cli php bin/console nelmio:apidoc:dump --format=json > var/openapi.json
+# Во временный файл и mv, не напрямую в openapi.json: `>` усекает целевой
+# файл до запуска команды, и упавший dump оставил бы committed-схему
+# пустой/битой на диске.
+api-doc-export: ## выгрузка OpenAPI в packages/api-schema/openapi.json
+	$(COMPOSE) exec -T php-cli php bin/console nelmio:apidoc:dump --format=json > packages/api-schema/openapi.json.tmp
+	mv packages/api-schema/openapi.json.tmp packages/api-schema/openapi.json
 
-api-types: ## регенерация TypeScript-типов (не работает до Stage 2, шаг 3)
-	$(COMPOSE) exec node-seller npm run api:generate
-	$(COMPOSE) exec node-admin npm run api:generate
+api-types: ## регенерация TypeScript-типов из packages/api-schema/openapi.json
+	$(COMPOSE) exec -w /var/www/packages/api-schema node-seller npm run generate
 
-api-types-check: ## проверка, что закоммиченные типы совпадают со схемой (не работает до Stage 2, шаг 3)
-	$(COMPOSE) exec node-seller npm run api:generate:check
-	$(COMPOSE) exec node-admin npm run api:generate:check
+# Диф в две ступени: сперва openapi.json против кода контроллеров (ловит
+# правку DTO/атрибута без api-doc-export) — здесь нет готового флага
+# у Nelmio, диф руками; затем schema.d.ts против openapi.json — тут
+# openapi-typescript 7.13 умеет это сам через --check (ловит забытый
+# api-types или ручную правку сгенерированного файла), без второго
+# временного файла. rm -f перед стартом (не только trap на выходе) —
+# если предыдущий прогон убили сигналом до очистки, эта проверка не должна
+# молча свериться со чужим огрызком; каждый exec явно проверяется `||`,
+# чтобы упавшая генерация не провалилась молча в diff по старому файлу.
+api-types-check: ## закоммиченные openapi.json и schema.d.ts должны совпадать со сгенерированными из кода
+	@rm -f packages/api-schema/openapi.json.check; \
+	trap 'rm -f packages/api-schema/openapi.json.check' EXIT; \
+	$(COMPOSE) exec -T php-cli php bin/console nelmio:apidoc:dump --format=json > packages/api-schema/openapi.json.check || \
+		{ echo "nelmio:apidoc:dump упал" >&2; exit 1; }; \
+	diff -u packages/api-schema/openapi.json packages/api-schema/openapi.json.check || \
+		{ echo "openapi.json расходится с кодом контроллеров — make api-doc-export" >&2; exit 1; }; \
+	$(COMPOSE) exec -T -w /var/www/packages/api-schema node-seller \
+		npx openapi-typescript openapi.json -o src/schema.d.ts --check || \
+		{ echo "schema.d.ts расходится с openapi.json — make api-types" >&2; exit 1; }
 
 # --- Фронтенд ------------------------------------------------------------
 
@@ -180,16 +210,16 @@ api-types-check: ## проверка, что закоммиченные типы
 # контейнера по умолчанию (`npm run dev`) падает и он не запускается —
 # exec в такой контейнер зайти не сможет. `run --rm` поднимает одноразовый
 # контейнер с переопределённой командой, не завися от состояния постоянного.
-front-install: ## установка зависимостей обоих приложений (npm ci, в контейнерах)
+front-install: ## установка зависимостей обоих приложений и packages/api-schema (npm ci, в контейнерах)
 	$(COMPOSE) run --rm node-seller npm ci
 	$(COMPOSE) run --rm node-admin npm ci
+	$(COMPOSE) run --rm -w /var/www/packages/api-schema node-seller npm ci
 
 front-dev: ## запуск dev-серверов (node-seller, node-admin)
 	$(COMPOSE) up -d node-seller node-admin
 
-front-build: ## production-сборка (оба приложения)
-	$(COMPOSE) exec node-seller npm run build
-	$(COMPOSE) exec node-admin npm run build
+front-build: ## production-сборка (APP=seller|admin, по умолчанию — оба)
+	@for app in $(APPS); do $(COMPOSE) exec node-$$app npm run build || exit 1; done
 
 # --- Ревью ---------------------------------------------------------------
 
@@ -218,6 +248,7 @@ review: review-prepare ## review-prepare + оба инструмента: make r
 # набором проверок.
 
 ci-local: structure-check stan deptrac lint front-typecheck front-lint front-knip front-test audit \
+	api-types-check \
 	db-wait db-test-create api-migrate-test test-unit test-int test-func \
 	front-build test-e2e ## всё, что прогоняет конвейер Stage 4, одной командой
 	@echo "ci-local: все проверки пройдены."

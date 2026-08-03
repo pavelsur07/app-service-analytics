@@ -548,30 +548,30 @@ make test-unit         без БД
 make test-int          с БД (тестовая база должна быть готова заранее)
 make test-func         через HTTP (тестовая база должна быть готова заранее)
 make test-e2e          Playwright, через контейнер playwright
-make test-cov          покрытие — нужен coverage-драйвер (pcov/xdebug), в образе пока нет
+make test-cov          покрытие — драйвер pcov в php-cli (docker/php/Dockerfile)
 
-# Проверки
+# Проверки — front-typecheck/front-lint/front-test/front-knip принимают
+# APP=seller|admin, без APP — оба приложения
 make lint / make lint-fix   PHP-CS-Fixer: проверка / автоисправление
 make stan               PHPStan
 make deptrac             границы модулей
 make structure-check     api/src содержит только Shared/Identity/Ingestion/Kernel.php
 make audit               composer audit + npm audit (оба приложения)
-make front-typecheck     tsc --noEmit (оба приложения)
-make front-lint          ESLint + Prettier --check (оба приложения)
-make front-test          Vitest (оба приложения)
-make front-knip          неиспользуемый код (оба приложения)
+make front-typecheck     tsc --noEmit
+make front-lint          ESLint + Prettier --check
+make front-test          Vitest
+make front-knip          неиспользуемый код
 
-# Контракт API — не работает до Stage 2, шаг 3 (NelmioApiDocBundle не
-# зарегистрирован, openapi-typescript не установлен, packages/api-schema/
-# не создан); цели существуют и вызывают правильные будущие команды
-make api-doc-export      выгрузка OpenAPI в файл
-make api-types           регенерация TypeScript-типов
-make api-types-check     проверка, что закоммиченные типы совпадают со схемой
+# Контракт API — схема генерируется из кода (атрибуты Nelmio на контроллерах),
+# без ручного YAML с описанием путей/ответов
+make api-doc-export      выгрузка OpenAPI в packages/api-schema/openapi.json
+make api-types           регенерация TypeScript-типов в packages/api-schema/src/schema.d.ts
+make api-types-check     openapi.json и schema.d.ts должны совпадать со сгенерированными из кода
 
-# Фронтенд
-make front-install      установка зависимостей обоих приложений (npm ci, в контейнерах)
+# Фронтенд — front-build тоже принимает APP=seller|admin
+make front-install      установка зависимостей обоих приложений и packages/api-schema (npm ci, в контейнерах)
 make front-dev          запуск dev-серверов (node-seller, node-admin)
-make front-build        production-сборка (оба приложения)
+make front-build        production-сборка
 
 # Ревью — см. «Процесс работы над задачей» ниже
 make review-prepare TASK="..."   сборка пакета в var/review/package.md
