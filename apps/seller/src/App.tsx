@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { apiGet } from './api/client'
 
 interface AppInfo {
   app: string
@@ -15,18 +16,11 @@ function usePing(url: string): PingState {
   const [state, setState] = useState<PingState>({ status: 'loading' })
 
   useEffect(() => {
-    // ponytail: plain fetch, not TanStack Query — one request, no cache/retry
-    // needed yet. Query replaces this in Stage 2 with the rest of the deps.
+    // ponytail: plain fetch (via apiGet), not TanStack Query — one request,
+    // no cache/retry needed yet. Query wiring is a later step.
     let cancelled = false
-    setState({ status: 'loading' })
 
-    fetch(url)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
-        }
-        return response.json() as Promise<AppInfo>
-      })
+    apiGet<AppInfo>(url)
       .then((info) => {
         if (!cancelled) {
           setState({ status: 'data', info })

@@ -514,26 +514,32 @@ Baseline PHPStan пустой. Добавление подавления — с�
 
 ## Команды
 
-Backend — рабочие с Stage 2, шаг 1. Frontend — заполнить, когда появятся
-зависимости и проверки (Stage 2, шаг 2/3).
+Backend — рабочие с Stage 2, шаг 1. Frontend — рабочие с Stage 2, шаг 2
+(запускать в `apps/seller` и `apps/admin` по отдельности — независимые
+приложения, независимые команды). `npm run api:generate` появится
+на Stage 2, шаг 3 (генерация типов из OpenAPI).
 
 ```
 # Backend
 composer test:unit
 composer test:integration
 composer test:functional
-composer test:e2e      # заглушка, реальный e2e — Playwright, Stage 2 шаг 2
+composer test:e2e      # заглушка, реальный e2e — Playwright, ниже
 composer stan
 composer cs-fix
 composer deptrac
 composer audit
 
-# Frontend
+# Frontend (в apps/seller и apps/admin)
 npm run typecheck
 npm run lint
+npm run format:check
 npm run test
-npm run api:generate
+npm run knip
 npm audit
+
+# Frontend e2e — только apps/seller, один сценарий
+docker compose exec playwright sh -c "cd /var/www/apps/seller && npx playwright test"
 
 # Окружение
 docker compose up
