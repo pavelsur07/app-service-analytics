@@ -66,5 +66,17 @@ services:
       - ./apps:/var/www/apps
     command: ["tail", "-f", "/dev/null"]
 
+  playwright:
+    # ponytail: Playwright's browsers need glibc — Alpine (musl) can't run
+    # them at all (not a config issue, upstream doesn't support musl).
+    # Same node_modules as `node`, only used to run `npx playwright test`.
+    image: mcr.microsoft.com/playwright:v1.62.1-noble
+    user: "1000:1000"
+    environment:
+      - HOME=/tmp
+    volumes:
+      - ./apps:/var/www/apps
+    command: ["tail", "-f", "/dev/null"]
+
 volumes:
   postgres_data:

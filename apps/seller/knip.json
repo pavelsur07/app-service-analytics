@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreDependencies": [
+    "@tanstack/react-query",
+    "@tanstack/react-table",
+    "date-fns",
+    "react-hook-form",
+    "react-router",
+    "recharts",
+    "zod"
+  ]
+}
