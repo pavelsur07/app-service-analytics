@@ -368,7 +368,6 @@ app/        ← импортирует что угодно; из него не �
 | Компонент React | PascalCase | `UnitEconomicsTable.tsx` |
 | Хук | camelCase с `use` | `useUnitEconomics.ts` |
 | Файл типов | camelCase с `.types` | `unit-economics.types.ts` |
-| Тип ответа API (frontend) | суффикс `Response` или `Dto` | `AppInfoResponse` |
 | Схема валидации | camelCase с `.schema` | `cost-upload.schema.ts` |
 | Папка фичи и модуля | kebab-case | `unit-economics/` |
 | Маршрут API | kebab-case | `/api/companies/{companyId}/unit-economics` |
@@ -533,14 +532,31 @@ npm 11 по умолчанию не запускает postinstall-скрипт�
 `/api/doc`, `/api/doc.json` (не регистрировались за ненадобностью).
 
 **Запрет ручных типов ответа на фронтенде (CLAUDE.md §10)** проверяется
-ESLint-правилом по имени: `interface`/`type` с суффиксом `Response`
-или `Dto` (см. «Именование») запрещены везде, кроме реэкспорта
-из `packages/api-schema` (`type X = components['schemas']['X']` —
-индексированный доступ к типу, не собственное описание полей,
-под правило не попадает). Это защита по конвенции имени, не структурная:
-тип без суффикса из списка её не встретит, а обратная гарантия —
-`make api-types-check` в `ci-local`, требующий соответствия
-закоммиченного `schema.d.ts` файлу, сгенерированному из кода.
+типизированным ESLint-правилом `local/no-manual-api-response-type`
+(`apps/*/eslint-rules/no-manual-api-response-type.js`, дублируется
+в обоих приложениях — они независимы, общего кода нет). Правило смотрит
+по существу, не по имени: у каждого вызова `apiGet<T>()` (единственная
+точка входа API-ответов — прямой `fetch` запрещён везде, кроме
+`src/api/`) через TS type checker находит объявление `T` и проверяет,
+рукописное ли оно (`interface`, либо `type` с телом-объектом) —
+неважно, как `T` называется: `AppInfo`, `PingResult`, `AppInfoDto`
+ловятся одинаково. Проходит только тип, ссылающийся на схему
+(`type X = components['schemas']['X']` — индексированный доступ,
+не собственное описание полей).
+
+Первая версия проверяла по суффиксу имени (`*Response`/`*Dto`) — дырявая
+в обе стороны: тип без суффикса проходил, не-API тип с суффиксом ловился
+ложно. Заменена по итогам ревью (см. `docs/adr/` не создавался — это не
+архитектурное решение, а починка существующего правила).
+
+Правилу нужен TS type checker → `languageOptions.parserOptions.projectService`
+включён, но только для `files: ['src/**/*.{ts,tsx}']` — вне `tsconfig.json`
+(`include: src`) типизированный парсинг падает на `eslint.config.js`,
+`vite.config.ts` и подобных.
+
+Обратная гарантия — `make api-types-check` в `ci-local`, требующий
+соответствия закоммиченного `schema.d.ts` файлу, сгенерированному
+из кода.
 
 ## Покрытие тестов
 

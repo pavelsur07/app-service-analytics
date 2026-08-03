@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 import reactHooks from 'eslint-plugin-react-hooks'
 import importPlugin from 'eslint-plugin-import'
 import prettierConfig from 'eslint-config-prettier'
+import noManualApiResponseType from './eslint-rules/no-manual-api-response-type.js'
 
 // Зоны feature-vs-feature считаются с диска: сейчас features/ пусто или
 // не существует, поэтому список пуст — заполнится сам по мере появления
@@ -86,23 +87,6 @@ export default tseslint.config(
           message:
             'Литеральный массив в queryKey запрещён — ключ собирается общим хелпером (CLAUDE.md §7).',
         },
-        // Ловит по имени (*Response, *Dto) — не структурная проверка,
-        // обходится другим именем. Полная версия — typed-правило через
-        // TS type checker, которое видит, течёт ли тип в apiGet<T>() не
-        // из packages/api-schema; заводить его для одного эндпоинта —
-        // абстракция до второго случая. Пока дисциплина именования
-        // обязательна (CLAUDE.md §10), а не только этот линтер.
-        {
-          selector: 'TSInterfaceDeclaration[id.name=/(Response|Dto)$/]',
-          message:
-            'Типы ответов API — только импорт из сгенерированной схемы (packages/api-schema), ручное описание запрещено (CLAUDE.md §10).',
-        },
-        {
-          selector:
-            "TSTypeAliasDeclaration[id.name=/(Response|Dto)$/][typeAnnotation.type='TSTypeLiteral']",
-          message:
-            'Типы ответов API — только импорт из сгенерированной схемы (packages/api-schema), ручное описание запрещено (CLAUDE.md §10).',
-        },
       ],
       'import/no-restricted-paths': [
         'error',
@@ -131,11 +115,33 @@ export default tseslint.config(
     },
   },
   {
+    // projectService только для src/**: остальному (eslint.config.js сам,
+    // vite.config.ts, playwright.config.ts, tests/e2e) не нужен TS type
+    // checker, а вне tsconfig.json (include: src) типизированный парсинг
+    // падает с "not found by the project service". Нужен он здесь ради
+    // local/no-manual-api-response-type — проверяет apiGet<T>() по
+    // существу (где объявлен T — в схеме или руками), не по имени типа.
+    files: ['src/**/*.{ts,tsx}'],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    plugins: {
+      local: {
+        rules: { 'no-manual-api-response-type': noManualApiResponseType },
+      },
+    },
+    rules: {
+      'local/no-manual-api-response-type': 'error',
+    },
+  },
+  {
     // Компоненты — .tsx. Чистые .ts-утилиты форматирования (shared/lib)
     // намеренно делают денежную арифметику — это их работа. Flat config
     // не сливает массивы одного правила между блоками, поэтому здесь
-    // повторены queryKey и типы ответов вместе с деньгами, а не только
-    // добавлены деньги.
+    // повторён queryKey вместе с деньгами, а не только добавлены деньги.
     files: ['src/**/*.tsx'],
     rules: {
       'no-restricted-syntax': [
@@ -145,23 +151,6 @@ export default tseslint.config(
             "Property[key.name='queryKey'][value.type='ArrayExpression']",
           message:
             'Литеральный массив в queryKey запрещён — ключ собирается общим хелпером (CLAUDE.md §7).',
-        },
-        // Ловит по имени (*Response, *Dto) — не структурная проверка,
-        // обходится другим именем. Полная версия — typed-правило через
-        // TS type checker, которое видит, течёт ли тип в apiGet<T>() не
-        // из packages/api-schema; заводить его для одного эндпоинта —
-        // абстракция до второго случая. Пока дисциплина именования
-        // обязательна (CLAUDE.md §10), а не только этот линтер.
-        {
-          selector: 'TSInterfaceDeclaration[id.name=/(Response|Dto)$/]',
-          message:
-            'Типы ответов API — только импорт из сгенерированной схемы (packages/api-schema), ручное описание запрещено (CLAUDE.md §10).',
-        },
-        {
-          selector:
-            "TSTypeAliasDeclaration[id.name=/(Response|Dto)$/][typeAnnotation.type='TSTypeLiteral']",
-          message:
-            'Типы ответов API — только импорт из сгенерированной схемы (packages/api-schema), ручное описание запрещено (CLAUDE.md §10).',
         },
         {
           selector:

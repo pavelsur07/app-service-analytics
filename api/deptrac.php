@@ -72,11 +72,17 @@ return static function (DeptracConfig $config): void {
             $symfonyComponent = Layer::withName('SymfonyComponent')->collectors(
                 ClassLikeConfig::create('^Symfony\\Component\\.*'),
             ),
+            $nelmioApiDoc = Layer::withName('NelmioApiDoc')->collectors(
+                ClassLikeConfig::create('^Nelmio\\ApiDocBundle\\.*'),
+            ),
+            $openApiAttributes = Layer::withName('OpenApiAttributes')->collectors(
+                ClassLikeConfig::create('^OpenApi\\.*'),
+            ),
         )
         ->rulesets(
             // Shared — технический слой, свободно используется всеми,
             // сам никогда не поднимается вверх к Identity/Ingestion.
-            Ruleset::forLayer($sharedUi)->accesses($sharedApplication, $sharedDomain, $symfonyComponent),
+            Ruleset::forLayer($sharedUi)->accesses($sharedApplication, $sharedDomain, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($sharedApplication)->accesses($sharedDomain),
             Ruleset::forLayer($sharedInfrastructure)->accesses($sharedDomain),
             Ruleset::forLayer($sharedDomain)->accesses($brickMoney),
