@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Shared\Ui\Controller;
 
 use App\Shared\Ui\Response\AppInfoResponse;
+use Nelmio\ApiDocBundle\Attribute\Model;
+use OpenApi\Attributes as OA;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
@@ -18,6 +20,11 @@ final class SellerPingController
     ) {
     }
 
+    #[OA\Response(
+        response: 200,
+        description: 'Информация о приложении',
+        content: new Model(type: AppInfoResponse::class),
+    )]
     public function __invoke(): JsonResponse
     {
         return new JsonResponse(new AppInfoResponse(

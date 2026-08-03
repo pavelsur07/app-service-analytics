@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 import reactHooks from 'eslint-plugin-react-hooks'
 import importPlugin from 'eslint-plugin-import'
 import prettierConfig from 'eslint-config-prettier'
+import noManualApiResponseType from './eslint-rules/no-manual-api-response-type.js'
 
 // Зоны feature-vs-feature считаются с диска: сейчас features/ пусто или
 // не существует, поэтому список пуст — заполнится сам по мере появления
@@ -111,6 +112,29 @@ export default tseslint.config(
     files: ['src/api/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-globals': 'off',
+    },
+  },
+  {
+    // projectService только для src/**: остальному (eslint.config.js сам,
+    // vite.config.ts) не нужен TS type checker, а вне tsconfig.json
+    // (include: src) типизированный парсинг падает с "not found by the
+    // project service". Нужен он здесь ради local/no-manual-api-response-type
+    // — проверяет apiGet<T>() по существу (где объявлен T — в схеме
+    // или руками), не по имени типа.
+    files: ['src/**/*.{ts,tsx}'],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    plugins: {
+      local: {
+        rules: { 'no-manual-api-response-type': noManualApiResponseType },
+      },
+    },
+    rules: {
+      'local/no-manual-api-response-type': 'error',
     },
   },
   {

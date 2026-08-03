@@ -57,27 +57,33 @@ lint              PHP-CS-Fixer в режиме проверки
 lint-fix          автоисправление
 stan              PHPStan
 deptrac           границы модулей
+structure-check   api/src содержит только Shared/Identity/Ingestion/Kernel.php
 audit             composer audit + npm audit
-front-typecheck   tsc --noEmit
-front-lint        ESLint
-front-knip        неиспользуемый код
+front-typecheck   tsc --noEmit — APP=seller|admin, по умолчанию оба
+front-lint        ESLint + Prettier --check — APP=seller|admin, по умолчанию оба
+front-test        Vitest — APP=seller|admin, по умолчанию оба (обязателен по CLAUDE.md §10, в исходный состав целей не входил)
+front-knip        неиспользуемый код — APP=seller|admin, по умолчанию оба
 ```
 
 **Контракт API**
 
 ```
-api-doc-export    выгрузка OpenAPI в файл
-api-types         регенерация TypeScript-типов
-api-types-check   проверка, что закоммиченные типы совпадают со схемой
+api-doc-export    выгрузка OpenAPI в packages/api-schema/openapi.json
+api-types         регенерация TypeScript-типов в packages/api-schema/src/schema.d.ts
+api-types-check   openapi.json и schema.d.ts должны совпадать со сгенерированными из кода
 ```
 
 **Фронтенд**
 
 ```
-front-install     установка зависимостей обоих приложений
+front-install     установка зависимостей обоих приложений и packages/api-schema
 front-dev         dev-серверы
-front-build       production-сборка
+front-build       production-сборка — APP=seller|admin, по умолчанию оба
 ```
+
+**`APP=` на front-* целях.** Одна цель — один цикл по списку приложений
+(`seller admin` по умолчанию, `$(APP)` если задан), а не пара строк
+на каждое приложение: третье приложение не потребует правки целей.
 
 **Ревью**
 
