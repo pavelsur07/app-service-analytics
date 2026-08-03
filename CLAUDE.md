@@ -514,33 +514,71 @@ Baseline PHPStan пустой. Добавление подавления — с�
 
 ## Команды
 
-Backend — рабочие с Stage 2, шаг 1. Frontend — рабочие с Stage 2, шаг 2
-(запускать в `apps/seller` и `apps/admin` по отдельности — независимые
-приложения, независимые команды). `npm run api:generate` появится
-на Stage 2, шаг 3 (генерация типов из OpenAPI).
+Вход — `Makefile` в корне репозитория; `make` без аргументов печатает
+этот же список с описаниями. Makefile отвечает только за Docker
+и оркестрацию; внутри контейнера всё выполняют composer- и npm-скрипты
+(`api/composer.json`, `apps/*/package.json`) — Makefile их вызывает,
+а не повторяет. Все фронтендовые команды идут через контейнеры
+`node-seller` / `node-admin`, никогда через хост (`docs/patterns.md`,
+«Node-окружение»).
 
 ```
-# Backend
-composer test:unit
-composer test:integration
-composer test:functional
-composer test:e2e      # заглушка, реальный e2e — Playwright, ниже
-composer stan
-composer cs-fix
-composer deptrac
-composer audit
-
-# Frontend (в apps/seller и apps/admin)
-npm run typecheck
-npm run lint
-npm run format:check
-npm run test
-npm run knip
-npm audit
-
-# Frontend e2e — только apps/seller, один сценарий
-docker compose exec playwright sh -c "cd /var/www/apps/seller && npx playwright test"
-
 # Окружение
-docker compose up
+make init              полный подъём с нуля: down-clear, build, up, install, migrate
+make up / make down    запуск и остановка
+make down-clear        остановка с удалением томов
+make build / make pull сборка и обновление образов
+make ps / make logs    состояние и журналы
+
+# Backend
+make api-shell         вход в контейнер php-cli
+make api-install       composer install
+make api-migrate       применение миграций (dev-база)
+make api-migrate-test  применение миграций в тестовой базе
+make api-console CMD="..."   произвольная консольная команда
+
+# База
+make db-wait           ожидание готовности Postgres
+make db-test-create    создание тестовой базы (идемпотентно)
+make db-test-rebuild   полное пересоздание тестовой базы
+
+# Тесты
+make test              unit + integration + functional (с подготовкой тестовой базы)
+make test-unit         без БД
+make test-int          с БД (тестовая база должна быть готова заранее)
+make test-func         через HTTP (тестовая база должна быть готова заранее)
+make test-e2e          Playwright, через контейнер playwright
+make test-cov          покрытие — нужен coverage-драйвер (pcov/xdebug), в образе пока нет
+
+# Проверки
+make lint / make lint-fix   PHP-CS-Fixer: проверка / автоисправление
+make stan               PHPStan
+make deptrac             границы модулей
+make structure-check     api/src содержит только Shared/Identity/Ingestion/Kernel.php
+make audit               composer audit + npm audit (оба приложения)
+make front-typecheck     tsc --noEmit (оба приложения)
+make front-lint          ESLint + Prettier --check (оба приложения)
+make front-test          Vitest (оба приложения)
+make front-knip          неиспользуемый код (оба приложения)
+
+# Контракт API — не работает до Stage 2, шаг 3 (NelmioApiDocBundle не
+# зарегистрирован, openapi-typescript не установлен, packages/api-schema/
+# не создан); цели существуют и вызывают правильные будущие команды
+make api-doc-export      выгрузка OpenAPI в файл
+make api-types           регенерация TypeScript-типов
+make api-types-check     проверка, что закоммиченные типы совпадают со схемой
+
+# Фронтенд
+make front-install      установка зависимостей обоих приложений (npm ci, в контейнерах)
+make front-dev          запуск dev-серверов (node-seller, node-admin)
+make front-build        production-сборка (оба приложения)
+
+# Ревью — см. «Процесс работы над задачей» ниже
+make review-prepare TASK="..."   сборка пакета в var/review/package.md
+make review-codex                Codex CLI, ответ в var/review/codex.md
+make review-kimi                 Kimi CLI, ответ в var/review/kimi.md
+make review TASK="..."           review-prepare + оба инструмента
+
+# Сводная
+make ci-local            всё, что прогоняет конвейер Stage 4, одной командой
 ```

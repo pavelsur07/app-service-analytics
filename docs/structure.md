@@ -10,7 +10,11 @@
 app-service-analytics/
 ├── CLAUDE.md
 ├── README.md
+├── Makefile              оркестрация Docker и вызов composer-/npm-скриптов;
+│                         `make` без аргументов — список целей
 ├── docker-compose.yml
+├── bin/
+│   └── review-prepare.sh сборка пакета для внешнего ревью (make review-prepare)
 ├── traefik/
 │   └── dynamic.yml       статическая маршрутизация по доменам (file provider)
 ├── docker/

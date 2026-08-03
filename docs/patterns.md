@@ -392,6 +392,7 @@ app/        ← импортирует что угодно; из него не �
 | Очередь | `symfony/messenger` | doctrine-транспорт |
 | Почта | `symfony/mailer` | транспорт строкой в конфиге |
 | OpenAPI | `nelmio/api-doc-bundle` | схема генерируется из кода |
+| Миграции | `doctrine/doctrine-migrations-bundle` | стандартный выбор для Doctrine; `migrations/` — одна папка на проект |
 | Тесты | `phpunit/phpunit`, `dama/doctrine-test-bundle` | второй даёт откат транзакции между тестами |
 | Анализ | `phpstan/phpstan` + `phpstan-doctrine` + `phpstan-strict-rules` | level 9 |
 | Границы | `deptrac/deptrac` | проверяет зависимости модулей; пакет переименован с `qossmic/deptrac` — старое имя объявлено abandoned на момент установки (Stage 2) |
@@ -471,6 +472,45 @@ production-фронтенд, и с образом `playwright` (`mcr.microsoft.c
 которого не было в `node:22-alpine`) — без него npm не знает, какой из
 платформенных бинарников ставить, и это не косметика, а причина
 падения `admin`.
+
+## Одобрение install-скриптов (npm allow-scripts)
+
+npm 11 по умолчанию не запускает postinstall-скрипты пакетов, ещё не
+одобренных явно (сейчас — `esbuild`, `unrs-resolver`; нативные бинарники
+собираются/копируются в этом скрипте, без него оба останутся заглушками).
+Без действия это только предупреждение — тихо зависит от того, кто и как
+запускал install, ровно то, чего требовалось избежать.
+
+**Решение — нативный механизм npm, не сторонний инструмент
+(`@lavamoat/allow-scripts` и подобные не нужны):**
+
+- `npm approve-scripts <pkg> --allow-scripts-pin` пишет
+  `allowScripts: { "pkg@version": true }` прямо в `package.json` —
+  решение закоммичено, не зависит от локального состояния машины,
+  разработчика или CI-агента.
+- `fsevents` (опциональная macOS-зависимость chokidar/vite, здесь никогда
+  не устанавливается — весь npm только в Linux-контейнерах) явно
+  запрещена через `npm deny-scripts`: `allowScripts: { "fsevents": false }`.
+  Явный отказ вместо тихого пропуска — тот же принцип, что и одобрение.
+- `.npmrc` каждого приложения: `strict-allow-scripts=true` — превращает
+  предупреждение в отказ `npm ci`/`npm install` для ЛЮБОГО будущего
+  пакета с неодобренным install-скриптом. Без этой строки политика
+  одобрения ничего не блокирует — установка просто пройдёт с
+  предупреждением, которое легко не заметить.
+- `package.json`: `"engines": {"npm": ">=11.16.0"}` + `.npmrc`:
+  `engine-strict=true` — `allowScripts`/`strict-allow-scripts` появились
+  в npm 11.16; без проверки версии на более старом npm вся политика
+  молча не действует, а `npm ci` просто выполнит скрипты как раньше.
+
+Решение применяется один раз на новый непроверенный пакет
+(`npm approve-scripts` / `npm deny-scripts`), не на каждую установку.
+
+## Миграции
+
+`doctrine/doctrine-migrations-bundle` — стандартный выбор для Doctrine,
+альтернатив не сравнивали. `migrations/` — одна папка на весь проект
+(см. `structure.md`), путь задан в
+`config/packages/doctrine_migrations.yaml`.
 
 ---
 
