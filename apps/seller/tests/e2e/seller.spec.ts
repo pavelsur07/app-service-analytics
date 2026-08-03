@@ -9,4 +9,6 @@ test('seller start screen shows data from its own endpoint', async ({
     page.getByRole('heading', { name: 'Conwix — Seller' }),
   ).toBeVisible()
   await expect(page.getByText('app: conwix-seller-api')).toBeVisible()
+  await expect(page.getByText(/version: .+/)).toBeVisible()
+  await expect(page.getByText(/respondedAt: .+/)).toBeVisible()
 })

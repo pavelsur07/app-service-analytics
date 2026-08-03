@@ -24,6 +24,14 @@ services:
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - php-fpm
+    networks:
+      # *.internal aliases so other containers (Playwright) reach the
+      # real vhosts by name — *.localhost won't do: glibc/most resolvers
+      # hardcode that TLD to loopback per RFC 6761, ignoring Docker's DNS.
+      default:
+        aliases:
+          - app.conwix.internal
+          - admin.conwix.internal
 
   php-fpm:
     build:
@@ -90,11 +98,20 @@ services:
 
   playwright:
     # Playwright's browsers need glibc — Alpine (musl) can't run them at
-    # all (not a config issue, upstream doesn't support musl).
+    # all (not a config issue, upstream doesn't support musl). Browsers
+    # ship pre-installed in this image at the exact revision @playwright/test
+    # expects — version below is pinned to match apps/seller/package.json.
+    #
+    # working_dir matters beyond convenience: without it (cwd defaults to
+    # `/`), `npx playwright test` finds no local config/tests, falls back
+    # to fetching a fresh `playwright` package from the registry, and its
+    # test-file discovery walks the filesystem from `/` — hitting
+    # /etc/credstore (root-only) along the way and failing with EACCES.
     image: mcr.microsoft.com/playwright:v1.62.1-noble
     user: "1000:1000"
     environment:
       - HOME=/tmp
+    working_dir: /var/www/apps/seller
     volumes:
       - ./apps:/var/www/apps
     command: ["tail", "-f", "/dev/null"]
