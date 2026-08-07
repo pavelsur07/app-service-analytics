@@ -388,6 +388,25 @@ jobs:
 
       - run: make front-build
 
+      # Статика фронтенда — артефакт конвейера, а не стадия образа.
+      # Почему так — docs/patterns.md, «Сборка образов»: где её отдавать,
+      # ещё не решено, а запекание в образ приложения связало бы правку
+      # стиля с пересборкой и перевыкладкой PHP.
+      #
+      # Выкладывается только с master и берётся отсюда, а не из задачи
+      # image: собрана она здесь, и вторая сборка ради артефакта была бы
+      # той же работой второй раз. Номер прогона общий с тегом образа,
+      # поэтому пара «образ — статика» восстанавливается однозначно.
+      - name: статика фронтенда
+        if: github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-${{ github.run_number }}
+          path: |
+            apps/seller/dist/
+            apps/admin/dist/
+          retention-days: 30
+
       - run: make test-e2e
 
       - name: отчёт Playwright при падении
@@ -437,13 +456,32 @@ jobs:
           set -eu
           image="ghcr.io/${{ github.repository }}/api"
           docker build \
-            -f docker/php/Dockerfile.prod \
+            -f docker/php/Dockerfile \
+            --target prod \
             --build-arg APP_VERSION='${{ steps.tag.outputs.tag }}' \
             -t "$image:${{ steps.tag.outputs.tag }}" \
             -t "$image:latest" \
             .
           docker push "$image:${{ steps.tag.outputs.tag }}"
           docker push "$image:latest"
+
+      # Явная проверка того, что --target выбран верно: dev-стадия
+      # содержит composer и pcov, prod не должна. Ошибиться здесь легко
+      # (опечатка в target собирает последнюю стадию файла), а заметить
+      # трудно — образ при этом рабочий.
+      - name: в prod-образе нет инструментов разработки
+        run: |
+          set -eu
+          image="ghcr.io/${{ github.repository }}/api:${{ steps.tag.outputs.tag }}"
+          for tool in composer phpunit phpstan deptrac; do
+            if docker run --rm "$image" sh -c "command -v $tool" >/dev/null 2>&1; then
+              echo "в prod-образе найден $tool" >&2; exit 1
+            fi
+          done
+          if docker run --rm "$image" php -m | grep -qi pcov; then
+            echo "в prod-образе найден pcov" >&2; exit 1
+          fi
+          echo "composer, phpunit, phpstan, deptrac, pcov отсутствуют"
 
       - name: тег виден внутри образа
         run: |

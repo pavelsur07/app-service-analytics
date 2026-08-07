@@ -1,10 +1,10 @@
 services:
   traefik:
     image: traefik:v3.5
-    # ponytail: static file provider, not docker-label discovery — routing
-    # is fixed (2 hosts, 1 backend) and this skips a docker.sock mount.
-    # Switch to the docker provider when routing needs to react to
-    # containers appearing/disappearing (Stage 2+).
+    # Статический file provider, не обнаружение по docker-меткам:
+    # маршрутизация фиксирована (два хоста, один бэкенд), и это избавляет
+    # от монтирования docker.sock. Переходить на docker provider — когда
+    # маршруты должны будут реагировать на появление контейнеров.
     command:
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
       - "--entrypoints.web.address=:80"
@@ -33,19 +33,24 @@ services:
           - app.conwix.internal
           - admin.conwix.internal
 
+  # Оба сервиса собирают одну и ту же стадию dev одного Dockerfile. Разными
+  # остаются роли, а не образы: php-fpm обслуживает FastCGI, php-cli —
+  # оболочка для инструментов. В production образ один и в другом смысле:
+  # там стадия prod, и воркеры Messenger поднимаются из неё же
+  # (docker-compose.prod.yml).
   php-fpm:
-    build:
-      context: ./docker/php
-      args:
-        PHP_VARIANT: fpm
+    build: &php-dev-build
+      context: .
+      dockerfile: docker/php/Dockerfile
+      target: dev
+    # Как и php-cli: под root php-fpm создавал бы в примонтированном api/var
+    # файлы, которые потом не перезапишет ни хост, ни php-cli.
+    user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
     volumes:
       - ./api:/var/www/html
 
   php-cli:
-    build:
-      context: ./docker/php
-      args:
-        PHP_VARIANT: cli
+    build: *php-dev-build
     # Хост и контейнер делят bind-mount, поэтому обязаны сходиться в uid.
     # 1000 — разработчик на этой машине; в конвейере раннер ходит под
     # другим uid, и CONTAINER_UID/GID выставляются под него (.github/
@@ -72,13 +77,12 @@ services:
   redis:
     image: redis:7.4-alpine
 
-  # ponytail: glibc (bookworm-slim), not alpine — Node's native addons
-  # (rollup, esbuild, lightningcss, oxc, Playwright's browsers) are built
-  # and tested against glibc first; musl support is secondary and has
-  # already broken twice (Playwright wouldn't run at all, admin's rollup
-  # bound to the wrong libc after an install happened outside the
-  # container). glibc here also matches `playwright` below and whatever
-  # actually builds the production frontend later — one libc, not three.
+  # glibc (bookworm-slim), не alpine — осознанное расхождение с образами
+  # PHP, где база alpine. Нативные модули экосистемы Node (rollup, esbuild,
+  # lightningcss, oxc, браузеры Playwright) собираются и тестируются прежде
+  # всего под glibc; musl — вторичная цель, и за неё уже заплатили дважды.
+  # Здесь тот же libc, что у образа playwright ниже. Подробнее —
+  # docs/patterns.md, «База образов».
   node-seller:
     image: node:24.18.1-bookworm-slim
     user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
