@@ -1,0 +1,15 @@
+# Контекст сборки docker/php/Dockerfile.prod — корень репозитория.
+# Без этого файла в демон уезжают .git, node_modules и vendor: минуты
+# на передачу контекста и вероятность утащить в образ dev-зависимости.
+.git/
+.github/
+node_modules/
+**/node_modules/
+api/vendor/
+api/var/
+api/tests/
+apps/*/dist/
+docs/
+test-results/
+playwright-report/
+var/
