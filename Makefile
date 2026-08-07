@@ -120,8 +120,8 @@ test-int: ## тесты с БД (тестовая база должна быть
 test-func: ## тесты через HTTP (тестовая база должна быть готова)
 	$(COMPOSE) exec php-cli composer test:functional
 
-test-e2e: ## Playwright, через контейнер playwright
-	$(COMPOSE) exec playwright sh -c "cd /var/www/apps/seller && npx playwright test"
+test-e2e: ## Playwright, через контейнер playwright — оба сценария (seller, admin)
+	$(COMPOSE) exec playwright npx playwright test
 
 test-cov: ## покрытие (драйвер pcov в php-cli, docker/php/Dockerfile)
 	$(COMPOSE) exec php-cli composer test:cov
@@ -210,10 +210,11 @@ api-types-check: ## закоммиченные openapi.json и schema.d.ts до�
 # контейнера по умолчанию (`npm run dev`) падает и он не запускается —
 # exec в такой контейнер зайти не сможет. `run --rm` поднимает одноразовый
 # контейнер с переопределённой командой, не завися от состояния постоянного.
-front-install: ## установка зависимостей обоих приложений и packages/api-schema (npm ci, в контейнерах)
+front-install: ## установка зависимостей обоих приложений, packages/api-schema и e2e (npm ci, в контейнерах)
 	$(COMPOSE) run --rm node-seller npm ci
 	$(COMPOSE) run --rm node-admin npm ci
 	$(COMPOSE) run --rm -w /var/www/packages/api-schema node-seller npm ci
+	$(COMPOSE) run --rm playwright npm ci
 
 front-dev: ## запуск dev-серверов (node-seller, node-admin)
 	$(COMPOSE) up -d node-seller node-admin

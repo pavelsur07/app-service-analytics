@@ -104,20 +104,32 @@ services:
     # Playwright's browsers need glibc — Alpine (musl) can't run them at
     # all (not a config issue, upstream doesn't support musl). Browsers
     # ship pre-installed in this image at the exact revision @playwright/test
-    # expects — version below is pinned to match apps/seller/package.json.
+    # expects — version below is pinned to match package.json at repo root,
+    # the only place @playwright/test is declared. The apps don't pin it:
+    # their tests/e2e/* spec files resolve `import ... from
+    # '@playwright/test'` upward, to the same root node_modules.
     #
-    # working_dir matters beyond convenience: without it (cwd defaults to
-    # `/`), `npx playwright test` finds no local config/tests, falls back
-    # to fetching a fresh `playwright` package from the registry, and its
-    # test-file discovery walks the filesystem from `/` — hitting
-    # /etc/credstore (root-only) along the way and failing with EACCES.
+    # Whole repo mounted at /var/www, not just ./apps: playwright.config.ts
+    # (one config, two projects — seller and admin, docs/structure.md)
+    # lives at repo root and its projects' testDir point into both apps'
+    # tests/e2e/, so the container needs to see both from one root.
+    #
+    # working_dir is repo root, not apps/seller: the root package.json's
+    # node_modules is what resolves playwright.config.ts's own `import
+    # ... from '@playwright/test'` (Node resolution walks up from the
+    # requiring file, not sideways into an app's node_modules) and gives
+    # `npx playwright` its CLI. Without a local node_modules on the path
+    # (cwd defaulting to `/`), npx falls back to fetching a fresh
+    # `playwright` package from the registry, and its test-file discovery
+    # walks the filesystem from `/`, hitting /etc/credstore (root-only)
+    # and failing with EACCES.
     image: mcr.microsoft.com/playwright:v1.62.1-noble
     user: "1000:1000"
     environment:
       - HOME=/tmp
-    working_dir: /var/www/apps/seller
+    working_dir: /var/www
     volumes:
-      - ./apps:/var/www/apps
+      - .:/var/www
     command: ["tail", "-f", "/dev/null"]
 
 volumes:
