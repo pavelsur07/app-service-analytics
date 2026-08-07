@@ -12,21 +12,22 @@ app-service-analytics/
 ├── README.md
 ├── Makefile              оркестрация Docker и вызов composer-/npm-скриптов;
 │                         `make` без аргументов — список целей
-├── docker-compose.yml
+├── docker-compose.yml    dev-окружение
+├── docker-compose.prod.yml  описание prod-топологии: веб и воркер
+│                         из одного образа; не выкладка
 ├── playwright.config.ts  один конфиг на репозиторий, проекты seller и admin
 ├── package.json          только @playwright/test под этот конфиг
 ├── bin/
 │   └── review-prepare.sh сборка пакета для внешнего ревью (make review-prepare)
 ├── traefik/
 │   └── dynamic.yml       статическая маршрутизация по доменам (file provider)
-├── .dockerignore         контекст сборки prod-образа — корень репозитория
+├── .dockerignore         контекст сборки — корень репозитория
 ├── docker/
 │   ├── nginx/            vhost: *.conwix.localhost снаружи,
 │   │                     *.conwix.internal внутри сети
 │   └── php/
-│       ├── Dockerfile        инструментальный образ разработчика
-│       │                     (cli + fpm через ARG PHP_VARIANT)
-│       └── Dockerfile.prod   образ, которым заканчивается конвейер
+│       └── Dockerfile    один файл, стадии base / prod-deps / prod / dev;
+│                         выбор через --target
 ├── docs/
 │   ├── adr/
 │   ├── plan/
@@ -46,9 +47,11 @@ app-service-analytics/
 
 **Конвейер — один файл, шесть задач.** `changes` считает диф и отдаёт
 два флага; `backend` и `frontend` идут под этими флагами; `contract`
-и `e2e` — без условий, всегда. Завершает `image`: собирает
-`docker/php/Dockerfile.prod` и публикует в ghcr с тегом сборки,
-только с `master`. Развёртывание в конвейер не входит.
+и `e2e` — без условий, всегда. Завершает `image`: собирает стадию `prod`
+из `docker/php/Dockerfile` и публикует в ghcr с тегом сборки, только
+с `master`; там же проверяется, что в опубликованном образе нет
+инструментов разработки. Статика фронтенда уезжает артефактом из задачи
+`e2e`. Развёртывание в конвейер не входит.
 
 Почему фильтры именно такие и почему контрактные проверки выведены
 из-под них — `patterns.md`, раздел «Конвейер».

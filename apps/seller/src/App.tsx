@@ -13,8 +13,8 @@ function usePing(url: string): PingState {
   const [state, setState] = useState<PingState>({ status: 'loading' })
 
   useEffect(() => {
-    // ponytail: plain fetch (via apiGet), not TanStack Query — one request,
-    // no cache/retry needed yet. Query wiring is a later step.
+    // Голый fetch (через apiGet), не TanStack Query: один запрос,
+    // кэш и повторы пока не нужны. Query подключается позже.
     let cancelled = false
 
     apiGet<AppInfoResponse>(url)
