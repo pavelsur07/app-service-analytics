@@ -10,8 +10,6 @@ final readonly class AppInfoResponse
         public string $app,
         public string $version,
         public string $respondedAt,
-        // Проба конвейера: новое поле схемы без регенерации (критерий 3).
-        public string $environment = 'dev',
     ) {
     }
 }

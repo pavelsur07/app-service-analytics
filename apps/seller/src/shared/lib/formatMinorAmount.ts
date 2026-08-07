@@ -8,5 +8,3 @@ export function formatMinorAmount(
     minorAmount / 100,
   )
 }
-
-// Проба фильтров конвейера: коммит только во фронтенд (критерий 1).
