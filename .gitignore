@@ -9,3 +9,5 @@
 # падают сюда же, не в apps/*/.
 /test-results/
 /playwright-report/
+# Локальные разрешения Claude Code — привязаны к машине и её ключам.
+/.claude/settings.local.json
