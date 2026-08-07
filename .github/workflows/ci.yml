@@ -150,8 +150,12 @@ jobs:
 
       - run: docker compose up -d postgres php-cli
 
+      # Без if по cache-hit: composer install не только раскладывает
+      # vendor, но и выполняет post-install-cmd (cache:clear,
+      # assets:install). Пропустив шаг на попадании, получаем vendor
+      # без прогретого var/cache — и php-fpm отвечает 500 на первом же
+      # запросе. Кэш обязан экономить скачивание, а не установку.
       - name: composer install
-        if: steps.vendor.outputs.cache-hit != 'true'
         run: make api-install
 
       - run: make lint stan deptrac structure-check
@@ -274,8 +278,12 @@ jobs:
 
       - run: docker compose up -d postgres php-cli
 
+      # Без if по cache-hit: composer install не только раскладывает
+      # vendor, но и выполняет post-install-cmd (cache:clear,
+      # assets:install). Пропустив шаг на попадании, получаем vendor
+      # без прогретого var/cache — и php-fpm отвечает 500 на первом же
+      # запросе. Кэш обязан экономить скачивание, а не установку.
       - name: composer install
-        if: steps.vendor.outputs.cache-hit != 'true'
         run: make api-install
 
       - name: npm ci
@@ -362,8 +370,10 @@ jobs:
 
       - run: docker compose up -d postgres php-fpm nginx playwright
 
+      # См. комментарий в задаче backend: шаг обязателен и при попадании
+      # в кэш — post-install-cmd прогревает var/cache, без которого
+      # php-fpm отдаёт 500.
       - name: composer install
-        if: steps.vendor.outputs.cache-hit != 'true'
         run: docker compose up -d php-cli && make api-install
 
       - name: npm ci
