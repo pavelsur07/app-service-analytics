@@ -1,0 +1,428 @@
+name: ci
+
+# Только push, без отдельного триггера pull_request: репозиторий одного
+# разработчика, форков нет, и PR всё равно показывает проверку с прогона
+# своего head-коммита. Два триггера означали бы два прогона на каждый
+# коммит в ветке с открытым PR.
+#
+# Побочное следствие важнее экономии: у push всегда есть github.event.before,
+# поэтому диф считается одинаково на master и на ветке — одна ветка кода
+# в фильтрах, а не две.
+on: push
+
+# Новый коммит в ту же ветку отменяет предыдущий прогон: досматривать
+# результат по устаревшему коду незачем.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Имена собранных образов складываются из имени проекта (conwix-php-cli),
+  # и на них ссылаются docker save/load в кэше. Без явного значения имя
+  # берётся из названия каталога и молча меняется вместе с ним.
+  COMPOSE_PROJECT_NAME: conwix
+
+jobs:
+  changes:
+    name: фильтры по путям
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        name: что менялось
+        run: |
+          set -eu
+          base='${{ github.event.before }}'
+
+          # Новая ветка, первый коммит или переписанная история: базы для
+          # дифа нет. Гоняем всё — «не знаю, что менялось» обязано означать
+          # «проверяю всё», а не «пропускаю».
+          if [ -z "$base" ] \
+            || [ "$base" = "0000000000000000000000000000000000000000" ] \
+            || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            changed=''
+            reason='базы для дифа нет — полный прогон'
+          else
+            changed=$(git diff --name-only "$base" '${{ github.sha }}')
+            reason="диф $base..${GITHUB_SHA}"
+          fi
+
+          matches() { printf '%s\n' "$changed" | grep -qE "$1"; }
+
+          # Затрагивает то, КАК прогоняются проверки, а не только что
+          # проверяется: конвейер, окружение, образы, схема БД.
+          # Здесь фильтровать нельзя — фильтр судил бы сам о себе.
+          everything='^(\.github/|Makefile|docker-compose\.yml|docker/|api/migrations/)'
+
+          if [ -z "$changed" ] || matches "$everything"; then
+            backend=true
+            frontend=true
+          else
+            backend=false
+            frontend=false
+            matches '^api/' && backend=true
+            matches '^apps/' && frontend=true
+            # Контракт общий: правка схемы касается обеих половин.
+            matches '^packages/api-schema/' && { backend=true; frontend=true; }
+          fi
+
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Фильтры по путям"
+            echo ""
+            echo "Основание: $reason"
+            echo ""
+            echo "| Набор | Запускается |"
+            echo "|---|---|"
+            echo "| backend (PHP-CS-Fixer, PHPStan, Deptrac, structure-check, PHPUnit) | \`$backend\` |"
+            echo "| frontend (typecheck, ESLint, Prettier, Vitest, knip, сборка) | \`$frontend\` |"
+            echo "| contract (api-types-check, audit) | \`true\` — всегда |"
+            echo "| e2e (Playwright, оба сценария) | \`true\` — всегда |"
+            echo ""
+            echo "<details><summary>Изменённые файлы</summary>"
+            echo ""
+            echo '```'
+            printf '%s\n' "${changed:-(весь репозиторий)}"
+            echo '```'
+            echo ""
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  backend:
+    name: backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Контейнеры ходят под 1000:1000 (docker-compose.yml), чекаут раннера
+      # принадлежит 1001. Без выравнивания composer install не может писать
+      # в примонтированный api/.
+      - name: выравнивание uid под контейнеры
+        run: sudo chown -R 1000:1000 .
+
+      - name: кэш образа php
+        id: php-image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/php-image.tar
+          key: php-image-${{ hashFiles('docker/php/Dockerfile') }}
+
+      - name: образ php из кэша или сборкой
+        run: |
+          set -eu
+          if [ '${{ steps.php-image.outputs.cache-hit }}' = 'true' ]; then
+            docker load -i /tmp/php-image.tar
+          else
+            docker compose build php-cli php-fpm
+            docker save -o /tmp/php-image.tar conwix-php-cli conwix-php-fpm
+          fi
+
+      - name: кэш composer
+        id: vendor
+        uses: actions/cache@v4
+        with:
+          path: api/vendor
+          key: composer-${{ hashFiles('api/composer.lock') }}
+
+      # Ключ содержит github.sha, поэтому запись происходит каждый прогон,
+      # а restore-keys поднимает ближайший предыдущий результат. Иначе
+      # кэш PHPStan застыл бы на первом прогоне и с ростом кода
+      # переставал бы что-либо ускорять.
+      - name: кэш результата PHPStan
+        uses: actions/cache@v4
+        with:
+          path: api/var/phpstan
+          key: phpstan-${{ hashFiles('api/composer.lock', 'api/phpstan.neon') }}-${{ github.sha }}
+          restore-keys: |
+            phpstan-${{ hashFiles('api/composer.lock', 'api/phpstan.neon') }}-
+
+      - run: docker compose up -d postgres php-cli
+
+      - name: composer install
+        if: steps.vendor.outputs.cache-hit != 'true'
+        run: make api-install
+
+      - run: make lint stan deptrac structure-check
+
+      - run: make db-wait db-test-create api-migrate-test test-unit test-int test-func
+
+  frontend:
+    name: frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: выравнивание uid под контейнеры
+        run: sudo chown -R 1000:1000 .
+
+      # npm ci стирает node_modules и ставит заново, поэтому кэшируется
+      # сам node_modules, а установка при попадании пропускается —
+      # кэш только каталога npm ускорял бы install, но не отменял его.
+      - name: кэш node_modules (seller)
+        id: nm-seller
+        uses: actions/cache@v4
+        with:
+          path: apps/seller/node_modules
+          key: npm-seller-${{ hashFiles('apps/seller/package-lock.json') }}
+
+      - name: кэш node_modules (admin)
+        id: nm-admin
+        uses: actions/cache@v4
+        with:
+          path: apps/admin/node_modules
+          key: npm-admin-${{ hashFiles('apps/admin/package-lock.json') }}
+
+      - name: кэш node_modules (api-schema)
+        id: nm-schema
+        uses: actions/cache@v4
+        with:
+          path: packages/api-schema/node_modules
+          key: npm-schema-${{ hashFiles('packages/api-schema/package-lock.json') }}
+
+      - name: npm ci
+        if: >-
+          steps.nm-seller.outputs.cache-hit != 'true' ||
+          steps.nm-admin.outputs.cache-hit != 'true' ||
+          steps.nm-schema.outputs.cache-hit != 'true'
+        run: make front-install-apps
+
+      - run: make front-dev
+
+      - run: make front-typecheck front-lint front-test front-knip front-build
+
+  contract:
+    name: контракт и уязвимости
+    needs: changes
+    # Без if — исключение из фильтров, ради которого фильтры вообще
+    # допустимы. Именно правка бэкенда ломает фронтенд; пропустив здесь,
+    # экономим минуты, чтобы ловить рассинхронизацию руками.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: выравнивание uid под контейнеры
+        run: sudo chown -R 1000:1000 .
+
+      - name: кэш образа php
+        id: php-image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/php-image.tar
+          key: php-image-${{ hashFiles('docker/php/Dockerfile') }}
+
+      - name: образ php из кэша или сборкой
+        run: |
+          set -eu
+          if [ '${{ steps.php-image.outputs.cache-hit }}' = 'true' ]; then
+            docker load -i /tmp/php-image.tar
+          else
+            docker compose build php-cli php-fpm
+            docker save -o /tmp/php-image.tar conwix-php-cli conwix-php-fpm
+          fi
+
+      - name: кэш composer
+        id: vendor
+        uses: actions/cache@v4
+        with:
+          path: api/vendor
+          key: composer-${{ hashFiles('api/composer.lock') }}
+
+      - name: кэш node_modules (seller)
+        id: nm-seller
+        uses: actions/cache@v4
+        with:
+          path: apps/seller/node_modules
+          key: npm-seller-${{ hashFiles('apps/seller/package-lock.json') }}
+
+      - name: кэш node_modules (admin)
+        id: nm-admin
+        uses: actions/cache@v4
+        with:
+          path: apps/admin/node_modules
+          key: npm-admin-${{ hashFiles('apps/admin/package-lock.json') }}
+
+      - name: кэш node_modules (api-schema)
+        id: nm-schema
+        uses: actions/cache@v4
+        with:
+          path: packages/api-schema/node_modules
+          key: npm-schema-${{ hashFiles('packages/api-schema/package-lock.json') }}
+
+      - run: docker compose up -d postgres php-cli
+
+      - name: composer install
+        if: steps.vendor.outputs.cache-hit != 'true'
+        run: make api-install
+
+      - name: npm ci
+        if: >-
+          steps.nm-seller.outputs.cache-hit != 'true' ||
+          steps.nm-admin.outputs.cache-hit != 'true' ||
+          steps.nm-schema.outputs.cache-hit != 'true'
+        run: make front-install-apps
+
+      - run: make front-dev
+
+      - run: make api-types-check
+
+      - run: make audit
+
+  e2e:
+    name: e2e
+    needs: changes
+    # Тоже без if. Стартовый экран — единственное место, где контракт
+    # проверяется целиком: от эндпоинта до отрисовки.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: выравнивание uid под контейнеры
+        run: sudo chown -R 1000:1000 .
+
+      - name: кэш образа php
+        id: php-image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/php-image.tar
+          key: php-image-${{ hashFiles('docker/php/Dockerfile') }}
+
+      - name: образ php из кэша или сборкой
+        run: |
+          set -eu
+          if [ '${{ steps.php-image.outputs.cache-hit }}' = 'true' ]; then
+            docker load -i /tmp/php-image.tar
+          else
+            docker compose build php-cli php-fpm
+            docker save -o /tmp/php-image.tar conwix-php-cli conwix-php-fpm
+          fi
+
+      - name: кэш composer
+        id: vendor
+        uses: actions/cache@v4
+        with:
+          path: api/vendor
+          key: composer-${{ hashFiles('api/composer.lock') }}
+
+      - name: кэш node_modules (seller)
+        id: nm-seller
+        uses: actions/cache@v4
+        with:
+          path: apps/seller/node_modules
+          key: npm-seller-${{ hashFiles('apps/seller/package-lock.json') }}
+
+      - name: кэш node_modules (admin)
+        id: nm-admin
+        uses: actions/cache@v4
+        with:
+          path: apps/admin/node_modules
+          key: npm-admin-${{ hashFiles('apps/admin/package-lock.json') }}
+
+      - name: кэш node_modules (api-schema)
+        id: nm-schema
+        uses: actions/cache@v4
+        with:
+          path: packages/api-schema/node_modules
+          key: npm-schema-${{ hashFiles('packages/api-schema/package-lock.json') }}
+
+      - name: кэш node_modules (e2e, корень)
+        id: nm-e2e
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: npm-e2e-${{ hashFiles('package-lock.json') }}
+
+      - run: docker compose up -d postgres php-fpm nginx playwright
+
+      - name: composer install
+        if: steps.vendor.outputs.cache-hit != 'true'
+        run: docker compose up -d php-cli && make api-install
+
+      - name: npm ci
+        if: >-
+          steps.nm-seller.outputs.cache-hit != 'true' ||
+          steps.nm-admin.outputs.cache-hit != 'true' ||
+          steps.nm-schema.outputs.cache-hit != 'true' ||
+          steps.nm-e2e.outputs.cache-hit != 'true'
+        run: make front-install
+
+      - run: make front-dev
+
+      - run: make front-build
+
+      - run: make test-e2e
+
+      - name: отчёт Playwright при падении
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  image:
+    name: сборка и публикация образа
+    needs: [backend, frontend, contract, e2e]
+    # always() — пропущенные backend/frontend не должны утаскивать за собой
+    # публикацию; !failure() && !cancelled() — упавшие обязаны.
+    if: >-
+      always() && !failure() && !cancelled()
+      && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: tag
+        name: тег сборки
+        run: |
+          set -eu
+          tag="${{ github.run_number }}-$(git rev-parse --short HEAD)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Тег сборки: \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: вход в ghcr
+        run: |
+          echo '${{ secrets.GITHUB_TOKEN }}' \
+            | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+
+      # Тег попадает внутрь образа как APP_VERSION, откуда его берёт
+      # параметр app.version и отдаёт эндпоинт версии. Отдельной версии
+      # у фронтенда нет намеренно: он показывает то, что вернул API, —
+      # два источника «что развёрнуто» расходились бы молча.
+      - name: сборка и публикация
+        run: |
+          set -eu
+          image="ghcr.io/${{ github.repository }}/api"
+          docker build \
+            -f docker/php/Dockerfile.prod \
+            --build-arg APP_VERSION='${{ steps.tag.outputs.tag }}' \
+            -t "$image:${{ steps.tag.outputs.tag }}" \
+            -t "$image:latest" \
+            .
+          docker push "$image:${{ steps.tag.outputs.tag }}"
+          docker push "$image:latest"
+
+      - name: тег виден внутри образа
+        run: |
+          set -eu
+          image="ghcr.io/${{ github.repository }}/api:${{ steps.tag.outputs.tag }}"
+          baked=$(docker run --rm "$image" php -r 'echo getenv("APP_VERSION");')
+          echo "APP_VERSION в образе: $baked"
+          [ "$baked" = '${{ steps.tag.outputs.tag }}' ] \
+            || { echo "APP_VERSION в образе не совпал с тегом" >&2; exit 1; }

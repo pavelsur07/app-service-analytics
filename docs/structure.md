@@ -19,9 +19,14 @@ app-service-analytics/
 │   └── review-prepare.sh сборка пакета для внешнего ревью (make review-prepare)
 ├── traefik/
 │   └── dynamic.yml       статическая маршрутизация по доменам (file provider)
+├── .dockerignore         контекст сборки prod-образа — корень репозитория
 ├── docker/
-│   └── nginx/            vhost: *.conwix.localhost снаружи,
-│                         *.conwix.internal внутри сети
+│   ├── nginx/            vhost: *.conwix.localhost снаружи,
+│   │                     *.conwix.internal внутри сети
+│   └── php/
+│       ├── Dockerfile        инструментальный образ разработчика
+│       │                     (cli + fpm через ARG PHP_VARIANT)
+│       └── Dockerfile.prod   образ, которым заканчивается конвейер
 ├── docs/
 │   ├── adr/
 │   ├── plan/
@@ -34,8 +39,19 @@ app-service-analytics/
 │   └── admin/            admin.conwix.com
 ├── packages/
 │   └── api-schema/       OpenAPI + сгенерированные TS-типы
-└── .github/workflows/
+└── .github/
+    └── workflows/
+        └── ci.yml        конвейер: фильтры по путям, кэш, публикация образа
 ```
+
+**Конвейер — один файл, шесть задач.** `changes` считает диф и отдаёт
+два флага; `backend` и `frontend` идут под этими флагами; `contract`
+и `e2e` — без условий, всегда. Завершает `image`: собирает
+`docker/php/Dockerfile.prod` и публикует в ghcr с тегом сборки,
+только с `master`. Развёртывание в конвейер не входит.
+
+Почему фильтры именно такие и почему контрактные проверки выведены
+из-под них — `patterns.md`, раздел «Конвейер».
 
 Лендинг `conwix.com` живёт в отдельном репозитории: другой цикл релизов,
 другие люди, другой стек. Связывать его выкладку с выкладкой продукта незачем.

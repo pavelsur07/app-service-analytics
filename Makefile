@@ -31,7 +31,7 @@ DB_TEST_NAME := $(DB_NAME)_test
 	lint lint-fix stan deptrac structure-check audit \
 	front-typecheck front-lint front-test front-knip \
 	api-doc-export api-types api-types-check \
-	front-install front-dev front-build \
+	front-install front-install-apps e2e-install front-dev front-build \
 	review-prepare review-codex review-kimi review \
 	ci-local
 
@@ -210,10 +210,17 @@ api-types-check: ## закоммиченные openapi.json и schema.d.ts до�
 # контейнера по умолчанию (`npm run dev`) падает и он не запускается —
 # exec в такой контейнер зайти не сможет. `run --rm` поднимает одноразовый
 # контейнер с переопределённой командой, не завися от состояния постоянного.
-front-install: ## установка зависимостей обоих приложений, packages/api-schema и e2e (npm ci, в контейнерах)
+front-install: front-install-apps e2e-install ## установка зависимостей обоих приложений, packages/api-schema и e2e (npm ci, в контейнерах)
+
+# Отдельно от e2e-install: джобам конвейера, которым Playwright не нужен
+# (frontend, contract), иначе пришлось бы тянуть образ на 3 ГБ ради
+# трёх пакетов в корневом package.json.
+front-install-apps: ## npm ci обоих приложений и packages/api-schema
 	$(COMPOSE) run --rm node-seller npm ci
 	$(COMPOSE) run --rm node-admin npm ci
 	$(COMPOSE) run --rm -w /var/www/packages/api-schema node-seller npm ci
+
+e2e-install: ## npm ci корневого package.json (@playwright/test под общий конфиг)
 	$(COMPOSE) run --rm playwright npm ci
 
 front-dev: ## запуск dev-серверов (node-seller, node-admin)

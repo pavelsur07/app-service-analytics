@@ -1,0 +1,50 @@
+# Образ, которым заканчивается конвейер (Stage 4, часть 4). Отличается
+# от docker/php/Dockerfile принципиально: тот — инструментальный образ
+# разработчика, код в него монтируется томом и есть dev-зависимости;
+# этот содержит код внутри и собран без них.
+#
+# Контекст сборки — корень репозитория, не docker/php: нужен api/.
+#
+# Куда образ выкладывается — открытый вопрос, развёртывание в Stage 4
+# не входит. Поэтому здесь только php-fpm с приложением: ни nginx,
+# ни статики фронтенда, ни supervisord — всё это решения развёртывания,
+# а принимать их заранее означало бы выбрать за будущий Stage.
+FROM php:8.4-fpm-alpine
+
+# postgresql-dev нужен только чтобы скомпилировать pdo_pgsql, в рантайме
+# достаточно libpq — оставленный целиком, он весит 500 МБ, больше самого
+# приложения в десять раз. Тот же приём с --virtual, что и для pcov
+# в docker/php/Dockerfile.
+RUN apk add --no-cache libpq \
+    && apk add --no-cache --virtual .build-deps postgresql-dev \
+    && docker-php-ext-install pdo_pgsql opcache \
+    && apk del .build-deps
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+WORKDIR /var/www/html
+
+# Зависимости отдельным слоем до кода: правка контроллера не должна
+# заставлять composer ставить всё заново.
+COPY api/composer.json api/composer.lock ./
+
+# --no-scripts: post-install-cmd вызывает cache:clear и assets:install,
+# которым нужен рабочий APP_SECRET и DATABASE_URL. На сборке их нет
+# и быть не должно — секреты приезжают в рантайме.
+RUN composer install \
+        --no-dev \
+        --no-scripts \
+        --no-interaction \
+        --prefer-dist \
+        --optimize-autoloader
+
+COPY api/ ./
+
+RUN composer dump-autoload --no-dev --optimize --classmap-authoritative
+
+# Тег сборки. Значение по умолчанию заведомо неправдоподобно: образ,
+# собранный мимо конвейера, обязан отличаться от собранного им,
+# а не притворяться версией 0.1.0.
+ARG APP_VERSION=0.0.0-unbuilt
+ENV APP_VERSION=$APP_VERSION
+ENV APP_ENV=prod
