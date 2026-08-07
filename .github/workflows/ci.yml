@@ -104,11 +104,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Контейнеры ходят под 1000:1000 (docker-compose.yml), чекаут раннера
-      # принадлежит 1001. Без выравнивания composer install не может писать
-      # в примонтированный api/.
-      - name: выравнивание uid под контейнеры
-        run: sudo chown -R 1000:1000 .
+      # Контейнеры и хост делят чекаут и обязаны сходиться в uid: часть
+      # целей Makefile пишет с хоста, а не из контейнера. Подробнее —
+      # docker-compose.yml, php-cli.
+      - name: uid контейнеров = uid раннера
+        run: |
+          echo "CONTAINER_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "CONTAINER_GID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: кэш образа php
         id: php-image
@@ -164,8 +166,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: выравнивание uid под контейнеры
-        run: sudo chown -R 1000:1000 .
+      # Контейнеры и хост делят чекаут и обязаны сходиться в uid: часть
+      # целей Makefile пишет с хоста, а не из контейнера. Подробнее —
+      # docker-compose.yml, php-cli.
+      - name: uid контейнеров = uid раннера
+        run: |
+          echo "CONTAINER_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "CONTAINER_GID=$(id -g)" >> "$GITHUB_ENV"
 
       # npm ci стирает node_modules и ставит заново, поэтому кэшируется
       # сам node_modules, а установка при попадании пропускается —
@@ -212,8 +219,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: выравнивание uid под контейнеры
-        run: sudo chown -R 1000:1000 .
+      # Контейнеры и хост делят чекаут и обязаны сходиться в uid: часть
+      # целей Makefile пишет с хоста, а не из контейнера. Подробнее —
+      # docker-compose.yml, php-cli.
+      - name: uid контейнеров = uid раннера
+        run: |
+          echo "CONTAINER_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "CONTAINER_GID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: кэш образа php
         id: php-image
@@ -288,8 +300,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: выравнивание uid под контейнеры
-        run: sudo chown -R 1000:1000 .
+      # Контейнеры и хост делят чекаут и обязаны сходиться в uid: часть
+      # целей Makefile пишет с хоста, а не из контейнера. Подробнее —
+      # docker-compose.yml, php-cli.
+      - name: uid контейнеров = uid раннера
+        run: |
+          echo "CONTAINER_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "CONTAINER_GID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: кэш образа php
         id: php-image

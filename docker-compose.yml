@@ -46,7 +46,14 @@ services:
       context: ./docker/php
       args:
         PHP_VARIANT: cli
-    user: "1000:1000"
+    # Хост и контейнер делят bind-mount, поэтому обязаны сходиться в uid.
+    # 1000 — разработчик на этой машине; в конвейере раннер ходит под
+    # другим uid, и CONTAINER_UID/GID выставляются под него (.github/
+    # workflows/ci.yml). Раздать дерево через chown нельзя: часть целей
+    # Makefile пишет с хоста, а не из контейнера (api-doc-export,
+    # api-types-check — редирект `>` выполняет хостовый shell), и любой
+    # выбранный владелец ломал бы вторую половину.
+    user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
     environment:
       - HOME=/tmp
     volumes:
@@ -74,7 +81,7 @@ services:
   # actually builds the production frontend later — one libc, not three.
   node-seller:
     image: node:24.18.1-bookworm-slim
-    user: "1000:1000"
+    user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
     environment:
       - HOME=/tmp
     working_dir: /var/www/apps/seller
@@ -89,7 +96,7 @@ services:
 
   node-admin:
     image: node:24.18.1-bookworm-slim
-    user: "1000:1000"
+    user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
     environment:
       - HOME=/tmp
     working_dir: /var/www/apps/admin
@@ -124,7 +131,7 @@ services:
     # walks the filesystem from `/`, hitting /etc/credstore (root-only)
     # and failing with EACCES.
     image: mcr.microsoft.com/playwright:v1.62.1-noble
-    user: "1000:1000"
+    user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
     environment:
       - HOME=/tmp
     working_dir: /var/www
