@@ -2,3 +2,10 @@
 /vendor/
 /.env
 /var/
+# package.json на этом уровне — только @playwright/test для
+# playwright.config.ts (docs/patterns.md, «Playwright — общий конфиг»).
+/node_modules/
+# Конфиг один на репозиторий (playwright.config.ts), отчёты и артефакты
+# падают сюда же, не в apps/*/.
+/test-results/
+/playwright-report/

@@ -15,6 +15,8 @@ export default defineConfig({
   plugins: [tailwindcss()],
   test: {
     environment: 'node',
+    // tests/e2e — Playwright, отдельный тест-раннер; Vitest его не трогает.
+    exclude: ['node_modules/**', 'tests/e2e/**'],
   },
   server: {
     proxy: apiProxy,
