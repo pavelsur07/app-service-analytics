@@ -26,5 +26,3 @@ final class MoneyTest extends TestCase
         }
     }
 }
-
-// Проба фильтров конвейера: коммит только в api (критерий 2).
