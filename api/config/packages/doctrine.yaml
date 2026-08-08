@@ -7,15 +7,31 @@ doctrine:
         #server_version: '16'
 
         profiling_collect_backtrace: '%kernel.debug%'
+        # UuidType — из symfony/doctrine-bridge (транзитивная зависимость
+        # doctrine-messenger, используется напрямую и потому явно
+        # запрошена в composer.json). Конвертирует symfony/uid Uuid
+        # в нативный тип uuid PostgreSQL и обратно (ADR-003: строковое
+        # хранение запрещено).
+        types:
+            uuid: Symfony\Bridge\Doctrine\Types\UuidType
+        mapping_types:
+            uuid: uuid
     orm:
         validate_xml_mapping: true
         naming_strategy: doctrine.orm.naming_strategy.underscore
         identity_generation_preferences:
             Doctrine\DBAL\Platforms\PostgreSQLPlatform: identity
-        # Сущностей пока нет нигде. Появятся в Domain/ соответствующего
-        # модуля (не в src/Entity — этой папки в проекте нет, см.
-        # docs/structure.md), тогда здесь заводится маппинг на модуль.
         auto_mapping: true
+        # Не src/Entity — этой папки в проекте нет и не будет
+        # (docs/structure.md). Один mapping-блок на модуль, заводится
+        # вместе с первой сущностью модуля, не заранее.
+        mappings:
+            Ingestion:
+                type: attribute
+                is_bundle: false
+                dir: '%kernel.project_dir%/src/Ingestion/Domain'
+                prefix: 'App\Ingestion\Domain'
+                alias: Ingestion
 
 when@test:
     doctrine:
