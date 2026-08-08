@@ -107,19 +107,10 @@ db-test-rebuild: db-wait ## полное пересоздание тестово
 # поверх схемы, сложившейся за несколько итераций, а то, что она
 # применяется на пустую базу — именно это произойдёт на боевой.
 #
-# Шаги через $(MAKE), а не списком зависимостей: здесь важен порядок,
-# и он должен быть виден в рецепте, а не выводиться из позиции в строке.
-#
-# Кэш контейнера сносится отдельно: api/var — bind-mount с хоста,
-# down-clear удаляет тома, но его не трогает.
-db-rebuild-check: ## down-clear → up → migrate → migrate-test → test: миграция с пустой базы
-	$(MAKE) down-clear
-	$(MAKE) up
-	rm -rf api/var/cache
-	$(MAKE) db-wait
-	$(MAKE) api-migrate
-	$(MAKE) test
-	@echo "db-rebuild-check: миграции применяются с пустой базы, тесты зелёные."
+# Порядок задан списком зависимостей; он соблюдается благодаря
+# .NOTPARALLEL в начале файла.
+db-rebuild-check: down-clear up db-wait api-migrate api-migrate-test test ## down-clear → up → migrate → migrate-test → test: миграция с пустой базы
+	@echo "db-rebuild-check: OK"
 
 # --- Тесты -------------------------------------------------------------
 # Подготовка тестовой базы — отдельные цели (db-test-create,
@@ -253,15 +244,32 @@ front-build: ## production-сборка (APP=seller|admin, по умолчани
 review-prepare: ## сборка пакета для ревью (var/review/package.md): make review-prepare TASK="..." [ADR="0006 0007"]
 	sh bin/review-prepare.sh
 
-review-codex: ## прогон Codex CLI по уже собранному var/review/package.md, ответ в var/review/codex.md
-	@mkdir -p var/review
-	@test -f var/review/package.md || { echo "Сначала make review-prepare TASK=\"...\"" >&2; exit 1; }
-	timeout 900 codex exec --sandbox read-only -o var/review/codex.md - < var/review/package.md
+# Роли разведены (CLAUDE.md, «Порог внешнего ревью»): общая часть пакета
+# собирается один раз, инструкция роли добавляется своя. Один и тот же
+# текст, отданный двум моделям, даёт два сильно пересекающихся ответа —
+# тогда второй ревьюер перестаёт быть вторым мнением.
+#
+# review-prepare выдаёт разделы 1–4; 5A, 5B и 6 живут в шаблоне,
+# поэтому нужный раздел вырезается оттуда, а не из пакета.
+REVIEW_TEMPLATE := docs/review-package-template.md
 
-review-kimi: ## прогон Kimi CLI по уже собранному var/review/package.md, ответ в var/review/kimi.md
-	@mkdir -p var/review
+# $(1) — заголовок раздела роли; берётся он и раздел 6 «Формат ответа».
+define review_request
 	@test -f var/review/package.md || { echo "Сначала make review-prepare TASK=\"...\"" >&2; exit 1; }
-	timeout 900 kimi -p "$$(cat var/review/package.md)" --output-format text > var/review/kimi.md
+	@cp var/review/package.md $(2)
+	@awk '/^## $(1)\./{on=1; print; next} /^## 5[AB]\./ || /^## 6\./{on=0} on' $(REVIEW_TEMPLATE) >> $(2)
+	@awk '/^## 6\./{on=1} on' $(REVIEW_TEMPLATE) >> $(2)
+endef
+
+review-codex: ## роль «соответствие» (5A): запрос в package-rules.md, ответ в codex.md
+	@mkdir -p var/review
+	$(call review_request,5A,var/review/package-rules.md)
+	timeout 900 codex exec --sandbox read-only -o var/review/codex.md - < var/review/package-rules.md
+
+review-kimi: ## роль «дефекты» (5B): запрос в package-defects.md, ответ в kimi.md
+	@mkdir -p var/review
+	$(call review_request,5B,var/review/package-defects.md)
+	timeout 900 kimi -p "$$(cat var/review/package-defects.md)" --output-format text > var/review/kimi.md
 
 review: review-prepare ## review-prepare + оба инструмента: make review TASK="..."
 	$(MAKE) review-codex
