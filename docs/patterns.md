@@ -392,6 +392,7 @@ app/        ← импортирует что угодно; из него не �
 | ORM (запись) | `doctrine/orm` | только write-модель |
 | SQL (чтение) | `doctrine/dbal` | все списки и витрины |
 | Идентификаторы | `symfony/uid` | UUIDv7, нативно |
+| Doctrine-тип для UUID | `symfony/doctrine-bridge` `UuidType` | транзитивная зависимость doctrine-messenger, с первой сущности (Identity, пакет 1) запрошена в `composer.json` напрямую — используется её класс явно. Конвертирует `Symfony\Component\Uid\Uuid` в нативный `uuid` PostgreSQL, регистрация — `config/packages/doctrine.yaml` (`dbal.types`, `dbal.mapping_types`) |
 | Деньги | `brick/money` | внутри Value Object, наружу не торчит |
 | Offset-пагинация | `pagerfanta/core` | с DBAL-адаптером, не с ORM; `pagerfanta/pagerfanta` — версия 2.0.1 для PHP 5.3, после 3.x пакет разделён на `core` + адаптеры |
 | Keyset-пагинация | своё | 50 строк; готовые решения навязывают модель |
