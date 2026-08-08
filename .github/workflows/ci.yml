@@ -483,6 +483,26 @@ jobs:
           fi
           echo "composer, phpunit, phpstan, deptrac, pcov отсутствуют"
 
+      # Официальный образ не активирует ни один из своих php.ini, и без
+      # явного mv php работает на встроенных умолчаниях: ошибки уходят
+      # в HTTP-ответ, аргументы функций — в стектрейсы. Молчаливый режим,
+      # который не отличить от рабочего, пока наружу не уедет путь
+      # или ключ площадки.
+      - name: prod-образ настроен как production
+        run: |
+          set -eu
+          image="ghcr.io/${{ github.repository }}/api:${{ steps.tag.outputs.tag }}"
+          check() {
+            actual=$(docker run --rm "$image" php -r "echo ini_get('$1') ?: 'Off';")
+            [ "$actual" = "$2" ] || { echo "$1: ожидалось $2, получено $actual" >&2; exit 1; }
+            echo "  $1 = $actual"
+          }
+          docker run --rm "$image" php -r 'exit(php_ini_loaded_file() ? 0 : 1);' \
+            || { echo "php.ini не активирован" >&2; exit 1; }
+          check display_errors Off
+          check display_startup_errors Off
+          check zend.exception_ignore_args 1
+
       - name: тег виден внутри образа
         run: |
           set -eu

@@ -76,6 +76,19 @@ RUN composer dump-autoload --no-dev --optimize --classmap-authoritative
 
 FROM base AS prod
 
+# Официальный образ кладёт два пресета и не активирует ни один: без этой
+# строки php работает на встроенных умолчаниях, а они ближе к development.
+# Здесь это не про удобство, а про две утечки:
+#   display_errors=On            — фатальные ошибки и предупреждения уходят
+#                                  в HTTP-ответ вместе с путями (Symfony
+#                                  ловит исключения, но не то, что падает
+#                                  до загрузки ядра);
+#   zend.exception_ignore_args=0 — аргументы функций попадают в стектрейсы,
+#                                  а туда приезжают ключи площадок
+#                                  и данные компаний.
+# conf.d/zz-*.ini читаются после php.ini и продолжают перекрывать нужное.
+RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+
 # validate_timestamps=0 — php не проверяет mtime файлов на каждом запросе.
 # Код внутри образа неизменен, проверять нечего; при выкладке поднимается
 # новый контейнер, а не подменяются файлы.
@@ -122,6 +135,10 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
 # иначе правка файла требовала бы пересборки образа.
 
 FROM base AS dev
+
+# Парный пресет к prod: здесь ошибки, наоборот, должны быть видны сразу
+# и целиком, включая аргументы в стектрейсах.
+RUN mv "$PHP_INI_DIR/php.ini-development" "$PHP_INI_DIR/php.ini"
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
