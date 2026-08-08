@@ -8,6 +8,14 @@ framework:
     #esi: true
     #fragments: true
 
+    # Именованный клиент на площадку — ретраи/таймауты symfony/http-client
+    # штатные, base_uri задаётся один раз здесь, не строкой на каждый вызов.
+    # Второй scoped-клиент заводится вместе со вторым коннектором.
+    http_client:
+        scoped_clients:
+            ozon.client:
+                base_uri: '%env(OZON_API_BASE_URL)%'
+
 when@test:
     framework:
         test: true
