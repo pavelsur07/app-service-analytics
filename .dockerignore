@@ -31,6 +31,5 @@ api/.php-cs-fixer.dist.php
 
 apps/*/dist/
 docs/
-test-results/
-playwright-report/
+# var/ — артефакты Playwright (playwright.config.ts, outputDir).
 var/
