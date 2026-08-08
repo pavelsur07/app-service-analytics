@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Badge, Card } from '../../../packages/ui/src'
 import { apiGet } from './api/client'
 import type { components } from './api/schema'
 
@@ -44,19 +45,46 @@ export function App() {
   const state = usePing('/api/seller/ping')
 
   if (state.status === 'loading') {
-    return <p>Загрузка…</p>
+    return <p className="p-6 text-text-muted">Загрузка…</p>
   }
 
   if (state.status === 'error') {
-    return <p>Ошибка: {state.message}</p>
+    return (
+      <div className="p-6">
+        <Card>
+          <div className="flex items-center gap-3">
+            <Badge tone="negative">✕ ошибка</Badge>
+            <span className="text-text-secondary">{state.message}</span>
+          </div>
+        </Card>
+      </div>
+    )
   }
 
   return (
-    <div>
-      <h1>Conwix — Seller</h1>
-      <p>app: {state.info.app}</p>
-      <p>version: {state.info.version}</p>
-      <p>respondedAt: {state.info.respondedAt}</p>
+    <div className="p-6">
+      <Card>
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-semibold">Conwix — Seller</h1>
+            <Badge tone="positive">✓ связь с API</Badge>
+          </div>
+          <dl className="flex flex-col gap-1 text-text-secondary">
+            <div className="flex gap-4">
+              <dt className="w-28">app</dt>
+              <dd className="text-text-primary">{state.info.app}</dd>
+            </div>
+            <div className="flex gap-4">
+              <dt className="w-28">version</dt>
+              <dd className="text-text-primary">{state.info.version}</dd>
+            </div>
+            <div className="flex gap-4">
+              <dt className="w-28">respondedAt</dt>
+              <dd className="text-text-primary">{state.info.respondedAt}</dd>
+            </div>
+          </dl>
+        </div>
+      </Card>
     </div>
   )
 }

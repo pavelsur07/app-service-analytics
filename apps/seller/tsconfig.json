@@ -15,7 +15,17 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+
+    // packages/ui собирается каждым приложением как свой исходник —
+    // своего node_modules у него нет намеренно. Здесь TypeScript ищет
+    // типы react (сборку делает Vite по своему alias); без этого пакет
+    // не находит react вовсе, а со своей копией их стало бы две,
+    // и две копии React ломают хуки.
+    "paths": {
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "../../packages/ui/src"]
 }
