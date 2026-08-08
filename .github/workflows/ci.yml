@@ -593,15 +593,24 @@ jobs:
              docker compose -f docker-compose.prod.yml up -d
              docker logout ghcr.io"
 
+      # С повторами, а не один запрос после sleep: контейнер поднимается
+      # не мгновенно, и одиночная проверка ловила пустой ответ, объявляя
+      # исправную выкладку неудачной.
       - name: развёрнут именно этот тег
         run: |
           set -eu
-          sleep 25
+          want='${{ needs.image.outputs.tag }}'
           for host in app.conwix.com admin.conwix.com; do
             case "$host" in app.*) path=/api/seller/ping;; *) path=/api/admin/ping;; esac
-            got=$(curl -sf --max-time 20 "https://$host$path" | sed -E 's/.*"version":"([^"]+)".*/\1/')
-            [ "$got" = '${{ needs.image.outputs.tag }}' ] \
-              || { echo "$host отдаёт версию '$got', ожидалась '${{ needs.image.outputs.tag }}'" >&2; exit 1; }
+            got=''
+            for _ in $(seq 1 20); do
+              got=$(curl -sf --max-time 10 "https://$host$path" 2>/dev/null \
+                    | sed -E 's/.*"version":"([^"]+)".*/\1/') || got=''
+              [ "$got" = "$want" ] && break
+              sleep 5
+            done
+            [ "$got" = "$want" ] \
+              || { echo "$host отдаёт версию '${got:-(нет ответа)}', ожидалась '$want'" >&2; exit 1; }
             echo "  $host → $got"
           done
 
