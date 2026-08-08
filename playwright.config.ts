@@ -6,6 +6,11 @@ import { defineConfig, devices } from '@playwright/test'
 // свой, тесты полностью независимы (docs/structure.md).
 export default defineConfig({
   fullyParallel: true,
+  // Следы прогонов — в var/, как у инструментов бэкенда (api/var/phpstan,
+  // api/var/phpunit и остальные). По умолчанию Playwright пишет в
+  // test-results/ в корне репозитория, и этот каталог приходилось
+  // перечислять отдельно в .gitignore и .dockerignore; var/ там уже есть.
+  outputDir: 'var/playwright',
   projects: [
     {
       name: 'seller',
