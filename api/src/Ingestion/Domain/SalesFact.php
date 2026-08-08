@@ -57,7 +57,9 @@ class SalesFact
     #[ORM\Column(type: 'money_minor_amount')]
     private int $commissionAmountMinor;
 
-    #[ORM\Column(length: 3)]
+    // options: ['fixed' => true] — ADR-004 требует именно char(3), не
+    // varchar(3): без fixed Doctrine генерирует VARCHAR на любой длине.
+    #[ORM\Column(length: 3, options: ['fixed' => true])]
     private readonly string $currency;
 
     #[ORM\Column(type: 'uuid')]
