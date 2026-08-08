@@ -91,4 +91,46 @@ final class DoctrineMarketplaceRawDocumentRepositoryTest extends KernelTestCase
 
         self::assertEquals(2, $count);
     }
+
+    public function testIdenticalAccountReportPeriodAndBodyAreIndependentAcrossCompanies(): void
+    {
+        self::bootKernel();
+        $container = self::getContainer();
+
+        /** @var Connection $connection */
+        $connection = $container->get(Connection::class);
+        $repository = new DoctrineMarketplaceRawDocumentRepository($connection);
+
+        $accountId = Uuid::v7();
+        $companyA = Uuid::v7();
+        $companyB = Uuid::v7();
+
+        // Естественный ключ не включает company_id как единственный
+        // различитель здесь намеренно: тот же marketplace_account_id
+        // (гипотетически общий идентификатор источника) и тот же контент
+        // у двух разных компаний обязаны дать две независимые строки,
+        // не дедуп друг против друга (CLAUDE.md §1, изоляция арендаторов).
+        MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
+            ->withCompanyId($companyA)
+            ->withMarketplaceAccountId($accountId)
+            ->withRawBody('{"result":[{"posting_number":"A-1"}]}')
+            ->persistWith($repository);
+        MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
+            ->withCompanyId($companyB)
+            ->withMarketplaceAccountId($accountId)
+            ->withRawBody('{"result":[{"posting_number":"A-1"}]}')
+            ->persistWith($repository);
+
+        $countA = $connection->fetchOne(
+            'SELECT COUNT(*) FROM marketplace_raw_document WHERE company_id = ? AND marketplace_account_id = ?',
+            [$companyA->toRfc4122(), $accountId->toRfc4122()],
+        );
+        $countB = $connection->fetchOne(
+            'SELECT COUNT(*) FROM marketplace_raw_document WHERE company_id = ? AND marketplace_account_id = ?',
+            [$companyB->toRfc4122(), $accountId->toRfc4122()],
+        );
+
+        self::assertEquals(1, $countA);
+        self::assertEquals(1, $countB);
+    }
 }

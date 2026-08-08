@@ -50,16 +50,12 @@ class MarketplaceRawDocument
     #[ORM\Column(length: 64)]
     private readonly string $bodyHash;
 
-    /** @var array<array-key, mixed> */
-    #[ORM\Column(type: 'json', options: ['jsonb' => true])]
-    private readonly array $body;
+    #[ORM\Column(type: 'text')]
+    private readonly string $body;
 
     #[ORM\Column]
     private readonly \DateTimeImmutable $receivedAt;
 
-    /**
-     * @param array<array-key, mixed> $body
-     */
     private function __construct(
         Uuid $id,
         Uuid $companyId,
@@ -67,7 +63,7 @@ class MarketplaceRawDocument
         string $reportType,
         \DateTimeImmutable $period,
         string $bodyHash,
-        array $body,
+        string $body,
         \DateTimeImmutable $receivedAt,
     ) {
         $this->id = $id;
@@ -81,12 +77,13 @@ class MarketplaceRawDocument
     }
 
     /**
-     * $rawBody — точные байты HTTP-ответа (ADR-006: хэш и содержимое
-     * относятся к тому, что реально пришло по сети, не к пересобранной
-     * строке). Площадка предполагается отдающей синтаксически валидный
-     * JSON даже на ошибках — устойчивость raw-слоя к дрейфу схем
-     * (ADR-006) про переименованные/пропавшие поля структуры ответа,
-     * не про повреждённые байты на транспорте.
+     * $rawBody — точные байты HTTP-ответа, сохраняются как есть, без
+     * попытки разбора: ADR-006 требует, чтобы raw переживал ошибку
+     * разбора, а не только дрейф структуры внутри валидного JSON.
+     * Требование валидности здесь сделало бы синтаксически некорректный
+     * (или не-JSON) ответ невозможным сохранить вообще — ровно то,
+     * от чего raw-слой обязан защищать. Разбор — отдельный шаг
+     * (пакет 4), его неудача не отменяет уже сохранённую запись.
      */
     public static function capture(
         Uuid $companyId,
@@ -95,11 +92,6 @@ class MarketplaceRawDocument
         \DateTimeImmutable $period,
         string $rawBody,
     ): self {
-        $decoded = json_decode($rawBody, true, flags: \JSON_THROW_ON_ERROR);
-        if (!\is_array($decoded)) {
-            throw new \UnexpectedValueException('Ozon response body must decode to a JSON object or array.');
-        }
-
         return new self(
             Uuid::v7(),
             $companyId,
@@ -107,7 +99,7 @@ class MarketplaceRawDocument
             $reportType,
             $period,
             hash('sha256', $rawBody),
-            $decoded,
+            $rawBody,
             new \DateTimeImmutable(),
         );
     }
@@ -142,10 +134,7 @@ class MarketplaceRawDocument
         return $this->bodyHash;
     }
 
-    /**
-     * @return array<array-key, mixed>
-     */
-    public function body(): array
+    public function body(): string
     {
         return $this->body;
     }

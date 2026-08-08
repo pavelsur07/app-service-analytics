@@ -38,7 +38,7 @@ final readonly class DoctrineMarketplaceRawDocumentRepository implements Marketp
                 'reportType' => $document->reportType(),
                 'period' => $document->period()->format('Y-m-d'),
                 'bodyHash' => $document->bodyHash(),
-                'body' => json_encode($document->body(), \JSON_THROW_ON_ERROR),
+                'body' => $document->body(),
                 'receivedAt' => $document->receivedAt()->format('Y-m-d H:i:sP'),
             ],
         );
