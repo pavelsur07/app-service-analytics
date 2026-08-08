@@ -11,9 +11,11 @@ doctrine:
         # doctrine-messenger, используется напрямую и потому явно
         # запрошена в composer.json). Конвертирует symfony/uid Uuid
         # в нативный тип uuid PostgreSQL и обратно (ADR-003: строковое
-        # хранение запрещено).
+        # хранение запрещено). money_minor_amount — ADR-004: явный
+        # Doctrine Type на каждое денежное поле вместо голого bigint.
         types:
             uuid: Symfony\Bridge\Doctrine\Types\UuidType
+            money_minor_amount: App\Shared\Infrastructure\Doctrine\Type\MoneyMinorAmountType
         mapping_types:
             uuid: uuid
     orm:
