@@ -8,14 +8,19 @@
 # из окружения площадки развёртывания. Файл не наследует docker-compose.yml
 # и рядом с ним не запускается — в нём другая роль у тех же имён.
 #
-# Что проверено запуском и что нет — docs/structure.md, раздел
-# про этот файл. Коротко: топология поднималась локально целиком
-# и обслуживала оба домена; не проверен только выпуск сертификатов ACME,
-# которому нужно публичное DNS-имя.
+# Топология развёрнута и обслуживает боевой трафик на app.conwix.com
+# и admin.conwix.com. Сертификаты Let's Encrypt выпущены, все семь
+# сервисов в состоянии healthy. Что именно проверено — docs/structure.md,
+# раздел про этот файл.
 #
-#   IMAGE=ghcr.io/…/api:<тег> \
-#   APP_SECRET=… DATABASE_URL=… ACME_EMAIL=… \
+#   IMAGE=ghcr.io/…/api:<тег> APP_SECRET=… ACME_EMAIL=… \
+#   POSTGRES_USER=… POSTGRES_PASSWORD=… POSTGRES_DB=… DATABASE_URL=… \
 #   docker compose -f docker-compose.prod.yml up -d
+#
+# Потолки памяти (mem_limit) выставлены под машину с 1.9 ГиБ. Это
+# предохранитель, а не резервирование: сумма потолков больше физической
+# памяти намеренно, каждый контейнер берёт сколько нужно, но ни один
+# не может унести остальные.
 #
 # ДО первого запуска, вручную человеком (CLAUDE.md, «Миграции»):
 #   1. Миграции применены к базе.
@@ -24,18 +29,19 @@
 #      перезапуска. Проверено локально: пока таблицы нет, оба воркера
 #      падают с «relation messenger_messages does not exist», после
 #      создания становятся healthy.
-#   3. Том frontend_static наполнен сборкой фронтенда (артефакт прогона
-#      frontend-<номер>, раскладка seller/ и admin/).
+#   3. Каталог ./static рядом с этим файлом наполнен сборкой фронтенда
+#      (артефакт прогона frontend-<номер>, раскладка seller/ и admin/).
 
 x-api-env: &api-env
   APP_ENV: prod
   APP_SECRET: ${APP_SECRET:?}
-  # PostgreSQL в этой топологии нет намеренно, это не упущение.
-  # Единственное хранилище клиентских финансовых данных обязано иметь
-  # восстановление на момент времени и проверенные копии
-  # (docs/operations-checklist.md); контейнер в compose рядом с приложением
-  # этого не даёт, а даёт иллюзию. Поэтому база — управляемая, снаружи
-  # топологии, и приезжает строкой подключения.
+  # PostgreSQL — на этой же машине, сервис postgres ниже.
+  #
+  # Плата за это решение названа прямо: восстановление на момент времени
+  # и проверенные копии (docs/operations-checklist.md, «До первого
+  # платящего клиента») управляемая база давала бы из коробки, а здесь
+  # их предстоит построить самим, и до тех пор их нет. Не «сделаем
+  # потом» вообще, а первый пункт того же чек-листа.
   DATABASE_URL: ${DATABASE_URL:?}
   # Redis, наоборот, внутри: по ADR-001 в нём только сессии, лимиты
   # запросов и блокировки. Потеря содержимого стоит повторного входа,
@@ -82,9 +88,13 @@ services:
       # Собранная статика seller и admin. Конвейер отдаёт её артефактом
       # прогона (frontend-<номер>), а не образом: где её отдавать — решение
       # развёртывания, и запекание в образ приложения связало бы правку
-      # стиля с перевыкладкой PHP. Том наполняется на выкладке,
-      # раскладкой seller/ и admin/ внутри.
-      - frontend_static:/srv/static:ro
+      # стиля с перевыкладкой PHP.
+      #
+      # Каталог, а не именованный том: выкладка тогда — распаковать файлы
+      # рядом с compose-файлом, а не запускать вспомогательный контейнер,
+      # чтобы наполнить том. Конфиги Traefik и nginx рядом монтируются
+      # так же.
+      - ./static:/srv/static:ro
     networks: [edge, internal]
     depends_on:
       api:
@@ -106,7 +116,10 @@ services:
     restart: unless-stopped
     environment: *api-env
     networks: [internal]
+    mem_limit: 384m
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     # Команда не переопределяется — образ уже запускает php-fpm.
@@ -140,6 +153,8 @@ services:
     environment: *api-env
     networks: [internal]
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     # init: true подкладывает системный init первым процессом.
@@ -151,6 +166,7 @@ services:
     # в журнал. Messenger обрабатывает SIGTERM корректно (доделывает
     # текущее сообщение и выходит), но получить сигнал он должен.
     init: true
+    mem_limit: 256m
     # Ingestion ходит во внешние API: 10 секунд по умолчанию не хватит
     # доделать запрос к площадке, и остановка снова придётся на середину.
     stop_grace_period: 60s
@@ -163,7 +179,7 @@ services:
       # от накопления памяти в долгоживущем процессе. Перезапуск безопасен
       # ровно потому, что обработчики идемпотентны (CLAUDE.md, правило 4).
       - --time-limit=3600
-      - --memory-limit=256M
+      - --memory-limit=112M
     healthcheck:
       # Живость процесса ничего не значит для воркера: он выглядит живым
       # и когда потерял базу. Проверяется зависимость, без которой
@@ -181,9 +197,12 @@ services:
     environment: *api-env
     networks: [internal]
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     init: true
+    mem_limit: 256m
     # Пересчёт — внутренняя работа без внешних вызовов, поэтому запас
     # меньше, чем у ingestion.
     stop_grace_period: 30s
@@ -193,7 +212,7 @@ services:
       - messenger:consume
       - async_calc
       - --time-limit=3600
-      - --memory-limit=512M
+      - --memory-limit=112M
     healthcheck:
       test: ["CMD", "php", "bin/console", "dbal:run-sql", "SELECT 1", "--quiet"]
       interval: 30s
@@ -201,9 +220,33 @@ services:
       retries: 3
       start_period: 20s
 
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:?}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [internal]
+    # Порт наружу не публикуется: база доступна только из internal-сети.
+    # Опубликованный 5432 на машине с публичным адресом — приглашение
+    # к перебору пароля.
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:?}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   redis:
     image: redis:7.4-alpine
     restart: unless-stopped
+    mem_limit: 128m
+    # Вытеснять по достижении лимита, а не падать: содержимое — сессии
+    # и счётчики лимитов, потеря старейших дешевле отказа.
+    command: ["redis-server", "--maxmemory", "96mb", "--maxmemory-policy", "allkeys-lru"]
     # Только сессии, лимиты запросов и блокировки (ADR-001). Сохранность
     # между перезапусками не нужна: содержимое восстанавливается повторным
     # входом, а не резервной копией. Том всё же есть — чтобы плановый
@@ -227,5 +270,5 @@ networks:
 
 volumes:
   acme:
+  postgres_data:
   redis_data:
-  frontend_static:

@@ -429,6 +429,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
 
@@ -509,3 +511,104 @@ jobs:
           echo "APP_VERSION в образе: $baked"
           [ "$baked" = '${{ steps.tag.outputs.tag }}' ] \
             || { echo "APP_VERSION в образе не совпал с тегом" >&2; exit 1; }
+
+  deploy:
+    name: выкладка
+    needs: [image, e2e]
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    # Не GitHub Environment с обязательным подтверждением: выкладка
+    # автоматическая по решению владельца. Предохранитель остался один
+    # и он настоящий — миграции ниже, их конвейер не применяет.
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v5
+
+      # Собранная статика приезжает артефактом из задачи e2e: она её уже
+      # собрала, вторая сборка была бы той же работой второй раз.
+      - name: статика фронтенда
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-${{ github.run_number }}
+          path: static-artifact
+
+      - name: ключ доступа
+        run: |
+          set -eu
+          mkdir -p ~/.ssh
+          printf '%s\n' '${{ secrets.DEPLOY_SSH_KEY }}' > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          # Отпечаток хоста задан секретом, а не accept-new: иначе первая
+          # выкладка приняла бы любой сервер, оказавшийся по этому адресу.
+          printf '%s\n' '${{ secrets.DEPLOY_KNOWN_HOSTS }}' > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: топология и статика на сервер
+        run: |
+          set -eu
+          SSH="ssh -i $HOME/.ssh/deploy -o BatchMode=yes"
+          HOST='root@${{ secrets.DEPLOY_HOST }}'
+          # Раскладка seller/ и admin/ — как её ждёт docker/nginx/prod.conf.
+          rsync -az --delete -e "$SSH" \
+            static-artifact/seller/dist/ "$HOST:/opt/conwix/static/seller/"
+          rsync -az --delete -e "$SSH" \
+            static-artifact/admin/dist/ "$HOST:/opt/conwix/static/admin/"
+          # Файлы топологии — из репозитория, чтобы правка compose доезжала
+          # вместе с кодом, а не переносилась руками.
+          rsync -az -e "$SSH" docker-compose.prod.yml "$HOST:/opt/conwix/"
+          rsync -az -e "$SSH" traefik/dynamic.prod.yml "$HOST:/opt/conwix/traefik/"
+          rsync -az -e "$SSH" docker/nginx/prod.conf "$HOST:/opt/conwix/docker/nginx/"
+
+      # Миграции конвейер НЕ применяет — CLAUDE.md, «Миграции и изменения
+      # схемы»: применение к боевым данным всегда решение человека.
+      # Но выложить код, которому нужна ещё не применённая схема, тоже
+      # нельзя: приложение упадёт уже у клиента. Поэтому проверка есть,
+      # а применения нет — при непринятых миграциях выкладка
+      # останавливается до вмешательства.
+      - name: непринятых миграций нет
+        run: |
+          set -eu
+          ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes 'root@${{ secrets.DEPLOY_HOST }}' \
+            'cd /opt/conwix && docker compose -f docker-compose.prod.yml exec -T api \
+               php bin/console doctrine:migrations:up-to-date' \
+            || { echo "Есть непринятые миграции. Примените их вручную и повторите выкладку." >&2; exit 1; }
+
+      - name: выкладка
+        run: |
+          set -eu
+          IMAGE='ghcr.io/${{ github.repository }}/api:${{ needs.image.outputs.tag }}'
+          # Токен задачи, а не долгоживущий PAT: он действителен только
+          # на время прогона, и на сервере не остаётся — logout в конце.
+          ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes 'root@${{ secrets.DEPLOY_HOST }}' \
+            "set -eu
+             cd /opt/conwix
+             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+             docker pull '$IMAGE'
+             # IMAGE в .env, а не только в команде: иначе ps, logs и restart
+             # на сервере перестают работать без него.
+             sed -i '/^IMAGE=/d' .env
+             echo 'IMAGE=$IMAGE' >> .env
+             docker compose -f docker-compose.prod.yml up -d
+             docker logout ghcr.io"
+
+      - name: развёрнут именно этот тег
+        run: |
+          set -eu
+          sleep 25
+          for host in app.conwix.com admin.conwix.com; do
+            case "$host" in app.*) path=/api/seller/ping;; *) path=/api/admin/ping;; esac
+            got=$(curl -sf --max-time 20 "https://$host$path" | sed -E 's/.*"version":"([^"]+)".*/\1/')
+            [ "$got" = '${{ needs.image.outputs.tag }}' ] \
+              || { echo "$host отдаёт версию '$got', ожидалась '${{ needs.image.outputs.tag }}'" >&2; exit 1; }
+            echo "  $host → $got"
+          done
+
+      - name: все сервисы здоровы
+        run: |
+          set -eu
+          ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes 'root@${{ secrets.DEPLOY_HOST }}' \
+            "cd /opt/conwix
+             docker compose -f docker-compose.prod.yml ps --format '{{.Service}} {{.Status}}'
+             ! docker compose -f docker-compose.prod.yml ps --format '{{.Status}}' | grep -qE 'unhealthy|Restarting'"
