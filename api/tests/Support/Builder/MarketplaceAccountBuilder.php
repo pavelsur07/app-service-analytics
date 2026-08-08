@@ -8,7 +8,10 @@ use App\Identity\Domain\Company;
 use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
+use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\ValueObject\Marketplace;
+use App\Identity\Domain\ValueObject\MarketplaceAccountState;
+use App\Identity\Domain\ValueObject\MarketplaceCredentials;
 
 /**
  * ADR-005: валидные умолчания, неизменяем, связанную Company создаёт
@@ -21,6 +24,7 @@ final class MarketplaceAccountBuilder
     private string $externalShopId = 'sandbox-shop';
     private string $credentialsCiphertext = 'stub-ciphertext';
     private int $credentialsKeyVersion = 1;
+    private MarketplaceAccountState $state = MarketplaceAccountState::Active;
 
     private function __construct()
     {
@@ -56,17 +60,43 @@ final class MarketplaceAccountBuilder
         return $clone;
     }
 
+    /**
+     * Шифрует по-настоящему через переданный шифр (обычно взятый
+     * из контейнера в интеграционном тесте) — в отличие от withCredentials(),
+     * результат реально расшифровывается тем же CredentialsCipher, каким
+     * его будет читать проверяемый код. withCredentials() с непрозрачной
+     * строкой достаточно там, где содержимое ciphertext не проверяется.
+     *
+     * @param array<string, string> $credentials
+     */
+    public function withPlaintextCredentials(array $credentials, MarketplaceCredentialsEncryptor $encryptor): self
+    {
+        $encrypted = $encryptor->encrypt(MarketplaceCredentials::fromArray($credentials));
+
+        return $this->withCredentials($encrypted->ciphertext, $encrypted->keyVersion);
+    }
+
+    public function withState(MarketplaceAccountState $state): self
+    {
+        $clone = clone $this;
+        $clone->state = $state;
+
+        return $clone;
+    }
+
     public function build(): MarketplaceAccount
     {
         $company = $this->company ?? CompanyBuilder::aCompany()->build();
-
-        return MarketplaceAccount::connect(
+        $account = MarketplaceAccount::connect(
             companyId: $company->id(),
             marketplace: $this->marketplace,
             externalShopId: $this->externalShopId,
             credentialsCiphertext: $this->credentialsCiphertext,
             credentialsKeyVersion: $this->credentialsKeyVersion,
         );
+        $this->applyState($account);
+
+        return $account;
     }
 
     public function persistWith(CompanyRepository $companies, MarketplaceAccountRepository $marketplaceAccounts): MarketplaceAccount
@@ -80,8 +110,18 @@ final class MarketplaceAccountBuilder
             credentialsCiphertext: $this->credentialsCiphertext,
             credentialsKeyVersion: $this->credentialsKeyVersion,
         );
+        $this->applyState($account);
         $marketplaceAccounts->add($account);
 
         return $account;
+    }
+
+    private function applyState(MarketplaceAccount $account): void
+    {
+        match ($this->state) {
+            MarketplaceAccountState::Active => null,
+            MarketplaceAccountState::Broken => $account->markBroken(),
+            MarketplaceAccountState::Revoked => $account->revoke(),
+        };
     }
 }
