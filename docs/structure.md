@@ -94,12 +94,32 @@ api/
 │   ├── Identity/
 │   └── Ingestion/
 ├── tests/
+├── var/                  всё, что порождается прогонами
+│   ├── cache/            Symfony (dev, test, prod)
+│   ├── log/              Symfony
+│   ├── phpstan/          tmpDir из phpstan.neon
+│   ├── phpunit/          cacheDirectory из phpunit.dist.xml
+│   ├── deptrac.cache     cacheFile из deptrac.php
+│   └── php-cs-fixer.cache  setCacheFile из .php-cs-fixer.dist.php
 ├── deptrac.php
 ├── phpstan.neon
 ├── phpstan-baseline.neon
 ├── .php-cs-fixer.dist.php
 └── composer.json
 ```
+
+**Кэши инструментов — в `var/`, не в корне `api/` и не в `var/cache/`.**
+Корень показывает состав проекта, а не следы прогонов. `var/cache/` —
+территория Symfony: там лежат `dev`, `test`, `prod`, её чистят
+`cache:clear` и цель `db-rebuild-check`, так что чужой кэш оттуда
+исчезал бы молча.
+
+Выигрыш не только в порядке: `api/var/` уже исключён и из git,
+и из контекста сборки образа, поэтому одна строка `.dockerignore`
+закрывает все четыре кэша разом. До переезда `.deptrac.cache`,
+`.php-cs-fixer.cache` и `.phpunit.cache` попадали в локально собранный
+prod-образ — в конвейере не попадали только потому, что задача `image`
+идёт на отдельном раннере, где линтеры не запускались.
 
 `config/reference.php` порождается Symfony при сборке контейнера
 и в репозитории не отслеживается: его содержимое зависит от окружения

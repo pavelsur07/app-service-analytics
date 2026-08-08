@@ -10,6 +10,10 @@ $finder = Finder::create()
 ;
 
 return (new Config())
+    // Кэш — в var/ рядом с кэшами остальных инструментов, а не в корне
+    // api/. Корень должен показывать состав проекта, а не следы прогонов;
+    // var/ уже исключён и из git, и из контекста сборки образа.
+    ->setCacheFile(__DIR__ . '/var/php-cs-fixer.cache')
     ->setRiskyAllowed(true)
     ->setRules([
         '@PSR12' => true,

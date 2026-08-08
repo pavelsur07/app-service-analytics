@@ -12,6 +12,9 @@ use Deptrac\Deptrac\Contract\Config\Ruleset;
 return static function (DeptracConfig $config): void {
     $config
         ->paths('./src')
+        // Кэш — в var/ рядом с кэшами остальных инструментов (phpunit,
+        // phpstan, php-cs-fixer), а не в корне api/.
+        ->cacheFile('var/deptrac.cache')
         ->layers(
             $sharedDomain = Layer::withName('SharedDomain')->collectors(
                 DirectoryConfig::create('src/Shared/Domain/.*'),
