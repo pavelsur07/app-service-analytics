@@ -15,9 +15,19 @@ node_modules/
 **/node_modules/
 
 api/vendor/
+# var/ — и кэш Symfony, и кэши инструментов (phpstan, phpunit, deptrac,
+# php-cs-fixer настроены писать сюда). Одна строка закрывает все.
 api/var/
 # tests/ в prod-образе — исполнимый код, который там не нужен.
 api/tests/
+
+# Конфигурация инструментов разработки: в рантайме не читается,
+# а самих инструментов в prod-образе нет.
+api/phpstan.neon
+api/phpstan-baseline.neon
+api/phpunit.dist.xml
+api/deptrac.php
+api/.php-cs-fixer.dist.php
 
 apps/*/dist/
 docs/
