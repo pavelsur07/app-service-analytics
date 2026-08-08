@@ -117,7 +117,7 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($ingestionApplication)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent),
-            Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain),
+            Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),
         )
     ;
 };
