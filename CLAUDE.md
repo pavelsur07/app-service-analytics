@@ -680,7 +680,9 @@ make api-types           регенерация TypeScript-типов в package
 make api-types-check     openapi.json и schema.d.ts должны совпадать со сгенерированными из кода
 
 # Фронтенд — front-build тоже принимает APP=seller|admin
-make front-install      установка зависимостей обоих приложений и packages/api-schema (npm ci, в контейнерах)
+make front-install       front-install-apps + e2e-install
+make front-install-apps  npm ci обоих приложений и packages/api-schema
+make e2e-install         npm ci корневого package.json (@playwright/test)
 make front-dev          запуск dev-серверов (node-seller, node-admin)
 make front-build        production-сборка
 

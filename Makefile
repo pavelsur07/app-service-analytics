@@ -26,7 +26,7 @@ DB_TEST_NAME := $(DB_NAME)_test
 .PHONY: help \
 	init up down down-clear build pull ps logs \
 	api-shell api-install api-migrate api-migrate-test api-console \
-	db-wait db-test-create db-test-rebuild \
+	db-wait db-test-create db-test-rebuild db-rebuild-check \
 	test test-unit test-int test-func test-e2e test-cov \
 	lint lint-fix stan deptrac structure-check audit \
 	front-typecheck front-lint front-test front-knip \
@@ -101,6 +101,25 @@ db-test-rebuild: db-wait ## полное пересоздание тестово
 	$(COMPOSE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP DATABASE IF EXISTS $(DB_TEST_NAME)"
 	$(COMPOSE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE DATABASE $(DB_TEST_NAME)"
 	$(MAKE) api-migrate-test
+
+# Условие закрытия задачи с миграцией (CLAUDE.md, «Миграции и изменения
+# схемы»). Проверяет не то, что миграция применилась у разработчика
+# поверх схемы, сложившейся за несколько итераций, а то, что она
+# применяется на пустую базу — именно это произойдёт на боевой.
+#
+# Шаги через $(MAKE), а не списком зависимостей: здесь важен порядок,
+# и он должен быть виден в рецепте, а не выводиться из позиции в строке.
+#
+# Кэш контейнера сносится отдельно: api/var — bind-mount с хоста,
+# down-clear удаляет тома, но его не трогает.
+db-rebuild-check: ## down-clear → up → migrate → migrate-test → test: миграция с пустой базы
+	$(MAKE) down-clear
+	$(MAKE) up
+	rm -rf api/var/cache
+	$(MAKE) db-wait
+	$(MAKE) api-migrate
+	$(MAKE) test
+	@echo "db-rebuild-check: миграции применяются с пустой базы, тесты зелёные."
 
 # --- Тесты -------------------------------------------------------------
 # Подготовка тестовой базы — отдельные цели (db-test-create,
