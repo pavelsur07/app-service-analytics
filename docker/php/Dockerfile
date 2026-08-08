@@ -25,6 +25,11 @@ ARG PHP_VERSION=8.4.24
 
 FROM php:${PHP_VERSION}-fpm-alpine AS base
 
+# opcache здесь нет намеренно: базовый образ уже собрал его и включил
+# через conf.d/docker-php-ext-opcache.ini. Повторный docker-php-ext-install
+# распаковал бы исходники PHP и скомпилировал то же расширение заново.
+# Настройки opcache для prod задаются отдельным ini в стадии prod.
+#
 # postgresql-dev нужен только чтобы скомпилировать pdo_pgsql, в рантайме
 # достаточно libpq. Оставленный целиком, он весит около 500 МБ — вдесятеро
 # больше самого приложения. Поэтому --virtual и apk del в том же RUN:
@@ -34,7 +39,7 @@ FROM php:${PHP_VERSION}-fpm-alpine AS base
 # нечем, TCP-порт открыт и у зависшего мастера.
 RUN apk add --no-cache libpq fcgi \
     && apk add --no-cache --virtual .build-deps postgresql-dev \
-    && docker-php-ext-install pdo_pgsql opcache \
+    && docker-php-ext-install pdo_pgsql \
     && apk del .build-deps
 
 WORKDIR /var/www/html
