@@ -1,45 +1,147 @@
 # Описание production-топологии, не выкладка.
 #
 # Куда это разворачивается — открытый вопрос (Stage 4, «Не входит»).
-# Файл существует, чтобы два решения были записаны исполнимо, а не прозой:
-# из какого образа поднимается веб-процесс и воркер, и как воркер получает
-# сигнал остановки. Проза расходится с реальностью молча, compose-файл
-# проверяется запуском.
+# Файл существует, чтобы решения были записаны исполнимо, а не прозой:
+# проза расходится с реальностью молча, compose-файл проверяется запуском.
 #
-# Хостов, реквизитов и секретов здесь нет и быть не должно: значения
-# приезжают из окружения площадки развёртывания. Файл не наследует
-# docker-compose.yml и не предназначен для запуска рядом с ним —
-# в нём другая роль у тех же имён.
+# Хостов, реквизитов и секретов здесь нет и быть не должно: всё приезжает
+# из окружения площадки развёртывания. Файл не наследует docker-compose.yml
+# и рядом с ним не запускается — в нём другая роль у тех же имён.
 #
-# Запуск (когда появится куда):
-#   IMAGE=ghcr.io/…/api:<тег> docker compose -f docker-compose.prod.yml up -d
+# Что проверено запуском и что нет — docs/structure.md, раздел
+# про этот файл. Коротко: топология поднималась локально целиком
+# и обслуживала оба домена; не проверен только выпуск сертификатов ACME,
+# которому нужно публичное DNS-имя.
+#
+#   IMAGE=ghcr.io/…/api:<тег> \
+#   APP_SECRET=… DATABASE_URL=… ACME_EMAIL=… \
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# ДО первого запуска, вручную человеком (CLAUDE.md, «Миграции»):
+#   1. Миграции применены к базе.
+#   2. Таблица messenger_messages существует. DSN содержит auto_setup=0 —
+#      приложение не создаёт её само, и воркеры без неё уходят в цикл
+#      перезапуска. Проверено локально: пока таблицы нет, оба воркера
+#      падают с «relation messenger_messages does not exist», после
+#      создания становятся healthy.
+#   3. Том frontend_static наполнен сборкой фронтенда (артефакт прогона
+#      frontend-<номер>, раскладка seller/ и admin/).
+
+x-api-env: &api-env
+  APP_ENV: prod
+  APP_SECRET: ${APP_SECRET:?}
+  # PostgreSQL в этой топологии нет намеренно, это не упущение.
+  # Единственное хранилище клиентских финансовых данных обязано иметь
+  # восстановление на момент времени и проверенные копии
+  # (docs/operations-checklist.md); контейнер в compose рядом с приложением
+  # этого не даёт, а даёт иллюзию. Поэтому база — управляемая, снаружи
+  # топологии, и приезжает строкой подключения.
+  DATABASE_URL: ${DATABASE_URL:?}
+  # Redis, наоборот, внутри: по ADR-001 в нём только сессии, лимиты
+  # запросов и блокировки. Потеря содержимого стоит повторного входа,
+  # а не данных, — управляемый сервис ради этого не нужен.
+  REDIS_URL: redis://redis:6379
+  MESSENGER_TRANSPORT_DSN: doctrine://default?auto_setup=0
 
 services:
-  # Веб-процесс и воркер — ОДИН образ с разной командой.
+  traefik:
+    image: traefik:v3.5
+    restart: unless-stopped
+    # TLS — Let's Encrypt через HTTP-01, разрешает его сам Traefik.
+    # Выбран против DNS-01: последний умеет wildcard, но требует токен
+    # DNS-провайдера, то есть ещё один секрет с правом менять зону.
+    # Доменов два и они известны заранее — wildcard не нужен.
+    # Против ручных сертификатов: продление вручную — операция, о которой
+    # вспоминают в день истечения.
+    command:
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik/dynamic.prod.yml:/etc/traefik/dynamic.yml:ro
+      # Том, а не файл на хосте: потеря acme.json означает повторный
+      # выпуск сертификатов, а у Let's Encrypt на это недельные лимиты.
+      - acme:/acme
+    networks: [edge]
+    depends_on:
+      nginx:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ./docker/nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
+      # Собранная статика seller и admin. Конвейер отдаёт её артефактом
+      # прогона (frontend-<номер>), а не образом: где её отдавать — решение
+      # развёртывания, и запекание в образ приложения связало бы правку
+      # стиля с перевыкладкой PHP. Том наполняется на выкладке,
+      # раскладкой seller/ и admin/ внутри.
+      - frontend_static:/srv/static:ro
+    networks: [edge, internal]
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/", "--header", "Host: app.conwix.com"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Веб-процесс и воркеры — ОДИН образ с разной командой.
   #
   # Два образа означали бы, что код веб-процесса и код воркера могут
   # разъехаться. Ошибки этого класса — «в API работает, в фоне нет» —
   # ищутся часами, потому что оба процесса выглядят исправными,
   # а расхождение видно только в диффе двух реестровых тегов.
   api:
-    image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:12-abcdef0}
+    image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
     restart: unless-stopped
-    environment:
-      APP_ENV: prod
-      APP_SECRET: ${APP_SECRET:?}
-      DATABASE_URL: ${DATABASE_URL:?}
-      MESSENGER_TRANSPORT_DSN: ${MESSENGER_TRANSPORT_DSN:?}
+    environment: *api-env
+    networks: [internal]
+    depends_on:
+      redis:
+        condition: service_healthy
     # Команда не переопределяется — образ уже запускает php-fpm.
-    # Живость проверяет HEALTHCHECK из Dockerfile (ping.path php-fpm).
+    #
+    # Проверка живости берётся из HEALTHCHECK образа и спрашивает только
+    # php-fpm (ping.path). CLAUDE.md требует, чтобы проверка затрагивала
+    # зависимости — базу, Redis, глубину очереди. Здесь этого нет
+    # не по решению, а потому что эндпоинта, который их опрашивает,
+    # в приложении не существует: есть только /api/*/ping, не трогающий
+    # ничего. Пункт стоит в operations-checklist.md как обязательный
+    # до первого платящего клиента; до тех пор проверка честно называется
+    # проверкой процесса, а не зависимостей.
 
-  worker:
-    image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:12-abcdef0}
+  # Воркеров два, по одному на транспорт из ADR-001.
+  #
+  # Один воркер на оба транспорта был бы дешевле, но загрузка ждёт внешний
+  # API под лимитом запросов, а пересчёт считает: длинный опрос площадки
+  # задерживал бы пересчёт для всех. Разделение здесь — единственная мера
+  # изоляции арендаторов, которую топология вообще может дать.
+  #
+  # Настоящей изоляции между компаниями НЕТ, и это отложено осознанно.
+  # Транспорт doctrine отдаёт сообщения в порядке поступления: компания,
+  # поставившая в очередь десять тысяч сообщений, задержит остальные.
+  # Лечится это не топологией, а на уровне приложения — нарезкой задания
+  # на порции и планировщиком, обходящим компании по кругу. Кода
+  # ingestion пока нет, поэтому и планировать нечего; условие возврата
+  # к вопросу — первая компания, чья загрузка занимает больше часа.
+  worker-ingestion:
+    image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
     restart: unless-stopped
-    environment:
-      APP_ENV: prod
-      APP_SECRET: ${APP_SECRET:?}
-      DATABASE_URL: ${DATABASE_URL:?}
-      MESSENGER_TRANSPORT_DSN: ${MESSENGER_TRANSPORT_DSN:?}
+    environment: *api-env
+    networks: [internal]
+    depends_on:
+      redis:
+        condition: service_healthy
     # init: true подкладывает системный init первым процессом.
     #
     # Без него PID 1 — сам воркер, а PID 1 в Linux не получает действий
@@ -49,14 +151,81 @@ services:
     # в журнал. Messenger обрабатывает SIGTERM корректно (доделывает
     # текущее сообщение и выходит), но получить сигнал он должен.
     init: true
-    # --time-limit: воркер сам выходит раз в час, restart поднимает его
-    # заново. Дешёвая защита от накопления памяти в долгоживущем процессе;
-    # перезапуск безопасен ровно потому, что обработчики идемпотентны
-    # (CLAUDE.md, правило 4).
+    # Ingestion ходит во внешние API: 10 секунд по умолчанию не хватит
+    # доделать запрос к площадке, и остановка снова придётся на середину.
+    stop_grace_period: 60s
     command:
       - php
       - bin/console
       - messenger:consume
-      - async
+      - async_ingestion
+      # Выход раз в час, restart поднимает заново: дешёвая защита
+      # от накопления памяти в долгоживущем процессе. Перезапуск безопасен
+      # ровно потому, что обработчики идемпотентны (CLAUDE.md, правило 4).
       - --time-limit=3600
       - --memory-limit=256M
+    healthcheck:
+      # Живость процесса ничего не значит для воркера: он выглядит живым
+      # и когда потерял базу. Проверяется зависимость, без которой
+      # работа невозможна, — доступность PostgreSQL, она же хранилище
+      # самой очереди.
+      test: ["CMD", "php", "bin/console", "dbal:run-sql", "SELECT 1", "--quiet"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  worker-calc:
+    image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
+    restart: unless-stopped
+    environment: *api-env
+    networks: [internal]
+    depends_on:
+      redis:
+        condition: service_healthy
+    init: true
+    # Пересчёт — внутренняя работа без внешних вызовов, поэтому запас
+    # меньше, чем у ingestion.
+    stop_grace_period: 30s
+    command:
+      - php
+      - bin/console
+      - messenger:consume
+      - async_calc
+      - --time-limit=3600
+      - --memory-limit=512M
+    healthcheck:
+      test: ["CMD", "php", "bin/console", "dbal:run-sql", "SELECT 1", "--quiet"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    # Только сессии, лимиты запросов и блокировки (ADR-001). Сохранность
+    # между перезапусками не нужна: содержимое восстанавливается повторным
+    # входом, а не резервной копией. Том всё же есть — чтобы плановый
+    # перезапуск не выкидывал всех пользователей разом.
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+# Две сети, а не одна общая: Traefik смотрит в интернет и не должен иметь
+# сетевого пути к Redis и к воркерам. nginx — единственный сервис в обеих,
+# он и есть граница.
+networks:
+  edge:
+  internal:
+    internal: true
+
+volumes:
+  acme:
+  redis_data:
+  frontend_static:

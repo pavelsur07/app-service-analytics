@@ -1,0 +1,50 @@
+# Маршрутизация production. Провайдер файловый, не docker-метки — та же
+# причина, что в dev: набор маршрутов фиксирован, а метки потребовали бы
+# монтирования docker.sock в контейнер, смотрящий в интернет.
+#
+# conwix.com здесь отсутствует намеренно. Лендинг живёт в отдельном
+# репозитории со своим циклом релизов и своей выкладкой (docs/structure.md);
+# этот конвейер и эта топология его не касаются. Маршрут для него здесь
+# означал бы, что выкладка приложения способна сломать лендинг.
+
+http:
+  routers:
+    # HTTP отвечает только редиректом: приложение работает по TLS,
+    # а кука сессии по ADR-007 несёт флаг Secure и по http не вернётся.
+    app-insecure:
+      rule: "Host(`app.conwix.com`)"
+      entryPoints: ["web"]
+      middlewares: ["to-https"]
+      service: nginx
+
+    admin-insecure:
+      rule: "Host(`admin.conwix.com`)"
+      entryPoints: ["web"]
+      middlewares: ["to-https"]
+      service: nginx
+
+    app:
+      rule: "Host(`app.conwix.com`)"
+      entryPoints: ["websecure"]
+      service: nginx
+      tls:
+        certResolver: letsencrypt
+
+    admin:
+      rule: "Host(`admin.conwix.com`)"
+      entryPoints: ["websecure"]
+      service: nginx
+      tls:
+        certResolver: letsencrypt
+
+  middlewares:
+    to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    nginx:
+      loadBalancer:
+        servers:
+          - url: "http://nginx:80"
