@@ -5,6 +5,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import importPlugin from 'eslint-plugin-import'
 import prettierConfig from 'eslint-config-prettier'
 import noManualApiResponseType from './eslint-rules/no-manual-api-response-type.js'
+import noArbitraryTailwind from './eslint-rules/no-arbitrary-tailwind.js'
 
 // Зоны feature-vs-feature считаются с диска: сейчас features/ пусто или
 // не существует, поэтому список пуст — заполнится сам по мере появления
@@ -130,11 +131,15 @@ export default tseslint.config(
     },
     plugins: {
       local: {
-        rules: { 'no-manual-api-response-type': noManualApiResponseType },
+        rules: {
+          'no-manual-api-response-type': noManualApiResponseType,
+          'no-arbitrary-tailwind': noArbitraryTailwind,
+        },
       },
     },
     rules: {
       'local/no-manual-api-response-type': 'error',
+      'local/no-arbitrary-tailwind': 'error',
     },
   },
   {

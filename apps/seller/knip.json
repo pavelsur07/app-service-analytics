@@ -8,7 +8,8 @@
     "react-router",
     "recharts",
     "zod",
-    "@playwright/test"
+    "@playwright/test",
+    "tailwindcss"
   ],
   "ignoreBinaries": ["playwright"]
 }

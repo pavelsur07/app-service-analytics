@@ -1,0 +1,122 @@
+/* Источник правды для токенов. Макет docs/design/ui-kit/v0.2.html читает
+   человек; сюда значения переносятся вручную, обратной синхронизации нет.
+
+   Подключается вместо @import "tailwindcss" в обоих приложениях —
+   в apps/ токенов нет и быть не должно, иначе seller и admin разъедутся
+   в оттенках, и никто не заметит. */
+@import "tailwindcss";
+
+@theme {
+  /* Имена ролей — как в макете: text/primary → --color-text-primary.
+     Отсюда многословие вроде text-text-primary; словарь макета важнее
+     краткости класса, иначе перенос перестаёт быть проверяемым. */
+
+  --color-accent: #1a56db;
+  --color-accent-hover: #1e40af;
+  --color-accent-active: #16307e;
+  --color-accent-subtle: #eef3fe;
+  --color-accent-subtle-hover: #e1eafd;
+
+  --color-text-primary: #0b1220;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  /* faint — только не-текст: на bg/base даёт 4.40:1, ниже AA */
+  --color-text-faint: #8b95a7;
+  --color-text-disabled: #94a3b8;
+  --color-text-inverse: #ffffff;
+
+  --color-bg-base: #f4f6fa;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #f7f9fc;
+  --color-surface-hover: #fafbfd;
+  --color-surface-selected: #f4f8ff;
+
+  --color-border-default: #e8ecf3;
+  --color-border-subtle: #f1f4f9;
+  --color-border-strong: #cbd5e1;
+  --color-border-focus: #c7d7fb;
+
+  --color-positive-text: #047857;
+  --color-positive-bg: #ecfdf5;
+  --color-positive-border: #d1fae5;
+  --color-positive-solid: #10b981;
+
+  --color-negative-text: #b91c1c;
+  --color-negative-bg: #fef2f2;
+  --color-negative-border: #fecaca;
+  --color-negative-solid: #ef4444;
+
+  --color-warning-text: #92400e;
+  --color-warning-bg: #fffbeb;
+  --color-warning-border: #fde68a;
+  --color-warning-solid: #f59e0b;
+
+  /* Цвет статьи затрат закреплён навсегда: пользователь запоминает
+     логистику как бирюзовую, и перекраска ломает узнавание отчёта.
+     Менять значение здесь — то же, что переименовать статью. */
+  --color-chart-revenue: #1a56db;
+  --color-chart-cost: #8b5cf6;
+  --color-chart-commission: #0ea5e9;
+  --color-chart-logistics: #06b6d4;
+  --color-chart-storage: #ec4899;
+  --color-chart-ads: #a21caf;
+  --color-chart-acquiring: #14b8a6;
+  --color-chart-other: #64748b;
+
+  --shadow-card: 0 1px 2px rgb(11 18 32 / 0.04);
+  --shadow-overlay: 0 8px 24px rgb(11 18 32 / 0.1);
+
+  /* Шкала радиусов Tailwind не переопределяется: в макете кнопка 6px
+     (rounded-md), карточка 12px (rounded-xl) — оба совпадают
+     с умолчаниями. */
+
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+}
+
+/* Тёмные пары зафиксированы для всех ролей. Отрисовка тёмной темы —
+   не в этой версии; токены объявлены, чтобы роль не пришлось выдумывать
+   заново, когда до неё дойдут руки. */
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-accent: #3b82f6;
+
+    --color-text-primary: #e6edf7;
+    --color-text-secondary: #a9b6cc;
+    --color-text-muted: #93a2ba;
+    --color-text-inverse: #0b1220;
+
+    --color-bg-base: #0b1220;
+    --color-surface-raised: #111a2b;
+    --color-surface-hover: #17223a;
+    --color-surface-selected: #1d2e4e;
+
+    --color-border-default: #1f2c44;
+
+    --color-positive-text: #34d399;
+    --color-positive-bg: #06251b;
+    --color-negative-text: #f87171;
+    --color-negative-bg: #2a1114;
+    --color-warning-text: #fbbf24;
+    --color-warning-bg: #2a1e06;
+  }
+}
+
+@layer base {
+  /* Базовый размер 14, а не 16: продукт про плотность данных.
+     Задаётся на body, а не на html, — иначе поехала бы вся шкала
+     отступов, она в rem. */
+  body {
+    background-color: var(--color-bg-base);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: 14px;
+  }
+
+  /* Цифры в колонках обязаны стоять друг под другом. Включено глобально:
+     забыть tabular-nums на конкретной таблице проще, чем вспомнить. */
+  table,
+  input,
+  output {
+    font-variant-numeric: tabular-nums;
+  }
+}

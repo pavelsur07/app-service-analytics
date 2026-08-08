@@ -1,0 +1,16 @@
+{
+  // Нужен не для отдельной сборки — пакет собирает каждое приложение.
+  // Нужен esbuild: он ищет tsconfig рядом с файлом, и без него JSX здесь
+  // компилировался бы классическим runtime (React.createElement),
+  // а React в область видимости никто не импортирует.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "strict": true
+  },
+  "include": ["src"]
+}
