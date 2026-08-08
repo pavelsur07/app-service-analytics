@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Ingestion\Infrastructure\Connector\Ozon;
+namespace App\Tests\Unit\Ingestion\Domain;
 
-use App\Ingestion\Infrastructure\Connector\Ozon\OzonPostingFboListParser;
+use App\Ingestion\Domain\OzonPostingFboListParser;
 use App\Shared\Domain\ValueObject\Money;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
 final class OzonPostingFboListParserTest extends TestCase
 {
-    private const string FIXTURE = __DIR__.'/../../../../../Fixtures/Marketplace/ozon/posting-fbo-list-2026-07-01.json';
+    private const string FIXTURE = __DIR__.'/../../../Fixtures/Marketplace/ozon/posting-fbo-list-2026-07-01.json';
 
     public function testParsesEveryProductLineInTheFixture(): void
     {

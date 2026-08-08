@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Connector\Ozon;
 
+use App\Ingestion\Domain\OzonPostingsFetcher;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -17,15 +18,18 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * изменить порядок ключей/пробелы и сломать идемпотентность по хэшу.
  * Разбор — отдельный шаг, не в клиенте.
  *
- * Общая абстракция коннектора — после второго коннектора, не до первого
- * (docs/structure.md), поэтому интерфейса здесь нет.
+ * Реализует OzonPostingsFetcher (Domain) не ради общей абстракции
+ * коннектора — та появляется после второго коннектора, не до первого
+ * (docs/structure.md) — а чтобы Application не зависел от конкретного
+ * HTTP-клиента напрямую (тот же приём, что CredentialsCipher/
+ * MarketplaceCredentialsEncryptor в Identity, пакет 1).
  */
-final readonly class OzonPostingFboListClient
+final readonly class OzonPostingFboListClient implements OzonPostingsFetcher
 {
     private const string ENDPOINT = '/v2/posting/fbo/list';
 
     public function __construct(
-        #[Autowire(service: 'http_client.ozon.client')]
+        #[Autowire(service: 'ozon.client')]
         private HttpClientInterface $httpClient,
     ) {
     }

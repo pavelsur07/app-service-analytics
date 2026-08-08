@@ -107,14 +107,14 @@ return static function (DeptracConfig $config): void {
             // в Ingestion не заходит вообще ни с одного слоя.
             Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $sharedApplication, $sharedDomain, $symfonyComponent),
             Ruleset::forLayer($identityApplication)->accesses($identityDomain, $sharedApplication, $sharedDomain),
-            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $sharedApplication, $sharedDomain),
-            Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent),
+            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $sharedApplication, $sharedDomain, $symfonyUid),
+            Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid),
 
             // Ingestion — вход в Identity только через IdentityFacade;
             // Ui вообще не пересекает границу модуля, даже через Facade.
             Ruleset::forLayer($ingestionUi)->accesses($ingestionApplication, $ingestionDomain, $sharedApplication, $sharedDomain),
-            Ruleset::forLayer($ingestionApplication)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain),
+            Ruleset::forLayer($ingestionApplication)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),

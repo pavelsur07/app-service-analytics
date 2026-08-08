@@ -2,16 +2,17 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Connector\Ozon;
+namespace App\Ingestion\Domain;
 
-use App\Ingestion\Domain\SalesFact;
 use App\Shared\Domain\ValueObject\Money;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Разбор /v2/posting/fbo/list в SalesFact (ADR-009). Отдельный шаг
- * от сохранения raw (ADR-006): неудача здесь не теряет сырьё, оно уже
- * сохранено раньше.
+ * Разбор /v2/posting/fbo/list в SalesFact (ADR-009). Domain, не
+ * Infrastructure: применяет правила ADR-009 (состав source_row_id,
+ * бизнес-дата, деньги), не делает ни одного вызова наружу — ни HTTP,
+ * ни БД. Отдельный шаг от сохранения raw (ADR-006): неудача здесь
+ * не теряет сырьё, оно уже сохранено раньше.
  */
 final class OzonPostingFboListParser
 {

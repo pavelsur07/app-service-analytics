@@ -7,11 +7,14 @@ namespace App\Ingestion\Infrastructure\Persistence;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use Doctrine\DBAL\Connection;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * DBAL, не ORM (CLAUDE.md §6: raw — данные пайплайна, не человека).
- * INSERT ... ON CONFLICT DO NOTHING по естественному ключу — идентичный
- * контент того же периода молча пропускается, не ошибка.
+ * INSERT ... ON CONFLICT DO UPDATE (no-op на существующее значение)
+ * по естественному ключу — не DO NOTHING: тот не даёт RETURNING id
+ * при конфликте, а вызывающему нужен id уже существующей строки,
+ * не только успешной вставки.
  */
 final readonly class DoctrineMarketplaceRawDocumentRepository implements MarketplaceRawDocumentRepository
 {
@@ -20,16 +23,17 @@ final readonly class DoctrineMarketplaceRawDocumentRepository implements Marketp
     ) {
     }
 
-    public function add(MarketplaceRawDocument $document): void
+    public function add(MarketplaceRawDocument $document): Uuid
     {
-        $this->connection->executeStatement(
+        $id = $this->connection->fetchOne(
             <<<'SQL'
                 INSERT INTO marketplace_raw_document
                     (id, company_id, marketplace_account_id, report_type, period, body_hash, body, received_at)
                 VALUES
                     (:id, :companyId, :marketplaceAccountId, :reportType, :period, :bodyHash, :body, :receivedAt)
                 ON CONFLICT (company_id, marketplace_account_id, report_type, period, body_hash)
-                DO NOTHING
+                DO UPDATE SET received_at = marketplace_raw_document.received_at
+                RETURNING id
                 SQL,
             [
                 'id' => $document->id()->toRfc4122(),
@@ -42,5 +46,9 @@ final readonly class DoctrineMarketplaceRawDocumentRepository implements Marketp
                 'receivedAt' => $document->receivedAt()->format('Y-m-d H:i:sP'),
             ],
         );
+
+        \assert(\is_string($id));
+
+        return Uuid::fromString($id);
     }
 }
