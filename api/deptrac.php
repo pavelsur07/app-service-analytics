@@ -41,8 +41,20 @@ return static function (DeptracConfig $config): void {
             $identityFacade = Layer::withName('IdentityFacade')->collectors(
                 DirectoryConfig::create('src/Identity/Application/Facade/.*'),
             ),
+            // ActiveOzonAccountsQuery вынесен из IdentityInfrastructure тем же
+            // приёмом, что SymfonyUid из SymfonyComponent: IdentityUi уже
+            // имеет широкий доступ к IdentityInfrastructure (MeController →
+            // UserCompaniesQuery) — без mustNot этот класс попал бы туда же,
+            // и HTTP-контроллер получил бы физическую возможность выполнить
+            // межарендаторный запрос в обход CLAUDE.md §1.
             $identityInfrastructure = Layer::withName('IdentityInfrastructure')->collectors(
-                DirectoryConfig::create('src/Identity/Infrastructure/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Identity/Infrastructure/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonAccountsQuery$')],
+                ),
+            ),
+            $identityOperationalQuery = Layer::withName('IdentityOperationalQuery')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonAccountsQuery$'),
             ),
             $identityUi = Layer::withName('IdentityUi')->collectors(
                 DirectoryConfig::create('src/Identity/Ui/.*'),
@@ -137,12 +149,14 @@ return static function (DeptracConfig $config): void {
             // внутри Domain: тот же статус UID, что и у identityFacade ниже.
             Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $identityInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($identityApplication)->accesses($identityDomain, $sharedApplication, $sharedDomain, $symfonyUid),
-            // identityInfrastructure — тот же принцип синхронного чтения,
-            // что и у identityUi выше (ActiveOzonAccountsQuery, DBAL):
-            // Facade — единственная точка входа Ingestion в Identity,
-            // поэтому именно ей приходится выполнять этот DBAL-запрос,
-            // не через ORM-репозиторий (CLAUDE.md §1/§5).
-            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $identityInfrastructure, $sharedApplication, $sharedDomain, $symfonyUid),
+            // identityOperationalQuery — не identityInfrastructure целиком:
+            // только у Facade есть доступ к ActiveOzonAccountsQuery, у
+            // identityUi (см. выше) — нет, это и есть граница CLAUDE.md §1.
+            // identityInfrastructure тут же — ради ActiveOzonAccountRow
+            // (DTO строки, не сам запрос), который Facade строит из
+            // результата и который остался в общем слое.
+            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $identityOperationalQuery, $identityInfrastructure, $sharedApplication, $sharedDomain, $symfonyUid),
+            Ruleset::forLayer($identityOperationalQuery)->accesses($identityInfrastructure, $sharedInfrastructure, $symfonyComponent),
             Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
 
