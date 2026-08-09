@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Identity\Ui\Command;
 
 use App\Identity\Application\CreateUserWithMembershipAction;
-use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\User;
 use App\Identity\Domain\ValueObject\CompanyMemberRole;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -26,6 +25,14 @@ use Symfony\Component\Uid\Uuid;
  * данными владельца, не отдельная data-миграция (план —
  * /home/deploy/.claude/plans/rippling-churning-scroll.md, «Бэкфилл
  * механизм — вариант А»).
+ *
+ * companyId не проверяется на существование: «Поиск сущности компании
+ * по одному лишь идентификатору запрещён» (CLAUDE.md §1) — метода вида
+ * CompanyRepository::get($id) без companyId-контекста в репозитории
+ * не существует. Опечатка оператора создаст членство в никуда молча
+ * (нет FK на company_id — тот же выбор, что для marketplace_account),
+ * но это ручная команда с оператором, видящим введённый им companyId
+ * в подтверждении на экране.
  */
 #[AsCommand(
     name: 'app:identity:create-user',
@@ -35,7 +42,6 @@ final class CreateUserCommand extends Command
 {
     public function __construct(
         private readonly CreateUserWithMembershipAction $createUserWithMembership,
-        private readonly CompanyRepository $companies,
         private readonly UserPasswordHasherInterface $passwordHasher,
     ) {
         parent::__construct();
@@ -70,8 +76,13 @@ final class CreateUserCommand extends Command
             return Command::FAILURE;
         }
 
-        if (null === $this->companies->get($companyIdArgument)) {
-            $io->error(\sprintf('Компания "%s" не найдена.', $companyIdArgument));
+        // Только формат — не поиск сущности по идентификатору (CLAUDE.md
+        // §1 запрещает именно это, см. класс-докблок), существование
+        // компании не проверяется.
+        try {
+            $companyId = Uuid::fromString($companyIdArgument);
+        } catch (\InvalidArgumentException) {
+            $io->error(\sprintf('"%s" не UUID.', $companyIdArgument));
 
             return Command::FAILURE;
         }
@@ -84,7 +95,7 @@ final class CreateUserCommand extends Command
         $passwordHash = $this->passwordHasher->hashPassword(User::register($email, ''), $plainPassword);
 
         try {
-            $user = ($this->createUserWithMembership)($email, $passwordHash, Uuid::fromString($companyIdArgument), $role);
+            $user = ($this->createUserWithMembership)($email, $passwordHash, $companyId, $role);
         } catch (UniqueConstraintViolationException) {
             // Повторный запуск с тем же email (CLAUDE.md §4 — перехват
             // конфликта на вставке, не проверка перед ней).
