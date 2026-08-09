@@ -46,6 +46,13 @@ services:
     # Как и php-cli: под root php-fpm создавал бы в примонтированном api/var
     # файлы, которые потом не перезапишет ни хост, ни php-cli.
     user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
+    # Пробрасывается, только если задана на хосте: локально ключ идёт
+    # через api/.env.local (в .gitignore), в CI — через секрет раннера
+    # (.github/workflows/ci.yml, job e2e). Без значения на хосте
+    # docker compose переменную внутрь не кладёт, и Symfony читает
+    # .env.local как обычно.
+    environment:
+      - APP_ENCRYPTION_MASTER_KEY
     volumes:
       - ./api:/var/www/html
 
@@ -61,6 +68,7 @@ services:
     user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
     environment:
       - HOME=/tmp
+      - APP_ENCRYPTION_MASTER_KEY
     volumes:
       - ./api:/var/www/html
     command: ["tail", "-f", "/dev/null"]
