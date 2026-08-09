@@ -72,8 +72,21 @@ return static function (DeptracConfig $config): void {
             $brickMoney = Layer::withName('BrickMoney')->collectors(
                 ClassLikeConfig::create('^Brick\\Money\\.*'),
             ),
+            // symfony/uid, ADR-003: UUIDv7 для всех сущностей проекта.
+            // Идентификатор — часть Domain (тип поля Entity), поэтому
+            // выделен отдельным, более узким слоем, чем SymfonyComponent
+            // в целом: Domain не должен видеть Symfony шире, чем это нужно.
+            // Вынесен из SymfonyComponent через mustNot — иначе Uuid попал
+            // бы сразу в оба слоя, и грант на узкий слой не снимал бы
+            // нарушение по широкому.
+            $symfonyUid = Layer::withName('SymfonyUid')->collectors(
+                ClassLikeConfig::create('^Symfony\\Component\\Uid\\.*'),
+            ),
             $symfonyComponent = Layer::withName('SymfonyComponent')->collectors(
-                ClassLikeConfig::create('^Symfony\\Component\\.*'),
+                BoolConfig::create(
+                    must: [ClassLikeConfig::create('^Symfony\\Component\\.*')],
+                    mustNot: [ClassLikeConfig::create('^Symfony\\Component\\Uid\\.*')],
+                ),
             ),
             $nelmioApiDoc = Layer::withName('NelmioApiDoc')->collectors(
                 ClassLikeConfig::create('^Nelmio\\ApiDocBundle\\.*'),
@@ -92,19 +105,23 @@ return static function (DeptracConfig $config): void {
 
             // Identity — ниже Ingestion, Shared доступен без ограничений,
             // в Ingestion не заходит вообще ни с одного слоя.
-            Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $sharedApplication, $sharedDomain),
+            Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $sharedApplication, $sharedDomain, $symfonyComponent),
             Ruleset::forLayer($identityApplication)->accesses($identityDomain, $sharedApplication, $sharedDomain),
-            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $sharedApplication, $sharedDomain),
-            Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure),
-            Ruleset::forLayer($identityDomain)->accesses($sharedDomain),
+            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $sharedApplication, $sharedDomain, $symfonyUid),
+            Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid),
 
             // Ingestion — вход в Identity только через IdentityFacade;
             // Ui вообще не пересекает границу модуля, даже через Facade.
-            Ruleset::forLayer($ingestionUi)->accesses($ingestionApplication, $ingestionDomain, $sharedApplication, $sharedDomain),
-            Ruleset::forLayer($ingestionApplication)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain),
+            // IngestionInfrastructure — только Query: чтение синхронное
+            // и не требует оркестрации Application (CLAUDE.md: «Синхронные
+            // сценарии вызываются напрямую из Ui»), в отличие от записи,
+            // которая всегда идёт через Application/Facade.
+            Ruleset::forLayer($ingestionUi)->accesses($ingestionApplication, $ingestionDomain, $ingestionInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($ingestionApplication)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain),
-            Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure),
-            Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain),
+            Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),
         )
     ;
 };

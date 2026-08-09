@@ -305,6 +305,13 @@ jobs:
     # Тоже без if. Стартовый экран — единственное место, где контракт
     # проверяется целиком: от эндпоинта до отрисовки.
     runs-on: ubuntu-latest
+    # Мастер-ключ шифрования учётных данных площадок (ADR-007) для
+    # дев-БД, в которую сеет данные test-e2e. Не боевой секрет — ключ
+    # только для одноразовых прогонов CI, реальных данных под ним нет.
+    # docker-compose.yml пробрасывает переменную в php-cli/php-fpm,
+    # только если она задана на хосте.
+    env:
+      APP_ENCRYPTION_MASTER_KEY: ${{ secrets.APP_ENCRYPTION_MASTER_KEY_CI }}
     steps:
       - uses: actions/checkout@v5
 
@@ -406,6 +413,12 @@ jobs:
             apps/seller/dist/
             apps/admin/dist/
           retention-days: 30
+
+      # test-e2e сеет данные в dev-БД (bin/e2e-seed.sh), а не в тестовую —
+      # экран открывается против того же php-fpm, что видит браузер.
+      # Без миграции здесь она пуста: раньше это было незаметно, пока
+      # e2e не требовал таблиц (стартовый пинг-экран).
+      - run: make db-wait api-migrate
 
       - run: make test-e2e
 
