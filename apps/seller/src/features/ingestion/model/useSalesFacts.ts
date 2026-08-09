@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { apiGet } from '../../../api/client'
+import { createCompanyApiClient } from '../../../api/companyClient'
 import type { components } from '../../../api/schema'
 import { companyQueryKey } from '../../../shared/lib/companyQueryKey'
 
@@ -19,8 +19,8 @@ export function useSalesFacts(
     queryFn: () => {
       const query =
         cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`
-      return apiGet<SalesFactListResponse>(
-        `/api/companies/${encodeURIComponent(companyId)}/ingestion/ozon/sales-facts${query}`,
+      return createCompanyApiClient(companyId).get<SalesFactListResponse>(
+        `/ingestion/ozon/sales-facts${query}`,
       )
     },
     enabled: options?.enabled ?? true,

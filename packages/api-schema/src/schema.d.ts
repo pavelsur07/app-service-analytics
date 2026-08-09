@@ -71,6 +71,11 @@ export interface components {
             items: components["schemas"]["SalesFactListItemResponse"][];
             nextCursor?: string | null;
         };
+        ValidationErrorResponse: {
+            status: number;
+            code: string;
+            message: string;
+        };
         AppInfoResponse: {
             app: string;
             version: string;
@@ -103,6 +108,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SalesFactListResponse"];
+                };
+            };
+            /** @description Некорректный limit или cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
         };

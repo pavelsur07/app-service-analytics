@@ -8,6 +8,7 @@ use App\Ingestion\Infrastructure\Query\SalesFactListQuery;
 use App\Ingestion\Infrastructure\Query\SalesFactListRow;
 use App\Ingestion\Ui\Response\SalesFactListItemResponse;
 use App\Ingestion\Ui\Response\SalesFactListResponse;
+use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -35,6 +36,11 @@ final class ListSalesFactsController
         response: 200,
         description: 'Список продаж компании, keyset-пагинация',
         content: new Model(type: SalesFactListResponse::class),
+    )]
+    #[OA\Response(
+        response: 422,
+        description: 'Некорректный limit или cursor',
+        content: new Model(type: ValidationErrorResponse::class),
     )]
     public function __invoke(string $companyId, Request $request): JsonResponse
     {
@@ -86,7 +92,7 @@ final class ListSalesFactsController
     private function validationError(string $code, string $message): JsonResponse
     {
         return new JsonResponse(
-            ['status' => Response::HTTP_UNPROCESSABLE_ENTITY, 'code' => $code, 'message' => $message],
+            new ValidationErrorResponse(status: Response::HTTP_UNPROCESSABLE_ENTITY, code: $code, message: $message),
             Response::HTTP_UNPROCESSABLE_ENTITY,
         );
     }
