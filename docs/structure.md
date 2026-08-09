@@ -19,7 +19,10 @@ app-service-analytics/
 ├── playwright.config.ts  один конфиг на репозиторий, проекты seller и admin
 ├── package.json          только @playwright/test под этот конфиг
 ├── bin/
-│   └── review-prepare.sh сборка пакета для внешнего ревью (make review-prepare)
+│   ├── review-prepare.sh сборка пакета для внешнего ревью (make review-prepare)
+│   └── e2e-seed.sh       сеет компанию/подключение и разбирает фикстуру
+│                         Ozon в sales_fact перед Playwright (make test-e2e);
+│                         реальных ключей площадки в песочнице нет
 ├── traefik/
 │   ├── dynamic.yml       dev: *.conwix.localhost (file provider)
 │   └── dynamic.prod.yml  prod: app/admin.conwix.com, TLS, редирект с http
@@ -284,7 +287,7 @@ apps/seller/
 │   │                 разбор ошибок API
 │   ├── api/          клиент, привязанный к компании
 │   └── features/
-│       └── accounts/
+│       └── ingestion/
 ├── index.html
 └── vite.config.ts
 ```
@@ -301,25 +304,42 @@ apps/seller/
 
 Фичи создаются по мере появления экранов. Пустых папок нет.
 
-**Текущее состояние.** До первой настоящей фичи `features/` и `app/`
-ещё нет — заводить их сейчас означало бы абстрагироваться до первого
-случая. Но `api/` и `shared/` уже появились: без них не собрать
-зависимости и проверки (клиент — чтобы запретить голый `fetch`,
-`lib/` — под обязательный тест форматирования).
+**Текущее состояние.** Первая настоящая фича — `features/ingestion/`
+(список продаж Ozon), вместе с ней появились `app/` (роутер,
+`QueryClientProvider`) и остальные обязательные единственности `shared/`.
+Имя фичи — `ingestion`, как модуль бэкенда, который её обслуживает
+(витрина пакета 6 живёт внутри Ingestion, не отдельным модулем).
+Стартовый ping-экран (`App.tsx`) не заменён — стал одним из маршрутов
+`app/Root.tsx` наравне с новым.
 
 ```
 apps/seller/
 ├── src/
-│   ├── App.tsx                        три состояния: загрузка, ошибка, данные
+│   ├── App.tsx                        ping-экран, маршрут "/"; три состояния
 │   ├── main.tsx                       точка входа
 │   ├── index.css                      @import "tailwindcss"
+│   ├── app/
+│   │   └── Root.tsx                   роутер + QueryClientProvider
 │   ├── api/
 │   │   ├── client.ts                  единственное место с fetch — apiGet()
+│   │   ├── companyClient.ts           клиент, привязанный к companyId
+│   │   ├── ApiError.ts                разбор { status, code, message } бэкенда
 │   │   └── schema.ts                  реэкспорт типов из packages/api-schema
-│   └── shared/
-│       └── lib/
-│           └── formatMinorAmount.ts   копейки → отображаемая сумма
-├── tests/e2e/                         Playwright-сценарий этого приложения
+│   ├── shared/
+│   │   └── lib/
+│   │       ├── formatMinorAmount.ts   копейки → отображаемая сумма
+│   │       └── companyQueryKey.ts     ['company', companyId, модуль, сущность, ...]
+│   └── features/
+│       └── ingestion/
+│           ├── model/
+│           │   └── useSalesFacts.ts   TanStack Query, курсорная пагинация
+│           ├── ui/
+│           │   ├── SalesFactsPage.tsx
+│           │   └── SalesFactsTable.tsx  обычная <table>, не react-table —
+│           │                          нечем управлять без клиентской сортировки
+│           └── lib/
+│               └── statusPresentation.ts  статус текстом и знаком, не только цветом
+├── tests/e2e/                         два сценария: ping и список продаж
 ├── eslint.config.js                   границы импортов + свои правила
 ├── knip.json
 ├── index.html
