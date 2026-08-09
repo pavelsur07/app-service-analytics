@@ -3,7 +3,6 @@
   "ignoreDependencies": [
     "@tanstack/react-table",
     "date-fns",
-    "react-hook-form",
     "recharts",
     "zod",
     "@playwright/test",

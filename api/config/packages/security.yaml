@@ -31,6 +31,10 @@ security:
             logout:
                 path: /api/auth/logout
                 invalidate_session: true
+                # Умолчание Symfony (302 на "/") не подходит для JSON API;
+                # в 7.4 success_handler убран из схемы firewall.logout —
+                # ответ переопределяется подпиской на LogoutEvent
+                # (Identity/Ui/EventListener/ApiLogoutResponseListener).
             # По (email, IP) — ADR-007. hide_user_not_found (умолчание
             # true) уже не различает "нет пользователя" и "неверный
             # пароль" на уровне ошибки, здесь то же на уровне лимита:
@@ -64,3 +68,20 @@ when@test:
                 cost: 4 # Lowest possible value for bcrypt
                 time_cost: 3 # Lowest possible value for argon
                 memory_cost: 10 # Lowest possible value for argon
+
+# То же снижение, что и в test, и по той же причине — но E2E (Playwright)
+# идёт не через test-окружение, а через настоящий php-fpm под APP_ENV=dev
+# (docker-compose.yml). Полная стоимость 'auto' на CPU CI-раннера
+# подводила вход к nginx fastcgi_read_timeout (5s) даже на одном запросе
+# без всякой конкуренции — обнаружено красным test-e2e (workers: 1 сам
+# по себе не чинил, только снижал вероятность). prod без when@prod —
+# полная стоимость сохраняется там, где это дорогая настоящая защита,
+# не только цена ожидания в тесте.
+when@dev:
+    security:
+        password_hashers:
+            Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface:
+                algorithm: auto
+                cost: 4
+                time_cost: 3
+                memory_cost: 10

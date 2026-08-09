@@ -132,7 +132,11 @@ test-func: ## тесты через HTTP (тестовая база должна
 
 test-e2e: ## сеет тестовые данные (dev-БД) и прогоняет Playwright — оба сценария (seller, admin)
 	sh bin/e2e-seed.sh
-	$(COMPOSE) exec -e E2E_COMPANY_ID=$$(cat var/e2e-company-id) playwright npx playwright test
+	$(COMPOSE) exec \
+		-e E2E_COMPANY_ID=$$(cat var/e2e-company-id) \
+		-e E2E_USER_EMAIL=$$(sed -n '1p' var/e2e-user-credentials) \
+		-e E2E_USER_PASSWORD=$$(sed -n '2p' var/e2e-user-credentials) \
+		playwright npx playwright test
 
 test-cov: ## покрытие (драйвер pcov в php-cli, docker/php/Dockerfile)
 	$(COMPOSE) exec php-cli composer test:cov
