@@ -3,7 +3,18 @@ framework:
     secret: '%env(APP_SECRET)%'
 
     # Note that the session will be started ONLY if you read or write from it.
-    session: true
+    # Redis (ADR-007) — отзыв доступа мгновенен: сессия удаляется на
+    # сервере, дамп базы не даёт доступа к чужим сессиям. Неделя активной
+    # сессии без remember-me; cookie_lifetime и gc_maxlifetime совпадают,
+    # иначе данные сессии на сервере истекут раньше самой куки.
+    session:
+        handler_id: Symfony\Component\HttpFoundation\Session\Storage\Handler\RedisSessionHandler
+        name: conwix_seller_session
+        cookie_httponly: true
+        cookie_samesite: lax
+        cookie_secure: auto
+        cookie_lifetime: 604800
+        gc_maxlifetime: 604800
 
     #esi: true
     #fragments: true

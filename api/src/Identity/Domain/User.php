@@ -5,21 +5,21 @@ declare(strict_types=1);
 namespace App\Identity\Domain;
 
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
+use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Uid\Uuid;
 
 /**
  * Учётная запись человека (ADR-007). Не данные компании — доступ к ним
  * даёт CompanyMember, не User сам по себе (ADR-002).
  *
- * Не реализует Symfony UserInterface/PasswordAuthenticatedUserInterface
- * в этом пакете: security-bundle — зависимость PR2 (аутентификация),
- * здесь только схема. Интерфейсы и делегирующие методы добавляются
- * вместе с пакетом в PR2, не раньше.
+ * getRoles() всегда ['ROLE_USER']: системы разрешений нет, роль-колонка
+ * живёт на CompanyMember и с Symfony-ролями не связана.
  */
 #[ORM\Entity]
 #[ORM\Table(name: '`user`')]
 #[ORM\UniqueConstraint(name: 'uq_user_email', columns: ['email'])]
-class User
+class User implements UserInterface, PasswordAuthenticatedUserInterface
 {
     #[ORM\Id]
     #[ORM\Column(type: 'uuid')]
@@ -75,5 +75,29 @@ class User
     public function passwordHash(): string
     {
         return $this->passwordHash;
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    public function getUserIdentifier(): string
+    {
+        \assert('' !== $this->email);
+
+        return $this->email;
+    }
+
+    public function getPassword(): string
+    {
+        return $this->passwordHash;
+    }
+
+    public function getRoles(): array
+    {
+        return ['ROLE_USER'];
+    }
+
+    public function eraseCredentials(): void
+    {
     }
 }

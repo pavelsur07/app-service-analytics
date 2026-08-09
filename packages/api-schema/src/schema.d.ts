@@ -4,6 +4,38 @@
  */
 
 export interface paths {
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_auth_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_identity_auth_me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/ingestion/ozon/sales-facts": {
         parameters: {
             query?: never;
@@ -56,6 +88,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        MeCompanyResponse: {
+            id: string;
+            name: string;
+        };
+        MeResponse: {
+            email: string;
+            companies: components["schemas"]["MeCompanyResponse"][];
+        };
         SalesFactListItemResponse: {
             marketplaceAccountId: string;
             sourceRowId: string;
@@ -90,6 +130,43 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    post_identity_auth_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_identity_auth_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Текущий пользователь и компании, доступные ему по членству */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+        };
+    };
     get_ingestion_ozon_sales_facts_list: {
         parameters: {
             query?: never;

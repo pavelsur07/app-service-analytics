@@ -82,10 +82,22 @@ return static function (DeptracConfig $config): void {
             $symfonyUid = Layer::withName('SymfonyUid')->collectors(
                 ClassLikeConfig::create('^Symfony\\Component\\Uid\\.*'),
             ),
+            // Тот же принцип, что у SymfonyUid, и по той же причине: User —
+            // сущность Domain, но Symfony Security требует, чтобы именно она
+            // реализовывала UserInterface/PasswordAuthenticatedUserInterface
+            // напрямую (это контракт аутентификации, не опциональная
+            // обёртка) — обходной адаптер в Infrastructure добавил бы слой
+            // косвенности ради одного класса, не ради границы.
+            $symfonySecurityUser = Layer::withName('SymfonySecurityUser')->collectors(
+                ClassLikeConfig::create('^Symfony\\Component\\Security\\Core\\User\\.*'),
+            ),
             $symfonyComponent = Layer::withName('SymfonyComponent')->collectors(
                 BoolConfig::create(
                     must: [ClassLikeConfig::create('^Symfony\\Component\\.*')],
-                    mustNot: [ClassLikeConfig::create('^Symfony\\Component\\Uid\\.*')],
+                    mustNot: [
+                        ClassLikeConfig::create('^Symfony\\Component\\Uid\\.*'),
+                        ClassLikeConfig::create('^Symfony\\Component\\Security\\Core\\User\\.*'),
+                    ],
                 ),
             ),
             $nelmioApiDoc = Layer::withName('NelmioApiDoc')->collectors(
@@ -105,11 +117,19 @@ return static function (DeptracConfig $config): void {
 
             // Identity — ниже Ingestion, Shared доступен без ограничений,
             // в Ingestion не заходит вообще ни с одного слоя.
-            Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $sharedApplication, $sharedDomain, $symfonyComponent),
+            //
+            // IdentityUi отдаёт HTTP начиная с PR2 (MeController, обработчики
+            // входа) — тот же набор прав, что уже есть у IngestionUi:
+            // IdentityInfrastructure напрямую для синхронного чтения
+            // (MeController → UserCompaniesQuery, тот же принцип, что
+            // у ListSalesFactsController — см. комментарий в IngestionUi
+            // ниже), SharedUi — переиспользование ValidationErrorResponse,
+            // NelmioApiDoc/OpenApiAttributes — атрибуты на контроллере.
+            Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $identityInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($identityApplication)->accesses($identityDomain, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $sharedApplication, $sharedDomain, $symfonyUid),
-            Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
-            Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid),
+            Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
+            Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
 
             // Ingestion — вход в Identity только через IdentityFacade;
             // Ui вообще не пересекает границу модуля, даже через Facade.

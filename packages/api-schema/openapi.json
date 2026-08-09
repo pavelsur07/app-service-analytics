@@ -5,6 +5,33 @@
         "version": "0.1.0-dev"
     },
     "paths": {
+        "/api/auth/login": {
+            "post": {
+                "operationId": "post_identity_auth_login",
+                "responses": {
+                    "default": {
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/auth/me": {
+            "get": {
+                "operationId": "get_identity_auth_me",
+                "responses": {
+                    "200": {
+                        "description": "\u0422\u0435\u043a\u0443\u0449\u0438\u0439 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u0438 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438, \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u044b\u0435 \u0435\u043c\u0443 \u043f\u043e \u0447\u043b\u0435\u043d\u0441\u0442\u0432\u0443",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MeResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/companies/{companyId}/ingestion/ozon/sales-facts": {
             "get": {
                 "operationId": "get_ingestion_ozon_sales_facts_list",
@@ -79,6 +106,39 @@
     },
     "components": {
         "schemas": {
+            "MeCompanyResponse": {
+                "required": [
+                    "id",
+                    "name"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "MeResponse": {
+                "required": [
+                    "email",
+                    "companies"
+                ],
+                "properties": {
+                    "email": {
+                        "type": "string"
+                    },
+                    "companies": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MeCompanyResponse"
+                        }
+                    }
+                },
+                "type": "object"
+            },
             "SalesFactListItemResponse": {
                 "required": [
                     "marketplaceAccountId",
