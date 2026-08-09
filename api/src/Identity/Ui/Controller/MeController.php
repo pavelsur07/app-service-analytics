@@ -40,9 +40,12 @@ final class MeController
         $user = $this->security->getUser();
         \assert($user instanceof User);
 
+        /** @var list<array<string, mixed>> $rawRows */
+        $rawRows = $this->userCompanies->build($user->id()->toRfc4122())->executeQuery()->fetchAllAssociative();
+
         $companies = array_map(
             static fn (UserCompanyRow $row): MeCompanyResponse => new MeCompanyResponse(id: $row->id, name: $row->name),
-            $this->userCompanies->forUser($user->id()->toRfc4122()),
+            array_map(UserCompaniesQuery::mapRow(...), $rawRows),
         );
 
         return new JsonResponse(new MeResponse(email: $user->email(), companies: $companies));

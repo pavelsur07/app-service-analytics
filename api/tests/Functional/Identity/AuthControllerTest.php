@@ -35,6 +35,11 @@ final class AuthControllerTest extends WebTestCase
         [$companies, $users, $companyMembers] = $this->repositories();
 
         $company = CompanyBuilder::aCompany()->withName('Acme LLC')->persistWith($companies);
+        // Компания, к которой пользователь не имеет отношения — доказывает
+        // изоляцию, а не только то, что своя компания попадает в ответ
+        // (ADR-005, обязательное покрытие: изоляция данных между
+        // компаниями).
+        CompanyBuilder::aCompany()->withName('Other Company')->persistWith($companies);
         $user = UserBuilder::aUser()
             ->withEmail('owner@example.com')
             ->withPasswordHash($this->hash('correct-horse-battery-staple'))
@@ -50,7 +55,7 @@ final class AuthControllerTest extends WebTestCase
 
         self::assertSame('owner@example.com', $payload['email']);
         self::assertIsArray($payload['companies']);
-        self::assertCount(1, $payload['companies']);
+        self::assertCount(1, $payload['companies'], 'ответ не должен включать компании, где пользователь не участник');
         self::assertIsArray($payload['companies'][0]);
         self::assertSame('Acme LLC', $payload['companies'][0]['name']);
     }
