@@ -38,15 +38,27 @@ return static function (DeptracConfig $config): void {
                     mustNot: [DirectoryConfig::create('src/Identity/Application/Facade/.*')],
                 ),
             ),
+            // IdentityScheduleFacade вынесен из IdentityFacade в отдельный
+            // класс и отдельный слой: Deptrac различает только классы,
+            // не методы одного класса, поэтому единственный способ дать
+            // widely-доступному IdentityFacade безопасный метод
+            // (findOzonSyncTarget, company-scoped) и при этом закрыть
+            // межарендаторное чтение (findActiveOzonSyncTargets) от всех,
+            // кроме одного вызывающего, — держать их на разных классах.
             $identityFacade = Layer::withName('IdentityFacade')->collectors(
-                DirectoryConfig::create('src/Identity/Application/Facade/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Identity/Application/Facade/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityScheduleFacade$')],
+                ),
+            ),
+            $identityScheduleFacade = Layer::withName('IdentityScheduleFacade')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityScheduleFacade$'),
             ),
             // ActiveOzonAccountsQuery вынесен из IdentityInfrastructure тем же
-            // приёмом, что SymfonyUid из SymfonyComponent: IdentityUi уже
-            // имеет широкий доступ к IdentityInfrastructure (MeController →
-            // UserCompaniesQuery) — без mustNot этот класс попал бы туда же,
-            // и HTTP-контроллер получил бы физическую возможность выполнить
-            // межарендаторный запрос в обход CLAUDE.md §1.
+            // приёмом: IdentityUi уже имеет широкий доступ к IdentityInfrastructure
+            // (MeController → UserCompaniesQuery) — без mustNot этот класс
+            // попал бы туда же, и HTTP-контроллер получил бы физическую
+            // возможность выполнить межарендаторный запрос в обход CLAUDE.md §1.
             $identityInfrastructure = Layer::withName('IdentityInfrastructure')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Identity/Infrastructure/.*')],
@@ -173,13 +185,13 @@ return static function (DeptracConfig $config): void {
             // внутри Domain: тот же статус UID, что и у identityFacade ниже.
             Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $identityInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($identityApplication)->accesses($identityDomain, $sharedApplication, $sharedDomain, $symfonyUid),
-            // identityOperationalQuery — не identityInfrastructure целиком:
-            // только у Facade есть доступ к ActiveOzonAccountsQuery, у
-            // identityUi (см. выше) — нет, это и есть граница CLAUDE.md §1.
-            // identityInfrastructure тут же — ради ActiveOzonAccountRow
-            // (DTO строки, не сам запрос), который Facade строит из
-            // результата и который остался в общем слое.
-            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $identityOperationalQuery, $identityInfrastructure, $sharedApplication, $sharedDomain, $symfonyUid),
+            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $sharedApplication, $sharedDomain, $symfonyUid),
+            // identityOperationalQuery/identityInfrastructure (ради
+            // ActiveOzonAccountRow) — только у IdentityScheduleFacade,
+            // не у IdentityFacade выше: это и есть граница CLAUDE.md §1.
+            // identityFacade тут же — ради OzonAccountRef (плоский DTO
+            // в той же папке, не метод с побочным эффектом).
+            Ruleset::forLayer($identityScheduleFacade)->accesses($identityFacade, $identityOperationalQuery, $identityInfrastructure, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($identityOperationalQuery)->accesses($identityInfrastructure, $sharedInfrastructure, $symfonyComponent),
             Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
@@ -195,7 +207,10 @@ return static function (DeptracConfig $config): void {
             // классу разрешён IngestionOperationalAction (см. слой выше).
             Ruleset::forLayer($ingestionScheduleCommand)->accesses($ingestionOperationalAction, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent),
             Ruleset::forLayer($ingestionApplication)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
-            Ruleset::forLayer($ingestionOperationalAction)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain, $symfonyComponent),
+            // identityScheduleFacade, не identityFacade: единственный
+            // потребитель межарендаторного чтения, узкий слой на узкий
+            // слой (см. комментарий у identityScheduleFacade выше).
+            Ruleset::forLayer($ingestionOperationalAction)->accesses($ingestionDomain, $ingestionApplication, $identityScheduleFacade, $sharedApplication, $sharedDomain, $symfonyComponent),
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),

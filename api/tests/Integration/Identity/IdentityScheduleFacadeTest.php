@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Identity;
 
-use App\Identity\Application\Facade\IdentityFacade;
+use App\Identity\Application\Facade\IdentityScheduleFacade;
 use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
@@ -17,9 +17,11 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * findActiveOzonSyncTargets — межарендаторное чтение для планировщика
  * (CLAUDE.md §1, «Исключение...»): предмет первого теста именно то,
- * что оно видит все компании разом, это не баг изоляции.
+ * что оно видит все компании разом, это не баг изоляции. Отдельный
+ * класс от IdentityFacade (не только отдельный метод) — единственный
+ * вызывающий по Deptrac (deptrac.php) — DispatchActiveOzonSyncsAction.
  */
-final class IdentityFacadeTest extends KernelTestCase
+final class IdentityScheduleFacadeTest extends KernelTestCase
 {
     public function testFindActiveOzonSyncTargetsReturnsOnlyActiveAccountsAcrossCompanies(): void
     {
@@ -46,7 +48,7 @@ final class IdentityFacadeTest extends KernelTestCase
             ->withState(MarketplaceAccountState::Revoked)
             ->persistWith($companies, $marketplaceAccounts);
 
-        $targets = $this->identityFacade($container)->findActiveOzonSyncTargets();
+        $targets = $this->identityScheduleFacade($container)->findActiveOzonSyncTargets();
 
         $marketplaceAccountIds = array_map(static fn ($target) => $target->marketplaceAccountId, $targets);
         self::assertContains($activeInCompanyA->id()->toRfc4122(), $marketplaceAccountIds);
@@ -73,7 +75,7 @@ final class IdentityFacadeTest extends KernelTestCase
 
         $this->expectException(\RuntimeException::class);
 
-        $this->identityFacade($container)->findActiveOzonSyncTargets();
+        $this->identityScheduleFacade($container)->findActiveOzonSyncTargets();
     }
 
     private function bootedContainer(): ContainerInterface
@@ -83,10 +85,10 @@ final class IdentityFacadeTest extends KernelTestCase
         return self::getContainer();
     }
 
-    private function identityFacade(ContainerInterface $container): IdentityFacade
+    private function identityScheduleFacade(ContainerInterface $container): IdentityScheduleFacade
     {
-        /** @var IdentityFacade $facade */
-        $facade = $container->get(IdentityFacade::class);
+        /** @var IdentityScheduleFacade $facade */
+        $facade = $container->get(IdentityScheduleFacade::class);
 
         return $facade;
     }
