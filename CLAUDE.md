@@ -70,7 +70,8 @@ PHP — 8.4 (активная поддержка до конца 2026, безо�
 ```
 Shared        технический слой: Money, Doctrine-типы, UUID, базовые исключения.
               Предметной логики не содержит.
-Identity      Company, User, membership, MarketplaceAccount. Источник companyId.
+Identity      Company, User, CompanyMember (членство, ADR-002), MarketplaceAccount.
+              Источник companyId.
 Ingestion     коннекторы к площадкам, raw-слой, расписание, лимиты запросов,
               нормализация в факты.
 ```
