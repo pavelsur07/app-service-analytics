@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional\Identity;
 
-use App\Identity\Domain\CompanyMember;
-use App\Identity\Domain\ValueObject\CompanyMemberRole;
+use App\Identity\Domain\CompanyRepository;
 use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Ingestion\Domain\SalesFactRepository;
+use App\Tests\Support\Builder\CompanyBuilder;
+use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\ORM\EntityManagerInterface;
@@ -39,22 +40,19 @@ final class CompanyAccessSubscriberTest extends WebTestCase
     {
         $client = static::createClient();
         $salesFacts = $this->salesFacts();
-        $entityManager = $this->entityManager();
-        $users = new DoctrineUserRepository($entityManager);
-        $companyMembers = new DoctrineCompanyMemberRepository($entityManager);
+        [$companies, $users, $companyMembers] = $this->repositories();
 
-        $ownCompany = Uuid::v7();
-        $otherCompany = Uuid::v7();
+        $user = UserBuilder::aUser()->persistWith($users);
+        $member = CompanyMemberBuilder::aCompanyMember()->withUser($user)->persistWith($companies, $users, $companyMembers);
+        $otherCompany = CompanyBuilder::aCompany()->persistWith($companies);
 
-        $user = UserBuilder::aUser()->withEmail('member-a@example.com')->persistWith($users);
-        $companyMembers->add(CompanyMember::create($ownCompany, $user->id(), CompanyMemberRole::Owner));
         $client->loginUser($user, 'api');
 
         $salesFacts->upsertAll([
-            SalesFactBuilder::aSalesFact()->withCompanyId($otherCompany)->withSourceRowId('secret|SKU-1')->build(),
+            SalesFactBuilder::aSalesFact()->withCompanyId($otherCompany->id())->withSourceRowId('secret|SKU-1')->build(),
         ]);
 
-        $client->request('GET', \sprintf('/api/companies/%s/ingestion/ozon/sales-facts', $otherCompany->toRfc4122()));
+        $client->request('GET', \sprintf('/api/companies/%s/ingestion/ozon/sales-facts', $otherCompany->id()->toRfc4122()));
 
         self::assertResponseStatusCodeSame(403);
         $content = $client->getResponse()->getContent();
@@ -64,6 +62,10 @@ final class CompanyAccessSubscriberTest extends WebTestCase
         /** @var array<string, mixed> $payload */
         $payload = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('company_access_denied', $payload['code']);
+
+        // Собственная компания участника не трогается этим сценарием —
+        // просто доказывает, что членство реально было создано верно.
+        self::assertNotSame($member->companyId()->toRfc4122(), $otherCompany->id()->toRfc4122());
     }
 
     /**
@@ -75,16 +77,14 @@ final class CompanyAccessSubscriberTest extends WebTestCase
     {
         $client = static::createClient();
         $salesFacts = $this->salesFacts();
-        $entityManager = $this->entityManager();
-        $users = new DoctrineUserRepository($entityManager);
-        $companyMembers = new DoctrineCompanyMemberRepository($entityManager);
+        [$companies, $users, $companyMembers] = $this->repositories();
 
-        $companyA = Uuid::v7();
-        $companyB = Uuid::v7();
+        $user = UserBuilder::aUser()->persistWith($users);
+        $memberA = CompanyMemberBuilder::aCompanyMember()->withUser($user)->persistWith($companies, $users, $companyMembers);
+        $memberB = CompanyMemberBuilder::aCompanyMember()->withUser($user)->persistWith($companies, $users, $companyMembers);
+        $companyA = $memberA->companyId();
+        $companyB = $memberB->companyId();
 
-        $user = UserBuilder::aUser()->withEmail('multi-member@example.com')->persistWith($users);
-        $companyMembers->add(CompanyMember::create($companyA, $user->id(), CompanyMemberRole::Owner));
-        $companyMembers->add(CompanyMember::create($companyB, $user->id(), CompanyMemberRole::Owner));
         $client->loginUser($user, 'api');
 
         $salesFacts->upsertAll([
@@ -111,12 +111,18 @@ final class CompanyAccessSubscriberTest extends WebTestCase
         return $salesFacts;
     }
 
-    private function entityManager(): EntityManagerInterface
+    /**
+     * @return array{0: CompanyRepository, 1: DoctrineUserRepository, 2: DoctrineCompanyMemberRepository}
+     */
+    private function repositories(): array
     {
         /** @var EntityManagerInterface $entityManager */
         $entityManager = static::getContainer()->get(EntityManagerInterface::class);
 
-        return $entityManager;
+        /** @var CompanyRepository $companies */
+        $companies = static::getContainer()->get(CompanyRepository::class);
+
+        return [$companies, new DoctrineUserRepository($entityManager), new DoctrineCompanyMemberRepository($entityManager)];
     }
 
     /**
