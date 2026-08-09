@@ -63,11 +63,25 @@ return static function (DeptracConfig $config): void {
             $ingestionDomain = Layer::withName('IngestionDomain')->collectors(
                 DirectoryConfig::create('src/Ingestion/Domain/.*'),
             ),
+            // DispatchActiveOzonSyncsAction вынесен из IngestionApplication
+            // тем же приёмом, что ActiveOzonAccountsQuery из IdentityInfrastructure
+            // выше: IngestionUi уже имеет широкий доступ к IngestionApplication
+            // (см. ниже), и этот Action вызывает межарендаторный
+            // IdentityFacade::findActiveOzonSyncTargets() — без mustNot
+            // любой будущий HTTP-контроллер Ingestion (ListSalesFactsController
+            // и подобные) мог бы внедрить его в обход CLAUDE.md §1, несмотря
+            // на то что реальный вызывающий — только ScheduleOzonSyncCommand.
             $ingestionApplication = Layer::withName('IngestionApplication')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Ingestion/Application/.*')],
-                    mustNot: [DirectoryConfig::create('src/Ingestion/Application/Facade/.*')],
+                    mustNot: [
+                        DirectoryConfig::create('src/Ingestion/Application/Facade/.*'),
+                        ClassLikeConfig::create('^App\\Ingestion\\Application\\DispatchActiveOzonSyncsAction$'),
+                    ],
                 ),
+            ),
+            $ingestionOperationalAction = Layer::withName('IngestionOperationalAction')->collectors(
+                ClassLikeConfig::create('^App\\Ingestion\\Application\\DispatchActiveOzonSyncsAction$'),
             ),
             $ingestionFacade = Layer::withName('IngestionFacade')->collectors(
                 DirectoryConfig::create('src/Ingestion/Application/Facade/.*'),
@@ -75,8 +89,18 @@ return static function (DeptracConfig $config): void {
             $ingestionInfrastructure = Layer::withName('IngestionInfrastructure')->collectors(
                 DirectoryConfig::create('src/Ingestion/Infrastructure/.*'),
             ),
+            // ScheduleOzonSyncCommand — зеркально: единственный класс IngestionUi,
+            // которому нужен (и разрешён) доступ к IngestionOperationalAction;
+            // остальной IngestionUi (ListSalesFactsController и будущие
+            // контроллеры) его не видит.
+            $ingestionScheduleCommand = Layer::withName('IngestionScheduleCommand')->collectors(
+                ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\ScheduleOzonSyncCommand$'),
+            ),
             $ingestionUi = Layer::withName('IngestionUi')->collectors(
-                DirectoryConfig::create('src/Ingestion/Ui/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Ingestion/Ui/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\ScheduleOzonSyncCommand$')],
+                ),
             ),
 
             // Внешние библиотеки — не наши модули, но зависимость на них
@@ -167,7 +191,11 @@ return static function (DeptracConfig $config): void {
             // сценарии вызываются напрямую из Ui»), в отличие от записи,
             // которая всегда идёт через Application/Facade.
             Ruleset::forLayer($ingestionUi)->accesses($ingestionApplication, $ingestionDomain, $ingestionInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
+            // ScheduleOzonSyncCommand — не весь IngestionUi: только этому
+            // классу разрешён IngestionOperationalAction (см. слой выше).
+            Ruleset::forLayer($ingestionScheduleCommand)->accesses($ingestionOperationalAction, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent),
             Ruleset::forLayer($ingestionApplication)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($ingestionOperationalAction)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain, $symfonyComponent),
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),
