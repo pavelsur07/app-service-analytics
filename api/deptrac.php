@@ -106,13 +106,19 @@ return static function (DeptracConfig $config): void {
             $openApiAttributes = Layer::withName('OpenApiAttributes')->collectors(
                 ClassLikeConfig::create('^OpenApi\\.*'),
             ),
+            // sentry/sentry + sentry/sentry-symfony (SDK и бандл — один
+            // общий неймспейс верхнего уровня, отдельный слой не нужен).
+            $sentry = Layer::withName('Sentry')->collectors(
+                ClassLikeConfig::create('^Sentry\\.*'),
+            ),
         )
         ->rulesets(
             // Shared — технический слой, свободно используется всеми,
             // сам никогда не поднимается вверх к Identity/Ingestion.
             Ruleset::forLayer($sharedUi)->accesses($sharedApplication, $sharedDomain, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($sharedApplication)->accesses($sharedDomain),
-            Ruleset::forLayer($sharedInfrastructure)->accesses($sharedDomain),
+            // Sentry — SentryEventScrubber (before_send, config/packages/sentry.yaml).
+            Ruleset::forLayer($sharedInfrastructure)->accesses($sharedDomain, $sentry),
             Ruleset::forLayer($sharedDomain)->accesses($brickMoney),
 
             // Identity — ниже Ingestion, Shared доступен без ограничений,

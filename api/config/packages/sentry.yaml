@@ -1,0 +1,33 @@
+sentry:
+    dsn: '%env(SENTRY_DSN)%'
+
+    # capture_soft_fails: false — событие уходит в трекер только на
+    # финальный отказ (WorkerMessageFailedEvent::willRetry() === false),
+    # не на каждую попытку ретрая. Иначе одно реальное падение обработчика
+    # с 3 ретраями по умолчанию превращается в 3 события в GlitchTip.
+    messenger:
+        capture_soft_fails: false
+
+    # APM/трейсинг не нужен для цели этой задачи (видимость ошибок,
+    # не производительность) и добавляет лишнюю движущуюся часть без
+    # проверки. tracing.http_client_requests в остальном включён бы
+    # по умолчанию и обернул бы 'ozon.client' в TraceableHttpClient —
+    # явно выключаю, а не полагаюсь на то, что сейчас это безопасно
+    # (проверено: span не пишет заголовки запроса, но это деталь
+    # реализации библиотеки, а не контракт).
+    tracing:
+        enabled: false
+
+    options:
+        environment: '%kernel.environment%'
+        # Явно, а не полагаясь на умолчание SDK (тот же принцип, что
+        # у Money — никаких умолчаний по умолчанию): тело запроса, куки,
+        # IP пользователя не должны улетать в GlitchTip без осознанного
+        # решения. Данные компаний — финансовые (CLAUDE.md).
+        send_default_pii: false
+        # Подстраховка на будущее: вырезает заголовки-кандидаты на секрет
+        # (Api-Key, Authorization) из breadcrumbs/extra, если они там
+        # когда-нибудь появятся — сейчас (tracing выключен, сообщения
+        # symfony/http-client содержат только код и URL) их там нет,
+        # но это деталь реализации зависимостей, не гарантия.
+        before_send: App\Shared\Infrastructure\Observability\SentryEventScrubber

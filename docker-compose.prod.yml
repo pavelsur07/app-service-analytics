@@ -54,6 +54,11 @@ x-api-env: &api-env
   # все зашифрованные учётные данные площадок невосстановимыми —
   # резервная копия хранится отдельно от сервера.
   APP_ENCRYPTION_MASTER_KEY: ${APP_ENCRYPTION_MASTER_KEY:?}
+  # GlitchTip (протокол Sentry). :- , не :? — отсутствие DSN не должно
+  # ронять деплой, SDK при пустом значении корректно ничего не отправляет
+  # (config/packages/sentry.yaml). Добавляется в /opt/conwix/.env отдельным
+  # действием, не входит в этот compose-файл.
+  SENTRY_DSN: ${SENTRY_DSN:-}
 
 services:
   traefik:
