@@ -17,3 +17,12 @@ framework:
         # заведённая маршрутизация указывала бы на несуществующие классы.
         routing:
             App\Ingestion\Application\Message\FetchOzonPostingsMessage: async_ingestion
+
+# in-memory вместо doctrine-транспорта — тестируем факт и содержимое
+# диспатча (SyncOzonAccountCommandTest), не реальную очередь; боевой DSN
+# не затрагивается.
+when@test:
+    framework:
+        messenger:
+            transports:
+                async_ingestion: 'in-memory://'
