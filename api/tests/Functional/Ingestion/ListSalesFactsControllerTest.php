@@ -4,14 +4,23 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional\Ingestion;
 
+use App\Identity\Domain\CompanyRepository;
+use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
+use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Ingestion\Domain\SalesFactRepository;
+use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
+use App\Tests\Support\Builder\UserBuilder;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * ADR-005 (functional): изоляция арендаторов, формат ошибки.
+ * ADR-005 (functional): изоляция арендаторов, формат ошибки. С PR4
+ * (CompanyAccessSubscriber) маршрут требует и входа, и членства в запрошенной
+ * компании — каждый тест логинится как участник компании, чей URL
+ * запрашивает.
  */
 final class ListSalesFactsControllerTest extends WebTestCase
 {
@@ -20,7 +29,10 @@ final class ListSalesFactsControllerTest extends WebTestCase
         $client = static::createClient();
         $salesFacts = $this->salesFacts();
 
-        $companyA = Uuid::v7();
+        $companyA = $this->loginAsCompanyMember($client);
+        // companyB не участвует ни в каком членстве — этот тест доказывает
+        // изоляцию данных факт-таблицы, не проверку доступа, поэтому ей
+        // не нужна ни Company, ни CompanyMember, только сам идентификатор.
         $companyB = Uuid::v7();
 
         $salesFacts->upsertAll([
@@ -40,8 +52,9 @@ final class ListSalesFactsControllerTest extends WebTestCase
     public function testLimitAboveMaximumIsRejectedWith422(): void
     {
         $client = static::createClient();
+        $companyId = $this->loginAsCompanyMember($client);
 
-        $client->request('GET', \sprintf('/api/companies/%s/ingestion/ozon/sales-facts?limit=201', Uuid::v7()->toRfc4122()));
+        $client->request('GET', \sprintf('/api/companies/%s/ingestion/ozon/sales-facts?limit=201', $companyId->toRfc4122()));
 
         self::assertResponseStatusCodeSame(422);
         $payload = $this->decodeResponse($client);
@@ -52,8 +65,9 @@ final class ListSalesFactsControllerTest extends WebTestCase
     public function testMalformedCursorIsRejectedWith422(): void
     {
         $client = static::createClient();
+        $companyId = $this->loginAsCompanyMember($client);
 
-        $client->request('GET', \sprintf('/api/companies/%s/ingestion/ozon/sales-facts?cursor=not-valid-base64!!!', Uuid::v7()->toRfc4122()));
+        $client->request('GET', \sprintf('/api/companies/%s/ingestion/ozon/sales-facts?cursor=not-valid-base64!!!', $companyId->toRfc4122()));
 
         self::assertResponseStatusCodeSame(422);
         $payload = $this->decodeResponse($client);
@@ -65,7 +79,8 @@ final class ListSalesFactsControllerTest extends WebTestCase
         $client = static::createClient();
         $salesFacts = $this->salesFacts();
 
-        $companyId = Uuid::v7();
+        $companyId = $this->loginAsCompanyMember($client);
+
         $facts = [];
         for ($i = 0; $i < 5; ++$i) {
             $facts[] = SalesFactBuilder::aSalesFact()
@@ -99,6 +114,28 @@ final class ListSalesFactsControllerTest extends WebTestCase
         } while (null !== $cursor);
 
         self::assertCount(5, $seenSourceRowIds, 'все строки должны быть возвращены ровно один раз без пропусков');
+    }
+
+    /**
+     * Заводит пользователя и его членство через Builder (ADR-005), логинит
+     * и возвращает companyId получившегося членства — вызывающий код сам
+     * решает, какие sales_fact пометить этим companyId.
+     */
+    private function loginAsCompanyMember(KernelBrowser $client): Uuid
+    {
+        /** @var EntityManagerInterface $entityManager */
+        $entityManager = static::getContainer()->get(EntityManagerInterface::class);
+        /** @var CompanyRepository $companies */
+        $companies = static::getContainer()->get(CompanyRepository::class);
+        $users = new DoctrineUserRepository($entityManager);
+        $companyMembers = new DoctrineCompanyMemberRepository($entityManager);
+
+        $user = UserBuilder::aUser()->persistWith($users);
+        $member = CompanyMemberBuilder::aCompanyMember()->withUser($user)->persistWith($companies, $users, $companyMembers);
+
+        $client->loginUser($user, 'api');
+
+        return $member->companyId();
     }
 
     private function salesFacts(): SalesFactRepository
