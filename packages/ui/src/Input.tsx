@@ -7,9 +7,11 @@ type Props = Omit<
 > & {
   label: string;
   // Текст ошибки, не флаг: поле без объяснения, что именно не так,
-  // заставляет пользователя гадать.
-  error?: string;
-  hint?: string;
+  // заставляет пользователя гадать. `| undefined` явно (не только `?`) —
+  // react-hook-form отдаёt errors.field?.message как string | undefined,
+  // и exactOptionalPropertyTypes иначе не даёт передать его напрямую.
+  error?: string | undefined;
+  hint?: string | undefined;
 };
 
 const FIELD =

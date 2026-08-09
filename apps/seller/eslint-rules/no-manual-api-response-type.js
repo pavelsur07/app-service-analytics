@@ -3,18 +3,18 @@ import ts from 'typescript'
 
 // По существу, не по имени (CLAUDE.md §10): смотрит не на то, как назван
 // тип, а на то, где он объявлен. Точки входа API-ответов в приложение —
-// apiGet<T>() и createCompanyApiClient(companyId).get<T>() (тот же apiGet
-// внутри, привязанный к companyId, CLAUDE.md §7); fetch запрещён везде вне
-// src/api/, see no-restricted-globals. Если T — интерфейс или type
-// с телом-литералом, объявленный руками (не реэкспорт/индексированный
-// доступ из схемы), это ручное описание ответа, независимо от имени:
-// AppInfo, PingResult, AppInfoDto — ловится одинаково.
+// apiGet<T>(), apiPost<T>() и createCompanyApiClient(companyId).get<T>()
+// (тот же apiGet внутри, привязанный к companyId, CLAUDE.md §7); fetch
+// запрещён везде вне src/api/, see no-restricted-globals. Если T —
+// интерфейс или type с телом-литералом, объявленный руками (не реэкспорт/
+// индексированный доступ из схемы), это ручное описание ответа, независимо
+// от имени: AppInfo, PingResult, AppInfoDto — ловится одинаково.
 export default ESLintUtils.RuleCreator.withoutDocs({
   meta: {
     type: 'problem',
     docs: {
       description:
-        'apiGet<T>() / createCompanyApiClient(...).get<T>() type argument must originate from the generated OpenAPI schema, not a hand-authored shape.',
+        'apiGet<T>() / apiPost<T>() / createCompanyApiClient(...).get<T>() type argument must originate from the generated OpenAPI schema, not a hand-authored shape.',
     },
     messages: {
       manual:
@@ -27,13 +27,13 @@ export default ESLintUtils.RuleCreator.withoutDocs({
     const services = ESLintUtils.getParserServices(context)
     const checker = services.program.getTypeChecker()
 
-    // Прямой apiGet<T>(...) или client.get<T>(...), где client создан
-    // прямо на месте через createCompanyApiClient(...) (docs/patterns.md —
-    // цепочкой, не через промежуточную переменную; так же вызывается
-    // и в единственном текущем потребителе, useSalesFacts).
+    // Прямой apiGet<T>(...)/apiPost<T>(...) или client.get<T>(...), где
+    // client создан прямо на месте через createCompanyApiClient(...)
+    // (docs/patterns.md — цепочкой, не через промежуточную переменную;
+    // так же вызывается и в текущем потребителе, useSalesFacts).
     function isTrackedCall(node) {
       if (node.callee.type === 'Identifier') {
-        return node.callee.name === 'apiGet'
+        return node.callee.name === 'apiGet' || node.callee.name === 'apiPost'
       }
 
       return (

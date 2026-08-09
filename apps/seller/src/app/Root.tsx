@@ -1,15 +1,37 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 import { App as PingScreen } from '../App'
+import { CompanyListPage } from '../features/auth/ui/CompanyListPage'
+import { LoginPage } from '../features/auth/ui/LoginPage'
 import { SalesFactsPage } from '../features/ingestion/ui/SalesFactsPage'
+import { RequireAuth } from './RequireAuth'
 
-const queryClient = new QueryClient()
+// retry: false — TanStack Query по умолчанию повторяет неудачный запрос
+// трижды с задержкой; для 401/403 это не транзиентный сбой, а ответ,
+// который не изменится, и повторы только откладывают редирект
+// (RequireAuth, SalesFactsPage) на секунды.
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+})
 
 const router = createBrowserRouter([
   { path: '/', element: <PingScreen /> },
+  { path: '/login', element: <LoginPage /> },
+  {
+    path: '/companies',
+    element: (
+      <RequireAuth>
+        <CompanyListPage />
+      </RequireAuth>
+    ),
+  },
   {
     path: '/companies/:companyId/ingestion/sales-facts',
-    element: <SalesFactsPage />,
+    element: (
+      <RequireAuth>
+        <SalesFactsPage />
+      </RequireAuth>
+    ),
   },
 ])
 

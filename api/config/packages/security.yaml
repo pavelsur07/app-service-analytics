@@ -31,6 +31,10 @@ security:
             logout:
                 path: /api/auth/logout
                 invalidate_session: true
+                # Умолчание Symfony (302 на "/") не подходит для JSON API;
+                # в 7.4 success_handler убран из схемы firewall.logout —
+                # ответ переопределяется подпиской на LogoutEvent
+                # (Identity/Ui/EventListener/ApiLogoutResponseListener).
             # По (email, IP) — ADR-007. hide_user_not_found (умолчание
             # true) уже не различает "нет пользователя" и "неверный
             # пароль" на уровне ошибки, здесь то же на уровне лимита:

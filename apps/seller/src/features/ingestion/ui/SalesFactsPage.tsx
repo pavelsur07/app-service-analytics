@@ -1,12 +1,14 @@
-import { useState } from 'react'
-import { useParams } from 'react-router'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router'
+import { ApiError } from '../../../api/ApiError'
 import { Badge, Button, Card } from '../../../../../../packages/ui/src'
 import { useSalesFacts } from '../model/useSalesFacts'
 import { SalesFactsTable } from './SalesFactsTable'
 
-// Без переключения компании (нет второй компании в интерфейсе до входа) —
+// Без переключения компании в интерфейсе (список — features/auth) —
 // companyId только из URL, источник правды (docs/patterns.md).
 export function SalesFactsPage() {
+  const navigate = useNavigate()
   const { companyId } = useParams<{ companyId: string }>()
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null])
   const cursor = cursorStack[cursorStack.length - 1] ?? null
@@ -14,6 +16,14 @@ export function SalesFactsPage() {
   const query = useSalesFacts(companyId ?? '', cursor, {
     enabled: companyId !== undefined,
   })
+
+  // 403 — не "тихий пустой экран" (ТЗ §6): companyId в URL не значит
+  // доступ, отказ уводит на список компаний, доступных этому пользователю.
+  useEffect(() => {
+    if (query.error instanceof ApiError && query.error.status === 403) {
+      void navigate('/companies', { replace: true })
+    }
+  }, [query.error, navigate])
 
   if (companyId === undefined) {
     return (

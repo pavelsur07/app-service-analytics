@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Identity\Ui\Security;
 
 use App\Identity\Domain\User;
+use App\Identity\Ui\Response\LoginResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -23,6 +24,6 @@ final class LoginSuccessHandler implements AuthenticationSuccessHandlerInterface
         $user = $token->getUser();
         \assert($user instanceof User);
 
-        return new JsonResponse(['email' => $user->email()]);
+        return new JsonResponse(new LoginResponse(email: $user->email()));
     }
 }

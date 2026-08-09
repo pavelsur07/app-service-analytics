@@ -88,6 +88,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        LoginResponse: {
+            email: string;
+        };
+        ValidationErrorResponse: {
+            status: number;
+            code: string;
+            message: string;
+        };
         MeCompanyResponse: {
             id: string;
             name: string;
@@ -111,11 +119,6 @@ export interface components {
             items: components["schemas"]["SalesFactListItemResponse"][];
             nextCursor?: string | null;
         };
-        ValidationErrorResponse: {
-            status: number;
-            code: string;
-            message: string;
-        };
         AppInfoResponse: {
             app: string;
             version: string;
@@ -137,13 +140,32 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    email: string;
+                    password: string;
+                };
+            };
+        };
         responses: {
-            default: {
+            /** @description Вход выполнен, сессия установлена */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Неверный email или пароль — сообщение одинаково для обоих случаев (ADR-007) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
             };
         };
     };
