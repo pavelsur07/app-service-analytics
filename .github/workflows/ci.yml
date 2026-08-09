@@ -378,7 +378,11 @@ jobs:
           path: node_modules
           key: npm-e2e-${{ hashFiles('package-lock.json') }}
 
-      - run: docker compose up -d postgres php-fpm nginx playwright
+      # redis — сессии (ADR-007, RedisSessionHandler). Без него php-fpm
+      # не может достучаться до хоста redis при входе — тот же класс
+      # пробела, что уже чинили в backend-джобе (login_throttling),
+      # здесь не был перенесён на e2e-джобу.
+      - run: docker compose up -d postgres redis php-fpm nginx playwright
 
       # См. комментарий в задаче backend: шаг обязателен и при попадании
       # в кэш — post-install-cmd прогревает var/cache, без которого
