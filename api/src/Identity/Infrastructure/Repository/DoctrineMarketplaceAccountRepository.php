@@ -6,6 +6,8 @@ namespace App\Identity\Infrastructure\Repository;
 
 use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
+use App\Identity\Domain\ValueObject\Marketplace;
+use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -39,5 +41,21 @@ final readonly class DoctrineMarketplaceAccountRepository implements Marketplace
         \assert(null === $account || $account instanceof MarketplaceAccount);
 
         return $account;
+    }
+
+    public function findAllActive(Marketplace $marketplace): array
+    {
+        /** @var list<MarketplaceAccount> $accounts */
+        $accounts = $this->entityManager->createQueryBuilder()
+            ->select('account')
+            ->from(MarketplaceAccount::class, 'account')
+            ->where('account.marketplace = :marketplace')
+            ->andWhere('account.state = :state')
+            ->setParameter('marketplace', $marketplace)
+            ->setParameter('state', MarketplaceAccountState::Active)
+            ->getQuery()
+            ->getResult();
+
+        return $accounts;
     }
 }
