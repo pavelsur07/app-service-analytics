@@ -148,7 +148,10 @@ jobs:
           restore-keys: |
             phpstan-${{ hashFiles('api/composer.lock', 'api/phpstan.neon') }}-
 
-      - run: docker compose up -d postgres php-cli
+      # redis — сессии/rate limit login_throttling (ADR-007). Без него
+      # AuthControllerTest::testExceedingLoginAttemptsIsThrottled падает
+      # DNS-ошибкой на хосте redis, а не ошибкой самого теста.
+      - run: docker compose up -d postgres redis php-cli
 
       # Без if по cache-hit: composer install не только раскладывает
       # vendor, но и выполняет post-install-cmd (cache:clear,
