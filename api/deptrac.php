@@ -137,7 +137,12 @@ return static function (DeptracConfig $config): void {
             // внутри Domain: тот же статус UID, что и у identityFacade ниже.
             Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $identityInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($identityApplication)->accesses($identityDomain, $sharedApplication, $sharedDomain, $symfonyUid),
-            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $sharedApplication, $sharedDomain, $symfonyUid),
+            // identityInfrastructure — тот же принцип синхронного чтения,
+            // что и у identityUi выше (ActiveOzonAccountsQuery, DBAL):
+            // Facade — единственная точка входа Ingestion в Identity,
+            // поэтому именно ей приходится выполнять этот DBAL-запрос,
+            // не через ORM-репозиторий (CLAUDE.md §1/§5).
+            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $identityInfrastructure, $sharedApplication, $sharedDomain, $symfonyUid),
             Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
 

@@ -4,23 +4,24 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Identity;
 
+use App\Identity\Application\Facade\IdentityFacade;
 use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\MarketplaceAccountRepository;
-use App\Identity\Domain\ValueObject\Marketplace;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
+use App\Identity\Infrastructure\Query\ActiveOzonAccountsQuery;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * findAllActive — единственное межарендаторное чтение в этом репозитории
- * (CLAUDE.md §1, обоснование — докблок метода): предмет теста именно
- * то, что оно видит все компании разом, это не баг изоляции.
+ * findActiveOzonSyncTargets — межарендаторное чтение для планировщика
+ * (CLAUDE.md §1, «Исключение...»): предмет первого теста именно то,
+ * что оно видит все компании разом, это не баг изоляции.
  */
-final class DoctrineMarketplaceAccountRepositoryTest extends KernelTestCase
+final class IdentityFacadeTest extends KernelTestCase
 {
-    public function testFindAllActiveReturnsOnlyActiveAccountsAcrossCompanies(): void
+    public function testFindActiveOzonSyncTargetsReturnsOnlyActiveAccountsAcrossCompanies(): void
     {
         $container = $this->bootedContainer();
         $companies = $this->companies($container);
@@ -45,12 +46,34 @@ final class DoctrineMarketplaceAccountRepositoryTest extends KernelTestCase
             ->withState(MarketplaceAccountState::Revoked)
             ->persistWith($companies, $marketplaceAccounts);
 
-        $result = $marketplaceAccounts->findAllActive(Marketplace::Ozon);
+        $targets = $this->identityFacade($container)->findActiveOzonSyncTargets();
 
-        $resultIds = array_map(static fn ($account) => $account->id()->toRfc4122(), $result);
-        self::assertContains($activeInCompanyA->id()->toRfc4122(), $resultIds);
-        self::assertContains($activeInCompanyB->id()->toRfc4122(), $resultIds);
-        self::assertCount(2, $result);
+        $marketplaceAccountIds = array_map(static fn ($target) => $target->marketplaceAccountId, $targets);
+        self::assertContains($activeInCompanyA->id()->toRfc4122(), $marketplaceAccountIds);
+        self::assertContains($activeInCompanyB->id()->toRfc4122(), $marketplaceAccountIds);
+        self::assertCount(2, $targets);
+    }
+
+    /**
+     * Громкий отказ, не тихая отдача первых 200 — часть компаний тогда
+     * молча перестала бы синхронизироваться.
+     */
+    public function testFindActiveOzonSyncTargetsFailsLoudlyPastTheSafetyCap(): void
+    {
+        $container = $this->bootedContainer();
+        $companies = $this->companies($container);
+        $marketplaceAccounts = $this->marketplaceAccounts($container);
+
+        for ($i = 0; $i <= ActiveOzonAccountsQuery::MAX_RESULTS; ++$i) {
+            MarketplaceAccountBuilder::aMarketplaceAccount()
+                ->withCompany(CompanyBuilder::aCompany()->persistWith($companies))
+                ->withExternalShopId("shop-{$i}")
+                ->persistWith($companies, $marketplaceAccounts);
+        }
+
+        $this->expectException(\RuntimeException::class);
+
+        $this->identityFacade($container)->findActiveOzonSyncTargets();
     }
 
     private function bootedContainer(): ContainerInterface
@@ -58,6 +81,14 @@ final class DoctrineMarketplaceAccountRepositoryTest extends KernelTestCase
         self::bootKernel();
 
         return self::getContainer();
+    }
+
+    private function identityFacade(ContainerInterface $container): IdentityFacade
+    {
+        /** @var IdentityFacade $facade */
+        $facade = $container->get(IdentityFacade::class);
+
+        return $facade;
     }
 
     private function companies(ContainerInterface $container): CompanyRepository
