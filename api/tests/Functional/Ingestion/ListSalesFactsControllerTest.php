@@ -4,14 +4,23 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional\Ingestion;
 
+use App\Identity\Domain\CompanyMember;
+use App\Identity\Domain\ValueObject\CompanyMemberRole;
+use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
+use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Tests\Support\Builder\SalesFactBuilder;
+use App\Tests\Support\Builder\UserBuilder;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * ADR-005 (functional): изоляция арендаторов, формат ошибки.
+ * ADR-005 (functional): изоляция арендаторов, формат ошибки. С PR4
+ * (CompanyAccessSubscriber) маршрут требует и входа, и членства в запрошенной
+ * компании — каждый тест логинится как участник той компании, чей URL
+ * запрашивает.
  */
 final class ListSalesFactsControllerTest extends WebTestCase
 {
@@ -22,6 +31,7 @@ final class ListSalesFactsControllerTest extends WebTestCase
 
         $companyA = Uuid::v7();
         $companyB = Uuid::v7();
+        $this->loginAsMemberOf($client, $companyA);
 
         $salesFacts->upsertAll([
             SalesFactBuilder::aSalesFact()->withCompanyId($companyA)->withSourceRowId('A-1|SKU-1')->build(),
@@ -40,8 +50,10 @@ final class ListSalesFactsControllerTest extends WebTestCase
     public function testLimitAboveMaximumIsRejectedWith422(): void
     {
         $client = static::createClient();
+        $companyId = Uuid::v7();
+        $this->loginAsMemberOf($client, $companyId);
 
-        $client->request('GET', \sprintf('/api/companies/%s/ingestion/ozon/sales-facts?limit=201', Uuid::v7()->toRfc4122()));
+        $client->request('GET', \sprintf('/api/companies/%s/ingestion/ozon/sales-facts?limit=201', $companyId->toRfc4122()));
 
         self::assertResponseStatusCodeSame(422);
         $payload = $this->decodeResponse($client);
@@ -52,8 +64,10 @@ final class ListSalesFactsControllerTest extends WebTestCase
     public function testMalformedCursorIsRejectedWith422(): void
     {
         $client = static::createClient();
+        $companyId = Uuid::v7();
+        $this->loginAsMemberOf($client, $companyId);
 
-        $client->request('GET', \sprintf('/api/companies/%s/ingestion/ozon/sales-facts?cursor=not-valid-base64!!!', Uuid::v7()->toRfc4122()));
+        $client->request('GET', \sprintf('/api/companies/%s/ingestion/ozon/sales-facts?cursor=not-valid-base64!!!', $companyId->toRfc4122()));
 
         self::assertResponseStatusCodeSame(422);
         $payload = $this->decodeResponse($client);
@@ -66,6 +80,8 @@ final class ListSalesFactsControllerTest extends WebTestCase
         $salesFacts = $this->salesFacts();
 
         $companyId = Uuid::v7();
+        $this->loginAsMemberOf($client, $companyId);
+
         $facts = [];
         for ($i = 0; $i < 5; ++$i) {
             $facts[] = SalesFactBuilder::aSalesFact()
@@ -99,6 +115,25 @@ final class ListSalesFactsControllerTest extends WebTestCase
         } while (null !== $cursor);
 
         self::assertCount(5, $seenSourceRowIds, 'все строки должны быть возвращены ровно один раз без пропусков');
+    }
+
+    /**
+     * Ad hoc User + CompanyMember, без реальной строки Company — у
+     * company_member нет FK на company (тот же выбор, что для
+     * marketplace_account.company_id), проверке доступа реальная Company
+     * не нужна, только сама строка членства.
+     */
+    private function loginAsMemberOf(KernelBrowser $client, Uuid $companyId): void
+    {
+        /** @var EntityManagerInterface $entityManager */
+        $entityManager = static::getContainer()->get(EntityManagerInterface::class);
+        $users = new DoctrineUserRepository($entityManager);
+        $companyMembers = new DoctrineCompanyMemberRepository($entityManager);
+
+        $user = UserBuilder::aUser()->withEmail(\sprintf('member+%s@example.com', $companyId->toRfc4122()))->persistWith($users);
+        $companyMembers->add(CompanyMember::create($companyId, $user->id(), CompanyMemberRole::Owner));
+
+        $client->loginUser($user, 'api');
     }
 
     private function salesFacts(): SalesFactRepository

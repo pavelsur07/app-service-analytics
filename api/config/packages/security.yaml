@@ -19,6 +19,9 @@ security:
             pattern: ^/api/
             lazy: true
             provider: identity_user_provider
+            # Без него неаутентифицированный запрос к защищённому пути
+            # получает HTML debug-страницу Symfony, не JSON.
+            entry_point: App\Identity\Ui\Security\ApiAuthenticationEntryPoint
             json_login:
                 check_path: /api/auth/login
                 username_path: email
@@ -39,16 +42,17 @@ security:
                 max_attempts: 5
 
     # Первое совпадение побеждает — порядок важен. login/logout публичны
-    # (иначе войти невозможно). /api/companies/ намеренно НЕ в списке —
-    # это пакет только про вход, существующий sales-facts не защищаем
-    # здесь: подключение проверки членства для company-scoped маршрутов —
-    # отдельный пакет (CompanyAccessSubscriber), там же появится и это
-    # правило. Пинг-эндпоинты — публичны как раньше: отсутствие правила
+    # (иначе войти невозможно). /api/companies/ требует входа — 401 без
+    # сессии; проверку членства (403 для чужой компании) делает
+    # CompanyAccessSubscriber дальше, на kernel.controller — access_control
+    # не знает про companyId из URL, только про то, что маршрут защищён.
+    # Пинг-эндпоинты — публичны как раньше: отсутствие правила
     # не ограничивает.
     access_control:
         - { path: ^/api/auth/login, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/logout, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/me, roles: ROLE_USER }
+        - { path: ^/api/companies/, roles: ROLE_USER }
 
 when@test:
     security:
