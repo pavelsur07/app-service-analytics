@@ -15,6 +15,7 @@
 #
 #   IMAGE=ghcr.io/…/api:<тег> APP_SECRET=… ACME_EMAIL=… \
 #   POSTGRES_USER=… POSTGRES_PASSWORD=… POSTGRES_DB=… DATABASE_URL=… \
+#   APP_ENCRYPTION_MASTER_KEY=… \
 #   docker compose -f docker-compose.prod.yml up -d
 #
 # Потолки памяти (mem_limit) выставлены под машину с 1.9 ГиБ. Это
@@ -48,6 +49,11 @@ x-api-env: &api-env
   # а не данных, — управляемый сервис ради этого не нужен.
   REDIS_URL: redis://redis:6379
   MESSENGER_TRANSPORT_DSN: doctrine://default?auto_setup=0
+  # Мастер-ключ шифрования credentials площадок (ADR-007). Значение —
+  # только в /opt/conwix/.env на сервере, не в git. Его потеря делает
+  # все зашифрованные учётные данные площадок невосстановимыми —
+  # резервная копия хранится отдельно от сервера.
+  APP_ENCRYPTION_MASTER_KEY: ${APP_ENCRYPTION_MASTER_KEY:?}
 
 services:
   traefik:
