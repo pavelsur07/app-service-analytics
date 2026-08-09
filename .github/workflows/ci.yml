@@ -407,6 +407,12 @@ jobs:
             apps/admin/dist/
           retention-days: 30
 
+      # test-e2e сеет данные в dev-БД (bin/e2e-seed.sh), а не в тестовую —
+      # экран открывается против того же php-fpm, что видит браузер.
+      # Без миграции здесь она пуста: раньше это было незаметно, пока
+      # e2e не требовал таблиц (стартовый пинг-экран).
+      - run: make db-wait api-migrate
+
       - run: make test-e2e
 
       - name: отчёт Playwright при падении
