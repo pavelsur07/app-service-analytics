@@ -7,6 +7,7 @@ namespace App\Identity\Infrastructure\Repository;
 use App\Identity\Domain\Company;
 use App\Identity\Domain\CompanyRepository;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class DoctrineCompanyRepository implements CompanyRepository
 {
@@ -19,5 +20,16 @@ final readonly class DoctrineCompanyRepository implements CompanyRepository
     {
         $this->entityManager->persist($company);
         $this->entityManager->flush();
+    }
+
+    public function get(string $id): ?Company
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+
+        return $this->entityManager->find(Company::class, $uuid);
     }
 }

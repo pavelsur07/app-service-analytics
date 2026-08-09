@@ -125,8 +125,12 @@ return static function (DeptracConfig $config): void {
             // у ListSalesFactsController — см. комментарий в IngestionUi
             // ниже), SharedUi — переиспользование ValidationErrorResponse,
             // NelmioApiDoc/OpenApiAttributes — атрибуты на контроллере.
-            Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $identityInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
-            Ruleset::forLayer($identityApplication)->accesses($identityDomain, $sharedApplication, $sharedDomain),
+            // symfonyUid — идентификаторы существующих сущностей, принятые
+            // как аргумент (companyId из ввода оператора, CreateUserCommand/
+            // CreateUserWithMembershipAction), а не только сгенерированные
+            // внутри Domain: тот же статус UID, что и у identityFacade ниже.
+            Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $identityInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($identityApplication)->accesses($identityDomain, $sharedApplication, $sharedDomain, $symfonyUid),
             Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $sharedApplication, $sharedDomain, $symfonyUid),
             Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
