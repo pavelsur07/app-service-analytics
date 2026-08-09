@@ -121,7 +121,7 @@ services:
     image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
     restart: unless-stopped
     environment: *api-env
-    networks: [internal]
+    networks: [internal, egress]
     mem_limit: 384m
     depends_on:
       postgres:
@@ -157,7 +157,7 @@ services:
     image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
     restart: unless-stopped
     environment: *api-env
-    networks: [internal]
+    networks: [internal, egress]
     depends_on:
       postgres:
         condition: service_healthy
@@ -266,13 +266,21 @@ services:
       timeout: 3s
       retries: 3
 
-# Две сети, а не одна общая: Traefik смотрит в интернет и не должен иметь
-# сетевого пути к Redis и к воркерам. nginx — единственный сервис в обеих,
-# он и есть граница.
+# Три сети, а не одна общая: Traefik смотрит в интернет и не должен иметь
+# сетевого пути к Redis и к воркерам. nginx — единственный сервис
+# в edge и internal одновременно, он и есть граница.
+#
+# egress — отдельно от internal: internal: true убирает маршрут наружу
+# целиком, не только входящий, а api и worker-ingestion должны дозваниваться
+# до Ozon (и позже — S3/SMTP/GlitchTip). Не снимаю internal: true с общей
+# сети целиком — тогда исходящий интернет получили бы заодно postgres
+# и redis, которым он не нужен никогда. egress не публикует ports: ни
+# у одного сервиса — входящей поверхности снаружи не добавляет.
 networks:
   edge:
   internal:
     internal: true
+  egress:
 
 volumes:
   acme:
