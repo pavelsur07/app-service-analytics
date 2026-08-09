@@ -52,10 +52,18 @@ final class ListSalesFactsController
         $cursor = $request->query->get('cursor');
 
         try {
-            $result = $this->query->list($companyId, $cursor, $limit);
+            $qb = $this->query->build($companyId, $cursor, $limit);
+            /** @var list<array<string, mixed>> $rawRows */
+            $rawRows = $qb->executeQuery()->fetchAllAssociative();
         } catch (\InvalidArgumentException|\JsonException) {
             return $this->validationError('invalid_cursor', 'cursor is malformed.');
         }
+
+        $hasMore = \count($rawRows) > $limit;
+        $rawRows = \array_slice($rawRows, 0, $limit);
+        $rows = array_map(SalesFactListQuery::mapRow(...), $rawRows);
+
+        $nextCursor = ($hasMore && [] !== $rows) ? SalesFactListQuery::encodeCursor($rows[\count($rows) - 1]) : null;
 
         $items = array_map(
             static fn (SalesFactListRow $row): SalesFactListItemResponse => new SalesFactListItemResponse(
@@ -69,10 +77,10 @@ final class ListSalesFactsController
                 commissionAmountMinor: $row->commissionAmountMinor,
                 currency: $row->currency,
             ),
-            $result['items'],
+            $rows,
         );
 
-        return new JsonResponse(new SalesFactListResponse(items: $items, nextCursor: $result['nextCursor']));
+        return new JsonResponse(new SalesFactListResponse(items: $items, nextCursor: $nextCursor));
     }
 
     private function validationError(string $code, string $message): JsonResponse

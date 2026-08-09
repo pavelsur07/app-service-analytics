@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Query;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Query\QueryBuilder;
 
 /**
- * Список продаж — DBAL, не гидрация SalesFact (CLAUDE.md §5). Курсор,
- * не offset: sales_fact растёт с объёмом данных клиента (docs/patterns.md,
- * «Пагинация»). Сортировка по business_date DESC (свежее сверху) —
- * однозначна за счёт (marketplace_account_id, source_row_id) тем же
- * направлением, иначе кортеж-сравнение курсора не соответствовало бы
+ * Список продаж — DBAL, не гидрация SalesFact (CLAUDE.md §5). build()
+ * отдаёт QueryBuilder, не массив (CLAUDE.md §5) — выполнение и сборка
+ * результата в DTO — дело вызывающего кода (контроллера).
+ *
+ * Курсор, не offset: sales_fact растёт с объёмом данных клиента
+ * (docs/patterns.md, «Пагинация»). Сортировка business_date DESC (свежее
+ * сверху) однозначна за счёт (marketplace_account_id, source_row_id) тем
+ * же направлением — иначе кортеж-сравнение курсора не соответствовало бы
  * фактическому порядку строк.
  */
 final readonly class SalesFactListQuery
@@ -21,10 +25,7 @@ final readonly class SalesFactListQuery
     ) {
     }
 
-    /**
-     * @return array{items: list<SalesFactListRow>, nextCursor: ?string}
-     */
-    public function list(string $companyId, ?string $cursor, int $limit): array
+    public function build(string $companyId, ?string $cursor, int $limit): QueryBuilder
     {
         $qb = $this->connection->createQueryBuilder()
             ->select(
@@ -56,26 +57,13 @@ final readonly class SalesFactListQuery
                 ->setParameter('cursorSourceRowId', $cursorSourceRowId);
         }
 
-        /** @var list<array<string, mixed>> $rawRows */
-        $rawRows = $qb->executeQuery()->fetchAllAssociative();
-
-        $hasMore = \count($rawRows) > $limit;
-        $rawRows = \array_slice($rawRows, 0, $limit);
-        $rows = array_map(self::mapRow(...), $rawRows);
-
-        $nextCursor = null;
-        if ($hasMore && [] !== $rows) {
-            $last = $rows[\count($rows) - 1];
-            $nextCursor = self::encodeCursor($last->businessDate, $last->marketplaceAccountId, $last->sourceRowId);
-        }
-
-        return ['items' => $rows, 'nextCursor' => $nextCursor];
+        return $qb;
     }
 
     /**
      * @param array<string, mixed> $row
      */
-    private static function mapRow(array $row): SalesFactListRow
+    public static function mapRow(array $row): SalesFactListRow
     {
         return new SalesFactListRow(
             marketplaceAccountId: self::stringValue($row['marketplace_account_id']),
@@ -88,6 +76,14 @@ final readonly class SalesFactListQuery
             commissionAmountMinor: self::intValue($row['commission_amount_minor']),
             currency: self::stringValue($row['currency']),
         );
+    }
+
+    public static function encodeCursor(SalesFactListRow $row): string
+    {
+        return base64_encode(json_encode(
+            [$row->businessDate, $row->marketplaceAccountId, $row->sourceRowId],
+            \JSON_THROW_ON_ERROR,
+        ));
     }
 
     private static function stringValue(mixed $value): string
@@ -106,11 +102,6 @@ final readonly class SalesFactListQuery
         }
 
         return (int) $value;
-    }
-
-    private static function encodeCursor(string $businessDate, string $marketplaceAccountId, string $sourceRowId): string
-    {
-        return base64_encode(json_encode([$businessDate, $marketplaceAccountId, $sourceRowId], \JSON_THROW_ON_ERROR));
     }
 
     /**
