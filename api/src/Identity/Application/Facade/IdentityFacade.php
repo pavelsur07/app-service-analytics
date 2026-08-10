@@ -10,9 +10,12 @@ use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Единственная точка входа Ingestion в Identity (deptrac: IngestionApplication
- * и IngestionInfrastructure видят только этот слой, не Identity\Domain
- * напрямую).
+ * Точка входа Ingestion в Identity для company-scoped сценариев —
+ * каждый метод требует companyId (CLAUDE.md §1). Межарендаторное
+ * чтение для планировщика — намеренно НЕ здесь, а в IdentityScheduleFacade:
+ * иначе широкий доступ к этому классу (IngestionApplication целиком)
+ * транзитивно открыл бы и его — Deptrac не различает методы одного
+ * класса, только классы целиком.
  */
 final class IdentityFacade
 {

@@ -59,6 +59,13 @@ x-api-env: &api-env
   # (config/packages/sentry.yaml). Добавляется в /opt/conwix/.env отдельным
   # действием, не входит в этот compose-файл.
   SENTRY_DSN: ${SENTRY_DSN:-}
+  # Redis, не flock (dev-умолчание из .env, испечённого в образ): лок
+  # планировщика (worker-scheduler) должен быть виден из контейнера,
+  # который его держит, распределённо — flock живёт в границах одного
+  # контейнера и для этого не подходит даже с одним экземпляром сервиса.
+  # ADR-001 называет Redis предназначенным именно для распределённых
+  # блокировок.
+  LOCK_DSN: redis://redis:6379
 
 services:
   traefik:
@@ -224,6 +231,35 @@ services:
       - async_calc
       - --time-limit=3600
       - --memory-limit=112M
+    healthcheck:
+      test: ["CMD", "php", "bin/console", "dbal:run-sql", "SELECT 1", "--quiet"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Триггер расписания — не третий "воркер": не потребляет транспорт,
+  # а сам раз в интервал ставит в очередь async_ingestion сообщения
+  # для всех активных Ozon-подключений (docs/patterns.md — свой цикл,
+  # не symfony/scheduler и не cron на хосте). networks: [internal] без
+  # egress — сам в Ozon не ходит, только диспатчит; в Ozon идёт
+  # worker-ingestion, когда разберёт сообщение.
+  worker-scheduler:
+    image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
+    restart: unless-stopped
+    environment: *api-env
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 128m
+    command:
+      - php
+      - bin/console
+      - app:ingestion:schedule-ozon-sync
+      - --interval=900
     healthcheck:
       test: ["CMD", "php", "bin/console", "dbal:run-sql", "SELECT 1", "--quiet"]
       interval: 30s

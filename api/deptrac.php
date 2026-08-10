@@ -38,11 +38,35 @@ return static function (DeptracConfig $config): void {
                     mustNot: [DirectoryConfig::create('src/Identity/Application/Facade/.*')],
                 ),
             ),
+            // IdentityScheduleFacade вынесен из IdentityFacade в отдельный
+            // класс и отдельный слой: Deptrac различает только классы,
+            // не методы одного класса, поэтому единственный способ дать
+            // widely-доступному IdentityFacade безопасный метод
+            // (findOzonSyncTarget, company-scoped) и при этом закрыть
+            // межарендаторное чтение (findActiveOzonSyncTargets) от всех,
+            // кроме одного вызывающего, — держать их на разных классах.
             $identityFacade = Layer::withName('IdentityFacade')->collectors(
-                DirectoryConfig::create('src/Identity/Application/Facade/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Identity/Application/Facade/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityScheduleFacade$')],
+                ),
             ),
+            $identityScheduleFacade = Layer::withName('IdentityScheduleFacade')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityScheduleFacade$'),
+            ),
+            // ActiveOzonAccountsQuery вынесен из IdentityInfrastructure тем же
+            // приёмом: IdentityUi уже имеет широкий доступ к IdentityInfrastructure
+            // (MeController → UserCompaniesQuery) — без mustNot этот класс
+            // попал бы туда же, и HTTP-контроллер получил бы физическую
+            // возможность выполнить межарендаторный запрос в обход CLAUDE.md §1.
             $identityInfrastructure = Layer::withName('IdentityInfrastructure')->collectors(
-                DirectoryConfig::create('src/Identity/Infrastructure/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Identity/Infrastructure/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonAccountsQuery$')],
+                ),
+            ),
+            $identityOperationalQuery = Layer::withName('IdentityOperationalQuery')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonAccountsQuery$'),
             ),
             $identityUi = Layer::withName('IdentityUi')->collectors(
                 DirectoryConfig::create('src/Identity/Ui/.*'),
@@ -51,11 +75,25 @@ return static function (DeptracConfig $config): void {
             $ingestionDomain = Layer::withName('IngestionDomain')->collectors(
                 DirectoryConfig::create('src/Ingestion/Domain/.*'),
             ),
+            // DispatchActiveOzonSyncsAction вынесен из IngestionApplication
+            // тем же приёмом, что ActiveOzonAccountsQuery из IdentityInfrastructure
+            // выше: IngestionUi уже имеет широкий доступ к IngestionApplication
+            // (см. ниже), и этот Action вызывает межарендаторный
+            // IdentityFacade::findActiveOzonSyncTargets() — без mustNot
+            // любой будущий HTTP-контроллер Ingestion (ListSalesFactsController
+            // и подобные) мог бы внедрить его в обход CLAUDE.md §1, несмотря
+            // на то что реальный вызывающий — только ScheduleOzonSyncCommand.
             $ingestionApplication = Layer::withName('IngestionApplication')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Ingestion/Application/.*')],
-                    mustNot: [DirectoryConfig::create('src/Ingestion/Application/Facade/.*')],
+                    mustNot: [
+                        DirectoryConfig::create('src/Ingestion/Application/Facade/.*'),
+                        ClassLikeConfig::create('^App\\Ingestion\\Application\\DispatchActiveOzonSyncsAction$'),
+                    ],
                 ),
+            ),
+            $ingestionOperationalAction = Layer::withName('IngestionOperationalAction')->collectors(
+                ClassLikeConfig::create('^App\\Ingestion\\Application\\DispatchActiveOzonSyncsAction$'),
             ),
             $ingestionFacade = Layer::withName('IngestionFacade')->collectors(
                 DirectoryConfig::create('src/Ingestion/Application/Facade/.*'),
@@ -63,8 +101,18 @@ return static function (DeptracConfig $config): void {
             $ingestionInfrastructure = Layer::withName('IngestionInfrastructure')->collectors(
                 DirectoryConfig::create('src/Ingestion/Infrastructure/.*'),
             ),
+            // ScheduleOzonSyncCommand — зеркально: единственный класс IngestionUi,
+            // которому нужен (и разрешён) доступ к IngestionOperationalAction;
+            // остальной IngestionUi (ListSalesFactsController и будущие
+            // контроллеры) его не видит.
+            $ingestionScheduleCommand = Layer::withName('IngestionScheduleCommand')->collectors(
+                ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\ScheduleOzonSyncCommand$'),
+            ),
             $ingestionUi = Layer::withName('IngestionUi')->collectors(
-                DirectoryConfig::create('src/Ingestion/Ui/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Ingestion/Ui/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\ScheduleOzonSyncCommand$')],
+                ),
             ),
 
             // Внешние библиотеки — не наши модули, но зависимость на них
@@ -138,6 +186,13 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $identityInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($identityApplication)->accesses($identityDomain, $sharedApplication, $sharedDomain, $symfonyUid),
             Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $sharedApplication, $sharedDomain, $symfonyUid),
+            // identityOperationalQuery/identityInfrastructure (ради
+            // ActiveOzonAccountRow) — только у IdentityScheduleFacade,
+            // не у IdentityFacade выше: это и есть граница CLAUDE.md §1.
+            // identityFacade тут же — ради OzonAccountRef (плоский DTO
+            // в той же папке, не метод с побочным эффектом).
+            Ruleset::forLayer($identityScheduleFacade)->accesses($identityFacade, $identityOperationalQuery, $identityInfrastructure, $sharedApplication, $sharedDomain),
+            Ruleset::forLayer($identityOperationalQuery)->accesses($identityInfrastructure, $sharedInfrastructure, $symfonyComponent),
             Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
 
@@ -148,7 +203,14 @@ return static function (DeptracConfig $config): void {
             // сценарии вызываются напрямую из Ui»), в отличие от записи,
             // которая всегда идёт через Application/Facade.
             Ruleset::forLayer($ingestionUi)->accesses($ingestionApplication, $ingestionDomain, $ingestionInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
+            // ScheduleOzonSyncCommand — не весь IngestionUi: только этому
+            // классу разрешён IngestionOperationalAction (см. слой выше).
+            Ruleset::forLayer($ingestionScheduleCommand)->accesses($ingestionOperationalAction, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent),
             Ruleset::forLayer($ingestionApplication)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
+            // identityScheduleFacade, не identityFacade: единственный
+            // потребитель межарендаторного чтения, узкий слой на узкий
+            // слой (см. комментарий у identityScheduleFacade выше).
+            Ruleset::forLayer($ingestionOperationalAction)->accesses($ingestionDomain, $ingestionApplication, $identityScheduleFacade, $sharedApplication, $sharedDomain, $symfonyComponent),
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),
