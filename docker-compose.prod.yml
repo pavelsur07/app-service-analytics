@@ -259,7 +259,7 @@ services:
       - php
       - bin/console
       - app:ingestion:schedule-ozon-sync
-      - --interval=900
+      - --interval=1800
     healthcheck:
       test: ["CMD", "php", "bin/console", "dbal:run-sql", "SELECT 1", "--quiet"]
       interval: 30s
