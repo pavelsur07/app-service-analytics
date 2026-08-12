@@ -92,52 +92,6 @@
   color-scheme: light;
 }
 
-/* @theme внутри media Tailwind поднимает в глобальный :root, и тёмные
-   значения безусловно перезаписывают светлые. Поэтому переключение темы —
-   обычные CSS custom properties: утилиты Tailwind продолжают читать их. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-
-    --color-accent: #3b82f6;
-    --color-accent-hover: #60a5fa;
-    --color-accent-active: #2563eb;
-    --color-accent-subtle: #172554;
-    --color-accent-subtle-hover: #1e3a8a;
-
-    --color-text-primary: #e6edf7;
-    --color-text-secondary: #a9b6cc;
-    --color-text-muted: #93a2ba;
-    --color-text-faint: #7a8aa3;
-    --color-text-disabled: #64748b;
-    --color-text-inverse: #0b1220;
-
-    --color-bg-base: #0b1220;
-    --color-surface-raised: #111a2b;
-    --color-surface-sunken: #0f172a;
-    --color-surface-hover: #17223a;
-    --color-surface-selected: #1d2e4e;
-
-    --color-border-default: #1f2c44;
-    --color-border-subtle: #17223a;
-    --color-border-strong: #2c3c58;
-    --color-border-focus: #3b82f6;
-
-    --color-positive-text: #34d399;
-    --color-positive-bg: #06251b;
-    --color-positive-border: #065f46;
-    --color-positive-solid: #10b981;
-    --color-negative-text: #f87171;
-    --color-negative-bg: #2a1114;
-    --color-negative-border: #7f1d1d;
-    --color-negative-solid: #ef4444;
-    --color-warning-text: #fbbf24;
-    --color-warning-bg: #2a1e06;
-    --color-warning-border: #78350f;
-    --color-warning-solid: #f59e0b;
-  }
-}
-
 @keyframes shimmer {
   0%,
   100% {
