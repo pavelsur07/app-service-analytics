@@ -32,6 +32,22 @@ final class ListSalesFactsController
     ) {
     }
 
+    // Тот же пробел, что нашло ревью пакета 3 на соседних эндпоинтах:
+    // без явных параметров сгенерированный TypeScript получает
+    // `query?: never`, и фронтенд не может передать limit типизированно.
+    #[OA\Parameter(
+        name: 'limit',
+        in: 'query',
+        required: false,
+        schema: new OA\Schema(type: 'integer', default: self::DEFAULT_LIMIT, maximum: self::MAX_LIMIT, minimum: 1),
+    )]
+    #[OA\Parameter(
+        name: 'cursor',
+        in: 'query',
+        description: 'Курсор из nextCursor предыдущей страницы',
+        required: false,
+        schema: new OA\Schema(type: 'string'),
+    )]
     #[OA\Response(
         response: 200,
         description: 'Список продаж компании, keyset-пагинация',
