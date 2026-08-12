@@ -4,6 +4,38 @@
  */
 
 export interface paths {
+    "/api/extension/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_identity_extension_me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/extension-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_extension_token_issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -31,6 +63,22 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/extension-tokens/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_identity_extension_token_revoke"];
         options?: never;
         head?: never;
         patch?: never;
@@ -88,6 +136,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        MeCompanyResponse: {
+            id: string;
+            name: string;
+        };
+        ExtensionMeResponse: {
+            email: string;
+            company: components["schemas"]["MeCompanyResponse"];
+        };
+        IssueExtensionTokenResponse: {
+            id: string;
+            token: string;
+            tokenPrefix: string;
+            expiresAt: string;
+        };
         LoginResponse: {
             email: string;
         };
@@ -95,10 +157,6 @@ export interface components {
             status: number;
             code: string;
             message: string;
-        };
-        MeCompanyResponse: {
-            id: string;
-            name: string;
         };
         MeResponse: {
             email: string;
@@ -133,6 +191,48 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_identity_extension_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Пользователь и компания, к которым привязан предъявленный токен */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionMeResponse"];
+                };
+            };
+        };
+    };
+    post_identity_extension_token_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Токен выпущен. Поле token отдаётся единственный раз и больше не восстанавливается. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueExtensionTokenResponse"];
+                };
+            };
+        };
+    };
     post_identity_auth_login: {
         parameters: {
             query?: never;
@@ -185,6 +285,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+        };
+    };
+    delete_identity_extension_token_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Токен отозван. Повторный отзыв идемпотентен. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Токена с таким id в этой компании нет */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
         };

@@ -3,6 +3,16 @@ nelmio_api_doc:
         info:
             title: Conwix API
             version: '%app.version%'
+        components:
+            securitySchemes:
+                # Токен расширения браузера (ADR-010). Схема описана здесь,
+                # а не выводится из security.yaml: Nelmio не читает firewall.
+                # Помечены ею только маршруты расширения — атрибутом
+                # #[OA\Security] на контроллере. Сессионные эндпоинты
+                # приложения схемы не имеют: кука не часть контракта.
+                ExtensionToken:
+                    type: http
+                    scheme: bearer
     areas:
         default:
             path_patterns:
