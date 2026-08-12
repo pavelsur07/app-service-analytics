@@ -44,7 +44,7 @@ test.describe('sales facts', () => {
     // 2160.00 -> 2 160,00 ₽ — сверено до копейки вручную с фикстурой.
     const knownRow = page.locator('tbody tr').filter({ hasText: '4404411581' })
     await expect(knownRow).toBeVisible()
-    await expect(knownRow).toContainText('✕ отменено')
+    await expect(knownRow).toContainText('Отменено')
     await expect(knownRow).toContainText('2 160,00 ₽')
 
     // 86 строк в фикстуре, лимит по умолчанию 50 — «Дальше» обязана быть
