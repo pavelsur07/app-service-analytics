@@ -1,6 +1,8 @@
 import { fetchMe } from '../api/client'
+import { isStale, readCatalog, refreshCatalog } from '../shared/catalog'
 import {
   browserStorage,
+  readConnection,
   writeConnection,
   type Connection,
 } from '../shared/connection'
@@ -48,6 +50,25 @@ chrome.runtime.onMessageExternal.addListener(
   },
 )
 
+const CATALOG_ALARM = 'conwix:catalog'
+const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+// Будильник, не setInterval: service worker засыпает через полминуты
+// простоя, и таймер в памяти умирает вместе с ним. Период чуть меньше
+// суток — чтобы каталог успевал обновиться до того, как признан устаревшим.
+chrome.alarms.create(CATALOG_ALARM, {
+  periodInMinutes: 12 * 60,
+  delayInMinutes: 1,
+})
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (CATALOG_ALARM !== alarm.name) {
+    return
+  }
+
+  void refreshCatalogIfStale()
+})
+
 async function connect(token: string): Promise<ConnectResult> {
   try {
     // Токен проверяется до записи: подключённым расширение считается
@@ -59,10 +80,36 @@ async function connect(token: string): Promise<ConnectResult> {
       companyName: me.company.name,
     }
     await writeConnection(browserStorage(), connection)
+    // Каталог сразу, не по будильнику: иначе первые сутки после
+    // подключения оверлей молчал бы на всех карточках, и выглядело бы
+    // это как «расширение не работает».
+    await refreshCatalogIfStale()
 
     return { ok: true, companyName: connection.companyName }
   } catch {
     return { ok: false, error: 'connect_failed' }
+  }
+}
+
+async function refreshCatalogIfStale(): Promise<void> {
+  const storage = browserStorage()
+  const connection = await readConnection(storage)
+  if (null === connection) {
+    return
+  }
+
+  const now = new Date()
+  const catalog = await readCatalog(storage, connection.companyId)
+  if (null !== catalog && !isStale(catalog, now, CATALOG_MAX_AGE_MS)) {
+    return
+  }
+
+  try {
+    await refreshCatalog(storage, connection.token, connection.companyId, now)
+  } catch {
+    // Сеть недоступна или токен умер — прежний каталог остаётся жить.
+    // Он устареет, но устаревший список артикулов лучше пустого:
+    // товары редко исчезают, чаще добавляются.
   }
 }
 

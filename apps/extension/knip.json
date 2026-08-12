@@ -3,7 +3,8 @@
   "entry": [
     "src/popup/main.tsx",
     "src/background/index.ts",
-    "src/content/announce.ts"
+    "src/content/announce.ts",
+    "src/content/overlay.ts"
   ],
   "project": ["src/**/*.{ts,tsx}"],
   "ignoreDependencies": ["tailwindcss"]

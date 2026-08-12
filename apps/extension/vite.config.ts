@@ -53,6 +53,9 @@ export default defineConfig(({ mode }) => ({
         'content/announce': fileURLToPath(
           new URL('./src/content/announce.ts', import.meta.url),
         ),
+        'content/overlay': fileURLToPath(
+          new URL('./src/content/overlay.ts', import.meta.url),
+        ),
       },
       output: {
         entryFileNames: '[name].js',

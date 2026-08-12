@@ -38,4 +38,19 @@ declare namespace chrome {
 
     const onMessageExternal: ExternalMessageEvent
   }
+
+  namespace alarms {
+    interface Alarm {
+      name: string
+    }
+
+    function create(
+      name: string,
+      info: { periodInMinutes?: number; delayInMinutes?: number },
+    ): void
+
+    const onAlarm: {
+      addListener(callback: (alarm: Alarm) => void): void
+    }
+  }
 }
