@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
+import { Building2, CircleX, LoaderCircle, LogOut } from 'lucide-react'
 import { Link, useNavigate } from 'react-router'
-import { Badge, Button, Card } from '../../../../../../packages/ui/src'
+import { Button, Card, StatusPanel } from '../../../../../../packages/ui/src'
 import { useCurrentUser } from '../model/useCurrentUser'
 import { useLogout } from '../model/useLogout'
 
@@ -22,19 +23,47 @@ export function CompanyListPage() {
   }, [onlyCompanyId, navigate])
 
   if (currentUser.status === 'pending' || onlyCompanyId !== undefined) {
-    return <p className="p-6 text-text-muted">Загрузка…</p>
+    return (
+      <div className="p-6">
+        <Card>
+          <StatusPanel
+            icon={
+              <LoaderCircle
+                aria-hidden="true"
+                className="animate-spin"
+                size={20}
+              />
+            }
+            title="Загрузка компаний"
+          />
+        </Card>
+      </div>
+    )
   }
 
   if (currentUser.status === 'error') {
     return (
       <div className="p-6">
-        <Card>
-          <div className="flex items-center gap-3">
-            <Badge tone="negative">✕ ошибка</Badge>
-            <span className="text-text-secondary">
-              Не удалось загрузить список компаний.
-            </span>
-          </div>
+        <Card tone="negative">
+          <StatusPanel
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="compact"
+                onClick={() => {
+                  void currentUser.refetch()
+                }}
+              >
+                Повторить
+              </Button>
+            }
+            description="Не удалось загрузить список компаний."
+            icon={<CircleX aria-hidden="true" size={20} />}
+            role="alert"
+            title="Ошибка загрузки"
+            tone="negative"
+          />
         </Card>
       </div>
     )
@@ -54,19 +83,34 @@ export function CompanyListPage() {
                 logout.mutate()
               }}
             >
+              <LogOut aria-hidden="true" size={16} />
               Выйти
             </Button>
           </div>
           {companies.length === 0 ? (
-            <p className="text-text-muted">
-              Нет доступных компаний — обратитесь к владельцу аккаунта.
-            </p>
+            <StatusPanel
+              action={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="compact"
+                  onClick={() => {
+                    void currentUser.refetch()
+                  }}
+                >
+                  Обновить
+                </Button>
+              }
+              description="Обратитесь к владельцу аккаунта, чтобы получить доступ."
+              icon={<Building2 aria-hidden="true" size={20} />}
+              title="Нет доступных компаний"
+            />
           ) : (
             <ul className="flex flex-col gap-2">
               {companies.map((company) => (
                 <li key={company.id}>
                   <Link
-                    className="text-accent hover:underline"
+                    className="font-medium"
                     to={`/companies/${company.id}/ingestion/sales-facts`}
                   >
                     {company.name}

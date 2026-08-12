@@ -1,4 +1,5 @@
 import { useForm } from 'react-hook-form'
+import { CircleAlert } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { Button, Card, Input } from '../../../../../../packages/ui/src'
 import { useLogin } from '../model/useLogin'
@@ -56,11 +57,17 @@ export function LoginPage() {
               {...register('password', { required: 'Введите пароль' })}
             />
             {login.isError && (
-              <p className="text-xs text-negative-text">
-                {login.error instanceof Error
-                  ? login.error.message
-                  : 'Не удалось войти'}
-              </p>
+              <div
+                className="flex items-center gap-2 rounded-lg border border-negative-border bg-negative-bg p-3 text-xs text-negative-text"
+                role="alert"
+              >
+                <CircleAlert aria-hidden="true" size={16} />
+                <span>
+                  {login.error instanceof Error
+                    ? login.error.message
+                    : 'Не удалось войти'}
+                </span>
+              </div>
             )}
             <Button type="submit" loading={login.isPending}>
               Войти

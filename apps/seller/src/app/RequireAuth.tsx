@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
+import { CircleX, LoaderCircle } from 'lucide-react'
 import { Navigate } from 'react-router'
 import { ApiError } from '../api/ApiError'
 import { useCurrentUser } from '../features/auth/model/useCurrentUser'
-import { Badge, Card } from '../../../../packages/ui/src'
+import { Button, Card, StatusPanel } from '../../../../packages/ui/src'
 
 // Единая проверка живой сессии перед защищёнными экранами — 401 от
 // /api/auth/me уводит на /login, а не оставляет "тихий пустой экран"
@@ -12,7 +13,22 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const currentUser = useCurrentUser()
 
   if (currentUser.status === 'pending') {
-    return <p className="p-6 text-text-muted">Загрузка…</p>
+    return (
+      <div className="p-6">
+        <Card>
+          <StatusPanel
+            icon={
+              <LoaderCircle
+                aria-hidden="true"
+                className="animate-spin"
+                size={20}
+              />
+            }
+            title="Проверяем сессию"
+          />
+        </Card>
+      </div>
+    )
   }
 
   if (currentUser.status === 'error') {
@@ -25,13 +41,26 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
     return (
       <div className="p-6">
-        <Card>
-          <div className="flex items-center gap-3">
-            <Badge tone="negative">✕ ошибка</Badge>
-            <span className="text-text-secondary">
-              Не удалось проверить сессию.
-            </span>
-          </div>
+        <Card tone="negative">
+          <StatusPanel
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="compact"
+                onClick={() => {
+                  void currentUser.refetch()
+                }}
+              >
+                Повторить
+              </Button>
+            }
+            description="Не удалось проверить сессию."
+            icon={<CircleX aria-hidden="true" size={20} />}
+            role="alert"
+            title="Ошибка проверки сессии"
+            tone="negative"
+          />
         </Card>
       </div>
     )

@@ -22,7 +22,7 @@ const VARIANT: Record<Variant, string> = {
   primary:
     "border-accent bg-accent text-text-inverse hover:border-accent-hover hover:bg-accent-hover active:border-accent-active active:bg-accent-active",
   secondary:
-    "border-border-default bg-surface-raised text-text-primary hover:border-border-strong hover:bg-surface-hover",
+    "border-border-default bg-surface-raised hover:border-border-strong hover:bg-surface-hover",
   ghost:
     "border-transparent bg-transparent text-text-secondary hover:bg-border-subtle hover:text-text-primary",
 };
@@ -34,7 +34,12 @@ const SIZE: Record<Size, string> = {
   // не указан намеренно — Tailwind подставляет его для before: сам,
   // и произвольное значение здесь не нужно.
   compact:
-    "relative h-7 px-3 text-xs before:absolute before:inset-x-0 before:-inset-y-0.5",
+    "relative h-7 px-2.5 text-xs before:absolute before:inset-x-0 before:-inset-y-0.5",
+};
+
+const SECONDARY_TEXT: Record<Size, string> = {
+  normal: "text-text-primary",
+  compact: "text-text-secondary",
 };
 
 const BASE =
@@ -58,7 +63,7 @@ export function Button({
       // дважды, и защищаться придётся на сервере.
       disabled={disabled === true || loading}
       aria-busy={loading || undefined}
-      className={`${BASE} ${VARIANT[variant]} ${SIZE[size]} ${loading ? "cursor-progress" : "cursor-pointer"}`}
+      className={`${BASE} ${VARIANT[variant]} ${SIZE[size]} ${variant === "secondary" ? SECONDARY_TEXT[size] : ""} ${loading ? "cursor-progress" : "cursor-pointer"}`}
     >
       {loading ? (
         <span

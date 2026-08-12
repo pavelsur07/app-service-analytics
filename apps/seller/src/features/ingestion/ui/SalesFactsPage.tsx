@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
+import { ChevronLeft, ChevronRight, CircleX } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../../api/ApiError'
-import { Badge, Button, Card } from '../../../../../../packages/ui/src'
+import { Button, Card, StatusPanel } from '../../../../../../packages/ui/src'
 import { useSalesFacts } from '../model/useSalesFacts'
-import { SalesFactsTable } from './SalesFactsTable'
+import { SalesFactsTable, SalesFactsTableSkeleton } from './SalesFactsTable'
 
 // Без переключения компании в интерфейсе (список — features/auth) —
 // companyId только из URL, источник правды (docs/patterns.md).
@@ -28,13 +29,26 @@ export function SalesFactsPage() {
   if (companyId === undefined) {
     return (
       <div className="p-6">
-        <Card>
-          <div className="flex items-center gap-3">
-            <Badge tone="negative">✕ ошибка</Badge>
-            <span className="text-text-secondary">
-              В адресе не указан companyId.
-            </span>
-          </div>
+        <Card tone="negative">
+          <StatusPanel
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="compact"
+                onClick={() => {
+                  void navigate('/companies')
+                }}
+              >
+                К компаниям
+              </Button>
+            }
+            description="В адресе не указан companyId."
+            icon={<CircleX aria-hidden="true" size={20} />}
+            role="alert"
+            title="Некорректный адрес"
+            tone="negative"
+          />
         </Card>
       </div>
     )
@@ -44,60 +58,75 @@ export function SalesFactsPage() {
 
   return (
     <div className="p-6">
-      <Card>
-        <div className="flex flex-col gap-4">
-          <h1 className="text-xl font-semibold">Продажи Ozon</h1>
+      <div className="flex flex-col gap-4">
+        <h1 className="text-xl font-semibold">Продажи Ozon</h1>
 
-          {query.status === 'pending' && (
-            <p className="text-text-muted">Загрузка…</p>
-          )}
+        {query.status === 'pending' && <SalesFactsTableSkeleton />}
 
-          {query.status === 'error' && (
-            <div className="flex items-center gap-3">
-              <Badge tone="negative">✕ ошибка</Badge>
-              <span className="text-text-secondary">
-                {query.error instanceof Error
+        {query.status === 'error' && (
+          <Card tone="negative">
+            <StatusPanel
+              action={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="compact"
+                  onClick={() => {
+                    void query.refetch()
+                  }}
+                >
+                  Повторить
+                </Button>
+              }
+              description={
+                query.error instanceof Error
                   ? query.error.message
-                  : 'Неизвестная ошибка'}
-              </span>
-            </div>
-          )}
+                  : 'Неизвестная ошибка'
+              }
+              icon={<CircleX aria-hidden="true" size={20} />}
+              role="alert"
+              title="Не удалось загрузить продажи"
+              tone="negative"
+            />
+          </Card>
+        )}
 
-          {query.status === 'success' && (
-            <>
-              <SalesFactsTable items={query.data.items} />
-              <div className="flex items-center gap-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="compact"
-                  disabled={cursorStack.length <= 1}
-                  onClick={() => {
-                    setCursorStack((stack) =>
-                      stack.length > 1 ? stack.slice(0, -1) : stack,
-                    )
-                  }}
-                >
-                  Назад
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="compact"
-                  disabled={nextCursor === null}
-                  onClick={() => {
-                    if (nextCursor !== null) {
-                      setCursorStack((stack) => [...stack, nextCursor])
-                    }
-                  }}
-                >
-                  Дальше
-                </Button>
-              </div>
-            </>
-          )}
-        </div>
-      </Card>
+        {query.status === 'success' && (
+          <>
+            <SalesFactsTable items={query.data.items} />
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="compact"
+                disabled={cursorStack.length <= 1}
+                onClick={() => {
+                  setCursorStack((stack) =>
+                    stack.length > 1 ? stack.slice(0, -1) : stack,
+                  )
+                }}
+              >
+                <ChevronLeft aria-hidden="true" size={16} />
+                Назад
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="compact"
+                disabled={nextCursor === null}
+                onClick={() => {
+                  if (nextCursor !== null) {
+                    setCursorStack((stack) => [...stack, nextCursor])
+                  }
+                }}
+              >
+                Дальше
+                <ChevronRight aria-hidden="true" size={16} />
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

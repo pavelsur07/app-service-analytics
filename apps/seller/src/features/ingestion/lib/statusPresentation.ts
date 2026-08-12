@@ -1,5 +1,5 @@
 // Статус читается без цвета (docs/patterns.md, «Данные и статусы»): тон —
-// усиление, подпись со знаком — обязательный носитель смысла. Ozon может
+// усиление, подпись и Lucide-иконка — носители смысла. Ozon может
 // прислать статус, которого здесь нет (список площадки шире, ADR-009) —
 // это не повод падать, просто нейтральный тон и сырой текст статуса.
 type StatusTone = 'positive' | 'negative' | 'warning' | 'neutral'
@@ -10,10 +10,10 @@ export interface StatusPresentation {
 }
 
 const KNOWN_STATUSES: Record<string, StatusPresentation> = {
-  delivered: { tone: 'positive', label: '✓ доставлено' },
-  cancelled: { tone: 'negative', label: '✕ отменено' },
-  awaiting_packaging: { tone: 'warning', label: '⏳ ожидает сборки' },
-  awaiting_deliver: { tone: 'warning', label: '⏳ передаётся в доставку' },
+  delivered: { tone: 'positive', label: 'Доставлено' },
+  cancelled: { tone: 'negative', label: 'Отменено' },
+  awaiting_packaging: { tone: 'warning', label: 'Ожидает сборки' },
+  awaiting_deliver: { tone: 'warning', label: 'Передаётся в доставку' },
 }
 
 export function statusPresentation(status: string): StatusPresentation {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Badge, Card } from '../../../packages/ui/src'
+import { CircleCheck, CircleX, LoaderCircle } from 'lucide-react'
+import { Badge, Button, Card, StatusPanel } from '../../../packages/ui/src'
 import { apiGet } from './api/client'
 import type { components } from './api/schema'
 
@@ -45,17 +46,47 @@ export function App() {
   const state = usePing('/api/admin/ping')
 
   if (state.status === 'loading') {
-    return <p className="p-6 text-text-muted">Загрузка…</p>
+    return (
+      <div className="p-6">
+        <Card>
+          <StatusPanel
+            icon={
+              <LoaderCircle
+                aria-hidden="true"
+                className="animate-spin"
+                size={20}
+              />
+            }
+            title="Загрузка данных"
+          />
+        </Card>
+      </div>
+    )
   }
 
   if (state.status === 'error') {
     return (
       <div className="p-6">
-        <Card>
-          <div className="flex items-center gap-3">
-            <Badge tone="negative">✕ ошибка</Badge>
-            <span className="text-text-secondary">{state.message}</span>
-          </div>
+        <Card tone="negative">
+          <StatusPanel
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="compact"
+                onClick={() => {
+                  window.location.reload()
+                }}
+              >
+                Повторить
+              </Button>
+            }
+            description={state.message}
+            icon={<CircleX aria-hidden="true" size={20} />}
+            role="alert"
+            title="Не удалось загрузить данные"
+            tone="negative"
+          />
         </Card>
       </div>
     )
@@ -67,9 +98,12 @@ export function App() {
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-semibold">Conwix — Admin</h1>
-            <Badge tone="positive">✓ связь с API</Badge>
+            <Badge tone="positive">
+              <CircleCheck aria-hidden="true" size={16} />
+              связь с API
+            </Badge>
           </div>
-          <dl className="flex flex-col gap-1 text-text-secondary">
+          <dl className="flex flex-col gap-1 text-text-secondary tabular-nums">
             <div className="flex gap-4">
               <dt className="w-28">app</dt>
               <dd className="text-text-primary">{state.info.app}</dd>

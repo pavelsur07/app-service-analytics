@@ -2,17 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { statusPresentation } from './statusPresentation'
 
 describe('statusPresentation', () => {
-  it('marks delivered as positive with a checkmark', () => {
+  it('marks delivered as positive', () => {
     expect(statusPresentation('delivered')).toEqual({
       tone: 'positive',
-      label: '✓ доставлено',
+      label: 'Доставлено',
     })
   })
 
-  it('marks cancelled as negative with a cross', () => {
+  it('marks cancelled as negative', () => {
     expect(statusPresentation('cancelled')).toEqual({
       tone: 'negative',
-      label: '✕ отменено',
+      label: 'Отменено',
     })
   })
 
