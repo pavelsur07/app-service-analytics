@@ -15,6 +15,35 @@ security:
         dev:
             pattern: ^/(_profiler|_wdt|assets|build)/
             security: false
+        # Перед `api` — первое совпадение побеждает, а ^/api/extension/
+        # уже, чем ^/api/. Отдельный firewall, не ветка внутри `api`:
+        # тогда сессия не работает на маршрутах расширения, а токен —
+        # на маршрутах приложения (ADR-010). Пути не пересекаются,
+        # перепутать контуры нечем.
+        extension:
+            pattern: ^/api/extension/
+            # Сессии нет: расширение предъявляет токен на каждом запросе.
+            stateless: true
+            provider: identity_user_provider
+            # Две разные ветки отказа, и нужны обе — иначе 401 приходит
+            # HTML-страницей или пустым телом:
+            #   заголовка нет вовсе  → AccessTokenAuthenticator::supports()
+            #     возвращает false, аутентификатор не запускается, отказ
+            #     приходит от access_control → entry_point;
+            #   заголовок есть, токен не подошёл → исключение внутри
+            #     authenticate() → failure_handler (по умолчанию отдал бы
+            #     пустое тело с одним WWW-Authenticate).
+            entry_point: App\Identity\Ui\Security\ApiAuthenticationEntryPoint
+            # Штатный аутентификатор Symfony, свой не пишется: извлечение
+            # заголовка Authorization: Bearer (умолчание token_extractors)
+            # и построение Passport фреймворк делает сам. Вся проверка —
+            # в token_handler.
+            access_token:
+                token_handler: App\Identity\Infrastructure\Security\ExtensionTokenHandler
+                failure_handler: App\Identity\Ui\Security\ExtensionAuthenticationFailureHandler
+            # login_throttling здесь нет намеренно: секрет — 256 бит
+            # (ExtensionTokenSecret), перебор не имеет смысла, в отличие
+            # от входа по паролю ниже.
         api:
             pattern: ^/api/
             lazy: true
@@ -56,6 +85,10 @@ security:
         - { path: ^/api/auth/login, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/logout, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/me, roles: ROLE_USER }
+        # Маршруты расширения — тот же ROLE_USER: токен опознаёт того же
+        # User (ADR-010), отдельной роли нет, потому что firewall'ы
+        # не пересекаются и разделять нечего.
+        - { path: ^/api/extension/, roles: ROLE_USER }
         - { path: ^/api/companies/, roles: ROLE_USER }
 
 when@test:
