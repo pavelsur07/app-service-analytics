@@ -23,7 +23,29 @@ out="$review_dir/package.md"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT INT TERM
 tmp_index="$tmp_dir/index"
-diff="$(GIT_INDEX_FILE="$tmp_index" sh -c 'git add -A && git diff --cached HEAD')"
+
+# База дифа — точка расхождения с master, а не HEAD. С HEAD пакет
+# получался пустым, если задачу уже закоммитили: ревьюер честно отвечал
+# «изменений нет», и это выглядело как зелёное ревью. Точка расхождения
+# покрывает оба порядка работы — и «ревью до коммита», и «ревью после».
+#
+# Локальный master может отставать, поэтому сверяемся с origin/master;
+# если его нет (свежий клон без remote, работа офлайн) — откатываемся
+# к HEAD, то есть к прежнему поведению, а не падаем.
+base="HEAD"
+for candidate in origin/master master; do
+    if git rev-parse --verify --quiet "$candidate" >/dev/null; then
+        base="$(git merge-base "$candidate" HEAD)"
+        break
+    fi
+done
+
+diff="$(GIT_INDEX_FILE="$tmp_index" sh -c 'git add -A && git diff --cached "$1"' _ "$base")"
+
+if [ -z "$diff" ]; then
+    echo "review-prepare: диф пуст относительно $base — ревьюеру нечего читать." >&2
+    exit 1
+fi
 
 # Заголовок исходной секции в вывод не идёт — иначе он дублирует
 # собственный заголовок "## 3. Обязательные правила" ниже.
