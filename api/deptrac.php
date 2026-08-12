@@ -62,11 +62,32 @@ return static function (DeptracConfig $config): void {
             $identityInfrastructure = Layer::withName('IdentityInfrastructure')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Identity/Infrastructure/.*')],
-                    mustNot: [ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonAccountsQuery$')],
+                    mustNot: [
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonAccountsQuery$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ExtensionTokenByHashQuery$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Security\\ExtensionTokenHandler$'),
+                    ],
                 ),
             ),
             $identityOperationalQuery = Layer::withName('IdentityOperationalQuery')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonAccountsQuery$'),
+            ),
+            // Поиск токена расширения по хэшу — межарендаторный: компания
+            // ещё неизвестна, её как раз и определяет найденная строка
+            // (ADR-010). Тем же приёмом, что ActiveOzonAccountsQuery выше,
+            // выведен из широкого IdentityInfrastructure — иначе доступ
+            // к нему получил бы и IdentityUi (у которого этот доступ есть
+            // ради MeController → UserCompaniesQuery), то есть HTTP-контроллер
+            // смог бы искать токен без companyId, вопреки CLAUDE.md §1.
+            $identityExtensionTokenQuery = Layer::withName('IdentityExtensionTokenQuery')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ExtensionTokenByHashQuery$'),
+            ),
+            // Узкий слой на втором конце того же вызова: единственный, кому
+            // разрешён запрос выше. Держать обработчик в широком слое
+            // бессмысленно — грант пришлось бы выдавать всему
+            // IdentityInfrastructure, и граница исчезла бы.
+            $identityExtensionTokenHandler = Layer::withName('IdentityExtensionTokenHandler')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Security\\ExtensionTokenHandler$'),
             ),
             $identityUi = Layer::withName('IdentityUi')->collectors(
                 DirectoryConfig::create('src/Identity/Ui/.*'),
@@ -193,6 +214,13 @@ return static function (DeptracConfig $config): void {
             // в той же папке, не метод с побочным эффектом).
             Ruleset::forLayer($identityScheduleFacade)->accesses($identityFacade, $identityOperationalQuery, $identityInfrastructure, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($identityOperationalQuery)->accesses($identityInfrastructure, $sharedInfrastructure, $symfonyComponent),
+            // identityExtensionTokenQuery — только обработчику токена, никому
+            // больше; identityInfrastructure — ради ExtensionTokenRow
+            // и ExtensionTokenRequestAttributes (плоские классы широкого слоя,
+            // не способности). Тот же состав грантов, что у identityScheduleFacade:
+            // узкий слой на узкий плюс широкий слой ради DTO.
+            Ruleset::forLayer($identityExtensionTokenHandler)->accesses($identityExtensionTokenQuery, $identityDomain, $identityInfrastructure, $symfonyComponent),
+            Ruleset::forLayer($identityExtensionTokenQuery)->accesses($identityInfrastructure),
             Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
 
