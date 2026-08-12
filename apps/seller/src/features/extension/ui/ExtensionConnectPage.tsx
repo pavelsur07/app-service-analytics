@@ -2,7 +2,7 @@ import { CircleCheck, CircleX, LoaderCircle, Puzzle } from 'lucide-react'
 import { useParams } from 'react-router'
 
 import { Button, Card, StatusPanel } from '../../../../../../packages/ui/src'
-import { installedExtensionId } from '../lib/browserExtension'
+import { extensionRecipient } from '../lib/browserExtension'
 import { useConnectExtension } from '../model/useConnectExtension'
 
 // Экран подключения расширения браузера (ADR-010). Токен выпускается
@@ -11,7 +11,7 @@ import { useConnectExtension } from '../model/useConnectExtension'
 // у него ровно один.
 export function ExtensionConnectPage() {
   const { companyId } = useParams<{ companyId: string }>()
-  const extensionId = installedExtensionId()
+  const recipient = extensionRecipient()
   const connect = useConnectExtension(companyId ?? '')
 
   if (companyId === undefined) {
@@ -21,18 +21,27 @@ export function ExtensionConnectPage() {
   return (
     <div className="p-6">
       <Card>
-        {extensionId === undefined ? (
+        {recipient.kind === 'not-installed' ? (
           <StatusPanel
             icon={<Puzzle aria-hidden="true" size={20} />}
             title="Расширение не установлено"
             description="Установите расширение Conwix для браузера и обновите страницу."
+          />
+        ) : recipient.kind === 'not-configured' ? (
+          // Идентификатор расширения ещё не закреплён. Отправлять токен
+          // тому, кого назвал DOM, нельзя: подменить атрибут может любое
+          // другое расширение на этой странице.
+          <StatusPanel
+            icon={<CircleX aria-hidden="true" size={20} />}
+            title="Подключение недоступно"
+            description="Расширение ещё не опубликовано. Напишите в поддержку."
           />
         ) : (
           <Connect
             pending={connect.status === 'pending'}
             result={connect.data}
             failed={connect.status === 'error'}
-            onConnect={() => connect.mutate(extensionId)}
+            onConnect={() => connect.mutate(recipient.id)}
           />
         )}
       </Card>

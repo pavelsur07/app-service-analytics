@@ -10,9 +10,14 @@ type ValidationErrorResponse = components['schemas']['ValidationErrorResponse']
  * на chrome-extension://, относительный путь ушёл бы в само расширение,
  * а сессионной куки у него нет и быть не должно (ADR-010).
  */
-export const API_BASE_URL: string = import.meta.env.DEV
-  ? 'http://app.conwix.localhost'
-  : 'https://app.conwix.com'
+// Подставляется сборкой из manifest.config.ts тем же вызовом, что считает
+// хосты манифеста (vite.config.ts, define). Не import.meta.env.DEV:
+// `vite build --mode development` меняет mode, но не NODE_ENV, поэтому
+// DEV в собранном коде остаётся false — манифест разрешал бы localhost,
+// а запрос уходил на боевой домен.
+declare const __APP_ORIGIN__: string
+
+export const API_BASE_URL: string = __APP_ORIGIN__
 
 export class ApiError extends Error {
   constructor(

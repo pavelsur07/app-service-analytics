@@ -29,10 +29,10 @@ function fakeStorage(initial: Record<string, unknown> = {}): Storage & {
 
       return Promise.resolve()
     },
-    remove: (keys) => {
+    clear: () => {
       // Reflect.deleteProperty, а не delete по вычисляемому ключу:
       // так требует линтер, поведение то же.
-      for (const key of keys) {
+      for (const key of Object.keys(data)) {
         Reflect.deleteProperty(data, key)
       }
 
@@ -57,8 +57,15 @@ describe('подключение расширения', () => {
     // CLAUDE.md §7 в изводе расширения: chrome.storage переживает
     // и logout, и перезапуск браузера, поэтому данные предыдущей
     // компании обязаны исчезнуть в момент переподключения.
+    //
+    // Посторонний ключ в хранилище — не декорация: так выглядит любой
+    // будущий кэш, и именно он утёк бы, если бы очистка шла по списку
+    // известных ключей, а не целиком.
     const storage = fakeStorage()
     await writeConnection(storage, acme)
+    await storage.set({
+      'cache:listings': { companyId: acme.companyId, skus: ['1'] },
+    })
     await writeConnection(storage, other)
 
     const current = await readConnection(storage)

@@ -20,16 +20,53 @@ export interface ConnectResult {
 }
 
 /**
- * Идентификатор установленного расширения. Его публикует само расширение
- * скриптом на страницах приложения (apps/extension/src/content/announce.ts):
- * без ключа в манифесте id у каждой установки свой, и держать его
- * синхронно в двух приложениях было бы источником рассинхронизации.
+ * Идентификатор расширения, которому будет отправлен токен. Пустая
+ * строка означает «ещё не выпущен»: ключ в манифесте расширения тоже
+ * пуст, и постоянного идентификатора у него пока нет.
  *
- * undefined означает «расширение не установлено» — предлагать подключение
- * в этом случае нечему.
+ * Заполняется одновременно с ключом в apps/extension/manifest.config.ts —
+ * это одно и то же значение с двух сторон.
  */
-export function installedExtensionId(): string | undefined {
-  return document.documentElement.dataset.conwixExtensionId
+const PINNED_EXTENSION_ID = ''
+
+export type Recipient =
+  | { readonly kind: 'pinned'; readonly id: string }
+  // Расширение сообщило id само, и мы ему верим — только в разработке.
+  | { readonly kind: 'discovered'; readonly id: string }
+  | { readonly kind: 'not-installed' }
+  // Боевая сборка без закреплённого id: отправлять токен некому,
+  // потому что довериться DOM здесь нельзя.
+  | { readonly kind: 'not-configured' }
+
+/**
+ * Кому отдавать токен.
+ *
+ * Идентификатор берётся из закреплённой константы, а не из DOM: атрибут
+ * `data-conwix-extension-id` проставляет content-script нашего расширения,
+ * но перезаписать его может content-script любого другого расширения
+ * на этой же странице. Тогда приложение выпустило бы токен и отправило
+ * его чужому расширению — и это была бы не кража сессии, а выдача
+ * действующих учётных данных по доброй воле.
+ *
+ * В разработке закреплённого id ещё нет, поэтому там DOM используется
+ * осознанно: в dev-сборке чужие расширения на localhost — не та угроза,
+ * ради которой стоит блокировать работу. В боевой сборке без
+ * закреплённого id подключение просто недоступно.
+ */
+export function extensionRecipient(): Recipient {
+  const announced = document.documentElement.dataset.conwixExtensionId
+
+  if (PINNED_EXTENSION_ID !== '') {
+    return { kind: 'pinned', id: PINNED_EXTENSION_ID }
+  }
+
+  if (!import.meta.env.DEV) {
+    return { kind: 'not-configured' }
+  }
+
+  return announced === undefined
+    ? { kind: 'not-installed' }
+    : { kind: 'discovered', id: announced }
 }
 
 /**

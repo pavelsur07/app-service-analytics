@@ -16,7 +16,7 @@ const KEY = 'connection'
 export interface Storage {
   get(keys: string[]): Promise<Record<string, unknown>>
   set(items: Record<string, unknown>): Promise<void>
-  remove(keys: string[]): Promise<void>
+  clear(): Promise<void>
 }
 
 export function browserStorage(): Storage {
@@ -32,22 +32,27 @@ export async function readConnection(
 }
 
 /**
- * Запись подключения всегда стирает хранилище целиком, а не дописывает
- * поверх. Причина — CLAUDE.md §7: расширение переподключают к другой
- * компании, и всё, что осталось от прежней, обязано исчезнуть в тот же
- * момент. Дописывание оставило бы кэш предыдущей компании живым,
- * а выглядело бы это как работающее подключение.
+ * Запись подключения стирает хранилище целиком — `clear()`, а не удаление
+ * одного ключа. Причина — CLAUDE.md §7: расширение переподключают
+ * к другой компании, и всё, что осталось от прежней, обязано исчезнуть
+ * в тот же момент. Удаление по списку известных ключей означало бы, что
+ * каждый будущий кэш надо не забыть добавить в этот список, — а забытый
+ * ключ отдал бы данные предыдущей компании, и выглядело бы это как
+ * работающее подключение.
+ *
+ * Ничего, кроме подключения и производных от него кэшей, расширение
+ * в storage не держит, поэтому терять при очистке нечего.
  */
 export async function writeConnection(
   storage: Storage,
   connection: Connection,
 ): Promise<void> {
-  await storage.remove([KEY])
+  await storage.clear()
   await storage.set({ [KEY]: connection })
 }
 
 export async function clearConnection(storage: Storage): Promise<void> {
-  await storage.remove([KEY])
+  await storage.clear()
 }
 
 /**

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, type Plugin } from 'vite'
 
-import { buildManifest } from './manifest.config'
+import { appOrigin, buildManifest } from './manifest.config'
 
 // Манифест пишется в dist на этапе сборки — сгенерированный файл,
 // в репозитории его нет (см. manifest.config.ts, почему не статический JSON).
@@ -22,6 +22,14 @@ function manifestPlugin(mode: string): Plugin {
 
 export default defineConfig(({ mode }) => ({
   plugins: [tailwindcss(), manifestPlugin(mode)],
+  // Адрес приложения считается тем же вызовом, что и хосты манифеста,
+  // и подставляется в сборку константой. import.meta.env.DEV для этого
+  // не годится: `vite build --mode development` меняет mode, но не
+  // NODE_ENV, и DEV в собранном коде остаётся false — манифест разрешал
+  // бы localhost, а запрос уходил на боевой домен.
+  define: {
+    __APP_ORIGIN__: JSON.stringify(appOrigin(mode)),
+  },
   resolve: {
     // Та же причина, что у seller: packages/ui без своего node_modules,
     // react ему отдаёт приложение; dedupe страхует от второй копии.

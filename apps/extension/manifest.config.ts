@@ -22,8 +22,29 @@ const DEV_HOSTS = [
   'https://app.conwix.localhost/*',
 ]
 
+/**
+ * Адрес приложения — одна функция и для манифеста, и для клиента
+ * (vite.config.ts подставляет её результат в сборку через define).
+ *
+ * Раньше клиент выводил адрес из import.meta.env.DEV, и это расходилось
+ * с манифестом: `vite build --mode development` меняет mode, но не
+ * NODE_ENV, поэтому DEV в собранном коде оставался false. Манифест
+ * разрешал localhost, а запрос уходил на боевой домен — watch-сборка
+ * не работала вовсе. Один источник вместо двух закрывает этот класс
+ * расхождений, а не конкретный случай.
+ */
+export function appOrigin(mode: string): string {
+  return isProduction(mode)
+    ? 'https://app.conwix.com'
+    : 'http://app.conwix.localhost'
+}
+
+function isProduction(mode: string): boolean {
+  return 'production' === mode
+}
+
 export function buildManifest(mode: string): Record<string, unknown> {
-  const isDev = 'production' !== mode
+  const isDev = !isProduction(mode)
   const appMatches = isDev ? DEV_HOSTS : PROD_HOSTS
 
   return {

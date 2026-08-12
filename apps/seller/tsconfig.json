@@ -17,6 +17,10 @@
     "noImplicitReturns": true,
     "forceConsistentCasingInFileNames": true,
 
+    // import.meta.env — типы Vite. Понадобились, когда экран подключения
+    // расширения стал отличать dev от боевой сборки.
+    "types": ["vite/client"],
+
     // packages/ui собирается каждым приложением как свой исходник —
     // своего node_modules у него нет намеренно. Здесь TypeScript ищет
     // типы react (сборку делает Vite по своему alias); без этого пакет
