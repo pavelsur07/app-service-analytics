@@ -3,7 +3,15 @@ import { expect, test } from '@playwright/test'
 test('admin start screen shows data from its own endpoint', async ({
   page,
 }) => {
+  await page.emulateMedia({ colorScheme: 'dark' })
   await page.goto('/')
+
+  await expect(page.locator('body')).toHaveCSS('color-scheme', 'light')
+  await expect(page.locator('body')).toHaveCSS(
+    'background-color',
+    'rgb(244, 246, 250)',
+  )
+  await expect(page.locator('body')).toHaveCSS('color', 'rgb(11, 18, 32)')
 
   await expect(
     page.getByRole('heading', { name: 'Conwix — Admin' }),
