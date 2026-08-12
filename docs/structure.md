@@ -44,10 +44,13 @@ app-service-analytics/
 ├── api/                  Symfony
 ├── apps/
 │   ├── seller/           app.conwix.com
-│   └── admin/            admin.conwix.com
+│   ├── admin/            admin.conwix.com
+│   └── extension/        расширение браузера (MV3), выкладка через
+│                         Chrome Web Store, не через наш конвейер
 ├── packages/
 │   ├── api-schema/       OpenAPI + сгенерированные TS-типы
-│   └── ui/               токены и примитивы, общие для seller и admin
+│   └── ui/               токены и примитивы, общие для seller и admin;
+│                         расширение берёт их только в popup
 └── .github/
     └── workflows/
         └── ci.yml        конвейер: фильтры по путям, кэш, публикация образа

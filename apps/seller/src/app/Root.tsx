@@ -3,6 +3,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router'
 import { App as PingScreen } from '../App'
 import { CompanyListPage } from '../features/auth/ui/CompanyListPage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
+import { ExtensionConnectPage } from '../features/extension/ui/ExtensionConnectPage'
 import { SalesFactsPage } from '../features/ingestion/ui/SalesFactsPage'
 import { RequireAuth } from './RequireAuth'
 
@@ -30,6 +31,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <SalesFactsPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/companies/:companyId/extension',
+    element: (
+      <RequireAuth>
+        <ExtensionConnectPage />
       </RequireAuth>
     ),
   },

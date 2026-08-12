@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "types": ["vite/client"],
+
+    // Та же причина, что у seller: packages/ui собирается приложением
+    // как свой исходник и своего node_modules не имеет.
+    "paths": {
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"]
+    }
+  },
+  // vite.config.ts не включён намеренно — как у seller: он использует
+  // node:url, а типов Node в приложении нет и заводить их ради одного
+  // файла незачем. manifest.config.ts включён: там логика, которая едет
+  // в опубликованный пакет, и она проверяется.
+  "include": ["src", "../../packages/ui/src", "manifest.config.ts"]
+}

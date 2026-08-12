@@ -11,10 +11,11 @@
 # отдельный бинарник docker-compose (v1), где плагина ещё нет.
 COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
 
-# front-* цели гоняют оба приложения по умолчанию; make front-test APP=seller
+# front-* цели гоняют все приложения по умолчанию; make front-test APP=seller
 # сужает до одного. Один цикл по $(APPS) в каждой цели, а не по строке
-# на приложение — третье приложение не потребует правки целей.
-APPS := seller admin
+# на приложение — третье приложение целей не потребовало (extension добавлен
+# одной строкой здесь).
+APPS := seller admin extension
 APPS := $(if $(APP),$(APP),$(APPS))
 
 # Согласовано с docker-compose.yml (postgres: POSTGRES_USER/POSTGRES_DB)
@@ -230,16 +231,20 @@ front-install: front-install-apps e2e-install ## установка зависи
 # Отдельно от e2e-install: джобам конвейера, которым Playwright не нужен
 # (frontend, contract), иначе пришлось бы тянуть образ на 3 ГБ ради
 # трёх пакетов в корневом package.json.
-front-install-apps: ## npm ci обоих приложений и packages/api-schema
+front-install-apps: ## npm ci всех приложений и packages/api-schema
 	$(COMPOSE) run --rm node-seller npm ci
 	$(COMPOSE) run --rm node-admin npm ci
+	$(COMPOSE) run --rm node-extension npm ci
 	$(COMPOSE) run --rm -w /var/www/packages/api-schema node-seller npm ci
 
 e2e-install: ## npm ci корневого package.json (@playwright/test под общий конфиг)
 	$(COMPOSE) run --rm playwright npm ci
 
-front-dev: ## запуск dev-серверов (node-seller, node-admin)
-	$(COMPOSE) up -d node-seller node-admin
+# node-extension поднимается здесь же, но dev-сервера у него нет: команда
+# контейнера — watch-сборка (см. docker-compose.yml). Контейнер всё равно
+# должен быть поднят, иначе `exec` в front-typecheck/lint/test не зайдёт.
+front-dev: ## запуск dev-серверов (node-seller, node-admin) и watch-сборки расширения
+	$(COMPOSE) up -d node-seller node-admin node-extension
 
 front-build: ## production-сборка (APP=seller|admin, по умолчанию — оба)
 	@for app in $(APPS); do $(COMPOSE) exec node-$$app npm run build || exit 1; done

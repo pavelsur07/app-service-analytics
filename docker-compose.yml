@@ -119,6 +119,23 @@ services:
       - "5174:5174"
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5174"]
 
+  # Расширение браузера. Порта нет намеренно: dev-сервера у него быть
+  # не может — CSP Manifest V3 запрещает подгрузку кода со стороны,
+  # и HMR туда не встроится. Вместо dev-сервера watch-сборка: dist/
+  # виден на хосте через тот же bind-mount ./apps, и Chrome грузит
+  # его как распакованное расширение (docs/patterns.md, «Расширение
+  # браузера»).
+  node-extension:
+    image: node:24.18.1-bookworm-slim
+    user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
+    environment:
+      - HOME=/tmp
+    working_dir: /var/www/apps/extension
+    volumes:
+      - ./apps:/var/www/apps
+      - ./packages:/var/www/packages
+    command: ["npm", "run", "watch"]
+
   playwright:
     # Playwright's browsers need glibc — Alpine (musl) can't run them at
     # all (not a config issue, upstream doesn't support musl). Browsers

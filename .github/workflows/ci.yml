@@ -198,6 +198,13 @@ jobs:
           path: apps/admin/node_modules
           key: npm-admin-${{ hashFiles('apps/admin/package-lock.json') }}
 
+      - name: кэш node_modules (extension)
+        id: nm-extension
+        uses: actions/cache@v4
+        with:
+          path: apps/extension/node_modules
+          key: npm-extension-${{ hashFiles('apps/extension/package-lock.json') }}
+
       - name: кэш node_modules (api-schema)
         id: nm-schema
         uses: actions/cache@v4
@@ -209,6 +216,7 @@ jobs:
         if: >-
           steps.nm-seller.outputs.cache-hit != 'true' ||
           steps.nm-admin.outputs.cache-hit != 'true' ||
+          steps.nm-extension.outputs.cache-hit != 'true' ||
           steps.nm-schema.outputs.cache-hit != 'true'
         run: make front-install-apps
 
@@ -272,6 +280,13 @@ jobs:
           path: apps/admin/node_modules
           key: npm-admin-${{ hashFiles('apps/admin/package-lock.json') }}
 
+      - name: кэш node_modules (extension)
+        id: nm-extension
+        uses: actions/cache@v4
+        with:
+          path: apps/extension/node_modules
+          key: npm-extension-${{ hashFiles('apps/extension/package-lock.json') }}
+
       - name: кэш node_modules (api-schema)
         id: nm-schema
         uses: actions/cache@v4
@@ -293,6 +308,7 @@ jobs:
         if: >-
           steps.nm-seller.outputs.cache-hit != 'true' ||
           steps.nm-admin.outputs.cache-hit != 'true' ||
+          steps.nm-extension.outputs.cache-hit != 'true' ||
           steps.nm-schema.outputs.cache-hit != 'true'
         run: make front-install-apps
 
@@ -364,6 +380,13 @@ jobs:
           path: apps/admin/node_modules
           key: npm-admin-${{ hashFiles('apps/admin/package-lock.json') }}
 
+      - name: кэш node_modules (extension)
+        id: nm-extension
+        uses: actions/cache@v4
+        with:
+          path: apps/extension/node_modules
+          key: npm-extension-${{ hashFiles('apps/extension/package-lock.json') }}
+
       - name: кэш node_modules (api-schema)
         id: nm-schema
         uses: actions/cache@v4
@@ -394,6 +417,7 @@ jobs:
         if: >-
           steps.nm-seller.outputs.cache-hit != 'true' ||
           steps.nm-admin.outputs.cache-hit != 'true' ||
+          steps.nm-extension.outputs.cache-hit != 'true' ||
           steps.nm-schema.outputs.cache-hit != 'true' ||
           steps.nm-e2e.outputs.cache-hit != 'true'
         run: make front-install
