@@ -276,10 +276,19 @@ review-codex: ## роль «соответствие» (5A): запрос в pac
 	$(call review_request,5A,var/review/package-rules.md)
 	timeout 900 codex exec --sandbox read-only -o var/review/codex.md - < var/review/package-rules.md
 
+# Промпт — ссылка на файл, а не его содержимое. Codex читает запрос
+# со stdin, kimi так не умеет: у него источник промпта только -p, а один
+# аргумент в Linux ограничен 128 КиБ (MAX_ARG_STRLEN). Пакет с дифом
+# и всеми ADR давно больше, и `kimi -p "$(cat ...)"` падал с
+# «Argument list too long» — то есть роль «дефекты» просто не прогонялась.
+#
+# Read-only здесь просьбой в промпте, а не флагом: у kimi нет аналога
+# codex --sandbox read-only, а --plan несовместим с -p. Слабее, чем
+# у Codex, и это осознанная разница, а не недосмотр.
 review-kimi: ## роль «дефекты» (5B): запрос в package-defects.md, ответ в kimi.md
 	@mkdir -p var/review
 	$(call review_request,5B,var/review/package-defects.md)
-	timeout 900 kimi -p "$$(cat var/review/package-defects.md)" --output-format text > var/review/kimi.md
+	timeout 900 kimi --output-format text -p "Ты внешний ревьюер. Прочитай файл var/review/package-defects.md целиком и выполни то, что написано в его разделе «5B». Ответ дай строго в формате из раздела 6 этого файла. Работай только на чтение: ничего не редактируй, не создавай и не удаляй, тесты и сборку не запускай." > var/review/kimi.md
 
 review: review-prepare ## review-prepare + оба инструмента: make review TASK="..."
 	$(MAKE) review-codex
