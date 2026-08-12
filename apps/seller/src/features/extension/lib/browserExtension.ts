@@ -48,25 +48,53 @@ export type Recipient =
  * его чужому расширению — и это была бы не кража сессии, а выдача
  * действующих учётных данных по доброй воле.
  *
- * В разработке закреплённого id ещё нет, поэтому там DOM используется
- * осознанно: в dev-сборке чужие расширения на localhost — не та угроза,
- * ради которой стоит блокировать работу. В боевой сборке без
- * закреплённого id подключение просто недоступно.
+ * Пока идентификатор не закреплён, доверять DOM разрешено только
+ * на локальном домене разработки.
  */
 export function extensionRecipient(): Recipient {
-  const announced = document.documentElement.dataset.conwixExtensionId
+  return recipientFor(
+    location.hostname,
+    document.documentElement.dataset.conwixExtensionId,
+    PINNED_EXTENSION_ID,
+  )
+}
 
-  if (PINNED_EXTENSION_ID !== '') {
-    return { kind: 'pinned', id: PINNED_EXTENSION_ID }
+/**
+ * Отделено от DOM ради проверяемости: это решение о том, кому уходит
+ * действующий секрет, и оно обязано быть покрыто тестом, а не
+ * подтверждаться чтением.
+ *
+ * Признак разработки — сам адрес страницы, а не режим сборки. По режиму
+ * не выходит: `app.conwix.localhost` отдаёт nginx из `apps/seller/dist`,
+ * то есть production-сборку, и `import.meta.env.DEV` там false.
+ * Проверка по адресу отвечает на настоящий вопрос — «эта страница
+ * локальная?» — а не на косвенный.
+ */
+export function recipientFor(
+  hostname: string,
+  announcedId: string | undefined,
+  pinnedId: string,
+): Recipient {
+  if (pinnedId !== '') {
+    return { kind: 'pinned', id: pinnedId }
   }
 
-  if (!import.meta.env.DEV) {
+  if (!isLocalHostname(hostname)) {
     return { kind: 'not-configured' }
   }
 
-  return announced === undefined
+  return announcedId === undefined
     ? { kind: 'not-installed' }
-    : { kind: 'discovered', id: announced }
+    : { kind: 'discovered', id: announcedId }
+}
+
+/**
+ * Только настоящий локальный домен. Проверка по концу строки с точкой
+ * перед ним — иначе `app.conwix.localhost.evil.example` сошёл бы
+ * за локальный и получил бы токен.
+ */
+function isLocalHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname.endsWith('.localhost')
 }
 
 /**

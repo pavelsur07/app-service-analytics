@@ -1,5 +1,11 @@
-import { fetchMe } from '../api/client'
-import { isStale, readCatalog, refreshCatalog } from '../shared/catalog'
+import { fetchMe, fetchSkuSales } from '../api/client'
+import {
+  isOwnSku,
+  isStale,
+  readCatalog,
+  refreshCatalog,
+} from '../shared/catalog'
+import { isSalesRequest } from '../shared/salesRequest'
 import {
   browserStorage,
   readConnection,
@@ -49,6 +55,54 @@ chrome.runtime.onMessageExternal.addListener(
     return true
   },
 )
+
+/**
+ * Запрос итога продаж от оверлея. Сеть живёт здесь, а не в content-script:
+ * тот выполняется в origin страницы маркетплейса и его fetch подчиняется
+ * CORS (shared/salesRequest.ts). Заодно токен и хранилище не покидают
+ * service worker.
+ */
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (!isSalesRequest(message)) {
+    sendResponse(null)
+
+    return false
+  }
+
+  void salesFor(message.marketplaceSku).then(sendResponse)
+
+  return true
+})
+
+/**
+ * Один и тот же null на «не подключено», «не наш товар» и «не смогли
+ * спросить»: оверлею во всех трёх случаях делать одно — молчать.
+ *
+ * Проверка принадлежности здесь и остаётся локальной: артикул чужого
+ * товара никуда не уходит, сервер о нём не узнаёт.
+ */
+async function salesFor(marketplaceSku: string) {
+  const storage = browserStorage()
+  const connection = await readConnection(storage)
+  if (null === connection) {
+    return null
+  }
+
+  const catalog = await readCatalog(storage, connection.companyId)
+  if (null === catalog || !isOwnSku(catalog, marketplaceSku)) {
+    return null
+  }
+
+  try {
+    return await fetchSkuSales(
+      connection.token,
+      connection.companyId,
+      marketplaceSku,
+    )
+  } catch {
+    return null
+  }
+}
 
 const CATALOG_ALARM = 'conwix:catalog'
 const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000

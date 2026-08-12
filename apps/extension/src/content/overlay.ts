@@ -1,16 +1,19 @@
-import { fetchSkuSales, isUnauthorized } from '../api/client'
+import type { SkuSalesSummaryResponse } from '../api/client'
 import { findAnchor } from '../ozon/anchor'
 import { ozonProductIdFromUrl } from '../ozon/productUrl'
 import { removePanel, renderPanel } from '../overlay/panel'
-import { isOwnSku, readCatalog } from '../shared/catalog'
-import { browserStorage, readConnection } from '../shared/connection'
+import { parseSalesResponse, salesRequest } from '../shared/salesRequest'
 
 /**
  * Оверлей на карточке товара Ozon.
  *
- * Порядок намеренно такой: сначала адрес, потом локальный каталог,
- * и только потом сеть. Чужая карточка отсеивается, не покидая машины
- * клиента, — сервер о ней не узнаёт.
+ * Сам ничего не решает и ничего не знает: достаёт артикул из адреса,
+ * спрашивает service worker и рисует, если тот ответил. Проверка
+ * «мой ли товар», токен и хранилище остались там — на чужой странице
+ * чем меньше нашего кода знает о секретах, тем лучше.
+ *
+ * Сеть здесь невозможна и не нужна: content-script живёт в origin
+ * страницы, и его fetch подчиняется CORS (см. shared/salesRequest.ts).
  */
 
 // Карточка рисуется асинхронно: скрипт на document_start застаёт пустую
@@ -33,9 +36,8 @@ async function start(): Promise<void> {
  * висеть с числами предыдущего товара — отказ, который ничего
  * не роняет и потому особенно опасен.
  *
- * Открытый вопрос спайка (пункт 2): меняется ли адрес при смене
- * размера/цвета. Если нет — сюда понадобится ещё один наблюдатель,
- * более мелкий, и это отдельная работа.
+ * Открытый вопрос спайка: меняется ли адрес при смене размера/цвета.
+ * Если нет — сюда понадобится ещё один наблюдатель, более мелкий.
  */
 function watchLocationChanges(): void {
   let previous = location.href
@@ -48,8 +50,6 @@ function watchLocationChanges(): void {
     void handleLocation()
   }
 
-  // navigation API есть не везде, поэтому подстраховываемся наблюдением
-  // за DOM: любой переход внутри SPA его перерисовывает.
   window.addEventListener('popstate', check)
   new MutationObserver(check).observe(document.body, {
     childList: true,
@@ -70,18 +70,19 @@ async function handleLocation(): Promise<void> {
   }
   forget()
 
-  const storage = browserStorage()
-  const connection = await readConnection(storage)
-  if (null === connection) {
+  // Спрашиваем до ожидания якоря: на чужом товаре ответ придёт сразу
+  // и пустой, и незачем десять секунд ждать разметку ради молчания.
+  const summary = await requestSales(marketplaceSku)
+  if (null === summary) {
     return
   }
 
-  const catalog = await readCatalog(storage, connection.companyId)
-  // Каталога ещё нет — молчим. Объявлять чужим то, про что мы просто
-  // не знаем, хуже, чем не показать ничего.
-  if (null === catalog || !isOwnSku(catalog, marketplaceSku)) {
-    return
-  }
+  // Только после гидратации: карточка приходит с сервера уже отрисованной,
+  // и Vue сверяет её с собственным деревом. Наш узел, вставленный до этого
+  // момента, — лишний ребёнок в разметке: Vue сообщает hydration mismatch
+  // и перерисовывает поддерево, снося панель заодно. Мы при этом ломаем
+  // чужую страницу, что само по себе недопустимо.
+  await pageSettled()
 
   const anchor = await waitForAnchor()
   if (null === anchor) {
@@ -90,21 +91,90 @@ async function handleLocation(): Promise<void> {
     return
   }
 
-  try {
-    const summary = await fetchSkuSales(
-      connection.token,
-      connection.companyId,
-      marketplaceSku,
-    )
-    renderPanel(anchor, summary)
-    renderedForSku = marketplaceSku
-  } catch (error) {
-    // 401 — токен истёк или отозван: панель не показываем, состояние
-    // подключения чинит popup. Прочее (сеть, 5xx) — тоже молчим:
-    // навязчивая ошибка поверх чужой карточки хуже её отсутствия.
-    if (!isUnauthorized(error)) {
+  renderPanel(anchor, summary)
+  renderedForSku = marketplaceSku
+  keepPanelAlive(anchor, summary, marketplaceSku)
+}
+
+/**
+ * Ждём полной загрузки и один кадр сверх неё. Точного события «Vue
+ * закончил гидратацию» страница не публикует, а load + кадр на практике
+ * наступают позже: гидратация запускается из скриптов, загруженных
+ * к этому моменту.
+ *
+ * ponytail: эвристика, а не гарантия. Если однажды окажется мало —
+ * следующий шаг не увеличивать задержку, а дождаться исчезновения
+ * их маркера гидратации; но выяснять его состав до первой поломки
+ * незачем.
+ */
+function pageSettled(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const afterFrame = (): void => {
+      requestAnimationFrame(() => {
+        resolve()
+      })
+    }
+
+    if ('complete' === document.readyState) {
+      afterFrame()
+
       return
     }
+
+    window.addEventListener('load', afterFrame, { once: true })
+  })
+}
+
+/**
+ * Сторож: их перерисовка может снести панель и после гидратации.
+ * Возвращаем её на место, но не бесконечно — иначе при постоянном
+ * ре-рендере мы бы дрались с их приложением в цикле, и проиграли бы
+ * оба. Исчерпали попытки — молчим, страница клиента важнее панели.
+ */
+const MAX_REINSERTS = 5
+
+function keepPanelAlive(
+  anchor: Element,
+  summary: SkuSalesSummaryResponse,
+  marketplaceSku: string,
+): void {
+  let left = MAX_REINSERTS
+
+  const observer = new MutationObserver(() => {
+    if (marketplaceSku !== renderedForSku) {
+      observer.disconnect()
+
+      return
+    }
+    if (null !== document.getElementById('conwix-overlay')) {
+      return
+    }
+
+    if (left <= 0) {
+      observer.disconnect()
+
+      return
+    }
+    left -= 1
+
+    // Якорь мог быть заменён вместе с поддеревом — ищем заново.
+    const current = findAnchor(document).element ?? anchor
+    if (current.isConnected) {
+      renderPanel(current, summary)
+    }
+  })
+
+  observer.observe(document.body, { childList: true, subtree: true })
+}
+
+async function requestSales(marketplaceSku: string) {
+  try {
+    return parseSalesResponse(
+      await chrome.runtime.sendMessage(salesRequest(marketplaceSku)),
+    )
+  } catch {
+    // Service worker перезапускается или расширение обновляют — молчим.
+    return null
   }
 }
 
@@ -147,8 +217,7 @@ function waitForAnchor(): Promise<Element | null> {
  * узнаём об этом от расширения, а не через три недели от клиента.
  *
  * ponytail: пока в консоль. Отправка события на бэкенд — вместе
- * с эндпоинтом приёма (этап 3), отдельно ради одного события
- * его заводить незачем.
+ * с эндпоинтом приёма (этап 3).
  */
 function reportAnchorMissing(marketplaceSku: string): void {
   console.warn('[conwix] якорь на карточке не найден', {

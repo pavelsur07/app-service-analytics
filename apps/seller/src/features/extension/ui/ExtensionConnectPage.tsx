@@ -85,17 +85,30 @@ function Connect({
     )
   }
 
-  // Отказ расширения и отказ сети выглядят для человека одинаково,
-  // и действие у него одно — попробовать снова.
-  const rejected = failed || result?.ok === false
+  // Два разных отказа, и человеку от них нужны разные действия.
+  // Сваливать их в одно сообщение — значит отнимать у него (и у нас
+  // при разборе) единственную подсказку, где именно оборвалось.
+  const failure =
+    failed === true
+      ? {
+          title: 'Не удалось выпустить токен',
+          description: 'Проверьте соединение с Conwix и попробуйте ещё раз.',
+        }
+      : result?.ok === false
+        ? {
+            title: 'Расширение не приняло подключение',
+            description:
+              'Оно не смогло связаться с Conwix. Проверьте, что расширение включено, и попробуйте ещё раз.',
+          }
+        : null
 
   return (
     <>
-      {rejected ? (
+      {failure !== null ? (
         <StatusPanel
           icon={<CircleX aria-hidden="true" size={20} />}
-          title="Не удалось подключить"
-          description="Проверьте, что расширение включено, и попробуйте ещё раз."
+          title={failure.title}
+          description={failure.description}
         />
       ) : (
         <StatusPanel

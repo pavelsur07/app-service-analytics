@@ -33,7 +33,15 @@ const DEV_HOSTS = [
  * не работала вовсе. Один источник вместо двух закрывает этот класс
  * расхождений, а не конкретный случай.
  */
-export function appOrigin(mode: string): string {
+export function appOrigin(mode: string, override?: string): string {
+  // Переопределение — только для разработки: собрать расширение под
+  // туннель на нестандартном порту. Порт нужен именно здесь, потому что
+  // фоновый запрос расширения идёт по абсолютному адресу; шаблоны
+  // совпадений в манифесте порт игнорируют, и им хватает хоста.
+  if (undefined !== override && '' !== override && !isProduction(mode)) {
+    return override
+  }
+
   return isProduction(mode)
     ? 'https://app.conwix.com'
     : 'http://app.conwix.localhost'
@@ -98,10 +106,15 @@ export function buildManifest(mode: string): Record<string, unknown> {
       // на поиске, в категориях и в кабинете продавца скрипту делать
       // нечего, а каждый лишний адрес в matches это вопрос на ревью
       // в сторе.
+      // document_idle, а не document_start: карточка Ozon — Vue
+      // с серверным рендерингом, и узел, вставленный до гидратации,
+      // ломает её (hydration mismatch) и тут же сносится вместе
+      // с перерисованным поддеревом. Раннего запуска здесь не нужно —
+      // ждать всё равно приходится.
       {
         matches: ['https://www.ozon.ru/product/*', 'https://ozon.ru/product/*'],
         js: ['content/overlay.js'],
-        run_at: 'document_start',
+        run_at: 'document_idle',
       },
     ],
   }

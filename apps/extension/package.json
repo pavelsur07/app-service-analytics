@@ -3,8 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && vite build",
-    "watch": "vite build --watch --mode development",
+    "build": "tsc --noEmit && npm run build:app && npm run build:content",
+    "build:app": "vite build",
+    "build:content": "CONWIX_CONTENT=announce vite build && CONWIX_CONTENT=overlay vite build",
+    "build:dev": "npm run build:app -- --mode development && CONWIX_CONTENT=announce vite build --mode development && CONWIX_CONTENT=overlay vite build --mode development",
+    "watch": "npm run build:dev -- --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
