@@ -84,6 +84,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/extension/companies/{companyId}/skus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_extension_company_skus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/ingestion/ozon/sales-facts": {
         parameters: {
             query?: never;
@@ -92,6 +108,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_ingestion_ozon_sales_facts_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/extension/companies/{companyId}/skus/{marketplaceSku}/sales": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_extension_sku_sales"];
         put?: never;
         post?: never;
         delete?: never;
@@ -162,6 +194,10 @@ export interface components {
             email: string;
             companies: components["schemas"]["MeCompanyResponse"][];
         };
+        CompanySkuListResponse: {
+            items: string[];
+            nextCursor?: string | null;
+        };
         SalesFactListItemResponse: {
             marketplaceAccountId: string;
             sourceRowId: string;
@@ -176,6 +212,20 @@ export interface components {
         SalesFactListResponse: {
             items: components["schemas"]["SalesFactListItemResponse"][];
             nextCursor?: string | null;
+        };
+        SkuSalesTotalResponse: {
+            currency: string;
+            orderedQuantity: number;
+            orderedAmountMinor: number;
+            deliveredQuantity: number;
+            deliveredAmountMinor: number;
+            cancelledQuantity: number;
+            cancelledAmountMinor: number;
+        };
+        SkuSalesSummaryResponse: {
+            marketplaceSku: string;
+            days: number;
+            totals: components["schemas"]["SkuSalesTotalResponse"][];
         };
         AppInfoResponse: {
             app: string;
@@ -319,9 +369,48 @@ export interface operations {
             };
         };
     };
+    get_ingestion_extension_company_skus: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description Артикул из nextCursor предыдущей страницы */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Артикулы компании, keyset-пагинация по самому артикулу */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanySkuListResponse"];
+                };
+            };
+            /** @description Некорректный limit */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     get_ingestion_ozon_sales_facts_list: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                /** @description Курсор из nextCursor предыдущей страницы */
+                cursor?: string;
+            };
             header?: never;
             path: {
                 companyId: string;
@@ -340,6 +429,41 @@ export interface operations {
                 };
             };
             /** @description Некорректный limit или cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_extension_sku_sales: {
+        parameters: {
+            query?: {
+                /** @description Окно в днях по бизнес-дате площадки */
+                days?: number;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+                marketplaceSku: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Заказанное и отменённое по артикулу за окно дней, по каждой валюте отдельно */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkuSalesSummaryResponse"];
+                };
+            };
+            /** @description Некорректный days */
             422: {
                 headers: {
                     [name: string]: unknown;

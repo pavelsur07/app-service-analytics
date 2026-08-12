@@ -72,6 +72,27 @@ final class SalesFactBuilder
         return $clone;
     }
 
+    public function withMarketplaceSku(string $marketplaceSku): self
+    {
+        $clone = clone $this;
+        $clone->marketplaceSku = $marketplaceSku;
+
+        return $clone;
+    }
+
+    /**
+     * Дата в часовом поясе площадки (ADR-009). Задаётся снаружи, потому что
+     * попадание в окно расчёта — то, что проверяет тест, и билдер не должен
+     * вычислять проверяемое значение сам (ADR-005).
+     */
+    public function withBusinessDate(\DateTimeImmutable $businessDate): self
+    {
+        $clone = clone $this;
+        $clone->businessDate = $businessDate;
+
+        return $clone;
+    }
+
     public function withQuantity(int $quantity): self
     {
         $clone = clone $this;
