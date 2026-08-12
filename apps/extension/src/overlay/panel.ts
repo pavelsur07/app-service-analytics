@@ -1,4 +1,5 @@
 import type { SkuSalesSummaryResponse } from '../api/client'
+import { formatMinorAmount } from '../shared/lib/formatMinorAmount'
 
 /**
  * Панель Conwix на карточке маркетплейса.
@@ -101,11 +102,11 @@ function panelElement(summary: SkuSalesSummaryResponse): HTMLElement {
   panel.append(
     row(
       'Заказано',
-      `${total.orderedQuantity} шт · ${money(total.orderedAmountMinor, total.currency)}`,
+      `${total.orderedQuantity} шт · ${formatMinorAmount(total.orderedAmountMinor, total.currency)}`,
     ),
     row(
       'Доставлено',
-      `${total.deliveredQuantity} шт · ${money(total.deliveredAmountMinor, total.currency)}`,
+      `${total.deliveredQuantity} шт · ${formatMinorAmount(total.deliveredAmountMinor, total.currency)}`,
     ),
     row(
       'Отменено',
@@ -144,19 +145,4 @@ function row(label: string, value: string, muted = false): HTMLElement {
   element.append(labelNode, valueNode)
 
   return element
-}
-
-/**
- * Минорные единицы → строка. Деление на 100 здесь — форматирование
- * для показа, а не арифметика над деньгами: складывать и вычитать
- * величины расширение не имеет права, это делает бэкенд (CLAUDE.md §3).
- */
-function money(amountMinor: number, currency: string): string {
-  const formatted = new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 0,
-  }).format(amountMinor / 100)
-
-  return formatted
 }

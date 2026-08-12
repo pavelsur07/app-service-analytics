@@ -83,7 +83,11 @@ export function recipientFor(
     return { kind: 'not-configured' }
   }
 
-  return announcedId === undefined
+  // Пустая строка — это тоже «не сообщил»: атрибут может оказаться
+  // в разметке пустым, и отправлять токен «расширению с пустым id»
+  // означало бы показать клиенту ошибку подключения вместо честного
+  // «не установлено».
+  return announcedId === undefined || announcedId === ''
     ? { kind: 'not-installed' }
     : { kind: 'discovered', id: announcedId }
 }

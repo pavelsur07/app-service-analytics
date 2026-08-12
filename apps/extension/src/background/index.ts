@@ -63,9 +63,11 @@ chrome.runtime.onMessageExternal.addListener(
  * service worker.
  */
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  // Чужое сообщение оставляем без ответа и без sendResponse: слушателей
+  // может быть несколько, и ответивший первым закрывает канал. Ответить
+  // «не знаю» на всё подряд — значит сломать любой обработчик, который
+  // появится следом.
   if (!isSalesRequest(message)) {
-    sendResponse(null)
-
     return false
   }
 

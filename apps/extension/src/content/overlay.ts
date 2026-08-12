@@ -73,7 +73,7 @@ async function handleLocation(): Promise<void> {
   // Спрашиваем до ожидания якоря: на чужом товаре ответ придёт сразу
   // и пустой, и незачем десять секунд ждать разметку ради молчания.
   const summary = await requestSales(marketplaceSku)
-  if (null === summary) {
+  if (null === summary || isStale(marketplaceSku)) {
     return
   }
 
@@ -88,6 +88,9 @@ async function handleLocation(): Promise<void> {
   if (null === anchor) {
     reportAnchorMissing(marketplaceSku)
 
+    return
+  }
+  if (isStale(marketplaceSku)) {
     return
   }
 
@@ -176,6 +179,17 @@ async function requestSales(marketplaceSku: string) {
     // Service worker перезапускается или расширение обновляют — молчим.
     return null
   }
+}
+
+/**
+ * Пока мы ждали сеть, гидратацию и якорь, человек мог уйти на соседний
+ * товар: переход в SPA не перезапускает скрипт, а обработка асинхронна.
+ * Без этой сверки более медленный запрос дорисовал бы поверх новой
+ * карточки числа предыдущей — отказ, который ничего не роняет
+ * и потому особенно опасен.
+ */
+function isStale(marketplaceSku: string): boolean {
+  return marketplaceSku !== ozonProductIdFromUrl(location.href)
 }
 
 function forget(): void {

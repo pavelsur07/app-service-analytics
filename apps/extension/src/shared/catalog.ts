@@ -57,6 +57,7 @@ export async function refreshCatalog(
 ): Promise<Catalog> {
   const skus: string[] = []
   let cursor: string | null = null
+  let complete = false
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const response = await fetchSkuPage(token, companyId, cursor, PAGE_SIZE)
@@ -66,8 +67,20 @@ export async function refreshCatalog(
     // означают одно — страниц больше нет.
     cursor = response.nextCursor ?? null
     if (null === cursor) {
+      complete = true
       break
     }
+  }
+
+  // Потолок страниц исчерпан, а сервер обещает продолжение. Сохранить
+  // то, что успели, было бы худшим исходом: неполный список пролежал бы
+  // сутки как свежий, и оверлей молчал бы на своих же товарах, притом
+  // что в API они есть. Лучше остаться без каталога — тогда молчит всё
+  // и одинаково, а вызывающий сохранит прежний, если он был.
+  if (!complete) {
+    throw new Error(
+      `Каталог артикулов не выгружен целиком: исчерпан потолок в ${MAX_PAGES} страниц.`,
+    )
   }
 
   const catalog: Catalog = {

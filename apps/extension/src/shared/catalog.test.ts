@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { CompanySkuListResponse } from '../api/client'
 import { isOwnSku, isStale, readCatalog, refreshCatalog } from './catalog'
 import type { Storage } from './connection'
 
@@ -36,9 +37,7 @@ function fakeStorage(initial: Record<string, unknown> = {}): Storage & {
  * и возвращает сам мок. Обращаться к глобальному fetch из теста нельзя —
  * запрещено линтером вне src/api/, и правило ослаблять незачем.
  */
-function respondWithPages(
-  pages: { items: string[]; nextCursor: string | null }[],
-) {
+function respondWithPages(pages: CompanySkuListResponse[]) {
   let call = 0
   // Аргумент объявлен и используется в утверждениях о вызовах: без него
   // у мока пустой список параметров, и mock.calls[..][0] не проходит tsc.
@@ -84,6 +83,26 @@ describe('каталог артикулов', () => {
 
     expect(catalog.skus).toEqual(['111', '222', '333'])
     expect(stub.mock.calls).toHaveLength(2)
+  })
+
+  it('неполная выгрузка не сохраняется', async () => {
+    // Сервер обещает продолжение бесконечно. Сохранить половину каталога
+    // со свежей отметкой времени — худший исход: сутки оверлей молчал бы
+    // на своих товарах, притом что в API они есть.
+    const stub = respondWithPages(
+      Array.from({ length: 600 }, (_, index) => ({
+        items: [String(index)],
+        nextCursor: String(index),
+      })),
+    )
+    const storage = fakeStorage()
+
+    await expect(
+      refreshCatalog(storage, 'conwix_ext_token', COMPANY, NOW),
+    ).rejects.toThrow(/целиком/)
+
+    expect(await readCatalog(storage, COMPANY)).toBeNull()
+    expect(stub.mock.calls.length).toBeLessThanOrEqual(500)
   })
 
   it('передаёт курсор следующей страницы', async () => {
