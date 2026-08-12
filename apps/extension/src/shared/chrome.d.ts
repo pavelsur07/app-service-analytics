@@ -37,5 +37,35 @@ declare namespace chrome {
     }
 
     const onMessageExternal: ExternalMessageEvent
+
+    interface MessageEvent {
+      addListener(
+        callback: (
+          message: unknown,
+          sender: MessageSender,
+          sendResponse: (response: unknown) => void,
+        ) => boolean | undefined,
+      ): void
+    }
+
+    /** Сообщения между своими же частями расширения. */
+    const onMessage: MessageEvent
+
+    function sendMessage(message: unknown): Promise<unknown>
+  }
+
+  namespace alarms {
+    interface Alarm {
+      name: string
+    }
+
+    function create(
+      name: string,
+      info: { periodInMinutes?: number; delayInMinutes?: number },
+    ): void
+
+    const onAlarm: {
+      addListener(callback: (alarm: Alarm) => void): void
+    }
   }
 }

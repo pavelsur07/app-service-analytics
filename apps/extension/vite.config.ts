@@ -20,6 +20,10 @@ function manifestPlugin(mode: string): Plugin {
   }
 }
 
+// Какой content-script собирает этот проход. Пусто — собираем popup
+// и service worker, для них модули допустимы и удобны.
+const contentEntry = process.env.CONWIX_CONTENT
+
 export default defineConfig(({ mode }) => ({
   plugins: [tailwindcss(), manifestPlugin(mode)],
   // Адрес приложения считается тем же вызовом, что и хосты манифеста,
@@ -27,8 +31,13 @@ export default defineConfig(({ mode }) => ({
   // не годится: `vite build --mode development` меняет mode, но не
   // NODE_ENV, и DEV в собранном коде остаётся false — манифест разрешал
   // бы localhost, а запрос уходил на боевой домен.
+  // CONWIX_APP_ORIGIN — для локальной проверки через SSH-туннель
+  // на нестандартном порту: CONWIX_APP_ORIGIN=http://app.conwix.localhost:8080
+  // В production-сборке игнорируется (см. appOrigin).
   define: {
-    __APP_ORIGIN__: JSON.stringify(appOrigin(mode)),
+    __APP_ORIGIN__: JSON.stringify(
+      appOrigin(mode, process.env.CONWIX_APP_ORIGIN),
+    ),
   },
   resolve: {
     // Та же причина, что у seller: packages/ui без своего node_modules,
@@ -39,31 +48,50 @@ export default defineConfig(({ mode }) => ({
     dedupe: ['react', 'react-dom'],
   },
   build: {
-    // Имена файлов фиксированы, без хэшей: на них ссылается манифест,
-    // а он статический. Для расширения кэширование по имени и не нужно —
-    // файлы едут в пакете, а не по сети.
+    // Content-script собирается отдельным проходом и в формате iife.
+    //
+    // Причина не стилистическая: content-script в Manifest V3 грузится
+    // обычным скриптом, не модулем, и `import` в нём — синтаксическая
+    // ошибка, после которой не выполняется ничего. В общей сборке Vite
+    // выносит код, нужный сразу нескольким входам, в отдельные чанки
+    // и подставляет во вход `import` на них — то есть ломает ровно те
+    // файлы, которые ломать нельзя. Отдельный проход с одним входом
+    // делать этого не может: делить не с кем.
+    //
+    // Формат iife в rollup несовместим с несколькими входами, поэтому
+    // проход на каждый скрипт свой (см. package.json, build:content).
     rollupOptions: {
-      input: {
-        popup: fileURLToPath(
-          new URL('./src/popup/index.html', import.meta.url),
-        ),
-        background: fileURLToPath(
-          new URL('./src/background/index.ts', import.meta.url),
-        ),
-        'content/announce': fileURLToPath(
-          new URL('./src/content/announce.ts', import.meta.url),
-        ),
-      },
-      output: {
-        entryFileNames: '[name].js',
-        chunkFileNames: 'chunks/[name].js',
-        assetFileNames: 'assets/[name][extname]',
-      },
+      input:
+        contentEntry === undefined
+          ? {
+              popup: fileURLToPath(
+                new URL('./src/popup/index.html', import.meta.url),
+              ),
+              background: fileURLToPath(
+                new URL('./src/background/index.ts', import.meta.url),
+              ),
+            }
+          : fileURLToPath(
+              new URL(`./src/content/${contentEntry}.ts`, import.meta.url),
+            ),
+      output:
+        contentEntry === undefined
+          ? {
+              entryFileNames: '[name].js',
+              chunkFileNames: 'chunks/[name].js',
+              assetFileNames: 'assets/[name][extname]',
+            }
+          : {
+              // iife — самодостаточный обычный скрипт без import.
+              format: 'iife',
+              entryFileNames: `content/${contentEntry}.js`,
+              assetFileNames: 'assets/[name][extname]',
+            },
     },
     // MV3 запрещает eval и подгрузку кода со стороны; sourcemap отдельным
     // файлом это не нарушает и сильно помогает при отладке service worker.
     sourcemap: true,
-    emptyOutDir: true,
+    emptyOutDir: contentEntry === undefined,
   },
   test: {
     environment: 'node',

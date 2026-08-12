@@ -1,6 +1,14 @@
-import { fetchMe } from '../api/client'
+import { fetchMe, fetchSkuSales } from '../api/client'
+import {
+  isOwnSku,
+  isStale,
+  readCatalog,
+  refreshCatalog,
+} from '../shared/catalog'
+import { isSalesRequest } from '../shared/salesRequest'
 import {
   browserStorage,
+  readConnection,
   writeConnection,
   type Connection,
 } from '../shared/connection'
@@ -48,6 +56,75 @@ chrome.runtime.onMessageExternal.addListener(
   },
 )
 
+/**
+ * Запрос итога продаж от оверлея. Сеть живёт здесь, а не в content-script:
+ * тот выполняется в origin страницы маркетплейса и его fetch подчиняется
+ * CORS (shared/salesRequest.ts). Заодно токен и хранилище не покидают
+ * service worker.
+ */
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  // Чужое сообщение оставляем без ответа и без sendResponse: слушателей
+  // может быть несколько, и ответивший первым закрывает канал. Ответить
+  // «не знаю» на всё подряд — значит сломать любой обработчик, который
+  // появится следом.
+  if (!isSalesRequest(message)) {
+    return false
+  }
+
+  void salesFor(message.marketplaceSku).then(sendResponse)
+
+  return true
+})
+
+/**
+ * Один и тот же null на «не подключено», «не наш товар» и «не смогли
+ * спросить»: оверлею во всех трёх случаях делать одно — молчать.
+ *
+ * Проверка принадлежности здесь и остаётся локальной: артикул чужого
+ * товара никуда не уходит, сервер о нём не узнаёт.
+ */
+async function salesFor(marketplaceSku: string) {
+  const storage = browserStorage()
+  const connection = await readConnection(storage)
+  if (null === connection) {
+    return null
+  }
+
+  const catalog = await readCatalog(storage, connection.companyId)
+  if (null === catalog || !isOwnSku(catalog, marketplaceSku)) {
+    return null
+  }
+
+  try {
+    return await fetchSkuSales(
+      connection.token,
+      connection.companyId,
+      marketplaceSku,
+    )
+  } catch {
+    return null
+  }
+}
+
+const CATALOG_ALARM = 'conwix:catalog'
+const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+// Будильник, не setInterval: service worker засыпает через полминуты
+// простоя, и таймер в памяти умирает вместе с ним. Период чуть меньше
+// суток — чтобы каталог успевал обновиться до того, как признан устаревшим.
+chrome.alarms.create(CATALOG_ALARM, {
+  periodInMinutes: 12 * 60,
+  delayInMinutes: 1,
+})
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (CATALOG_ALARM !== alarm.name) {
+    return
+  }
+
+  void refreshCatalogIfStale()
+})
+
 async function connect(token: string): Promise<ConnectResult> {
   try {
     // Токен проверяется до записи: подключённым расширение считается
@@ -59,10 +136,36 @@ async function connect(token: string): Promise<ConnectResult> {
       companyName: me.company.name,
     }
     await writeConnection(browserStorage(), connection)
+    // Каталог сразу, не по будильнику: иначе первые сутки после
+    // подключения оверлей молчал бы на всех карточках, и выглядело бы
+    // это как «расширение не работает».
+    await refreshCatalogIfStale()
 
     return { ok: true, companyName: connection.companyName }
   } catch {
     return { ok: false, error: 'connect_failed' }
+  }
+}
+
+async function refreshCatalogIfStale(): Promise<void> {
+  const storage = browserStorage()
+  const connection = await readConnection(storage)
+  if (null === connection) {
+    return
+  }
+
+  const now = new Date()
+  const catalog = await readCatalog(storage, connection.companyId)
+  if (null !== catalog && !isStale(catalog, now, CATALOG_MAX_AGE_MS)) {
+    return
+  }
+
+  try {
+    await refreshCatalog(storage, connection.token, connection.companyId, now)
+  } catch {
+    // Сеть недоступна или токен умер — прежний каталог остаётся жить.
+    // Он устареет, но устаревший список артикулов лучше пустого:
+    // товары редко исчезают, чаще добавляются.
   }
 }
 

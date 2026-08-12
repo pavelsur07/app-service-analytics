@@ -1,6 +1,10 @@
 import type { components } from './schema'
 
 export type ExtensionMeResponse = components['schemas']['ExtensionMeResponse']
+export type CompanySkuListResponse =
+  components['schemas']['CompanySkuListResponse']
+export type SkuSalesSummaryResponse =
+  components['schemas']['SkuSalesSummaryResponse']
 type ValidationErrorResponse = components['schemas']['ValidationErrorResponse']
 
 /**
@@ -40,7 +44,44 @@ export function isUnauthorized(error: unknown): boolean {
 }
 
 export async function fetchMe(token: string): Promise<ExtensionMeResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/extension/me`, {
+  return request<ExtensionMeResponse>(token, '/api/extension/me')
+}
+
+/**
+ * Одна страница артикулов компании. Пагинация — забота вызывающего
+ * (shared/catalog.ts): клиенту здесь незачем знать, зачем список
+ * выгружают целиком.
+ */
+export async function fetchSkuPage(
+  token: string,
+  companyId: string,
+  cursor: string | null,
+  limit: number,
+): Promise<CompanySkuListResponse> {
+  const query = new URLSearchParams({ limit: String(limit) })
+  if (null !== cursor) {
+    query.set('cursor', cursor)
+  }
+
+  return request<CompanySkuListResponse>(
+    token,
+    `/api/extension/companies/${encodeURIComponent(companyId)}/skus?${query.toString()}`,
+  )
+}
+
+export async function fetchSkuSales(
+  token: string,
+  companyId: string,
+  marketplaceSku: string,
+): Promise<SkuSalesSummaryResponse> {
+  return request<SkuSalesSummaryResponse>(
+    token,
+    `/api/extension/companies/${encodeURIComponent(companyId)}/skus/${encodeURIComponent(marketplaceSku)}/sales`,
+  )
+}
+
+async function request<T>(token: string, path: string): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
 
@@ -48,7 +89,7 @@ export async function fetchMe(token: string): Promise<ExtensionMeResponse> {
     throw await parseApiError(response)
   }
 
-  return (await response.json()) as ExtensionMeResponse
+  return (await response.json()) as T
 }
 
 async function parseApiError(response: Response): Promise<ApiError> {
