@@ -116,6 +116,42 @@ final class ListSalesFactsControllerTest extends WebTestCase
         self::assertCount(5, $seenSourceRowIds, 'все строки должны быть возвращены ровно один раз без пропусков');
     }
 
+    public function testFactsOfAnotherCompanyAreNotListed(): void
+    {
+        // Обязательное покрытие ADR-005: изоляция данных между компаниями.
+        // Список продаж — основной экран клиента, и до этого теста был
+        // единственным company-scoped чтением без такой проверки: запись
+        // фактов, сырьё и синхронизация её имели, витрина нет.
+        $client = static::createClient();
+        $salesFacts = $this->salesFacts();
+
+        $companyId = $this->loginAsCompanyMember($client);
+
+        $salesFacts->upsertAll([
+            SalesFactBuilder::aSalesFact()
+                ->withCompanyId($companyId)
+                ->withSourceRowId('own|SKU-1')
+                ->withMarketplaceSku('own-sku')
+                ->build(),
+            // Чужая компания с тем же артикулом: артикулы площадки общие
+            // для всех продавцов, и отсечь чужие строки может только
+            // company_id в самом запросе.
+            SalesFactBuilder::aSalesFact()
+                ->withCompanyId(Uuid::v7())
+                ->withSourceRowId('foreign|SKU-1')
+                ->withMarketplaceSku('own-sku')
+                ->build(),
+        ]);
+
+        $client->request('GET', \sprintf('/api/companies/%s/ingestion/ozon/sales-facts', $companyId->toRfc4122()));
+
+        self::assertResponseIsSuccessful();
+        $items = $this->itemsOf($this->decodeResponse($client));
+
+        self::assertCount(1, $items);
+        self::assertSame('own|SKU-1', $items[0]['sourceRowId']);
+    }
+
     /**
      * Заводит пользователя и его членство через Builder (ADR-005), логинит
      * и возвращает companyId получившегося членства — вызывающий код сам
