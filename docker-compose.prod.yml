@@ -66,6 +66,14 @@ x-api-env: &api-env
   # ADR-001 называет Redis предназначенным именно для распределённых
   # блокировок.
   LOCK_DSN: redis://redis:6379
+  # SMTP провайдера и адрес, куда уходит оповещение о несвежих данных.
+  # :- , не :? — иначе отсутствие любого из них ронял бы разбор compose
+  # целиком, то есть и выкладку api. Отсутствие замечает не парсер,
+  # а сам сторож: worker-freshness ниже падает на первом тике с пустым
+  # ALERT_EMAIL и уходит в перезапуск, а шаг «все сервисы здоровы»
+  # красит выкладку в красный. Молча работать вхолостую он не умеет.
+  MAILER_DSN: ${MAILER_DSN:-null://null}
+  ALERT_EMAIL: ${ALERT_EMAIL:-}
 
 services:
   traefik:
@@ -260,6 +268,35 @@ services:
       - bin/console
       - app:ingestion:schedule-ozon-sync
       - --interval=1800
+    healthcheck:
+      test: ["CMD", "php", "bin/console", "dbal:run-sql", "SELECT 1", "--quiet"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Сторож свежести данных. Отдельный процесс, а не вторая обязанность
+  # worker-scheduler: сторож внутри сторожимого процесса умирает вместе
+  # с ним, и тогда «писем нет» означает и «синхронизации нет», и «всё
+  # хорошо» одновременно (CheckDataFreshnessCommand). egress — письмо
+  # уходит наружу через SMTP провайдера; сеть internal исходящий трафик
+  # не выпускает вообще.
+  worker-freshness:
+    image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
+    restart: unless-stopped
+    environment: *api-env
+    networks: [internal, egress]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 128m
+    command:
+      - php
+      - bin/console
+      - app:ingestion:check-data-freshness
+      - --interval=3600
     healthcheck:
       test: ["CMD", "php", "bin/console", "dbal:run-sql", "SELECT 1", "--quiet"]
       interval: 30s

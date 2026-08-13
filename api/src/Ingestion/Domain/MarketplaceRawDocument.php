@@ -91,6 +91,11 @@ class MarketplaceRawDocument
         string $reportType,
         \DateTimeImmutable $period,
         string $rawBody,
+        // Момент получения — снаружи, а не только из часов внутри:
+        // по нему меряется свежесть данных (NotifyStaleAccountsAction),
+        // и тест обязан задавать проверяемое значение сам (ADR-005).
+        // Умолчание оставлено, чтобы боевой вызов не повторял «сейчас».
+        ?\DateTimeImmutable $receivedAt = null,
     ): self {
         return new self(
             Uuid::v7(),
@@ -100,7 +105,7 @@ class MarketplaceRawDocument
             $period,
             hash('sha256', $rawBody),
             $rawBody,
-            new \DateTimeImmutable(),
+            $receivedAt ?? new \DateTimeImmutable(),
         );
     }
 
