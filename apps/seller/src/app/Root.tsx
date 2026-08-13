@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createBrowserRouter, RouterProvider } from 'react-router'
-import { App as PingScreen } from '../App'
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
+
 import { CompanyListPage } from '../features/auth/ui/CompanyListPage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
 import { ExtensionConnectPage } from '../features/extension/ui/ExtensionConnectPage'
 import { SalesFactsPage } from '../features/ingestion/ui/SalesFactsPage'
+import { CompanyLayout } from './CompanyLayout'
 import { RequireAuth } from './RequireAuth'
 
 // retry: false — TanStack Query по умолчанию повторяет неудачный запрос
@@ -16,7 +17,10 @@ const queryClient = new QueryClient({
 })
 
 const router = createBrowserRouter([
-  { path: '/', element: <PingScreen /> },
+  // Корень ведёт к выбору компании. Ping-экран, с которого начиналась
+  // первая полоска насквозь, убран: продуктовой ценности он не имеет,
+  // а занимал единственный адрес, который человек набирает руками.
+  { path: '/', element: <Navigate to="/companies" replace /> },
   { path: '/login', element: <LoginPage /> },
   {
     path: '/companies',
@@ -27,26 +31,21 @@ const router = createBrowserRouter([
     ),
   },
   {
-    path: '/companies/:companyId/ingestion/sales-facts',
-    element: (
-      <RequireAuth>
-        <SalesFactsPage />
-      </RequireAuth>
-    ),
-  },
-  {
-    path: '/companies/:companyId/extension',
-    element: (
-      <RequireAuth>
-        <ExtensionConnectPage />
-      </RequireAuth>
-    ),
+    // Оболочка компании: сайдбар и всё, что внутри. Адреса — про
+    // предметную область, а не про наши модули: `sales`, не
+    // `ingestion/sales-facts`. «Ingestion» — имя модуля бэкенда,
+    // продавцу оно ничего не говорит.
+    path: '/companies/:companyId',
+    element: <CompanyLayout />,
+    children: [
+      { index: true, element: <Navigate to="sales" replace /> },
+      { path: 'sales', element: <SalesFactsPage /> },
+      { path: 'extension', element: <ExtensionConnectPage /> },
+    ],
   },
 ])
 
-// Роутер и провайдеры (docs/structure.md, «app/»). Стартовый ping-экран
-// остаётся на "/" без изменений — первый настоящий экран получает свой
-// маршрут, не замещает существующий.
+// Роутер и провайдеры (docs/structure.md, «app/»).
 export function Root() {
   return (
     <QueryClientProvider client={queryClient}>
