@@ -8,7 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
 /**
- * Артикулы товаров компании — DBAL, без гидрации SalesFact (CLAUDE.md §5).
+ * Артикулы товаров компании — DBAL, без гидрации сущностей (CLAUDE.md §5).
  * build() отдаёт QueryBuilder (§5), выполнение и сборку делает контроллер.
  *
  * Зачем этот список расширению: чтобы решать «моя ли это карточка»
@@ -22,7 +22,7 @@ use Doctrine\DBAL\Query\QueryBuilder;
  * можно только в границах своей же компании — companyId в запросе
  * остаётся.
  *
- * Марктплейс не фильтруется и в пути не назван: сегодня у компании
+ * Маркетплейс не фильтруется и в пути не назван: сегодня у компании
  * только Ozon, а `marketplace` живёт в таблице чужого модуля (Identity).
  * Со вторым маркетплейсом здесь появится фильтр — и тогда же он появится
  * в контракте, а не раньше.
@@ -36,11 +36,25 @@ final readonly class CompanySkusQuery
 
     public function build(string $companyId, ?string $cursor, int $limit): QueryBuilder
     {
+        // Каталог и продажи, а не что-то одно. Каталог — источник правды
+        // о том, что у продавца есть сейчас, включая товары без единой
+        // продажи; продажи — о том, что у него было, включая товары,
+        // снятые с площадки. Оверлей должен молчать только на по-настоящему
+        // чужих карточках, а не на своих снятых или ещё не проданных.
+        //
+        // UNION, а не UNION ALL: артикул есть в обоих источниках почти
+        // всегда, и дубли пришлось бы отсеивать всё равно.
+        $union = <<<'SQL'
+            (
+                SELECT marketplace_sku FROM marketplace_listing WHERE company_id = :companyId
+                UNION
+                SELECT marketplace_sku FROM sales_fact WHERE company_id = :companyId
+            ) AS sku
+            SQL;
+
         $qb = $this->connection->createQueryBuilder()
             ->select('marketplace_sku')
-            ->distinct()
-            ->from('sales_fact')
-            ->where('company_id = :companyId')
+            ->from($union)
             ->setParameter('companyId', $companyId)
             ->orderBy('marketplace_sku', 'ASC')
             // +1 — узнать, есть ли следующая страница, без COUNT(*)

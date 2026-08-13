@@ -11,16 +11,21 @@ use App\Identity\Domain\ValueObject\ExtensionTokenSecret;
 use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineExtensionTokenRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
+use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Ingestion\Domain\SalesFactRepository;
+use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceListingWriter;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\ExtensionTokenBuilder;
+use App\Tests\Support\Builder\MarketplaceListingBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
 use App\Tests\Support\Builder\UserBuilder;
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Чтение данных компании расширением (пакет 3). Обязательное покрытие
@@ -50,6 +55,69 @@ final class ExtensionReadEndpointsTest extends WebTestCase
 
         self::assertSame(['111'], $payload['items']);
         self::assertNull($payload['nextCursor']);
+    }
+
+    public function testSkuListIncludesCatalogItemsWithoutSales(): void
+    {
+        // Это и есть смысл каталога: товар, который ещё ни разу
+        // не продавался, до сих пор считался чужим, и оверлей на его
+        // карточке молчал. Для продавца с новинками расширение выглядело
+        // как «работает через раз».
+        $client = static::createClient();
+        $fixture = $this->connectedCompany();
+
+        SalesFactBuilder::aSalesFact()
+            ->withCompanyId($fixture->company->id())
+            ->withMarketplaceSku('sold-1')
+            ->withSourceRowId('sold-row')
+            ->persistWith($this->salesFacts());
+
+        $accountId = Uuid::v7();
+        $syncedAt = new \DateTimeImmutable();
+        $this->listings()->replaceForAccount(
+            $fixture->company->id()->toRfc4122(),
+            $accountId,
+            [
+                MarketplaceListingBuilder::aMarketplaceListing()
+                    ->withCompanyId($fixture->company->id())
+                    ->withMarketplaceAccountId($accountId)
+                    ->withMarketplaceSku('never-sold')
+                    ->withSeenAt($syncedAt)
+                    ->build(),
+            ],
+            $syncedAt,
+        );
+
+        $payload = $this->get($client, $fixture, '/skus');
+
+        // Оба источника, а не один: каталог знает, что есть сейчас,
+        // продажи — что было, включая снятое с площадки.
+        self::assertSame(['never-sold', 'sold-1'], $payload['items']);
+    }
+
+    public function testCatalogOfAnotherCompanyDoesNotLeakIntoSkuList(): void
+    {
+        $client = static::createClient();
+        $fixture = $this->connectedCompany();
+
+        $syncedAt = new \DateTimeImmutable();
+        $foreignCompanyId = Uuid::v7();
+        $this->listings()->replaceForAccount(
+            $foreignCompanyId->toRfc4122(),
+            Uuid::v7(),
+            [
+                MarketplaceListingBuilder::aMarketplaceListing()
+                    ->withCompanyId($foreignCompanyId)
+                    ->withMarketplaceSku('foreign-sku')
+                    ->withSeenAt($syncedAt)
+                    ->build(),
+            ],
+            $syncedAt,
+        );
+
+        $payload = $this->get($client, $fixture, '/skus');
+
+        self::assertSame([], $payload['items']);
     }
 
     public function testTokenOfAnotherCompanyIsRejectedEvenForItsOwnMember(): void
@@ -253,6 +321,20 @@ final class ExtensionReadEndpointsTest extends WebTestCase
             ->persistWith($companies, $users, $tokens);
 
         return new ConnectedCompany($company, $user, $secret);
+    }
+
+    /**
+     * Строится напрямую, не через контейнер: каталог пока никем
+     * не потребляется (обработчик синхронизации приезжает вместе
+     * с парсером), и компилятор вырезает неиспользуемый private-сервис —
+     * та же причина, что у DoctrineUserRepository в пакете 1.
+     */
+    private function listings(): MarketplaceListingRepository
+    {
+        /** @var Connection $connection */
+        $connection = static::getContainer()->get(Connection::class);
+
+        return new DoctrineMarketplaceListingWriter($connection);
     }
 
     private function salesFacts(): SalesFactRepository
