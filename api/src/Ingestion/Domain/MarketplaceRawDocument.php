@@ -29,6 +29,10 @@ use Symfony\Component\Uid\Uuid;
     columns: ['company_id', 'marketplace_account_id', 'report_type', 'period', 'body_hash'],
 )]
 #[ORM\Index(name: 'idx_marketplace_raw_document_company_id', columns: ['company_id'])]
+// Контроль свежести данных (NotifyStaleAccountsAction): диапазон
+// по received_at с группировкой по подключению. Порядок столбцов —
+// ради index-only scan, см. RecentlyIngestedAccountsQuery.
+#[ORM\Index(name: 'idx_marketplace_raw_document_received_at', columns: ['received_at', 'company_id', 'marketplace_account_id'])]
 class MarketplaceRawDocument
 {
     #[ORM\Id]
@@ -91,6 +95,11 @@ class MarketplaceRawDocument
         string $reportType,
         \DateTimeImmutable $period,
         string $rawBody,
+        // Момент получения — снаружи, а не только из часов внутри:
+        // по нему меряется свежесть данных (NotifyStaleAccountsAction),
+        // и тест обязан задавать проверяемое значение сам (ADR-005).
+        // Умолчание оставлено, чтобы боевой вызов не повторял «сейчас».
+        ?\DateTimeImmutable $receivedAt = null,
     ): self {
         return new self(
             Uuid::v7(),
@@ -100,7 +109,7 @@ class MarketplaceRawDocument
             $period,
             hash('sha256', $rawBody),
             $rawBody,
-            new \DateTimeImmutable(),
+            $receivedAt ?? new \DateTimeImmutable(),
         );
     }
 

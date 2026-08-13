@@ -21,6 +21,7 @@ final class MarketplaceRawDocumentBuilder
     private string $reportType = 'ozon_posting_fbo_list';
     private \DateTimeImmutable $period;
     private string $rawBody = '{"result":[]}';
+    private ?\DateTimeImmutable $receivedAt = null;
 
     private function __construct()
     {
@@ -58,6 +59,14 @@ final class MarketplaceRawDocumentBuilder
         return $clone;
     }
 
+    public function withReceivedAt(\DateTimeImmutable $receivedAt): self
+    {
+        $clone = clone $this;
+        $clone->receivedAt = $receivedAt;
+
+        return $clone;
+    }
+
     public function withRawBody(string $rawBody): self
     {
         $clone = clone $this;
@@ -74,6 +83,7 @@ final class MarketplaceRawDocumentBuilder
             reportType: $this->reportType,
             period: $this->period,
             rawBody: $this->rawBody,
+            receivedAt: $this->receivedAt,
         );
     }
 
