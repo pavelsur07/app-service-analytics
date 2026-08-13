@@ -75,7 +75,11 @@ final class RecentlyIngestedAccountsQueryTest extends KernelTestCase
         $rows = $query->build(new \DateTimeImmutable('-36 hours'))->executeQuery()->fetchAllAssociative();
 
         return array_map(
-            static fn (array $row): string => RecentlyIngestedAccountsQuery::keyOfRow($row),
+            static function (array $row): string {
+                $fresh = RecentlyIngestedAccountsQuery::mapRow($row);
+
+                return RecentlyIngestedAccountsQuery::key($fresh->companyId, $fresh->marketplaceAccountId);
+            },
             $rows,
         );
     }

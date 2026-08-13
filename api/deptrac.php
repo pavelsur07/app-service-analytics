@@ -114,8 +114,15 @@ return static function (DeptracConfig $config): void {
                     ],
                 ),
             ),
-            $ingestionOperationalAction = Layer::withName('IngestionOperationalAction')->collectors(
-                ClassLikeConfig::create('^App\\Ingestion\\Application\\(DispatchActiveOzonSyncs|NotifyStaleAccounts)Action$'),
+            // Два узких слоя, а не один на оба Action: RecentlyIngestedAccountsQuery
+            // нужен только сторожу свежести, и общий слой выдал бы межарендаторное
+            // чтение заодно планировщику, которому оно не нужно. CLAUDE.md §1
+            // требует давать узкий слой только тому, кому он действительно нужен.
+            $ingestionSyncAction = Layer::withName('IngestionSyncAction')->collectors(
+                ClassLikeConfig::create('^App\\Ingestion\\Application\\DispatchActiveOzonSyncsAction$'),
+            ),
+            $ingestionFreshnessAction = Layer::withName('IngestionFreshnessAction')->collectors(
+                ClassLikeConfig::create('^App\\Ingestion\\Application\\NotifyStaleAccountsAction$'),
             ),
             $ingestionFacade = Layer::withName('IngestionFacade')->collectors(
                 DirectoryConfig::create('src/Ingestion/Application/Facade/.*'),
@@ -245,15 +252,16 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($ingestionUi)->accesses($ingestionApplication, $ingestionDomain, $ingestionInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
             // Команды фоновых процессов — не весь IngestionUi: только им
             // разрешён IngestionOperationalAction (см. слой выше).
-            Ruleset::forLayer($ingestionOperationalCommand)->accesses($ingestionOperationalAction, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent),
+            Ruleset::forLayer($ingestionOperationalCommand)->accesses($ingestionSyncAction, $ingestionFreshnessAction, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent),
             Ruleset::forLayer($ingestionApplication)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
             // identityScheduleFacade, не identityFacade: единственный
             // потребитель межарендаторного чтения, узкий слой на узкий
             // слой (см. комментарий у identityScheduleFacade выше).
+            Ruleset::forLayer($ingestionSyncAction)->accesses($ingestionDomain, $ingestionApplication, $identityScheduleFacade, $sharedApplication, $sharedDomain, $symfonyComponent),
             // ingestionOperationalQuery — межарендаторное чтение свежести,
             // только этому слою и никому больше (тот же состав грантов,
             // что у identityScheduleFacade: узкий слой на узкий).
-            Ruleset::forLayer($ingestionOperationalAction)->accesses($ingestionDomain, $ingestionApplication, $ingestionOperationalQuery, $identityScheduleFacade, $sharedApplication, $sharedDomain, $symfonyComponent),
+            Ruleset::forLayer($ingestionFreshnessAction)->accesses($ingestionDomain, $ingestionApplication, $ingestionOperationalQuery, $identityScheduleFacade, $sharedApplication, $sharedDomain, $symfonyComponent),
             Ruleset::forLayer($ingestionOperationalQuery)->accesses($ingestionInfrastructure, $sharedInfrastructure, $symfonyComponent),
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),

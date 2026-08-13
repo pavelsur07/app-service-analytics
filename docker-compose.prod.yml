@@ -297,12 +297,12 @@ services:
       - bin/console
       - app:ingestion:check-data-freshness
       - --interval=3600
-    healthcheck:
-      test: ["CMD", "php", "bin/console", "dbal:run-sql", "SELECT 1", "--quiet"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
+    # healthcheck намеренно нет. Скопированный у соседей SELECT 1 проверяет
+    # базу, а не сторожа: контейнер с мёртвым основным процессом такую
+    # проверку проходит и числится healthy. Для процесса, вся ценность
+    # которого в том, что он жив, ложное «здоров» хуже отсутствия проверки.
+    # Признак отказа здесь — сам факт перезапуска (ps показывает Restarting,
+    # шаг выкладки «все сервисы здоровы» это ловит).
 
   postgres:
     image: postgres:16-alpine

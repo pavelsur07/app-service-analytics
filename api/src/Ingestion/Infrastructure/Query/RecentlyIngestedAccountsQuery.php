@@ -47,6 +47,12 @@ final readonly class RecentlyIngestedAccountsQuery
         return $this->connection->createQueryBuilder()
             ->select('company_id', 'marketplace_account_id')
             ->from('marketplace_raw_document')
+            // Индекс (received_at, company_id, marketplace_account_id) —
+            // порядок столбцов ради index-only scan: диапазон по времени
+            // ведущим столбцом, а группировка забирает остальные два
+            // прямо из индекса, не заглядывая в кучу. Без него сторож
+            // раз в час читал бы всю таблицу raw-документов, а она растёт
+            // с каждым днём работы каждого подключения.
             ->where('received_at >= :since')
             ->setParameter('since', $since, Types::DATETIME_IMMUTABLE)
             ->groupBy('company_id')
@@ -67,11 +73,11 @@ final readonly class RecentlyIngestedAccountsQuery
     /**
      * @param array<string, mixed> $row
      */
-    public static function keyOfRow(array $row): string
+    public static function mapRow(array $row): RecentlyIngestedAccountRow
     {
-        return self::key(
-            self::stringValue($row['company_id']),
-            self::stringValue($row['marketplace_account_id']),
+        return new RecentlyIngestedAccountRow(
+            companyId: self::stringValue($row['company_id']),
+            marketplaceAccountId: self::stringValue($row['marketplace_account_id']),
         );
     }
 

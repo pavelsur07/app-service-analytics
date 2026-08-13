@@ -7,6 +7,7 @@ namespace App\Ingestion\Application;
 use App\Identity\Application\Facade\IdentityScheduleFacade;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\LockInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
 
@@ -20,11 +21,13 @@ use Symfony\Component\Mime\Email;
  * ничего — экран отрисуется, цифры покажутся, просто вчерашние. Это
  * единственный отказ продукта, который сам себя не показывает.
  *
- * Класс живёт в узком слое IngestionOperationalAction по той же причине,
- * что DispatchActiveOzonSyncsAction: он вызывает межарендаторные чтения
- * (IdentityScheduleFacade и RecentlyIngestedAccountsQuery), и широкий
- * доступ IngestionUi к IngestionApplication открыл бы их будущему
- * HTTP-контроллеру.
+ * Класс живёт в собственном узком слое Deptrac (IngestionFreshnessAction)
+ * по той же причине, что DispatchActiveOzonSyncsAction в своём: он
+ * вызывает межарендаторные чтения (IdentityScheduleFacade и
+ * RecentlyIngestedAccountsQuery), и широкий доступ IngestionUi
+ * к IngestionApplication открыл бы их будущему HTTP-контроллеру.
+ * Слои разные, а не один общий: доступ к запросу свежести не нужен
+ * планировщику, и общий слой выдал бы его заодно (CLAUDE.md §1).
  */
 final readonly class NotifyStaleAccountsAction
 {
@@ -57,6 +60,7 @@ final readonly class NotifyStaleAccountsAction
         private MailerInterface $mailer,
         private LockFactory $lockFactory,
         private string $alertEmail,
+        private string $mailerDsn,
     ) {
     }
 
@@ -73,6 +77,15 @@ final readonly class NotifyStaleAccountsAction
             throw new \RuntimeException('ALERT_EMAIL не задан — письму о несвежих данных некуда идти.');
         }
 
+        if ('' === $this->mailerDsn || str_starts_with($this->mailerDsn, 'null://')) {
+            // Отдельно от адреса: заданный ALERT_EMAIL при null-транспорте
+            // выглядит настроенным сторожем, который каждый час исправно
+            // «отправляет» письма в никуда. Symfony при null://null не
+            // бросает ничего — молчание тут неотличимо от успеха, поэтому
+            // проверка своя.
+            throw new \RuntimeException('MAILER_DSN — null-транспорт: письмо о несвежих данных будет проглочено молча.');
+        }
+
         $active = $this->identitySchedule->findActiveOzonSyncTargets();
         if ([] === $active) {
             return [];
@@ -80,23 +93,38 @@ final readonly class NotifyStaleAccountsAction
 
         $fresh = $this->freshKeys(new \DateTimeImmutable('now'));
 
-        $stale = [];
+        /** @var array<string, LockInterface> $claimed */
+        $claimed = [];
         foreach ($active as $target) {
             $key = RecentlyIngestedAccountsQuery::key($target->companyId, $target->marketplaceAccountId);
             if (isset($fresh[$key])) {
                 continue;
             }
-            if (!$this->claimAlert($key)) {
+            $lock = $this->claimAlert($key);
+            if (null === $lock) {
                 continue;
             }
-            $stale[] = $key;
+            $claimed[$key] = $lock;
         }
 
-        if ([] === $stale) {
+        if ([] === $claimed) {
             return [];
         }
 
-        $this->mailer->send($this->alertAbout($stale));
+        $stale = array_keys($claimed);
+
+        try {
+            $this->mailer->send($this->alertAbout($stale));
+        } catch (\Throwable $failure) {
+            // Замок снимается, иначе временная недоступность SMTP стоила бы
+            // суток тишины: подавление повторов сработало бы на письмо,
+            // которое не ушло. Следующий тик через час попробует снова.
+            foreach ($claimed as $lock) {
+                $lock->release();
+            }
+
+            throw $failure;
+        }
 
         return $stale;
     }
@@ -119,19 +147,21 @@ final readonly class NotifyStaleAccountsAction
 
         $keys = [];
         foreach ($rows as $row) {
-            $keys[RecentlyIngestedAccountsQuery::keyOfRow($row)] = true;
+            $fresh = RecentlyIngestedAccountsQuery::mapRow($row);
+            $keys[RecentlyIngestedAccountsQuery::key($fresh->companyId, $fresh->marketplaceAccountId)] = true;
         }
 
         return $keys;
     }
 
-    private function claimAlert(string $key): bool
+    private function claimAlert(string $key): ?LockInterface
     {
         // autoRelease: false — замок обязан пережить конец процесса,
         // иначе подавление повторов исчезло бы вместе с тиком.
-        return $this->lockFactory
-            ->createLock('ingestion.freshness-alert.'.$key, self::ALERT_INTERVAL_SECONDS, false)
-            ->acquire();
+        $lock = $this->lockFactory
+            ->createLock('ingestion.freshness-alert.'.$key, self::ALERT_INTERVAL_SECONDS, false);
+
+        return $lock->acquire() ? $lock : null;
     }
 
     /**

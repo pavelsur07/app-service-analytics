@@ -86,7 +86,39 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         self::assertCount(1, $mailer->messages);
     }
 
-    private function action(ContainerInterface $container, MailerInterface $mailer): NotifyStaleAccountsAction
+    public function testFailedSendDoesNotSuppressTheNextAttempt(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container);
+
+        // SMTP бывает временно недоступен. Подавление повторов не должно
+        // срабатывать на письмо, которое не ушло: иначе один отказ
+        // провайдера стоил бы суток тишины ровно тогда, когда данные
+        // уже встали.
+        $failing = new class implements MailerInterface {
+            public function send(RawMessage $message, ?Envelope $envelope = null): void
+            {
+                throw new \RuntimeException('SMTP недоступен');
+            }
+        };
+
+        $locks = new LockFactory(new InMemoryStore());
+
+        try {
+            ($this->action($container, $failing, $locks))();
+            self::fail('Отказ отправки обязан быть громким.');
+        } catch (\RuntimeException $expected) {
+            self::assertSame('SMTP недоступен', $expected->getMessage());
+        }
+
+        $mailer = $this->recordingMailer();
+        $retried = ($this->action($container, $mailer, $locks))();
+
+        self::assertSame([$this->key($account)], $retried);
+        self::assertCount(1, $mailer->messages);
+    }
+
+    private function action(ContainerInterface $container, MailerInterface $mailer, ?LockFactory $locks = null): NotifyStaleAccountsAction
     {
         $connection = $this->connection($container);
 
@@ -99,8 +131,9 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
             // не удержал бы, а Redis для одного теста поднимать незачем.
             // В проде LOCK_DSN — redis (docker-compose.prod.yml), и там
             // замок переживает конец тика по TTL.
-            new LockFactory(new InMemoryStore()),
+            $locks ?? new LockFactory(new InMemoryStore()),
             'ops@example.test',
+            'smtp://mail.example.test',
         );
     }
 

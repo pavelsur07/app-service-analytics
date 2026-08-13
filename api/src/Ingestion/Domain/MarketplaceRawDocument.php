@@ -29,6 +29,10 @@ use Symfony\Component\Uid\Uuid;
     columns: ['company_id', 'marketplace_account_id', 'report_type', 'period', 'body_hash'],
 )]
 #[ORM\Index(name: 'idx_marketplace_raw_document_company_id', columns: ['company_id'])]
+// Контроль свежести данных (NotifyStaleAccountsAction): диапазон
+// по received_at с группировкой по подключению. Порядок столбцов —
+// ради index-only scan, см. RecentlyIngestedAccountsQuery.
+#[ORM\Index(name: 'idx_marketplace_raw_document_received_at', columns: ['received_at', 'company_id', 'marketplace_account_id'])]
 class MarketplaceRawDocument
 {
     #[ORM\Id]
