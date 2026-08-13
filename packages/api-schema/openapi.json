@@ -18,6 +18,16 @@
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "description": "\u0422\u043e\u043a\u0435\u043d \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442, \u0438\u0441\u0442\u0451\u043a, \u043e\u0442\u043e\u0437\u0432\u0430\u043d \u0438\u043b\u0438 \u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a \u0438\u0441\u043a\u043b\u044e\u0447\u0451\u043d \u0438\u0437 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 },
                 "security": [
@@ -214,6 +224,16 @@
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "description": "\u0422\u043e\u043a\u0435\u043d \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u0438\u043b\u0438 \u043d\u0435\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043b\u0435\u043d",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 },
                 "security": [
@@ -335,6 +355,16 @@
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "description": "\u0422\u043e\u043a\u0435\u043d \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u0438\u043b\u0438 \u043d\u0435\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043b\u0435\u043d",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 },
                 "security": [
@@ -411,6 +441,25 @@
                 },
                 "type": "object"
             },
+            "ValidationErrorResponse": {
+                "required": [
+                    "status",
+                    "code",
+                    "message"
+                ],
+                "properties": {
+                    "status": {
+                        "type": "integer"
+                    },
+                    "code": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
             "IssueExtensionTokenResponse": {
                 "required": [
                     "id",
@@ -440,25 +489,6 @@
                 ],
                 "properties": {
                     "email": {
-                        "type": "string"
-                    }
-                },
-                "type": "object"
-            },
-            "ValidationErrorResponse": {
-                "required": [
-                    "status",
-                    "code",
-                    "message"
-                ],
-                "properties": {
-                    "status": {
-                        "type": "integer"
-                    },
-                    "code": {
-                        "type": "string"
-                    },
-                    "message": {
                         "type": "string"
                     }
                 },

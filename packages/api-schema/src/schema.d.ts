@@ -176,6 +176,11 @@ export interface components {
             email: string;
             company: components["schemas"]["MeCompanyResponse"];
         };
+        ValidationErrorResponse: {
+            status: number;
+            code: string;
+            message: string;
+        };
         IssueExtensionTokenResponse: {
             id: string;
             token: string;
@@ -184,11 +189,6 @@ export interface components {
         };
         LoginResponse: {
             email: string;
-        };
-        ValidationErrorResponse: {
-            status: number;
-            code: string;
-            message: string;
         };
         MeResponse: {
             email: string;
@@ -257,6 +257,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExtensionMeResponse"];
+                };
+            };
+            /** @description Токен отсутствует, истёк, отозван или участник исключён из компании */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
         };
@@ -393,6 +402,15 @@ export interface operations {
                     "application/json": components["schemas"]["CompanySkuListResponse"];
                 };
             };
+            /** @description Токен отсутствует или недействителен */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Некорректный limit */
             422: {
                 headers: {
@@ -461,6 +479,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkuSalesSummaryResponse"];
+                };
+            };
+            /** @description Токен отсутствует или недействителен */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Некорректный days */
