@@ -1,19 +1,24 @@
 #!/bin/sh
-# Снимает фикстуры каталога Ozon с реального кабинета: список товаров
-# и детали по ним. Живой запрос к площадке делает человек, не агент
-# и не конвейер (CLAUDE.md, «Периметр автономной работы»: ключей кабинетов
-# в песочнице нет), поэтому скрипт спрашивает реквизиты и никуда их не
-# сохраняет — ни в файл, ни в историю оболочки.
+# Снимает фикстуры каталога Ozon с реального кабинета. Живой запрос
+# к площадке делает человек, не агент и не конвейер (CLAUDE.md, «Периметр
+# автономной работы»: ключей кабинетов в песочнице нет), поэтому скрипт
+# спрашивает реквизиты и никуда их не сохраняет — ни в файл, ни в историю
+# оболочки.
 #
-# Запросов два, потому что sku в первом ответе нет. v3/product/list отдаёт
-# product_id и offer_id, а карточка на сайте и строка продажи опознаются
-# по sku (число в конце URL товара) — его возвращает только
-# v3/product/info/list. Каталог без sku нечем сопоставить ни с продажами,
-# ни с открытой в браузере карточкой.
+# Запроса два, и нужны они разному:
 #
-# Ответы сохраняются побайтово, без переформатирования: raw-слой хэширует
-# точные байты (ADR-006), и причёсанная фикстура проверяла бы не то,
-# что отдаёт площадка.
+#   product-list       каталогу хватает его одного: sku приходит прямо
+#                      в списке (проверено на фикстуре 2026-08-13 — sku
+#                      те же, что в v3/product/info/list, до последнего
+#                      товара), а карточка на сайте и строка продажи
+#                      опознаются именно по sku;
+#   product-info-list  названия, цены, комиссии, остатки — каталогу
+#                      не нужны, но это исходные данные юнит-экономики,
+#                      и снимать их отдельным походом в кабинет позже
+#                      дороже, чем взять сейчас.
+#
+# Ответы сохраняются побайтово, без переформатирования: причёсанная
+# фикстура проверяла бы не то, что отдаёт площадка.
 #
 #   bash bin/ozon-fixture.sh
 #
@@ -22,6 +27,8 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 DIR="$ROOT/api/tests/Fixtures/Marketplace/ozon"
 DATE=$(date +%F)
+IDS=$(mktemp)
+trap 'rm -f "$IDS"' EXIT
 
 printf 'Ozon Client-Id: '
 read -r CID
@@ -36,10 +43,10 @@ if [ -z "$CID" ] || [ -z "$KEY" ]; then
     exit 1
 fi
 
-echo '-> v3/product/list (список товаров кабинета)'
+echo '-> v3/product/list (каталог кабинета)'
 curl -sS -X POST https://api-seller.ozon.ru/v3/product/list -H "Client-Id: $CID" -H "Api-Key: $KEY" -H 'Content-Type: application/json' -d '{"filter":{"visibility":"ALL"},"limit":1000,"last_id":""}' -o "$DIR/product-list-$DATE.json"
 
-python3 - "$DIR/product-list-$DATE.json" <<'PY'
+python3 - "$DIR/product-list-$DATE.json" "$IDS" <<'PYEOF'
 import json, sys
 d = json.load(open(sys.argv[1]))
 if 'result' not in d:
@@ -47,16 +54,20 @@ if 'result' not in d:
 r = d['result']
 items = r.get('items', [])
 print(f"   товаров: {len(items)}   total: {r.get('total')}   last_id: {r.get('last_id')!r}")
+blank = [i for i in items if not i.get('sku')]
+if blank:
+    print(f'   без sku: {len(blank)} — товары без карточки, в каталог они не попадут')
 if len(items) == 1000:
-    print('   ВНИМАНИЕ: страница полная — есть вторая, нужен ещё один запрос с last_id')
-json.dump({"product_id": [i['product_id'] for i in items]}, open('/tmp/ozon-ids.json', 'w'))
-PY
+    print('   ВНИМАНИЕ: страница полная — есть вторая, нужен ещё запрос с last_id')
+json.dump({"product_id": [i['product_id'] for i in items]}, open(sys.argv[2], 'w'))
+PYEOF
 
 echo
-echo '-> v3/product/info/list (детали, здесь живёт sku)'
-curl -sS -X POST https://api-seller.ozon.ru/v3/product/info/list -H "Client-Id: $CID" -H "Api-Key: $KEY" -H 'Content-Type: application/json' -d @/tmp/ozon-ids.json -o "$DIR/product-info-list-$DATE.json"
-rm -f /tmp/ozon-ids.json
+echo '-> v3/product/info/list (названия, цены, комиссии — впрок)'
+curl -sS -X POST https://api-seller.ozon.ru/v3/product/info/list -H "Client-Id: $CID" -H "Api-Key: $KEY" -H 'Content-Type: application/json' -d @"$IDS" -o "$DIR/product-info-list-$DATE.json"
 
 echo
 echo '-> получилось:'
 ls -l "$DIR"
+echo
+echo 'Не забыть закоммитить: git add api/tests/Fixtures/Marketplace/ozon/'
