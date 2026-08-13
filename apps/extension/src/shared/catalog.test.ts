@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { HttpResponse } from 'msw'
+import { describe, expect, it } from 'vitest'
 
 import type { CompanySkuListResponse } from '../api/client'
+import { http, server } from '../../tests/msw/server'
 import { isOwnSku, isStale, readCatalog, refreshCatalog } from './catalog'
 import type { Storage } from './connection'
 
@@ -33,42 +35,36 @@ function fakeStorage(initial: Record<string, unknown> = {}): Storage & {
 }
 
 /**
- * Отдаёт страницы по порядку, как их отдал бы эндпоинт артикулов,
- * и возвращает сам мок. Обращаться к глобальному fetch из теста нельзя —
- * запрещено линтером вне src/api/, и правило ослаблять незачем.
+ * Отдаёт страницы по порядку и запоминает запрошенные курсоры.
+ *
+ * Хендлер типизирован сгенерированной схемой (openapi-msw): страница
+ * неверной формы не скомпилируется, и тест не сможет успешно пройти
+ * на ответе, которого контракт не допускает.
  */
 function respondWithPages(pages: CompanySkuListResponse[]) {
+  const cursors: (string | null)[] = []
   let call = 0
-  // Аргумент объявлен и используется в утверждениях о вызовах: без него
-  // у мока пустой список параметров, и mock.calls[..][0] не проходит tsc.
-  const stub = vi.fn((url: string | URL) => {
-    const page = pages[call] ?? { items: [], nextCursor: null }
-    call += 1
-    void url
 
-    return Promise.resolve(
-      new Response(JSON.stringify(page), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
-  })
-  vi.stubGlobal('fetch', stub)
+  server.use(
+    http.get('/api/extension/companies/{companyId}/skus', ({ request }) => {
+      cursors.push(new URL(request.url).searchParams.get('cursor'))
+      const page = pages[call] ?? { items: [], nextCursor: null }
+      call += 1
 
-  return stub
+      return HttpResponse.json(page)
+    }),
+  )
+
+  return cursors
 }
 
 const COMPANY = '019ff5ce-e740-7065-b0eb-e8f9acda89ef'
 const OTHER_COMPANY = '019ff5ce-0000-7065-b0eb-e8f9acda89ef'
 const NOW = new Date('2026-08-12T12:00:00Z')
 
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
-
 describe('каталог артикулов', () => {
   it('собирает список из всех страниц', async () => {
-    const stub = respondWithPages([
+    const cursors = respondWithPages([
       { items: ['111', '222'], nextCursor: '222' },
       { items: ['333'], nextCursor: null },
     ])
@@ -82,14 +78,25 @@ describe('каталог артикулов', () => {
     )
 
     expect(catalog.skus).toEqual(['111', '222', '333'])
-    expect(stub.mock.calls).toHaveLength(2)
+    expect(cursors).toHaveLength(2)
+  })
+
+  it('передаёт курсор следующей страницы', async () => {
+    const cursors = respondWithPages([
+      { items: ['111'], nextCursor: '111' },
+      { items: ['222'], nextCursor: null },
+    ])
+
+    await refreshCatalog(fakeStorage(), 'conwix_ext_token', COMPANY, NOW)
+
+    expect(cursors).toEqual([null, '111'])
   })
 
   it('неполная выгрузка не сохраняется', async () => {
     // Сервер обещает продолжение бесконечно. Сохранить половину каталога
     // со свежей отметкой времени — худший исход: сутки оверлей молчал бы
     // на своих товарах, притом что в API они есть.
-    const stub = respondWithPages(
+    const cursors = respondWithPages(
       Array.from({ length: 600 }, (_, index) => ({
         items: [String(index)],
         nextCursor: String(index),
@@ -102,19 +109,7 @@ describe('каталог артикулов', () => {
     ).rejects.toThrow(/целиком/)
 
     expect(await readCatalog(storage, COMPANY)).toBeNull()
-    expect(stub.mock.calls.length).toBeLessThanOrEqual(500)
-  })
-
-  it('передаёт курсор следующей страницы', async () => {
-    const stub = respondWithPages([
-      { items: ['111'], nextCursor: '111' },
-      { items: ['222'], nextCursor: null },
-    ])
-
-    await refreshCatalog(fakeStorage(), 'conwix_ext_token', COMPANY, NOW)
-
-    const second = stub.mock.calls[1]?.[0]
-    expect(String(second)).toContain('cursor=111')
+    expect(cursors.length).toBeLessThanOrEqual(500)
   })
 
   it('каталог чужой компании не считается своим', async () => {

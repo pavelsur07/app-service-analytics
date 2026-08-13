@@ -4,8 +4,9 @@
     "src/popup/main.tsx",
     "src/background/index.ts",
     "src/content/announce.ts",
-    "src/content/overlay.ts"
+    "src/content/overlay.ts",
+    "tests/msw/setup.ts"
   ],
-  "project": ["src/**/*.{ts,tsx}"],
+  "project": ["src/**/*.{ts,tsx}", "tests/**/*.ts"],
   "ignoreDependencies": ["tailwindcss"]
 }

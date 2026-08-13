@@ -69,6 +69,14 @@ final class ListCompanySkusController
         description: 'Некорректный limit',
         content: new Model(type: ValidationErrorResponse::class),
     )]
+    // 401 — часть контракта, а не деталь реализации: клиент обязан
+    // отличить «токен умер, переподключись» от прочих отказов, и форма
+    // тела у этого ответа определена (ValidationErrorResponse).
+    #[OA\Response(
+        response: 401,
+        description: 'Токен отсутствует или недействителен',
+        content: new Model(type: ValidationErrorResponse::class),
+    )]
     public function __invoke(string $companyId, Request $request): JsonResponse
     {
         $limit = self::DEFAULT_LIMIT;

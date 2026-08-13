@@ -10,6 +10,7 @@ use App\Identity\Infrastructure\Query\CompanyNameQuery;
 use App\Identity\Infrastructure\Security\ExtensionTokenRequestAttributes;
 use App\Identity\Ui\Response\ExtensionMeResponse;
 use App\Identity\Ui\Response\MeCompanyResponse;
+use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
 use Symfony\Bundle\SecurityBundle\Security;
@@ -49,6 +50,14 @@ final class ExtensionMeController
         response: 200,
         description: 'Пользователь и компания, к которым привязан предъявленный токен',
         content: new Model(type: ExtensionMeResponse::class),
+    )]
+    // 401 — часть контракта, а не деталь реализации: клиент обязан
+    // отличить «токен умер, переподключись» от прочих отказов, и форма
+    // тела у этого ответа определена (ValidationErrorResponse).
+    #[OA\Response(
+        response: 401,
+        description: 'Токен отсутствует, истёк, отозван или участник исключён из компании',
+        content: new Model(type: ValidationErrorResponse::class),
     )]
     public function __invoke(Request $request): JsonResponse
     {
