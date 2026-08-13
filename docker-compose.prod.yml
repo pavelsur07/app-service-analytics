@@ -73,6 +73,7 @@ x-api-env: &api-env
   # ALERT_EMAIL и уходит в перезапуск, а шаг «все сервисы здоровы»
   # красит выкладку в красный. Молча работать вхолостую он не умеет.
   MAILER_DSN: ${MAILER_DSN:-null://null}
+  MAILER_FROM: ${MAILER_FROM:-}
   ALERT_EMAIL: ${ALERT_EMAIL:-}
 
 services:

@@ -174,8 +174,9 @@ final readonly class NotifyStaleAccountsAction
             $stale,
         );
 
+        // From не задаётся здесь: адрес отправителя привязан к учётным
+        // данным SMTP, а не к письму (config/packages/mailer.yaml).
         return (new Email())
-            ->from('no-reply@conwix.com')
             ->to($this->alertEmail)
             ->subject(\sprintf('Conwix: данные не обновляются (%d подключений)', \count($stale)))
             ->text(
