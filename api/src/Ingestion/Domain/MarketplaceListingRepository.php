@@ -1,0 +1,32 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Ingestion\Domain;
+
+use Symfony\Component\Uid\Uuid;
+
+interface MarketplaceListingRepository
+{
+    /**
+     * Каталог подключения целиком: то, что пришло от площадки в эту
+     * синхронизацию, заменяет прежнее содержимое.
+     *
+     * Именно «целиком», а не «добавить»: площадка отдаёт весь список,
+     * и товар, из него исчезнувший, обязан исчезнуть и у нас — иначе
+     * снятый с продажи остался бы «своим» навсегда.
+     *
+     * Частичная выгрузка сюда попадать не должна: вызывающий передаёт
+     * список только когда прошёл все страницы. Половина каталога, принятая
+     * за целое, молча объявила бы часть своих товаров чужими — тот же
+     * отказ, что чинили в каталоге расширения.
+     *
+     * @param list<MarketplaceListing> $listings
+     */
+    public function replaceForAccount(
+        string $companyId,
+        Uuid $marketplaceAccountId,
+        array $listings,
+        \DateTimeImmutable $syncedAt,
+    ): void;
+}
