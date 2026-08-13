@@ -135,6 +135,7 @@ test-e2e: ## сеет тестовые данные (dev-БД) и прогоня
 	sh bin/e2e-seed.sh
 	$(COMPOSE) exec \
 		-e E2E_COMPANY_ID=$$(cat var/e2e-company-id) \
+		-e E2E_SECOND_COMPANY_ID=$$(cat var/e2e-second-company-id) \
 		-e E2E_USER_EMAIL=$$(sed -n '1p' var/e2e-user-credentials) \
 		-e E2E_USER_PASSWORD=$$(sed -n '2p' var/e2e-user-credentials) \
 		playwright npx playwright test
