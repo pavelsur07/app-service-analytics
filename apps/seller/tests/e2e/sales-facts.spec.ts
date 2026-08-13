@@ -32,9 +32,7 @@ test.describe('sales facts', () => {
     await login(page)
 
     // Один участник — автопереход мимо списка компаний прямо на экран продаж.
-    await expect(page).toHaveURL(
-      `/companies/${companyId}/ingestion/sales-facts`,
-    )
+    await expect(page).toHaveURL(`/companies/${companyId}/sales`)
     await expect(
       page.getByRole('heading', { name: 'Продажи Ozon' }),
     ).toBeVisible()
@@ -53,27 +51,44 @@ test.describe('sales facts', () => {
     await expect(page.getByRole('button', { name: 'Дальше' })).toBeEnabled()
   })
 
+  test('сайдбар переносит между разделами компании', async ({ page }) => {
+    await login(page)
+    await expect(page).toHaveURL(`/companies/${companyId}/sales`)
+
+    const nav = page.getByRole('navigation', { name: 'Разделы компании' })
+
+    // Ссылки в сайдбаре относительные и разрешаются от оболочки
+    // /companies/:companyId. Абсолютный путь увёл бы в чужую компанию
+    // или в никуда — молча, потому что экран отрисовался бы.
+    await nav.getByRole('link', { name: 'Расширение' }).click()
+    await expect(page).toHaveURL(`/companies/${companyId}/extension`)
+
+    await nav.getByRole('link', { name: 'Продажи' }).click()
+    await expect(page).toHaveURL(`/companies/${companyId}/sales`)
+
+    // Выход доступен с любого экрана компании, а не только со списка:
+    // до появления сайдбара выйти после входа было физически негде.
+    await nav.getByRole('button', { name: 'Выйти' }).click()
+    await expect(page).toHaveURL(/\/login$/)
+  })
+
   test('a foreign companyId is denied, not shown as an empty screen', async ({
     page,
   }) => {
     await login(page)
-    await expect(page).toHaveURL(
-      `/companies/${companyId}/ingestion/sales-facts`,
-    )
+    await expect(page).toHaveURL(`/companies/${companyId}/sales`)
 
     // Случайный UUID — заведомо не компания этого пользователя
     // (ТЗ, критерий приёмки 3: подстановка чужого companyId → отказ,
     // ни один ответ не содержит чужих данных).
     const foreignCompanyId = randomUUID()
-    await page.goto(`/companies/${foreignCompanyId}/ingestion/sales-facts`)
+    await page.goto(`/companies/${foreignCompanyId}/sales`)
 
     // 403 уводит со страницы — не "тихий пустой экран" (ТЗ §6): ни чужой
     // таблицы (даже пустой), ни зависания на URL чужой компании. Один
     // участник компании — редирект на /companies автопереходит обратно
     // на единственную свою.
-    await expect(page).toHaveURL(
-      `/companies/${companyId}/ingestion/sales-facts`,
-    )
+    await expect(page).toHaveURL(`/companies/${companyId}/sales`)
     await expect(
       page.getByRole('heading', { name: 'Продажи Ozon' }),
     ).toBeVisible()

@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test'
 
-test('seller start screen shows data from its own endpoint', async ({
-  page,
-}) => {
+test('корень ведёт в приложение, палитра всегда светлая', async ({ page }) => {
+  // Тёмная системная тема не должна ничего менять: интерфейс всегда
+  // использует светлую палитру (docs/patterns.md, «Дизайн-система»).
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.goto('/')
 
@@ -13,16 +13,10 @@ test('seller start screen shows data from its own endpoint', async ({
   )
   await expect(page.locator('body')).toHaveCSS('color', 'rgb(11, 18, 32)')
 
-  await expect(
-    page.getByRole('heading', { name: 'Conwix — Seller' }),
-  ).toBeVisible()
-
-  // Экран размечен списком определений: подпись и значение — разные
-  // узлы, поэтому проверяется пара, а не строка «app: …».
-  const value = (term: string) =>
-    page.getByRole('term').filter({ hasText: term }).locator('~ dd').first()
-
-  await expect(value('app')).toHaveText('conwix-seller-api')
-  await expect(value('version')).not.toBeEmpty()
-  await expect(value('respondedAt')).not.toBeEmpty()
+  // Корень больше не отдельный экран, а редирект: без сессии цепочка
+  // / → /companies → /login приводит на вход. Раньше здесь жил
+  // ping-экран, единственной ценностью которого была первая полоска
+  // насквозь.
+  await expect(page).toHaveURL(/\/login$/)
+  await expect(page.getByRole('button', { name: 'Войти' })).toBeVisible()
 })
