@@ -100,6 +100,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_company_connections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/ingestion/ozon/sales-facts": {
         parameters: {
             query?: never;
@@ -197,6 +213,19 @@ export interface components {
         CompanySkuListResponse: {
             items: string[];
             nextCursor?: string | null;
+        };
+        ConnectionResponse: {
+            id: string;
+            marketplace: string;
+            externalShopId: string;
+            state: string;
+            createdAt: string;
+            lastLoadedAt: {
+                [key: string]: string;
+            };
+        };
+        ConnectionsResponse: {
+            connections: components["schemas"]["ConnectionResponse"][];
         };
         SalesFactListItemResponse: {
             marketplaceAccountId: string;
@@ -413,6 +442,37 @@ export interface operations {
             };
             /** @description Некорректный limit */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_company_connections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Подключения компании с состоянием и моментом последней загрузки по каждой выгрузке */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionsResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

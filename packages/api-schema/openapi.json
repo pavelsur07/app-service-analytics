@@ -243,6 +243,44 @@
                 ]
             }
         },
+        "/api/companies/{companyId}/connections": {
+            "get": {
+                "operationId": "get_ingestion_company_connections",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438 \u0441 \u0441\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u0435\u043c \u0438 \u043c\u043e\u043c\u0435\u043d\u0442\u043e\u043c \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0435\u0439 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0438 \u043f\u043e \u043a\u0430\u0436\u0434\u043e\u0439 \u0432\u044b\u0433\u0440\u0443\u0437\u043a\u0435",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConnectionsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/companies/{companyId}/ingestion/ozon/sales-facts": {
             "get": {
                 "operationId": "get_ingestion_ozon_sales_facts_list",
@@ -526,6 +564,54 @@
                     "nextCursor": {
                         "type": "string",
                         "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "ConnectionResponse": {
+                "required": [
+                    "id",
+                    "marketplace",
+                    "externalShopId",
+                    "state",
+                    "createdAt",
+                    "lastLoadedAt"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "marketplace": {
+                        "type": "string"
+                    },
+                    "externalShopId": {
+                        "type": "string"
+                    },
+                    "state": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string"
+                    },
+                    "lastLoadedAt": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "type": "object"
+            },
+            "ConnectionsResponse": {
+                "required": [
+                    "connections"
+                ],
+                "properties": {
+                    "connections": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ConnectionResponse"
+                        }
                     }
                 },
                 "type": "object"
