@@ -39,3 +39,23 @@ services:
     Symfony\Component\HttpFoundation\Session\Storage\Handler\RedisSessionHandler:
         arguments:
             - '@redis.connection'
+
+    # Отправитель в обход очереди — только для сторожа свежести данных.
+    # Обычные письма едут через async_ingestion (messenger.yaml), и это
+    # правильно: отправка ретраится, отказ виден. Но оповещение о вставшей
+    # синхронизации, поставленное в ту же очередь, которая, возможно,
+    # и встала, не доедет ровно в том случае, ради которого написано.
+    #
+    # Аргументы позиционные: transport, bus, dispatcher. bus = null — это
+    # и есть «мимо очереди»; dispatcher нужен, иначе не применится
+    # заголовок From из mailer.yaml и любое письмо упадёт на RFC-проверке.
+    mailer.sync:
+        class: Symfony\Component\Mailer\Mailer
+        arguments:
+            - '@mailer.transports'
+            - null
+            - '@event_dispatcher'
+
+    App\Ingestion\Application\NotifyStaleAccountsAction:
+        arguments:
+            $mailer: '@mailer.sync'

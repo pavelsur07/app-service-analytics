@@ -6,6 +6,7 @@ namespace App\Identity\Infrastructure\Repository;
 
 use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
+use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -39,5 +40,28 @@ final readonly class DoctrineMarketplaceAccountRepository implements Marketplace
         \assert(null === $account || $account instanceof MarketplaceAccount);
 
         return $account;
+    }
+
+    public function markBrokenIfActive(string $companyId, Uuid $id): bool
+    {
+        // DBAL, не ORM: условие `state = 'active'` обязано быть внутри
+        // UPDATE, иначе проверка и запись расходятся между транзакциями
+        // (тот же приём, что в DoctrineExtensionTokenRepository::revokeIfActive).
+        // companyId в условии — изоляция арендаторов на уровне SQL.
+        $affected = $this->entityManager->getConnection()->executeStatement(
+            <<<'SQL'
+                UPDATE marketplace_account
+                SET state = :broken
+                WHERE id = :id AND company_id = :companyId AND state = :active
+                SQL,
+            [
+                'broken' => MarketplaceAccountState::Broken->value,
+                'active' => MarketplaceAccountState::Active->value,
+                'id' => $id->toRfc4122(),
+                'companyId' => $companyId,
+            ],
+        );
+
+        return $affected > 0;
     }
 }

@@ -19,4 +19,16 @@ interface MarketplaceAccountRepository
      * тот же приём, что у UserCompaniesQuery).
      */
     public function get(string $companyId, Uuid $id): ?MarketplaceAccount;
+
+    /**
+     * Перевод в broken (ADR-007) с условием «было active» внутри самого
+     * UPDATE. Возвращает true тому вызову, который состояние действительно
+     * поменял, — по нему и решается, отправлять ли письмо клиенту.
+     *
+     * Не «прочитать, проверить, записать»: планировщик ставит на одно
+     * подключение две задачи разом (продажи и каталог), обе получат отказ
+     * авторизации одновременно, и проверка перед записью прошла бы у обеих
+     * (CLAUDE.md §4). Клиент получил бы два письма об одном событии.
+     */
+    public function markBrokenIfActive(string $companyId, Uuid $id): bool;
 }

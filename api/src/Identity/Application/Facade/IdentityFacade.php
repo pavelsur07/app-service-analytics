@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Identity\Application\Facade;
 
+use App\Identity\Application\MarkMarketplaceAccountBrokenAction;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
@@ -22,6 +23,7 @@ final class IdentityFacade
     public function __construct(
         private readonly MarketplaceAccountRepository $marketplaceAccounts,
         private readonly MarketplaceCredentialsEncryptor $credentialsEncryptor,
+        private readonly MarkMarketplaceAccountBrokenAction $markAccountBroken,
     ) {
     }
 
@@ -54,5 +56,18 @@ final class IdentityFacade
             clientId: $credentials->get('client_id'),
             apiKey: $credentials->get('api_key'),
         );
+    }
+
+    /**
+     * Площадка отказала в авторизации (ADR-007): подключение переводится
+     * в broken, клиент получает письмо. Идемпотентно — повторный вызов
+     * по уже сломанному подключению не порождает второго письма.
+     *
+     * Через Facade, а не прямым вызовом Application-сценария: Ingestion
+     * не ходит внутрь Identity мимо границы модуля.
+     */
+    public function markOzonAccountBroken(string $companyId, string $marketplaceAccountId): bool
+    {
+        return ($this->markAccountBroken)($companyId, $marketplaceAccountId);
     }
 }

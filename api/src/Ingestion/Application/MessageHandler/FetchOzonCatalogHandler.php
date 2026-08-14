@@ -11,6 +11,7 @@ use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Domain\OzonProductListParser;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -67,6 +68,18 @@ final readonly class FetchOzonCatalogHandler
     ) {
     }
 
+    /**
+     * Отказ авторизации площадки — не техническая ошибка, а событие
+     * жизненного цикла подключения (ADR-007): ключ отозван или перевыпущен
+     * в кабинете. Повторять такой запрос бессмысленно, поэтому сообщение
+     * не падает в очередь отказов, а завершается: подключение переведено
+     * в broken, клиент получил письмо, планировщик его больше не возьмёт.
+     * Молчаливой остановкой это не является — в том и смысл письма.
+     *
+     * Остальные 4xx (и все 5xx) остаются исключениями и уходят в ретрай
+     * и в трекер: лимит запросов, неверный период, сбой площадки лечатся
+     * повтором, а не переподключением кабинета.
+     */
     public function __invoke(FetchOzonCatalogMessage $message): void
     {
         $target = $this->identityFacade->findOzonSyncTarget($message->companyId, $message->marketplaceAccountId);
@@ -87,7 +100,20 @@ final readonly class FetchOzonCatalogHandler
         $seenCursors = [];
 
         for ($page = 0; $page < self::MAX_PAGES; ++$page) {
-            $rawBody = $this->client->fetchPage($target->clientId, $target->apiKey, $lastId, self::PAGE_SIZE);
+            try {
+                $rawBody = $this->client->fetchPage($target->clientId, $target->apiKey, $lastId, self::PAGE_SIZE);
+            } catch (\Throwable $failure) {
+                if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
+                    throw $failure;
+                }
+
+                // Прочитанные страницы не записываются: replaceForAccount
+                // удаляет всё, чего нет в списке, и половина каталога стёрла
+                // бы остальные товары продавца.
+                $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
+
+                return;
+            }
 
             // Каждая страница — отдельный документ: тела разные, и общий
             // ключ raw-слоя (company, account, тип, период, хэш тела)
