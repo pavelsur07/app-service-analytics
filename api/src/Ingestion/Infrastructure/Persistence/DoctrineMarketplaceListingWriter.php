@@ -114,12 +114,22 @@ final readonly class DoctrineMarketplaceListingWriter implements MarketplaceList
         // очистить каталог подключения: NOT IN пустого множества истинно
         // для всех строк. Защита от неполной выгрузки не здесь — сюда
         // список попадает, только когда пройдены все страницы.
+        // NOT EXISTS, а не NOT IN: у NOT IN с подзапросом семантика ломается
+        // об единственный NULL — всё выражение становится NULL, и удаление
+        // тихо не делает ничего. Прийти NULL сюда сегодня неоткуда (парсер
+        // отдаёт непустые строки), но цена ошибки — каталог, который
+        // перестал чиститься, и заметили бы это не скоро. NOT EXISTS
+        // к тому же даёт планировщику обычный анти-join.
         $this->connection->executeStatement(
             <<<'SQL'
-                DELETE FROM marketplace_listing
-                WHERE company_id = :companyId
-                  AND marketplace_account_id = :marketplaceAccountId
-                  AND marketplace_sku NOT IN (SELECT jsonb_array_elements_text(:skus::jsonb))
+                DELETE FROM marketplace_listing AS l
+                WHERE l.company_id = :companyId
+                  AND l.marketplace_account_id = :marketplaceAccountId
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM jsonb_array_elements_text(:skus::jsonb) AS uploaded(sku)
+                      WHERE uploaded.sku = l.marketplace_sku
+                  )
                 SQL,
             [
                 'companyId' => $companyId,
