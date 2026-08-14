@@ -17,6 +17,7 @@ services:
         bind:
             string $alertEmail: '%env(ALERT_EMAIL)%'
             string $mailerDsn: '%env(MAILER_DSN)%'
+            int $expenseWindowDays: '%env(int:OZON_EXPENSE_WINDOW_DAYS)%'
 
     # makes classes in src/ available to be used as services
     # this creates a service per class whose id is the fully-qualified class name

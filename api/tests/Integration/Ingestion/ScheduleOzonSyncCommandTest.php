@@ -8,6 +8,7 @@ use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
+use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
@@ -45,28 +46,41 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
         $tester->assertCommandIsSuccessful();
 
         $sent = $this->transport($container)->getSent();
-        // По две задачи на подключение: продажи за сегодня и каталог.
-        // Каталог диспатчится тем же тиком намеренно — отдельное
-        // расписание потребовало бы хранить «когда синхронизировали
-        // в прошлый раз» ради экономии нескольких запросов в час.
-        self::assertCount(4, $sent);
+        // Пять задач на подключение: продажи за сегодня, каталог целиком
+        // и расходы за каждый день окна. Окно у расходов есть, а у продаж
+        // нет, потому что начисление приходит позже продажи — иногда
+        // на недели, и день, загруженный один раз, назавтра уже неполон.
+        self::assertCount(10, $sent);
 
         $postingTargets = [];
         $catalogTargets = [];
+        $expenseDates = [];
         foreach ($sent as $envelope) {
             $message = $envelope->getMessage();
             if ($message instanceof FetchOzonPostingsMessage) {
                 $postingTargets[] = $message->marketplaceAccountId;
             } elseif ($message instanceof FetchOzonCatalogMessage) {
                 $catalogTargets[] = $message->marketplaceAccountId;
+            } elseif ($message instanceof FetchOzonExpensesMessage) {
+                $expenseDates[$message->marketplaceAccountId][] = $message->accrualDate;
             } else {
                 self::fail('Планировщик поставил задачу неизвестного типа.');
             }
         }
 
+        $today = new \DateTimeImmutable('now', new \DateTimeZone('Europe/Moscow'));
         foreach ([$accountA, $accountB] as $account) {
-            self::assertContains($account->id()->toRfc4122(), $postingTargets);
-            self::assertContains($account->id()->toRfc4122(), $catalogTargets);
+            $id = $account->id()->toRfc4122();
+            self::assertContains($id, $postingTargets);
+            self::assertContains($id, $catalogTargets);
+            self::assertSame(
+                [
+                    $today->format('Y-m-d'),
+                    $today->modify('-1 day')->format('Y-m-d'),
+                    $today->modify('-2 day')->format('Y-m-d'),
+                ],
+                $expenseDates[$id] ?? [],
+            );
         }
 
         $today = new \DateTimeImmutable('now', new \DateTimeZone('Europe/Moscow'));
@@ -101,8 +115,9 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
 
         $tester = $this->commandTester();
         $tester->execute(['--once' => true]);
-        // Одно подключение — две задачи: продажи и каталог.
-        self::assertCount(2, $this->transport($container)->getSent());
+        // Одно подключение — пять задач: продажи, каталог и расходы
+        // за три дня окна.
+        self::assertCount(5, $this->transport($container)->getSent());
     }
 
     private function bootedContainer(): ContainerInterface
