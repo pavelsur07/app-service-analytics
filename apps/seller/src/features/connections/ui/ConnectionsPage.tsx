@@ -13,6 +13,7 @@ import {
   reportLabel,
 } from '../lib/connectionPresentation'
 import { useConnections } from '../model/useConnections'
+import { ReplaceCredentialsForm } from './ReplaceCredentialsForm'
 
 // Экран отвечает на два вопроса, на которые ответить было негде:
 // «данные вообще обновляются?» и «что означает письмо о сломанном
@@ -152,6 +153,18 @@ export function ConnectionsPage() {
                       </dd>
                     </div>
                   </dl>
+
+                  {/* Отключённому подключению замена ключа не помогает:
+                      отзыв необратим (ADR-011), и предлагать действие,
+                      которое сервер отвергнет, — обман. */}
+                  {connection.state !== 'revoked' && (
+                    <ReplaceCredentialsForm
+                      companyId={companyId}
+                      externalShopId={connection.externalShopId}
+                      marketplaceAccountId={connection.id}
+                      version={connection.version}
+                    />
+                  )}
                 </div>
               </Card>
             )
