@@ -8,6 +8,7 @@ use App\Identity\Application\MarkMarketplaceAccountBrokenAction;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
+use App\Identity\Infrastructure\Query\CompanyConnectionsQuery;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -24,7 +25,39 @@ final class IdentityFacade
         private readonly MarketplaceAccountRepository $marketplaceAccounts,
         private readonly MarketplaceCredentialsEncryptor $credentialsEncryptor,
         private readonly MarkMarketplaceAccountBrokenAction $markAccountBroken,
+        private readonly CompanyConnectionsQuery $connections,
     ) {
+    }
+
+    /**
+     * Подключения компании для экрана — состояние и происхождение,
+     * без учётных данных (их не выбирает и сам запрос).
+     *
+     * Свежесть данных сюда не входит и войти не может: она живёт
+     * в raw-слое Ingestion, а Identity в Ingestion не ходит — зависимости
+     * строго вниз. Склеивает их вызывающая сторона, в Ingestion.
+     *
+     * @return list<CompanyConnection>
+     */
+    public function listConnections(string $companyId): array
+    {
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $this->connections->build($companyId)->executeQuery()->fetchAllAssociative();
+
+        return array_map(
+            static function (array $row): CompanyConnection {
+                $connection = CompanyConnectionsQuery::mapRow($row);
+
+                return new CompanyConnection(
+                    id: $connection->id,
+                    marketplace: $connection->marketplace,
+                    externalShopId: $connection->externalShopId,
+                    state: $connection->state,
+                    createdAt: $connection->createdAt,
+                );
+            },
+            $rows,
+        );
     }
 
     /**

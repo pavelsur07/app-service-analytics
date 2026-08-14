@@ -225,7 +225,12 @@ return static function (DeptracConfig $config): void {
             // внутри Domain: тот же статус UID, что и у identityFacade ниже.
             Ruleset::forLayer($identityUi)->accesses($identityApplication, $identityDomain, $identityInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($identityApplication)->accesses($identityDomain, $sharedApplication, $sharedDomain, $symfonyUid),
-            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $sharedApplication, $sharedDomain, $symfonyUid),
+            // identityInfrastructure — ради company-scoped запросов чтения
+            // и их Row-DTO (CompanyConnectionsQuery): списки читаются DBAL,
+            // а не гидрацией сущностей (CLAUDE.md §5), и Facade — то место,
+            // где результат превращается в межмодульный DTO. Тот же грант
+            // и по той же причине есть у identityScheduleFacade.
+            Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $identityInfrastructure, $sharedApplication, $sharedDomain, $symfonyUid),
             // identityOperationalQuery/identityInfrastructure (ради
             // ActiveOzonAccountRow) — только у IdentityScheduleFacade,
             // не у IdentityFacade выше: это и есть граница CLAUDE.md §1.
@@ -253,7 +258,12 @@ return static function (DeptracConfig $config): void {
             // Команды фоновых процессов — не весь IngestionUi: только им
             // разрешён IngestionOperationalAction (см. слой выше).
             Ruleset::forLayer($ingestionOperationalCommand)->accesses($ingestionSyncAction, $ingestionFreshnessAction, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent),
-            Ruleset::forLayer($ingestionApplication)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
+            // ingestionInfrastructure — синхронные запросы чтения, которые
+            // Application только склеивает для экрана
+            // (ListCompanyConnectionsAction: состояние подключения из Identity
+            // плюс свежесть из своего raw-слоя). Ui сделать это сам не может —
+            // он не пересекает границу модуля даже через Facade.
+            Ruleset::forLayer($ingestionApplication)->accesses($ingestionDomain, $ingestionInfrastructure, $identityFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
             // identityScheduleFacade, не identityFacade: единственный
             // потребитель межарендаторного чтения, узкий слой на узкий
             // слой (см. комментарий у identityScheduleFacade выше).

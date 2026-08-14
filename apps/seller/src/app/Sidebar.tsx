@@ -1,4 +1,4 @@
-import { LogOut, Puzzle, TrendingUp } from 'lucide-react'
+import { LogOut, Plug, Puzzle, TrendingUp } from 'lucide-react'
 import { NavLink } from 'react-router'
 
 import { Button } from '../../../../packages/ui/src'
@@ -25,6 +25,7 @@ const ITEM_IDLE = 'text-text-secondary hover:bg-surface-hover'
 const ITEMS = [
   { to: 'sales', label: 'Продажи', icon: TrendingUp },
   { to: 'extension', label: 'Расширение', icon: Puzzle },
+  { to: 'connections', label: 'Подключения', icon: Plug },
 ] as const
 
 export function Sidebar({ companyId }: { companyId: string }) {

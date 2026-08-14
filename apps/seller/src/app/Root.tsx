@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 
 import { CompanyListPage } from '../features/auth/ui/CompanyListPage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
+import { ConnectionsPage } from '../features/connections/ui/ConnectionsPage'
 import { ExtensionConnectPage } from '../features/extension/ui/ExtensionConnectPage'
 import { SalesFactsPage } from '../features/ingestion/ui/SalesFactsPage'
 import { CompanyLayout } from './CompanyLayout'
@@ -41,6 +42,7 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="sales" replace /> },
       { path: 'sales', element: <SalesFactsPage /> },
       { path: 'extension', element: <ExtensionConnectPage /> },
+      { path: 'connections', element: <ConnectionsPage /> },
     ],
   },
 ])
