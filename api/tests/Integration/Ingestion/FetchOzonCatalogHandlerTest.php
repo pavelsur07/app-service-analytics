@@ -25,6 +25,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Mailer\Messenger\SendEmailMessage;
+use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
  * Клиент -> парсер -> замена каталога, через реальный Postgres и реальную
@@ -142,6 +144,14 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         $this->syncCatalog($container, $account);
     }
 
+    private function transport(ContainerInterface $container): InMemoryTransport
+    {
+        $transport = $container->get('messenger.transport.async_ingestion');
+        self::assertInstanceOf(InMemoryTransport::class, $transport);
+
+        return $transport;
+    }
+
     /**
      * Заглушка HTTP ставится в контейнер один раз на тест: повторный
      * set() по уже созданному сервису контейнер запрещает. Поэтому
@@ -175,6 +185,14 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         );
         self::assertSame('broken', $state);
         self::assertSame(0, $this->skuCount($container, $account));
+
+        // Письмо клиенту уходит через очередь, а не прямо из обработчика:
+        // недоступный в этот момент SMTP иначе терял бы уведомление
+        // насовсем — состояние уже broken, и повторная обработка письма
+        // не пошлёт (ADR-007, «молчаливая остановка запрещена»).
+        $queued = $this->transport($container)->getSent();
+        self::assertCount(1, $queued);
+        self::assertInstanceOf(SendEmailMessage::class, $queued[0]->getMessage());
     }
 
     /**
