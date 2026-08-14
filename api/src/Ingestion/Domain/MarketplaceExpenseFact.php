@@ -147,7 +147,7 @@ class MarketplaceExpenseFact
             $unitNumber,
             $amount,
             $rawDocumentId,
-            self::computeRowHash($amount),
+            self::computeRowHash($businessDate, $unitNumber, $amount),
             $now,
             $now,
         );
@@ -164,14 +164,23 @@ class MarketplaceExpenseFact
     }
 
     /**
-     * Детектор изменений (ADR-006) — не входит в ключ. Меняться у расхода
-     * может только сумма: тип, товар и отправление входят в ключ, а дата
-     * начисления при пересчёте не сдвигается — площадка выпускает новое
-     * начисление, а не переносит старое.
+     * Детектор изменений (ADR-006) — не входит в ключ, покрывает все
+     * поля, которые могут измениться при пересчёте: сумму, валюту,
+     * бизнес-дату и единицу отнесения. Ключевые поля исключены намеренно.
+     *
+     * Считать хэш от одной суммы было бы ошибкой: площадка вправе
+     * переотнести начисление на другой день или к другому отправлению,
+     * не тронув сумму, и такая правка прошла бы мимо — строка осталась бы
+     * со старой датой, а объяснить клиенту расхождение стало бы нечем.
      */
-    private static function computeRowHash(Money $amount): string
+    private static function computeRowHash(\DateTimeImmutable $businessDate, string $unitNumber, Money $amount): string
     {
-        return hash('sha256', (string) $amount->minorAmount());
+        return hash('sha256', implode('|', [
+            $businessDate->format('Y-m-d'),
+            $unitNumber,
+            $amount->minorAmount(),
+            $amount->currency(),
+        ]));
     }
 
     public function companyId(): Uuid

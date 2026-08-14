@@ -74,6 +74,7 @@ final readonly class DoctrineMarketplaceExpenseFactWriter implements Marketplace
             ON CONFLICT (company_id, marketplace_account_id, source_row_id)
             DO UPDATE SET
                 business_date = EXCLUDED.business_date,
+                unit_number = EXCLUDED.unit_number,
                 amount_minor = EXCLUDED.amount_minor,
                 currency = EXCLUDED.currency,
                 raw_document_id = EXCLUDED.raw_document_id,

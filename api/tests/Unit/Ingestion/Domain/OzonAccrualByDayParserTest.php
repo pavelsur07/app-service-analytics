@@ -104,12 +104,22 @@ final class OzonAccrualByDayParserTest extends TestCase
 
     public function testUnknownCategoryStopsTheParse(): void
     {
-        // container_fees в снятой фикстуре не заполнен ни разу. Появился —
-        // это новая категория расхода, и молча потерять её значит занизить
-        // издержки клиента, ничем себя не выдав.
+        // Незнакомая категория — новый вид расхода. Превратить её в ноль
+        // строк значит занизить издержки клиента, ничем себя не выдав:
+        // ADR-006 требует падать на дрейфе схемы, а не переживать его.
         $this->expectException(\UnexpectedValueException::class);
 
-        $this->parse('{"accruals":[{"accrual_id":1,"date":"2026-07-01","unit_number":"x","accrued_category":"CONTAINER","total_amount":{"amount":"-1","currency":"RUB"},"container_fees":{"fees":[]}}],"last_id":""}');
+        $this->parse('{"accruals":[{"accrual_id":1,"date":"2026-07-01","unit_number":"x","accrued_category":"CONTAINER","total_amount":{"amount":"-1","currency":"RUB"}}],"last_id":""}');
+    }
+
+    public function testContainerFeesStopTheParse(): void
+    {
+        // container_fees в снятой фикстуре не заполнен ни разу (ADR-012).
+        // Появился — это четвёртый блок расходов внутри знакомой
+        // категории, и пропустить его так же нельзя.
+        $this->expectException(\UnexpectedValueException::class);
+
+        $this->parse('{"accruals":[{"accrual_id":1,"date":"2026-07-01","unit_number":"x","accrued_category":"POSTING","total_amount":{"amount":"-1","currency":"RUB"},"container_fees":{"fees":[]}}],"last_id":""}');
     }
 
     public function testResponseWithoutAccrualsIsRejected(): void
@@ -119,6 +129,19 @@ final class OzonAccrualByDayParserTest extends TestCase
         $this->expectException(\UnexpectedValueException::class);
 
         $this->parse('{"code":8,"message":"You have reached request rate limit per second"}');
+    }
+
+    public function testReattributedAccrualChangesTheRowHash(): void
+    {
+        // Площадка вправе переотнести начисление на другой день, не тронув
+        // сумму. Хэш от одной суммы такую правку пропустил бы, и строка
+        // осталась бы со старой датой — объяснить клиенту расхождение
+        // стало бы нечем (ADR-006).
+        $first = $this->parse($this->accrual('ITEM', '{"fees":[{"sku":111,"fees":[{"type_id":1,"accrued":{"amount":"-19.43","currency":"RUB"}}]}]}'));
+        $moved = $this->parse(str_replace('2026-07-01', '2026-07-02', $this->accrual('ITEM', '{"fees":[{"sku":111,"fees":[{"type_id":1,"accrued":{"amount":"-19.43","currency":"RUB"}}]}]}')));
+
+        self::assertSame($first[0]->sourceRowIdValue(), $moved[0]->sourceRowIdValue());
+        self::assertNotSame($first[0]->rowHash(), $moved[0]->rowHash());
     }
 
     public function testCursorIsReturnedForPagination(): void

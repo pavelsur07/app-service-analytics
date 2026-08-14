@@ -28,6 +28,14 @@ use Symfony\Component\Uid\Uuid;
 final class OzonAccrualByDayParser
 {
     /**
+     * Категории, которые разбор знает (ADR-012). Незнакомая — это новый
+     * вид расхода, и превратить её в ноль строк значит занизить издержки
+     * клиента, ничем себя не выдав. ADR-006 требует падать на дрейфе
+     * схемы, а не молча его переживать.
+     */
+    private const array KNOWN_CATEGORIES = ['POSTING', 'ITEM', 'NON_ITEM'];
+
+    /**
      * @return array{facts: list<MarketplaceExpenseFact>, lastId: string}
      */
     public function parse(
@@ -80,12 +88,16 @@ final class OzonAccrualByDayParser
         // быть одним, а не двумя.
         $unitNumber = self::optionalString($accrual, 'unit_number');
 
-        // Категория, которой мы не знаем, — это не «пропустить»: площадка
-        // выпустила расход, и молча его потерять значит занизить издержки
-        // клиента, ничем себя не выдав. container_fees в снятой фикстуре
-        // пуст ни разу не заполнен (ADR-012) — появится, разбор упадёт.
+        $category = self::requireString($accrual, 'accrued_category');
+        if (!\in_array($category, self::KNOWN_CATEGORIES, true)) {
+            throw new \UnexpectedValueException("Начисление {$accrualId} категории '{$category}' — разбор такой не знает (ADR-012).");
+        }
+
+        // container_fees в снятой фикстуре не заполнен ни разу (ADR-012).
+        // Появился — это четвёртая категория расхода внутри знакомой
+        // тройки, и пропустить её так же нельзя.
         if (null !== ($accrual['container_fees'] ?? null)) {
-            throw new \UnexpectedValueException("Начисление {$accrualId} содержит container_fees — категория, которую разбор не знает (ADR-012).");
+            throw new \UnexpectedValueException("Начисление {$accrualId} содержит container_fees — блок, который разбор не знает (ADR-012).");
         }
 
         $facts = [];
