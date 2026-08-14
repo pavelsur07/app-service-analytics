@@ -15,10 +15,18 @@ use Symfony\Component\Uid\Uuid;
  * Клиент с новинками видел оверлей, который «работает через раз»,
  * и объяснить это было нечем.
  *
- * Хранится только артикул. Название и прочее придут, когда их будет
- * где показывать: это не факт-таблица с миллионами строк, добавить
- * колонку позже дёшево (CLAUDE.md, «не абстрагировать до второго
- * случая»).
+ * Хранится только артикул и момент, когда товар впервые увиделся.
+ * Название и прочее придут, когда их будет где показывать: это
+ * не факт-таблица с миллионами строк, добавить колонку позже дёшево
+ * (CLAUDE.md, «не абстрагировать до второго случая»).
+ *
+ * Изменяемых колонок нет ни одной, и это осознанно. Была `last_seen_at`,
+ * но признаком ухода товара она быть перестала (writer сравнивает
+ * с самой выгрузкой), а читать её стало некому: «когда каталог
+ * синхронизировался в прошлый раз» отвечает raw-слой. Оставленная,
+ * она означала бы, что повторный прогон обработчика на том же ответе
+ * площадки меняет строку, — ровно то, чего CLAUDE.md §4 не допускает
+ * и чего избегает sales_fact своим `WHERE row_hash IS DISTINCT FROM`.
  *
  * Ключ естественный, без суррогата: `(company_id, marketplace_account_id,
  * marketplace_sku)`. Артикул уникален в пределах подключения, а не
@@ -52,27 +60,16 @@ class MarketplaceListing
     #[ORM\Column]
     private readonly \DateTimeImmutable $firstSeenAt;
 
-    /**
-     * Момент последней синхронизации, в которой товар пришёл от площадки.
-     * По нему удаляются исчезнувшие: товар, снятый с продажи, перестаёт
-     * быть «своим» для оверлея — но только если выгрузка прошла целиком
-     * (см. writer).
-     */
-    #[ORM\Column]
-    private \DateTimeImmutable $lastSeenAt;
-
     private function __construct(
         Uuid $companyId,
         Uuid $marketplaceAccountId,
         string $marketplaceSku,
         \DateTimeImmutable $firstSeenAt,
-        \DateTimeImmutable $lastSeenAt,
     ) {
         $this->companyId = $companyId;
         $this->marketplaceAccountId = $marketplaceAccountId;
         $this->marketplaceSku = $marketplaceSku;
         $this->firstSeenAt = $firstSeenAt;
-        $this->lastSeenAt = $lastSeenAt;
     }
 
     public static function seen(
@@ -81,7 +78,7 @@ class MarketplaceListing
         string $marketplaceSku,
         \DateTimeImmutable $seenAt,
     ): self {
-        return new self($companyId, $marketplaceAccountId, $marketplaceSku, $seenAt, $seenAt);
+        return new self($companyId, $marketplaceAccountId, $marketplaceSku, $seenAt);
     }
 
     public function companyId(): Uuid
@@ -102,10 +99,5 @@ class MarketplaceListing
     public function firstSeenAt(): \DateTimeImmutable
     {
         return $this->firstSeenAt;
-    }
-
-    public function lastSeenAt(): \DateTimeImmutable
-    {
-        return $this->lastSeenAt;
     }
 }

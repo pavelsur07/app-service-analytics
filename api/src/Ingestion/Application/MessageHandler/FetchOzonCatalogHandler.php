@@ -8,6 +8,9 @@ use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Domain\MarketplaceListing;
 use App\Ingestion\Domain\MarketplaceListingRepository;
+use App\Ingestion\Domain\MarketplaceRawDocument;
+use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Domain\OzonProductListParser;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -16,18 +19,17 @@ use Symfony\Component\Uid\Uuid;
 /**
  * Клиент -> парсер -> замена каталога подключения целиком.
  *
- * Идемпотентен: replaceForAccount — апсерт по естественному ключу плюс
- * удаление исчезнувших, повторный запуск на том же ответе площадки
- * не меняет ни строки (first_seen_at сохраняется, last_seen_at
- * переставляется на тот же момент).
+ * Идемпотентен целиком: raw дедуплицируется по естественному ключу,
+ * каталог вставляется без обновления (в строке нет изменяемых колонок),
+ * повторный запуск на том же ответе площадки не меняет ни строки.
  *
- * **Ответы каталога намеренно не попадают в raw-слой.** Соблазн велик —
- * прослеживаемость ADR-006 требует raw для фактов, — но каталог фактом
- * не является, а последствие было бы скверным: raw-документ каталога
- * каждые полчаса обновлял бы received_at подключения, и сторож свежести
- * (NotifyStaleAccountsAction) считал бы синхронизацию продаж живой,
- * когда она встала. Контроль, который перестаёт срабатывать из-за
- * соседней исправной задачи, хуже отсутствующего.
+ * Ответ сохраняется в raw-слой до разбора, как и у отгрузок (ADR-006):
+ * неудача разбора не должна терять сырьё, а строка каталога обязана
+ * иметь происхождение. Сначала пробовали обойтись без raw — из опасения,
+ * что документы каталога будут обновлять отметку свежести подключения
+ * и маскировать вставшую синхронизацию продаж. Опасение верное,
+ * но лечится оно не пропуском raw, а фильтром по типу отчёта в самом
+ * стороже (RecentlyIngestedAccountsQuery).
  *
  * Страницы читаются циклом: у эндпоинта курсорная пагинация и другого
  * способа получить весь каталог нет. Запрет «запросов в цикле»
@@ -48,11 +50,20 @@ final readonly class FetchOzonCatalogHandler
 
     private const int PAGE_SIZE = 1000;
 
+    /**
+     * Бизнес-дата raw-документа — сегодня в часовом поясе площадки
+     * (ADR-009). У каталога периода нет, но period входит в естественный
+     * ключ raw-слоя: без него побайтово одинаковый ответ дедуплицировался
+     * бы навсегда, и следа сегодняшней синхронизации не осталось бы.
+     */
+    private const string TIMEZONE = 'Europe/Moscow';
+
     public function __construct(
         private IdentityFacade $identityFacade,
         private OzonCatalogFetcher $client,
         private OzonProductListParser $parser,
         private MarketplaceListingRepository $listings,
+        private MarketplaceRawDocumentRepository $rawDocuments,
     ) {
     }
 
@@ -69,6 +80,7 @@ final readonly class FetchOzonCatalogHandler
         $companyId = Uuid::fromString($target->companyId);
         $marketplaceAccountId = Uuid::fromString($target->marketplaceAccountId);
         $syncedAt = new \DateTimeImmutable();
+        $period = (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))->setTime(0, 0);
 
         $listings = [];
         $lastId = '';
@@ -76,6 +88,18 @@ final readonly class FetchOzonCatalogHandler
 
         for ($page = 0; $page < self::MAX_PAGES; ++$page) {
             $rawBody = $this->client->fetchPage($target->clientId, $target->apiKey, $lastId, self::PAGE_SIZE);
+
+            // Каждая страница — отдельный документ: тела разные, и общий
+            // ключ raw-слоя (company, account, тип, период, хэш тела)
+            // разводит их сам, без номера страницы в ключе.
+            $this->rawDocuments->add(MarketplaceRawDocument::capture(
+                companyId: $companyId,
+                marketplaceAccountId: $marketplaceAccountId,
+                reportType: MarketplaceReportType::OzonProductList,
+                period: $period,
+                rawBody: $rawBody,
+            ));
+
             $parsed = $this->parser->parse($rawBody);
 
             foreach ($parsed->skus as $sku) {
@@ -88,7 +112,7 @@ final readonly class FetchOzonCatalogHandler
             // синхронизация делала бы лишний запрос, а на ровно кратном
             // числе товаров — уходила бы на пустую страницу.
             if ('' === $parsed->lastId || $parsed->itemsOnPage < self::PAGE_SIZE) {
-                $this->listings->replaceForAccount($target->companyId, $marketplaceAccountId, $listings, $syncedAt);
+                $this->listings->replaceForAccount($target->companyId, $marketplaceAccountId, $listings);
 
                 return;
             }

@@ -12,7 +12,7 @@ use Symfony\Component\Uid\Uuid;
 
 final class DoctrineMarketplaceListingWriterTest extends KernelTestCase
 {
-    public function testRepeatedSyncKeepsFirstSeenAndAdvancesLastSeen(): void
+    public function testRepeatedSyncLeavesTheRowUntouched(): void
     {
         self::bootKernel();
         $writer = $this->writer();
@@ -28,11 +28,10 @@ final class DoctrineMarketplaceListingWriterTest extends KernelTestCase
         $row = $this->row($companyId, '111');
         self::assertNotNull($row);
         self::assertIsString($row['first_seen_at']);
-        self::assertIsString($row['last_seen_at']);
         // Товар, который мы уже видели, не становится новым от того,
-        // что синхронизация прошла снова.
+        // что синхронизация прошла снова, — и никакая другая колонка
+        // при этом не меняется: изменяемых в таблице нет (CLAUDE.md §4).
         self::assertStringStartsWith('2026-08-13 10:00:00', $row['first_seen_at']);
-        self::assertStringStartsWith('2026-08-14 10:00:00', $row['last_seen_at']);
     }
 
     public function testVanishedListingIsRemoved(): void
@@ -128,7 +127,7 @@ final class DoctrineMarketplaceListingWriterTest extends KernelTestCase
             $skus,
         );
 
-        $writer->replaceForAccount($companyId->toRfc4122(), $accountId, $listings, $syncedAt);
+        $writer->replaceForAccount($companyId->toRfc4122(), $accountId, $listings);
     }
 
     /**
@@ -137,7 +136,7 @@ final class DoctrineMarketplaceListingWriterTest extends KernelTestCase
     private function row(Uuid $companyId, string $sku): ?array
     {
         $row = $this->connection()->fetchAssociative(
-            'SELECT first_seen_at, last_seen_at FROM marketplace_listing WHERE company_id = ? AND marketplace_sku = ?',
+            'SELECT first_seen_at FROM marketplace_listing WHERE company_id = ? AND marketplace_sku = ?',
             [$companyId->toRfc4122(), $sku],
         );
 

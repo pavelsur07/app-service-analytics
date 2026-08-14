@@ -85,7 +85,6 @@ final class ExtensionReadEndpointsTest extends WebTestCase
                     ->withSeenAt($syncedAt)
                     ->build(),
             ],
-            $syncedAt,
         );
 
         $payload = $this->get($client, $fixture, '/skus');
@@ -112,7 +111,6 @@ final class ExtensionReadEndpointsTest extends WebTestCase
                     ->withSeenAt($syncedAt)
                     ->build(),
             ],
-            $syncedAt,
         );
 
         $payload = $this->get($client, $fixture, '/skus');

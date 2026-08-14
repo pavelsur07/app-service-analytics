@@ -21,12 +21,16 @@ interface MarketplaceListingRepository
      * за целое, молча объявила бы часть своих товаров чужими — тот же
      * отказ, что чинили в каталоге расширения.
      *
+     * Момента синхронизации в параметрах нет намеренно: признак ухода —
+     * отсутствие артикула в самой выгрузке, а не отметка времени. Отметку
+     * пробовали, и она ломалась о точность колонки в секундах: две
+     * синхронизации внутри одной секунды получали одинаковое значение.
+     *
      * @param list<MarketplaceListing> $listings
      */
     public function replaceForAccount(
         string $companyId,
         Uuid $marketplaceAccountId,
         array $listings,
-        \DateTimeImmutable $syncedAt,
     ): void;
 }

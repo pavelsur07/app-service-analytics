@@ -45,7 +45,6 @@ final readonly class DoctrineMarketplaceListingWriter implements MarketplaceList
         string $companyId,
         Uuid $marketplaceAccountId,
         array $listings,
-        \DateTimeImmutable $syncedAt,
     ): void {
         $this->connection->transactional(function () use ($companyId, $marketplaceAccountId, $listings): void {
             foreach (array_chunk($listings, self::CHUNK_SIZE) as $chunk) {
@@ -68,23 +67,27 @@ final readonly class DoctrineMarketplaceListingWriter implements MarketplaceList
         $valuesSql = [];
         $params = [];
         foreach ($listings as $i => $listing) {
-            $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :marketplaceSku{$i}, :firstSeenAt{$i}, :lastSeenAt{$i})";
+            $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :marketplaceSku{$i}, :firstSeenAt{$i})";
 
             $params["companyId{$i}"] = $listing->companyId()->toRfc4122();
             $params["marketplaceAccountId{$i}"] = $listing->marketplaceAccountId()->toRfc4122();
             $params["marketplaceSku{$i}"] = $listing->marketplaceSku();
             $params["firstSeenAt{$i}"] = $listing->firstSeenAt()->format('Y-m-d H:i:sP');
-            $params["lastSeenAt{$i}"] = $listing->lastSeenAt()->format('Y-m-d H:i:sP');
         }
 
-        // first_seen_at в SET нет намеренно: товар, который мы уже видели,
-        // не становится новым от того, что синхронизация прошла снова.
+        // DO NOTHING, а не DO UPDATE: обновлять в этой таблице нечего.
+        // Товар, который мы уже видели, не становится новым от того,
+        // что синхронизация прошла снова, — и повторный прогон
+        // обработчика на том же ответе площадки не меняет ни строки
+        // (CLAUDE.md §4). Тот же принцип, что у sales_fact с его
+        // `WHERE row_hash IS DISTINCT FROM`, только здесь сравнивать
+        // нечего: кроме ключа в строке лишь момент первой встречи.
         $sql = <<<SQL
             INSERT INTO marketplace_listing
-                (company_id, marketplace_account_id, marketplace_sku, first_seen_at, last_seen_at)
+                (company_id, marketplace_account_id, marketplace_sku, first_seen_at)
             VALUES {$this->joinValues($valuesSql)}
             ON CONFLICT (company_id, marketplace_account_id, marketplace_sku)
-            DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at
+            DO NOTHING
             SQL;
 
         $this->connection->executeStatement($sql, $params);

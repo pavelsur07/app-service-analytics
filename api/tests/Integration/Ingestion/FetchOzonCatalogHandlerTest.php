@@ -11,6 +11,7 @@ use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonCatalogHandler;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonProductListClient;
+use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Fake\FakeOzonCatalogFetcher;
@@ -46,15 +47,19 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         $this->fetcher($container, [$body, $body]);
 
         $this->syncCatalog($container, $account);
-        $afterFirst = $this->firstSeenAt($container, $account, '220280923');
+        $afterFirst = $this->rows($container, $account);
+        $rawAfterFirst = $this->rawDocumentCount($container, $account);
 
         // Идемпотентность (CLAUDE.md §4, §9): повторная синхронизация
-        // не заводит вторую строку и не делает давно известный товар
-        // новым — first_seen_at остаётся прежним.
+        // не заводит ни второй строки каталога, ни второго raw-документа
+        // и не меняет ни одной существующей. Сравнение по количеству
+        // пропустило бы подмену содержимого строки при том же числе
+        // строк — поэтому сверяются сами строки целиком.
         $this->syncCatalog($container, $account);
 
-        self::assertSame(62, $this->skuCount($container, $account));
-        self::assertSame($afterFirst, $this->firstSeenAt($container, $account, '220280923'));
+        self::assertSame($afterFirst, $this->rows($container, $account));
+        self::assertSame($rawAfterFirst, $this->rawDocumentCount($container, $account));
+        self::assertCount(62, $afterFirst);
     }
 
     public function testAllPagesAreFetchedBeforeTheCatalogIsReplaced(): void
@@ -169,6 +174,28 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         return json_encode(['result' => ['items' => $items, 'total' => \count($items), 'last_id' => $lastId]], \JSON_THROW_ON_ERROR);
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function rows(ContainerInterface $container, MarketplaceAccount $account): array
+    {
+        return $this->connection($container)->fetchAllAssociative(
+            'SELECT marketplace_sku, first_seen_at FROM marketplace_listing WHERE company_id = ? AND marketplace_account_id = ? ORDER BY marketplace_sku',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
+        );
+    }
+
+    private function rawDocumentCount(ContainerInterface $container, MarketplaceAccount $account): int
+    {
+        $count = $this->connection($container)->fetchOne(
+            'SELECT COUNT(*) FROM marketplace_raw_document WHERE company_id = ? AND marketplace_account_id = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
+        );
+        self::assertIsInt($count);
+
+        return $count;
+    }
+
     private function skuCount(ContainerInterface $container, MarketplaceAccount $account): int
     {
         $count = $this->connection($container)->fetchOne(
@@ -182,17 +209,44 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
 
     private function hasSku(ContainerInterface $container, MarketplaceAccount $account, string $sku): bool
     {
-        return null !== $this->firstSeenAt($container, $account, $sku);
-    }
-
-    private function firstSeenAt(ContainerInterface $container, MarketplaceAccount $account, string $sku): ?string
-    {
         $value = $this->connection($container)->fetchOne(
             'SELECT first_seen_at FROM marketplace_listing WHERE company_id = ? AND marketplace_account_id = ? AND marketplace_sku = ?',
             [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), $sku],
         );
 
-        return \is_string($value) ? $value : null;
+        return \is_string($value);
+    }
+
+    public function testCatalogSyncDoesNotMakeStaleSalesLookFresh(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+
+        // Сторож свежести (NotifyStaleAccountsAction) читает raw-слой,
+        // а каталог теперь тоже туда пишет. Без фильтра по типу отчёта
+        // исправная синхронизация каталога — она идёт тем же тиком —
+        // выдавала бы вставшую синхронизацию продаж за живую.
+        $this->fetcher($container, [$this->fixtureBody()]);
+        $this->syncCatalog($container, $account);
+
+        $freshSalesAccounts = (new RecentlyIngestedAccountsQuery($this->connection($container)))
+            ->build(new \DateTimeImmutable('-36 hours'))
+            ->executeQuery()
+            ->fetchAllAssociative();
+
+        $keys = array_map(
+            static function (array $row): string {
+                $fresh = RecentlyIngestedAccountsQuery::mapRow($row);
+
+                return RecentlyIngestedAccountsQuery::key($fresh->companyId, $fresh->marketplaceAccountId);
+            },
+            $freshSalesAccounts,
+        );
+
+        self::assertNotContains(
+            RecentlyIngestedAccountsQuery::key($account->companyId()->toRfc4122(), $account->id()->toRfc4122()),
+            $keys,
+        );
     }
 
     private function account(ContainerInterface $container): MarketplaceAccount
