@@ -63,6 +63,12 @@ final readonly class ListCompanyConnectionsAction
         /** @var list<array<string, mixed>> $rows */
         $rows = $this->freshness->build($companyId)->executeQuery()->fetchAllAssociative();
 
+        if (\count($rows) > AccountFreshnessQuery::MAX_RESULTS) {
+            // Молча обрезанная свежесть показала бы «загрузок не было»
+            // по исправной выгрузке — отказ, неотличимый от настоящего.
+            throw new \RuntimeException(\sprintf('Строк свежести у компании больше защитного потолка %d.', AccountFreshnessQuery::MAX_RESULTS));
+        }
+
         $byAccount = [];
         foreach ($rows as $row) {
             $freshness = AccountFreshnessQuery::mapRow($row);

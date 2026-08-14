@@ -51,6 +51,14 @@ final class MarketplaceRawDocumentBuilder
         return $clone;
     }
 
+    public function withReportType(string $reportType): self
+    {
+        $clone = clone $this;
+        $clone->reportType = $reportType;
+
+        return $clone;
+    }
+
     public function withPeriod(\DateTimeImmutable $period): self
     {
         $clone = clone $this;

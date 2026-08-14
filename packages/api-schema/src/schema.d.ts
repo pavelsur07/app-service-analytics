@@ -471,6 +471,15 @@ export interface operations {
                     "application/json": components["schemas"]["ConnectionsResponse"];
                 };
             };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
         };
     };
     get_ingestion_ozon_sales_facts_list: {

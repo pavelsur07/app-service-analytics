@@ -43,7 +43,9 @@ final readonly class AccountFreshnessQuery
             ->setParameter('companyId', $companyId)
             ->groupBy('marketplace_account_id')
             ->addGroupBy('report_type')
-            ->setMaxResults(self::MAX_RESULTS);
+            // +1 — см. CompanyConnectionsQuery: молча обрезанная свежесть
+            // показала бы «загрузок не было» по исправной выгрузке.
+            ->setMaxResults(self::MAX_RESULTS + 1);
     }
 
     /**
@@ -54,8 +56,23 @@ final readonly class AccountFreshnessQuery
         return new AccountFreshnessRow(
             marketplaceAccountId: self::stringValue($row['marketplace_account_id']),
             reportType: self::stringValue($row['report_type']),
-            lastReceivedAt: self::stringValue($row['last_received_at']),
+            lastReceivedAt: self::isoUtc($row['last_received_at']),
         );
+    }
+
+    /**
+     * Postgres отдаёт `timestamp without time zone` строкой «Y-m-d H:i:s».
+     * Браузер разбирает её как местное время, и 09:00 UTC превращается
+     * в 09:00 по часам пользователя — цифра сдвигается на величину его
+     * пояса, а <time dateTime> получает значение, недопустимое в HTML.
+     * Приложение пишет эти колонки в UTC (date.timezone=UTC), поэтому
+     * здесь UTC и объявляется явно.
+     */
+    private static function isoUtc(mixed $value): string
+    {
+        $raw = self::stringValue($value);
+
+        return (new \DateTimeImmutable($raw, new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
     }
 
     private static function stringValue(mixed $value): string

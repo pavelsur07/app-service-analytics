@@ -8,6 +8,7 @@ use App\Ingestion\Application\CompanyConnectionView;
 use App\Ingestion\Application\ListCompanyConnectionsAction;
 use App\Ingestion\Ui\Response\ConnectionResponse;
 use App\Ingestion\Ui\Response\ConnectionsResponse;
+use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -45,6 +46,15 @@ final class ListConnectionsController
         response: 200,
         description: 'Подключения компании с состоянием и моментом последней загрузки по каждой выгрузке',
         content: new Model(type: ConnectionsResponse::class),
+    )]
+    // 403 — часть контракта, а не деталь реализации: companyId в адресе
+    // не означает доступ (CompanyAccessSubscriber), и клиент обязан
+    // отличить «не твоя компания» от прочих отказов, чтобы увести
+    // человека к списку своих компаний, а не показать пустой экран.
+    #[OA\Response(
+        response: 403,
+        description: 'Пользователь не состоит в этой компании',
+        content: new Model(type: ValidationErrorResponse::class),
     )]
     public function __invoke(string $companyId): JsonResponse
     {

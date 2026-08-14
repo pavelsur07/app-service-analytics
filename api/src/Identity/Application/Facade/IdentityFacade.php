@@ -44,6 +44,13 @@ final class IdentityFacade
         /** @var list<array<string, mixed>> $rows */
         $rows = $this->connections->build($companyId)->executeQuery()->fetchAllAssociative();
 
+        if (\count($rows) > CompanyConnectionsQuery::MAX_RESULTS) {
+            // Громко, не тихая обрезка: список подключений без части строк
+            // выглядит как полный, и клиент решит, что магазин отключён.
+            // Тот же приём, что в IdentityScheduleFacade.
+            throw new \RuntimeException(\sprintf('Подключений у компании больше защитного потолка %d — экрану нужна пагинация.', CompanyConnectionsQuery::MAX_RESULTS));
+        }
+
         return array_map(
             static function (array $row): CompanyConnection {
                 $connection = CompanyConnectionsQuery::mapRow($row);
