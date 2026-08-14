@@ -21,103 +21,14 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
- * Юнит-экономика: расходы по товару складываются с выручкой, расходы
- * кабинета показываются отдельно. Обязательное покрытие ADR-005 —
- * изоляция данных между компаниями.
+ * Через HTTP проверяется только то, что живёт именно здесь: изоляция
+ * арендаторов (обязательное покрытие ADR-005) и отказ на некорректных
+ * параметрах. Сам расчёт — уровнем ниже (BuildUnitEconomicsActionTest):
+ * денежная арифметика по ADR-005 проверяется отдельно, а тестировать
+ * контроллеры §9 запрещает.
  */
 final class ShowUnitEconomicsControllerTest extends WebTestCase
 {
-    public function testMarginIsRevenueMinusCommissionAndExpenses(): void
-    {
-        $client = static::createClient();
-        $company = $this->loginAsCompanyMember($client);
-
-        SalesFactBuilder::aSalesFact()
-            ->withBusinessDate($this->today())
-            ->withCompanyId($company->id())
-            ->withMarketplaceSku('111')
-            ->withSourceRowId('sale-1')
-            ->withStatus('delivered')
-            ->withAmount(Money::ofMinor(274_700, 'RUB'))
-            ->withCommissionAmount(Money::ofMinor(-126_362, 'RUB'))
-            ->persistWith($this->salesFacts());
-
-        MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
-            ->withBusinessDate($this->today())
-            ->withCompanyId($company->id())
-            ->withMarketplaceSku('111')
-            ->withFeeTypeId(32)
-            ->withAmount(Money::ofMinor(-6_900, 'RUB'))
-            ->persistWith($this->expenseFacts());
-
-        $payload = $this->get($client, $company);
-
-        self::assertCount(1, $payload['skus']);
-        $sku = $payload['skus'][0];
-        self::assertSame('111', $sku['marketplaceSku']);
-        self::assertSame(274_700, $sku['revenueMinor']);
-        self::assertSame(-126_362, $sku['commissionMinor']);
-        self::assertSame(-6_900, $sku['expensesTotalMinor']);
-        // Сложение, а не вычитание: комиссия и расходы приходят
-        // от площадки отрицательными, и «взять по модулю» здесь означало
-        // бы сложить расход с выручкой.
-        self::assertSame(274_700 - 126_362 - 6_900, $sku['marginMinor']);
-        // Название расхода приходит из снимка справочника площадки:
-        // клиенту нужен «Логистика», а не «тип 32».
-        $expenses = $sku['expenses'];
-        self::assertIsArray($expenses);
-        $first = $expenses[0];
-        self::assertIsArray($first);
-        self::assertSame('Логистика', $first['name']);
-    }
-
-    public function testCabinetExpensesAreShownApartFromProducts(): void
-    {
-        $client = static::createClient();
-        $company = $this->loginAsCompanyMember($client);
-
-        MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
-            ->withBusinessDate($this->today())
-            ->withCompanyId($company->id())
-            ->withoutSku()
-            ->withFeeTypeId(41)
-            ->withAmount(Money::ofMinor(-23_793, 'RUB'))
-            ->persistWith($this->expenseFacts());
-
-        $payload = $this->get($client, $company);
-
-        // Реклама и хранение не размазываются по товарам (ADR-012):
-        // базис распределения захочется менять, а показанная строка
-        // честнее доли, происхождение которой клиент не проверит.
-        self::assertSame([], $payload['skus']);
-        self::assertSame(-23_793, $payload['cabinetExpensesTotalMinor']);
-        self::assertSame('Оплата за клик', $payload['cabinetExpenses'][0]['name']);
-        self::assertSame(41, $payload['cabinetExpenses'][0]['feeTypeId']);
-    }
-
-    public function testProductWithExpensesButNoSalesIsStillVisible(): void
-    {
-        $client = static::createClient();
-        $company = $this->loginAsCompanyMember($client);
-
-        // Возврат обработали в этом периоде, а продан товар был в прошлом.
-        // Спрятать такой расход значило бы занизить издержки.
-        MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
-            ->withBusinessDate($this->today())
-            ->withCompanyId($company->id())
-            ->withMarketplaceSku('222')
-            ->withFeeTypeId(59)
-            ->withAmount(Money::ofMinor(-11_500, 'RUB'))
-            ->persistWith($this->expenseFacts());
-
-        $payload = $this->get($client, $company);
-
-        self::assertCount(1, $payload['skus']);
-        self::assertSame('222', $payload['skus'][0]['marketplaceSku']);
-        self::assertSame(0, $payload['skus'][0]['revenueMinor']);
-        self::assertSame(-11_500, $payload['skus'][0]['marginMinor']);
-    }
-
     public function testDataOfAnotherCompanyIsNotIncluded(): void
     {
         $client = static::createClient();
@@ -151,6 +62,28 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
         $company = $this->loginAsCompanyMember($client);
 
         $client->request('GET', "/api/companies/{$company->id()->toRfc4122()}/unit-economics?days=400");
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    public function testLimitBeyondTheMaximumIsRejected(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+
+        // 422, а не тихая обрезка до максимума (§5): клиент, попросивший
+        // тысячу строк, должен узнать, что получил не тысячу.
+        $client->request('GET', "/api/companies/{$company->id()->toRfc4122()}/unit-economics?limit=1000");
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    public function testMalformedCursorIsRejected(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+
+        $client->request('GET', "/api/companies/{$company->id()->toRfc4122()}/unit-economics?cursor=broken");
 
         self::assertSame(422, $client->getResponse()->getStatusCode());
     }

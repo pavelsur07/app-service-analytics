@@ -24,6 +24,8 @@ final readonly class UnitEconomicsSkuResponse
         public int $commissionMinor,
         public array $expenses,
         public int $expensesTotalMinor,
+        /** Комиссия плюс расходы: считает бэкенд, не компонент (§10). */
+        public int $deductionsTotalMinor,
         public int $marginMinor,
     ) {
     }

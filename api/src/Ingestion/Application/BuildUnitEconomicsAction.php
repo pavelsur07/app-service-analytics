@@ -5,22 +5,21 @@ declare(strict_types=1);
 namespace App\Ingestion\Application;
 
 use App\Ingestion\Domain\OzonFeeTypeNames;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsCursor;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsExpenseRow;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsQuery;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsSalesRow;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsSkuRow;
+use App\Shared\Domain\ValueObject\Money;
 
 /**
- * Сборка юнит-экономики за период из двух агрегатов: продаж и расходов.
+ * Сборка юнит-экономики за период.
  *
- * Складывает их PHP, а не JOIN в SQL, и это осознанно: у продажи и её
- * расходов разные бизнес-даты по природе — начисление приходит позже,
- * иногда на недели (ADR-012). Соединение по дате приписывало бы июльской
- * продаже только те расходы, что успели начислиться в июле, и картина
- * менялась бы при каждом открытии экрана.
+ * Товары приходят одной страницей из запроса, где продажи и расходы уже
+ * объединены по артикулу: собирать объединение в PHP значило бы, что
+ * артикул с расходами, но без продаж, проходит мимо лимита страницы.
  *
- * Одна валюта на отчёт: суммы разных валют не складываются (§3).
- * Сегодня у Ozon это всегда RUB; вторая валюта в периоде — отказ,
- * а не молчаливое суммирование.
+ * Денежная арифметика — через Money (ADR-004): величины разных валют
+ * не складываются, и проверка живёт в самом типе, а не в этом сценарии.
  */
 final readonly class BuildUnitEconomicsAction
 {
@@ -29,95 +28,98 @@ final readonly class BuildUnitEconomicsAction
     ) {
     }
 
-    public function __invoke(string $companyId, \DateTimeImmutable $from, \DateTimeImmutable $to): UnitEconomicsReport
-    {
-        /** @var list<array<string, mixed>> $salesRows */
-        $salesRows = $this->query->sales($companyId, $from, $to)->executeQuery()->fetchAllAssociative();
-        if (\count($salesRows) > UnitEconomicsQuery::MAX_ROWS) {
-            // Тот же приём, что в IdentityScheduleFacade: тихая обрезка
-            // показала бы неполный отчёт как полный, и клиент считал бы
-            // прибыль по части ассортимента.
-            throw new \RuntimeException(\sprintf('Артикулов с продажами за период больше защитного потолка %d — экрану нужна пагинация.', UnitEconomicsQuery::MAX_ROWS));
-        }
+    public function __invoke(
+        string $companyId,
+        \DateTimeImmutable $from,
+        \DateTimeImmutable $to,
+        int $limit,
+        ?UnitEconomicsCursor $cursor,
+    ): UnitEconomicsReport {
+        /** @var list<array<string, mixed>> $skuRows */
+        $skuRows = $this->query->skus($companyId, $from, $to, $limit, $cursor)->executeQuery()->fetchAllAssociative();
 
-        /** @var list<array<string, mixed>> $expenseRows */
-        $expenseRows = $this->query->expenses($companyId, $from, $to)->executeQuery()->fetchAllAssociative();
+        $rows = array_map(UnitEconomicsQuery::mapSkuRow(...), $skuRows);
+        // +1 строка запрошена ради ответа на «есть ли ещё» — в отчёт
+        // она не идёт (§5: COUNT(*) на факт-таблицах не выполняется).
+        $hasMore = \count($rows) > $limit;
+        $rows = \array_slice($rows, 0, $limit);
 
-        $sales = array_map(UnitEconomicsQuery::mapSalesRow(...), $salesRows);
-        $expenses = array_map(UnitEconomicsQuery::mapExpenseRow(...), $expenseRows);
+        /** @var list<array<string, mixed>> $cabinetRows */
+        $cabinetRows = $this->query->cabinetExpenses($companyId, $from, $to)->executeQuery()->fetchAllAssociative();
+        $cabinet = array_map(UnitEconomicsQuery::mapExpenseRow(...), $cabinetRows);
 
-        $currency = $this->singleCurrency($sales, $expenses);
-
-        /**
-         * Ключ — артикул, но PHP приводит числовые строки к int:
-         * '222' в ключе становится 222, и обратное приведение ниже
-         * не косметика, а необходимость. PHPStan этого не видит
-         * и считает приведение лишним — он неправ.
-         *
-         * @var array<array-key, list<UnitEconomicsExpenseRow>> $bySku
-         */
-        $bySku = [];
-        $cabinet = [];
-        foreach ($expenses as $expense) {
-            if ('' === $expense->marketplaceSku) {
-                $cabinet[] = $expense;
-
-                continue;
-            }
-            $bySku[$expense->marketplaceSku][] = $expense;
-        }
+        $breakdown = $this->breakdown($companyId, $from, $to, $rows);
+        $currency = $this->singleCurrency($rows, $cabinet);
 
         $skus = [];
-        foreach ($sales as $row) {
-            $skuExpenses = $bySku[$row->marketplaceSku] ?? [];
-            unset($bySku[$row->marketplaceSku]);
-            $skus[] = $this->sku($row, $skuExpenses);
+        foreach ($rows as $row) {
+            $skus[] = $this->sku($row, $breakdown[$row->marketplaceSku] ?? []);
         }
 
-        // Расходы по артикулу, у которого за период не было продаж:
-        // возврат обработан в июле, а продан товар в июне. Спрятать их
-        // значило бы занизить издержки, и товар с одними расходами
-        // на экране обязан быть виден.
-        foreach ($bySku as $marketplaceSku => $skuExpenses) {
-            $skus[] = $this->sku(
-                new UnitEconomicsSalesRow(
-                    marketplaceSku: (string) $marketplaceSku,
-                    currency: $currency,
-                    deliveredQuantity: 0,
-                    deliveredAmountMinor: 0,
-                    commissionAmountMinor: 0,
-                    orderedQuantity: 0,
-                ),
-                $skuExpenses,
-            );
-        }
+        $last = $rows[\count($rows) - 1] ?? null;
 
         return new UnitEconomicsReport(
             skus: $skus,
             cabinetExpenses: $this->grouped($cabinet),
             cabinetExpensesTotalMinor: $this->total($cabinet),
             currency: $currency,
+            nextCursor: $hasMore && null !== $last
+                ? (new UnitEconomicsCursor($last->deliveredAmountMinor, $last->marketplaceSku))->toString()
+                : null,
         );
+    }
+
+    /**
+     * Разбивка по типам — одним запросом на всю страницу, не запросом
+     * на артикул (CLAUDE.md §6: запросов в цикле нет).
+     *
+     * @param list<UnitEconomicsSkuRow> $rows
+     *
+     * @return array<string, list<UnitEconomicsExpenseRow>>
+     */
+    private function breakdown(string $companyId, \DateTimeImmutable $from, \DateTimeImmutable $to, array $rows): array
+    {
+        if ([] === $rows) {
+            return [];
+        }
+
+        $skus = array_map(static fn (UnitEconomicsSkuRow $row): string => $row->marketplaceSku, $rows);
+
+        /** @var list<array<string, mixed>> $expenseRows */
+        $expenseRows = $this->query->breakdown($companyId, $from, $to, $skus)->executeQuery()->fetchAllAssociative();
+
+        $bySku = [];
+        foreach (array_map(UnitEconomicsQuery::mapExpenseRow(...), $expenseRows) as $expense) {
+            $bySku[$expense->marketplaceSku][] = $expense;
+        }
+
+        return $bySku;
     }
 
     /**
      * @param list<UnitEconomicsExpenseRow> $expenses
      */
-    private function sku(UnitEconomicsSalesRow $row, array $expenses): UnitEconomicsSku
+    private function sku(UnitEconomicsSkuRow $row, array $expenses): UnitEconomicsSku
     {
-        $expensesTotal = $this->total($expenses);
+        $revenue = Money::ofMinor($row->deliveredAmountMinor, $row->currency);
+        $commission = Money::ofMinor($row->commissionAmountMinor, $row->currency);
+        $expensesTotal = Money::ofMinor($row->expensesTotalMinor, $row->currency);
+
+        // Сложение, а не вычитание: комиссия и расходы приходят
+        // от площадки отрицательными, и «вычесть расход» означало бы
+        // гадать, каким знаком он пришёл.
+        $deductions = $commission->plus($expensesTotal);
 
         return new UnitEconomicsSku(
             marketplaceSku: $row->marketplaceSku,
             deliveredQuantity: $row->deliveredQuantity,
             orderedQuantity: $row->orderedQuantity,
-            revenueMinor: $row->deliveredAmountMinor,
-            commissionMinor: $row->commissionAmountMinor,
+            revenueMinor: $revenue->minorAmount(),
+            commissionMinor: $commission->minorAmount(),
             expenses: $this->grouped($expenses),
-            expensesTotalMinor: $expensesTotal,
-            // Сложение, а не вычитание: комиссия и расходы приходят
-            // от площадки отрицательными.
-            marginMinor: $row->deliveredAmountMinor + $row->commissionAmountMinor + $expensesTotal,
+            expensesTotalMinor: $expensesTotal->minorAmount(),
+            deductionsTotalMinor: $deductions->minorAmount(),
+            marginMinor: $revenue->plus($deductions)->minorAmount(),
         );
     }
 
@@ -128,21 +130,26 @@ final readonly class BuildUnitEconomicsAction
      */
     private function grouped(array $expenses): array
     {
+        /** @var array<int, Money> $byType */
         $byType = [];
         foreach ($expenses as $expense) {
-            $byType[$expense->feeTypeId] = ($byType[$expense->feeTypeId] ?? 0) + $expense->amountMinor;
+            $amount = Money::ofMinor($expense->amountMinor, $expense->currency);
+            $byType[$expense->feeTypeId] = isset($byType[$expense->feeTypeId])
+                ? $byType[$expense->feeTypeId]->plus($amount)
+                : $amount;
         }
 
-        // По убыванию величины расхода: первым в списке то, что съедает
-        // больше всего, — ради этого экран и открывают.
-        asort($byType);
+        // По возрастанию суммы: расходы отрицательные, поэтому первым
+        // в списке оказывается тот, что съедает больше всего, — ради
+        // него экран и открывают.
+        uasort($byType, static fn (Money $a, Money $b): int => $a->minorAmount() <=> $b->minorAmount());
 
         $grouped = [];
-        foreach ($byType as $feeTypeId => $amountMinor) {
+        foreach ($byType as $feeTypeId => $amount) {
             $grouped[] = new UnitEconomicsExpense(
                 feeTypeId: $feeTypeId,
                 name: OzonFeeTypeNames::of($feeTypeId),
-                amountMinor: $amountMinor,
+                amountMinor: $amount->minorAmount(),
             );
         }
 
@@ -154,29 +161,32 @@ final readonly class BuildUnitEconomicsAction
      */
     private function total(array $expenses): int
     {
-        $total = 0;
-        foreach ($expenses as $expense) {
-            $total += $expense->amountMinor;
+        if ([] === $expenses) {
+            return 0;
         }
 
-        return $total;
+        return Money::sum(array_map(
+            static fn (UnitEconomicsExpenseRow $row): Money => Money::ofMinor($row->amountMinor, $row->currency),
+            $expenses,
+        ))->minorAmount();
     }
 
     /**
-     * @param list<UnitEconomicsSalesRow>   $sales
-     * @param list<UnitEconomicsExpenseRow> $expenses
+     * @param list<UnitEconomicsSkuRow>     $rows
+     * @param list<UnitEconomicsExpenseRow> $cabinet
      */
-    private function singleCurrency(array $sales, array $expenses): string
+    private function singleCurrency(array $rows, array $cabinet): string
     {
         $currencies = array_unique(array_merge(
-            array_map(static fn (UnitEconomicsSalesRow $row): string => $row->currency, $sales),
-            array_map(static fn (UnitEconomicsExpenseRow $row): string => $row->currency, $expenses),
+            array_map(static fn (UnitEconomicsSkuRow $row): string => $row->currency, $rows),
+            array_map(static fn (UnitEconomicsExpenseRow $row): string => $row->currency, $cabinet),
         ));
 
         if (\count($currencies) > 1) {
-            // Молчаливое приведение по курсу запрещено (ADR-004),
-            // а сложить разные валюты в одну строку отчёта — то же самое,
-            // только без курса.
+            // Money бросил бы то же исключение на первом сложении;
+            // здесь оно раньше и с понятным сообщением, потому что
+            // одна валюта — свойство отчёта целиком, а не одной
+            // операции (ADR-004).
             throw new \RuntimeException('За период встретилось несколько валют — отчёт не складывает их в одну сумму (ADR-004).');
         }
 

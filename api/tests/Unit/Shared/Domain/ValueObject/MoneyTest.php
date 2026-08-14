@@ -109,4 +109,44 @@ final class MoneyTest extends TestCase
     {
         return array_map(static fn (Money $part): int => $part->minorAmount(), $parts);
     }
+
+    public function testAddsMoneyOfTheSameCurrency(): void
+    {
+        $total = Money::ofMinor(274_700, 'RUB')->plus(Money::ofMinor(-126_362, 'RUB'));
+
+        // Расходы приходят от площадки отрицательными, и сложение —
+        // единственная операция, которая нужна: «вычесть расход» означало
+        // бы гадать, каким знаком он пришёл.
+        self::assertSame(148_338, $total->minorAmount());
+    }
+
+    public function testRefusesToAddDifferentCurrencies(): void
+    {
+        // Молчаливое приведение по курсу запрещено (ADR-004), и сложить
+        // разные валюты — то же самое, только без курса.
+        $this->expectException(\InvalidArgumentException::class);
+
+        Money::ofMinor(100, 'RUB')->plus(Money::ofMinor(100, 'USD'));
+    }
+
+    public function testSumsAListOfTheSameCurrency(): void
+    {
+        $total = Money::sum([
+            Money::ofMinor(-6_900, 'RUB'),
+            Money::ofMinor(-785, 'RUB'),
+            Money::ofMinor(-1_943, 'RUB'),
+        ]);
+
+        self::assertSame(-9_628, $total->minorAmount());
+        self::assertSame('RUB', $total->currency());
+    }
+
+    public function testRefusesToSumAnEmptyList(): void
+    {
+        // Валюта результата была бы догадкой, а умолчаний у валюты
+        // не бывает (ADR-004).
+        $this->expectException(\InvalidArgumentException::class);
+
+        Money::sum([]);
+    }
 }

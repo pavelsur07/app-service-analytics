@@ -310,6 +310,8 @@ export interface components {
             commissionMinor: number;
             expenses: components["schemas"]["UnitEconomicsExpenseResponse"][];
             expensesTotalMinor: number;
+            /** Комиссия плюс расходы: считает бэкенд, не компонент (§10). */
+            deductionsTotalMinor: number;
             marginMinor: number;
         };
         UnitEconomicsResponse: {
@@ -319,6 +321,7 @@ export interface components {
             skus: components["schemas"]["UnitEconomicsSkuResponse"][];
             cabinetExpenses: components["schemas"]["UnitEconomicsExpenseResponse"][];
             cabinetExpensesTotalMinor: number;
+            nextCursor?: string | null;
         };
         AppInfoResponse: {
             app: string;
@@ -698,6 +701,10 @@ export interface operations {
             query?: {
                 /** @description Окно в днях по бизнес-дате площадки */
                 days?: number;
+                /** @description Сколько товаров вернуть на странице */
+                limit?: number;
+                /** @description Курсор следующей страницы из предыдущего ответа */
+                cursor?: string;
             };
             header?: never;
             path: {

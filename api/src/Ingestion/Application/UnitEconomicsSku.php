@@ -29,6 +29,12 @@ final readonly class UnitEconomicsSku
         public int $commissionMinor,
         public array $expenses,
         public int $expensesTotalMinor,
+        /**
+         * Комиссия плюс расходы — то, что съедает выручку. Считается
+         * здесь, а не в компоненте: арифметика над денежными величинами
+         * в компонентах запрещена (CLAUDE.md §10).
+         */
+        public int $deductionsTotalMinor,
         public int $marginMinor,
     ) {
     }

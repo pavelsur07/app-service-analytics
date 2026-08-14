@@ -17,6 +17,7 @@ final readonly class UnitEconomicsResponse
         public array $skus,
         public array $cabinetExpenses,
         public int $cabinetExpensesTotalMinor,
+        public ?string $nextCursor,
     ) {
     }
 }

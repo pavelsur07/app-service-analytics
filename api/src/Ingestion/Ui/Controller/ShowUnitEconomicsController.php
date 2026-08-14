@@ -7,6 +7,8 @@ namespace App\Ingestion\Ui\Controller;
 use App\Ingestion\Application\BuildUnitEconomicsAction;
 use App\Ingestion\Application\UnitEconomicsExpense;
 use App\Ingestion\Application\UnitEconomicsSku;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsCursor;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsQuery;
 use App\Ingestion\Ui\Response\UnitEconomicsExpenseResponse;
 use App\Ingestion\Ui\Response\UnitEconomicsResponse;
 use App\Ingestion\Ui\Response\UnitEconomicsSkuResponse;
@@ -36,6 +38,8 @@ use Symfony\Component\Routing\Requirement\Requirement;
 final class ShowUnitEconomicsController
 {
     private const int DEFAULT_DAYS = 30;
+    private const int DEFAULT_LIMIT = UnitEconomicsQuery::DEFAULT_LIMIT;
+    private const int MAX_LIMIT = UnitEconomicsQuery::MAX_LIMIT;
     private const int MAX_DAYS = 366;
     private const string TIMEZONE = 'Europe/Moscow';
 
@@ -50,6 +54,20 @@ final class ShowUnitEconomicsController
         description: 'Окно в днях по бизнес-дате площадки',
         required: false,
         schema: new OA\Schema(type: 'integer', default: self::DEFAULT_DAYS, maximum: self::MAX_DAYS, minimum: 1),
+    )]
+    #[OA\Parameter(
+        name: 'limit',
+        in: 'query',
+        description: 'Сколько товаров вернуть на странице',
+        required: false,
+        schema: new OA\Schema(type: 'integer', default: self::DEFAULT_LIMIT, maximum: self::MAX_LIMIT, minimum: 1),
+    )]
+    #[OA\Parameter(
+        name: 'cursor',
+        in: 'query',
+        description: 'Курсор следующей страницы из предыдущего ответа',
+        required: false,
+        schema: new OA\Schema(type: 'string'),
     )]
     #[OA\Response(
         response: 200,
@@ -90,7 +108,42 @@ final class ShowUnitEconomicsController
         $to = (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))->setTime(0, 0);
         $from = $to->modify(\sprintf('-%d day', $days - 1));
 
-        $report = ($this->buildReport)($companyId, $from, $to);
+        $limit = self::DEFAULT_LIMIT;
+        if ($request->query->has('limit')) {
+            $limit = (int) $request->query->get('limit');
+        }
+
+        if ($limit < 1 || $limit > self::MAX_LIMIT) {
+            // Превышение потолка — 422, а не тихая обрезка до максимума
+            // (§5): клиент, попросивший тысячу строк, должен узнать,
+            // что получил не тысячу.
+            return new JsonResponse(
+                new ValidationErrorResponse(
+                    status: Response::HTTP_UNPROCESSABLE_ENTITY,
+                    code: 'invalid_limit',
+                    message: \sprintf('limit must be an integer between 1 and %d.', self::MAX_LIMIT),
+                ),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        }
+
+        $cursor = null;
+        if ($request->query->has('cursor')) {
+            $raw = (string) $request->query->get('cursor');
+            $cursor = UnitEconomicsCursor::fromString($raw);
+            if (null === $cursor) {
+                return new JsonResponse(
+                    new ValidationErrorResponse(
+                        status: Response::HTTP_UNPROCESSABLE_ENTITY,
+                        code: 'invalid_cursor',
+                        message: 'cursor is malformed.',
+                    ),
+                    Response::HTTP_UNPROCESSABLE_ENTITY,
+                );
+            }
+        }
+
+        $report = ($this->buildReport)($companyId, $from, $to, $limit, $cursor);
 
         return new JsonResponse(new UnitEconomicsResponse(
             from: $from->format('Y-m-d'),
@@ -105,12 +158,14 @@ final class ShowUnitEconomicsController
                     commissionMinor: $sku->commissionMinor,
                     expenses: array_map(self::expense(...), $sku->expenses),
                     expensesTotalMinor: $sku->expensesTotalMinor,
+                    deductionsTotalMinor: $sku->deductionsTotalMinor,
                     marginMinor: $sku->marginMinor,
                 ),
                 $report->skus,
             ),
             cabinetExpenses: array_map(self::expense(...), $report->cabinetExpenses),
             cabinetExpensesTotalMinor: $report->cabinetExpensesTotalMinor,
+            nextCursor: $report->nextCursor,
         ));
     }
 

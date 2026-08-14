@@ -25,9 +25,11 @@ export function UnitEconomicsPage() {
   const navigate = useNavigate()
   const { companyId } = useParams<{ companyId: string }>()
   const [days, setDays] = useState<number>(30)
+  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null])
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const cursor = cursorStack[cursorStack.length - 1] ?? null
 
-  const query = useUnitEconomics(companyId ?? '', days, {
+  const query = useUnitEconomics(companyId ?? '', days, cursor, {
     enabled: companyId !== undefined,
   })
 
@@ -71,6 +73,10 @@ export function UnitEconomicsPage() {
                 variant={window === days ? 'primary' : 'secondary'}
                 onClick={() => {
                   setDays(window)
+                  // Курсор принадлежит окну: оставить его при смене
+                  // периода значило бы открыть вторую страницу другого
+                  // отчёта.
+                  setCursorStack([null])
                 }}
               >
                 {window} дней
@@ -195,8 +201,10 @@ export function UnitEconomicsPage() {
             )}
 
             {query.data.skus.map((sku) => {
+              // Сумма удержаний приходит с бэкенда: арифметика над
+              // денежными величинами в компонентах запрещена (§10).
               const share = shareOfRevenue(
-                sku.expensesTotalMinor + sku.commissionMinor,
+                sku.deductionsTotalMinor,
                 sku.revenueMinor,
               )
 
@@ -300,6 +308,47 @@ export function UnitEconomicsPage() {
                 </Card>
               )
             })}
+
+            {((query.data.nextCursor ?? null) !== null ||
+              cursorStack.length > 1) && (
+              <div className="flex items-center justify-end gap-2">
+                {/* Не тихая обрезка: страница ограничена, и клиент видит,
+                    что за ней есть ещё (§5). */}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="compact"
+                  disabled={cursorStack.length <= 1}
+                  onClick={() => {
+                    setCursorStack((stack: (string | null)[]) =>
+                      stack.length > 1 ? stack.slice(0, -1) : stack,
+                    )
+                  }}
+                >
+                  Назад
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="compact"
+                  disabled={(query.data.nextCursor ?? null) === null}
+                  onClick={() => {
+                    // Схема допускает и null, и отсутствие поля —
+                    // сводим к одному значению, иначе «Дальше» уводило
+                    // бы на страницу с курсором undefined.
+                    const next = query.data.nextCursor ?? null
+                    if (next !== null) {
+                      setCursorStack((stack: (string | null)[]) => [
+                        ...stack,
+                        next,
+                      ])
+                    }
+                  }}
+                >
+                  Дальше
+                </Button>
+              </div>
+            )}
           </>
         )}
       </div>

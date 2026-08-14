@@ -23,6 +23,8 @@ final readonly class UnitEconomicsReport
         public array $cabinetExpenses,
         public int $cabinetExpensesTotalMinor,
         public string $currency,
+        /** Курсор следующей страницы; null — страница последняя. */
+        public ?string $nextCursor,
     ) {
     }
 }
