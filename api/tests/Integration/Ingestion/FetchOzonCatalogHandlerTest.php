@@ -4,20 +4,27 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Ingestion;
 
+use App\Identity\Domain\CompanyMemberRepository;
 use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
+use App\Identity\Domain\UserRepository;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonCatalogHandler;
+use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonProductListClient;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
 use App\Tests\Support\Builder\CompanyBuilder;
+use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
+use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\Fake\FakeOzonCatalogFetcher;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
 
 /**
  * Клиент -> парсер -> замена каталога, через реальный Postgres и реальную
@@ -140,6 +147,41 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
      * set() по уже созданному сервису контейнер запрещает. Поэтому
      * страницы всех прогонов задаются одной очередью — она же показывает,
      * что обработчик не запросил лишнего.
+     */
+    public function testAuthorizationFailureBreaksTheAccountInsteadOfRetrying(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+
+        // Площадка отклонила ключ (ADR-007). Повторять бессмысленно:
+        // подключение переводится в broken, клиент получает письмо,
+        // обработчик завершается без исключения — иначе сообщение
+        // трижды ретраилось бы и осело в отказах, шумом поверх события,
+        // которое уже обработано.
+        $container->set(OzonProductListClient::class, new class implements OzonCatalogFetcher {
+            public function fetchPage(string $clientId, string $apiKey, string $lastId, int $limit = 1000): string
+            {
+                $client = new MockHttpClient(new MockResponse('{"code":16}', ['http_code' => 401]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v3/product/list')->getContent();
+            }
+        });
+
+        $this->syncCatalog($container, $account);
+
+        $state = $this->connection($container)->fetchOne(
+            'SELECT state FROM marketplace_account WHERE id = ?',
+            [$account->id()->toRfc4122()],
+        );
+        self::assertSame('broken', $state);
+        self::assertSame(0, $this->skuCount($container, $account));
+    }
+
+    /**
+     * Заглушка HTTP ставится в контейнер один раз на тест: повторный
+     * set() по уже созданному сервису контейнер запрещает. Поэтому
+     * страницы всех прогонов задаются одной очередью — она же показывает,
+     * что обработчик не запросил лишнего.
      *
      * @param list<string> $pages
      */
@@ -253,13 +295,26 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
     {
         /** @var CompanyRepository $companies */
         $companies = $container->get(CompanyRepository::class);
+        /** @var UserRepository $users */
+        $users = $container->get(UserRepository::class);
+        /** @var CompanyMemberRepository $members */
+        $members = $container->get(CompanyMemberRepository::class);
         /** @var MarketplaceAccountRepository $marketplaceAccounts */
         $marketplaceAccounts = $container->get(MarketplaceAccountRepository::class);
         /** @var MarketplaceCredentialsEncryptor $encryptor */
         $encryptor = $container->get(MarketplaceCredentialsEncryptor::class);
 
+        // С участником: у компании в продукте всегда есть владелец, и без
+        // него отказ авторизации некому уведомить (ADR-007) — подключение
+        // без адресата это ошибка данных, а не сценарий.
+        $company = CompanyBuilder::aCompany()->persistWith($companies);
+        CompanyMemberBuilder::aCompanyMember()
+            ->withCompany($company)
+            ->withUser(UserBuilder::aUser()->withEmail('owner-'.bin2hex(random_bytes(4)).'@example.test')->persistWith($users))
+            ->persistWith($companies, $users, $members);
+
         return MarketplaceAccountBuilder::aMarketplaceAccount()
-            ->withCompany(CompanyBuilder::aCompany()->persistWith($companies))
+            ->withCompany($company)
             ->withExternalShopId('shop-'.bin2hex(random_bytes(4)))
             ->withPlaintextCredentials(['client_id' => 'shop-1', 'api_key' => 'key-1'], $encryptor)
             ->persistWith($companies, $marketplaceAccounts);

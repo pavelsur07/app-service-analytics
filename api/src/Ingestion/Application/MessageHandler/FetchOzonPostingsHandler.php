@@ -9,6 +9,7 @@ use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonPostingFboListParser;
 use App\Ingestion\Domain\OzonPostingsFetcher;
 use App\Ingestion\Domain\SalesFactRepository;
@@ -39,6 +40,18 @@ final readonly class FetchOzonPostingsHandler
     ) {
     }
 
+    /**
+     * Отказ авторизации площадки — не техническая ошибка, а событие
+     * жизненного цикла подключения (ADR-007): ключ отозван или перевыпущен
+     * в кабинете. Повторять такой запрос бессмысленно, поэтому сообщение
+     * не падает в очередь отказов, а завершается: подключение переведено
+     * в broken, клиент получил письмо, планировщик его больше не возьмёт.
+     * Молчаливой остановкой это не является — в том и смысл письма.
+     *
+     * Остальные 4xx (и все 5xx) остаются исключениями и уходят в ретрай
+     * и в трекер: лимит запросов, неверный период, сбой площадки лечатся
+     * повтором, а не переподключением кабинета.
+     */
     public function __invoke(FetchOzonPostingsMessage $message): void
     {
         $target = $this->identityFacade->findOzonSyncTarget($message->companyId, $message->marketplaceAccountId);
@@ -53,12 +66,22 @@ final readonly class FetchOzonPostingsHandler
         $since = (new \DateTimeImmutable($message->businessDate, $timezone))->setTime(0, 0);
         $to = $since->modify('+1 day');
 
-        $rawBody = $this->client->fetch(
-            clientId: $target->clientId,
-            apiKey: $target->apiKey,
-            since: $since,
-            to: $to,
-        );
+        try {
+            $rawBody = $this->client->fetch(
+                clientId: $target->clientId,
+                apiKey: $target->apiKey,
+                since: $since,
+                to: $to,
+            );
+        } catch (\Throwable $failure) {
+            if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
+                throw $failure;
+            }
+
+            $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
+
+            return;
+        }
 
         $companyId = Uuid::fromString($target->companyId);
         $marketplaceAccountId = Uuid::fromString($target->marketplaceAccountId);

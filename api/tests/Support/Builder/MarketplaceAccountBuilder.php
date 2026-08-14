@@ -116,6 +116,12 @@ final class MarketplaceAccountBuilder
         return $account;
     }
 
+    /**
+     * До вставки, а не условным UPDATE после неё: сырой UPDATE разошёлся бы
+     * с ORM-кэшем в том же процессе, и тест проверял бы устаревшую сущность
+     * вместо строки в базе. Боевой переход в broken идёт другим путём —
+     * MarketplaceAccountRepository::markBrokenIfActive (ADR-007).
+     */
     private function applyState(MarketplaceAccount $account): void
     {
         match ($this->state) {
