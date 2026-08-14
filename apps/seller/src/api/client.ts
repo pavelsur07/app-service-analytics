@@ -29,3 +29,20 @@ export async function apiPost<T = unknown>(
   }
   return response.json() as Promise<T>
 }
+
+// PUT — замена учётных данных подключения (ADR-007). Тем же путём
+// и по той же причине, что POST: прямой fetch разрешён только здесь.
+export async function apiPut<T = unknown>(
+  path: string,
+  body: unknown,
+): Promise<T> {
+  const response = await fetch(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    throw await parseApiError(response)
+  }
+  return response.json() as Promise<T>
+}
