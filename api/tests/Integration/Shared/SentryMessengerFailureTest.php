@@ -42,13 +42,19 @@ final class SentryMessengerFailureTest extends KernelTestCase
         // это делает штатный Symfony\...\SendFailedMessageForRetryListener,
         // который срабатывает раньше Sentry (реально проверено при
         // отладке этого теста) и сам решает retry по стратегии
-        // async_ingestion (по умолчанию max_retries=3), глядя на
-        // RedeliveryStamp конверта. Без явного RedeliveryStamp(3)
-        // (ретраи уже исчерпаны) он считает это первой попыткой и всегда
-        // помечает событие на повтор — тогда Sentry увидит willRetry()
-        // === true и не отправит событие вовсе (capture_soft_fails: false).
+        // async_ingestion, глядя на RedeliveryStamp конверта. Без явного
+        // штампа с исчерпанными ретраями он считает это первой попыткой
+        // и всегда помечает событие на повтор — тогда Sentry увидит
+        // willRetry() === true и не отправит событие вовсе
+        // (capture_soft_fails: false).
+        //
+        // Число заведомо больше любого разумного max_retries, а не равное
+        // текущему: предмет теста — «на финальном отказе событие уходит»,
+        // и повышение потолка ретраев в messenger.yaml не должно ломать
+        // проверку Sentry. Ровно это и случилось, когда потолок вырос
+        // с трёх до пяти.
         $dispatcher->dispatch(new WorkerMessageFailedEvent(
-            new Envelope(new \stdClass(), [new RedeliveryStamp(3)]),
+            new Envelope(new \stdClass(), [new RedeliveryStamp(99)]),
             'async_ingestion',
             $exception,
         ));
