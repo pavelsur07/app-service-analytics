@@ -9,7 +9,6 @@ use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
-use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
@@ -131,13 +130,5 @@ final class ListConnectionsControllerTest extends WebTestCase
         $accounts = static::getContainer()->get(MarketplaceAccountRepository::class);
 
         return $accounts;
-    }
-
-    private function rawDocuments(): MarketplaceRawDocumentRepository
-    {
-        /** @var MarketplaceRawDocumentRepository $rawDocuments */
-        $rawDocuments = static::getContainer()->get(MarketplaceRawDocumentRepository::class);
-
-        return $rawDocuments;
     }
 }
