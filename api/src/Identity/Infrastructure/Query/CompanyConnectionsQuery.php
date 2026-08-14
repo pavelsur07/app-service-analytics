@@ -35,7 +35,7 @@ final readonly class CompanyConnectionsQuery
     public function build(string $companyId): QueryBuilder
     {
         return $this->connection->createQueryBuilder()
-            ->select('id', 'marketplace', 'external_shop_id', 'state', 'created_at')
+            ->select('id', 'marketplace', 'external_shop_id', 'state', 'created_at', 'version')
             ->from('marketplace_account')
             ->where('company_id = :companyId')
             ->setParameter('companyId', $companyId)
@@ -57,6 +57,7 @@ final readonly class CompanyConnectionsQuery
             externalShopId: self::stringValue($row['external_shop_id']),
             state: self::stringValue($row['state']),
             createdAt: self::isoUtc($row['created_at']),
+            version: self::intValue($row['version']),
         );
     }
 
@@ -73,6 +74,15 @@ final readonly class CompanyConnectionsQuery
         $raw = self::stringValue($value);
 
         return (new \DateTimeImmutable($raw, new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+    }
+
+    private static function intValue(mixed $value): int
+    {
+        if (!\is_int($value)) {
+            throw new \UnexpectedValueException('Expected an int version in a marketplace account row.');
+        }
+
+        return $value;
     }
 
     private static function stringValue(mixed $value): string

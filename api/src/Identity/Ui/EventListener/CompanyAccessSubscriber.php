@@ -6,6 +6,7 @@ namespace App\Identity\Ui\EventListener;
 
 use App\Identity\Domain\CompanyMemberRepository;
 use App\Identity\Domain\User;
+use App\Shared\Ui\RequestAttributes;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -50,6 +51,12 @@ final class CompanyAccessSubscriber implements EventSubscriberInterface
         \assert($user instanceof User);
 
         if ($this->companyMembers->existsForUserAndCompany($companyId, $user->id()->toRfc4122())) {
+            // Кто действует — сюда же, рядом с проверкой членства:
+            // аудит-журнал (ADR-007) требует автора у каждой записи,
+            // а контроллеры чужих модулей класс User импортировать
+            // не могут (зависимости строго вниз).
+            $event->getRequest()->attributes->set(RequestAttributes::ActorUserId, $user->id()->toRfc4122());
+
             return;
         }
 

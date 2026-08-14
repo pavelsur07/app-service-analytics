@@ -48,6 +48,18 @@ class MarketplaceAccount
     #[ORM\Column(length: 16, enumType: MarketplaceAccountState::class)]
     private MarketplaceAccountState $state;
 
+    /**
+     * Оптимистическая блокировка (ADR-008, уточнение ADR-011): учётные
+     * данные правятся человеком на месте, и без версии второй сохранивший
+     * молча затирает первого. Поле ведёт Doctrine, приложение его только
+     * отдаёт клиенту и принимает обратно.
+     */
+    // Тип указан явно: версионной колонке Doctrine не выводит его
+    // из PHP-типа и падает на маппинге.
+    #[ORM\Version]
+    #[ORM\Column(type: 'integer')]
+    private int $version = 1;
+
     #[ORM\Column]
     private readonly \DateTimeImmutable $createdAt;
 
@@ -123,9 +135,42 @@ class MarketplaceAccount
         return $this->state;
     }
 
+    public function version(): int
+    {
+        return $this->version;
+    }
+
     public function createdAt(): \DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    /**
+     * Клиент выпустил новый ключ в кабинете площадки и заменил его у нас
+     * (ADR-007).
+     *
+     * Заодно возвращает подключение в работу: если оно стояло broken,
+     * причина была ровно в этих учётных данных, и оставлять его сломанным
+     * после замены значило бы требовать второго действия, которого клиент
+     * не поймёт. Проверку нового ключа делает вызывающий сценарий — сюда
+     * учётные данные приходят уже подтверждёнными площадкой.
+     *
+     * Отозванное подключение сюда не попадает: отзыв необратим
+     * (ADR-011, признак append-only), и «оживить» его заменой ключа
+     * нельзя — вызывающий обязан отказать раньше.
+     */
+    public function replaceCredentials(string $credentialsCiphertext, int $credentialsKeyVersion): void
+    {
+        if (MarketplaceAccountState::Revoked === $this->state) {
+            throw new \DomainException('Отозванное подключение не оживляется заменой ключа (ADR-011).');
+        }
+
+        $this->credentialsCiphertext = $credentialsCiphertext;
+        $this->credentialsKeyVersion = $credentialsKeyVersion;
+
+        if (MarketplaceAccountState::Broken === $this->state) {
+            $this->state = MarketplaceAccountState::Active;
+        }
     }
 
     /**

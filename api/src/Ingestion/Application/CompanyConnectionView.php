@@ -24,6 +24,9 @@ final readonly class CompanyConnectionView
         public string $state,
         public string $createdAt,
         public array $lastLoadedAt,
+        /** Версия для оптимистической блокировки (ADR-008): клиент
+         * присылает её обратно при замене ключей. */
+        public int $version,
     ) {
     }
 }

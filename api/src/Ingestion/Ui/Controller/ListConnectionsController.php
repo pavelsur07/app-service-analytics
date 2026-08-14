@@ -66,6 +66,7 @@ final class ListConnectionsController
                 state: $view->state,
                 createdAt: $view->createdAt,
                 lastLoadedAt: $view->lastLoadedAt,
+                version: $view->version,
             ),
             ($this->listConnections)($companyId),
         );
