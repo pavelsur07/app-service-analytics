@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Application;
 
 use App\Identity\Application\Facade\IdentityScheduleFacade;
+use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -19,6 +20,13 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * Только «сегодня» — скользящее окно 45 дней и квартальный глубокий
  * рескан из ADR-006 сюда не входят, следующий шаг.
+ *
+ * Каталог диспатчится в том же тике и с тем же ритмом, что продажи.
+ * Отдельного расписания у него нет намеренно: разные интервалы — это
+ * состояние «когда каталог синхронизировался в прошлый раз», которое
+ * пришлось бы где-то держать, а выигрыш — несколько запросов в час
+ * при лимитах площадки на порядки выше. Появится подключение с десятками
+ * тысяч товаров — разведём, и тогда состояние окупится.
  */
 final readonly class DispatchActiveOzonSyncsAction
 {
@@ -41,8 +49,15 @@ final readonly class DispatchActiveOzonSyncsAction
                 marketplaceAccountId: $target->marketplaceAccountId,
                 businessDate: $businessDate,
             ));
+            $this->bus->dispatch(new FetchOzonCatalogMessage(
+                companyId: $target->companyId,
+                marketplaceAccountId: $target->marketplaceAccountId,
+            ));
         }
 
+        // Число подключений, а не сообщений: тик планировщика меряется
+        // тем, сколько кабинетов он обошёл, и это число не должно
+        // меняться от того, что у подключения появилась вторая задача.
         return \count($targets);
     }
 }

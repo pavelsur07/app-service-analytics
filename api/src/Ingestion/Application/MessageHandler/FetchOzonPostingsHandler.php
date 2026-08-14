@@ -8,6 +8,7 @@ use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonPostingFboListParser;
 use App\Ingestion\Domain\OzonPostingsFetcher;
 use App\Ingestion\Domain\SalesFactRepository;
@@ -23,7 +24,7 @@ use Symfony\Component\Uid\Uuid;
 #[AsMessageHandler]
 final readonly class FetchOzonPostingsHandler
 {
-    private const string REPORT_TYPE = 'ozon_posting_fbo_list';
+    private const string REPORT_TYPE = MarketplaceReportType::OzonPostingFboList;
 
     // Europe/Moscow — константа коннектора Ozon, не настройка подключения
     // (ADR-009): у площадки нет пользовательских часовых поясов кабинета.

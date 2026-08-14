@@ -262,7 +262,9 @@ return static function (DeptracConfig $config): void {
             // только этому слою и никому больше (тот же состав грантов,
             // что у identityScheduleFacade: узкий слой на узкий).
             Ruleset::forLayer($ingestionFreshnessAction)->accesses($ingestionDomain, $ingestionApplication, $ingestionOperationalQuery, $identityScheduleFacade, $sharedApplication, $sharedDomain, $symfonyComponent),
-            Ruleset::forLayer($ingestionOperationalQuery)->accesses($ingestionInfrastructure, $sharedInfrastructure, $symfonyComponent),
+            // ingestionDomain — ради MarketplaceReportType: тип отчёта
+            // в условии запроса, не способность модуля.
+            Ruleset::forLayer($ingestionOperationalQuery)->accesses($ingestionInfrastructure, $ingestionDomain, $sharedInfrastructure, $symfonyComponent),
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),

@@ -17,9 +17,16 @@ use Symfony\Component\Uid\Uuid;
  *
  * Отличие от фактов: здесь ещё и удаление. Площадка отдаёт весь список,
  * поэтому строки, не пришедшие в эту синхронизацию, из каталога уходят.
- * Признак — `last_seen_at` старше момента синхронизации: он проставляется
- * всем пришедшим, значит всё, что осталось со старой отметкой, площадка
- * больше не отдаёт.
+ * Признак ухода — отсутствие артикула в самой выгрузке, а не отметка
+ * времени. Отметку пробовали: `last_seen_at` хранится с точностью
+ * до секунды, и две синхронизации внутри одной секунды получают
+ * одинаковое значение — исчезнувший товар переживал такую пару
+ * незамеченным. Корректность каталога не должна зависеть от точности
+ * часов и от того, насколько быстро пришёл ответ площадки.
+ *
+ * Список артикулов передаётся одним jsonb-параметром, не набором
+ * плейсхолдеров: у подключения их бывают десятки тысяч, а запрос
+ * должен остаться одним запросом.
  *
  * Всё в одной транзакции: между «залили новое» и «удалили старое»
  * каталог не должен быть виден ни пустым, ни задвоенным — оверлей
@@ -38,14 +45,13 @@ final readonly class DoctrineMarketplaceListingWriter implements MarketplaceList
         string $companyId,
         Uuid $marketplaceAccountId,
         array $listings,
-        \DateTimeImmutable $syncedAt,
     ): void {
-        $this->connection->transactional(function () use ($companyId, $marketplaceAccountId, $listings, $syncedAt): void {
+        $this->connection->transactional(function () use ($companyId, $marketplaceAccountId, $listings): void {
             foreach (array_chunk($listings, self::CHUNK_SIZE) as $chunk) {
                 $this->upsertChunk($chunk);
             }
 
-            $this->deleteVanished($companyId, $marketplaceAccountId, $syncedAt);
+            $this->deleteVanished($companyId, $marketplaceAccountId, $listings);
         });
     }
 
@@ -61,47 +67,74 @@ final readonly class DoctrineMarketplaceListingWriter implements MarketplaceList
         $valuesSql = [];
         $params = [];
         foreach ($listings as $i => $listing) {
-            $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :marketplaceSku{$i}, :firstSeenAt{$i}, :lastSeenAt{$i})";
+            $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :marketplaceSku{$i}, :firstSeenAt{$i})";
 
             $params["companyId{$i}"] = $listing->companyId()->toRfc4122();
             $params["marketplaceAccountId{$i}"] = $listing->marketplaceAccountId()->toRfc4122();
             $params["marketplaceSku{$i}"] = $listing->marketplaceSku();
             $params["firstSeenAt{$i}"] = $listing->firstSeenAt()->format('Y-m-d H:i:sP');
-            $params["lastSeenAt{$i}"] = $listing->lastSeenAt()->format('Y-m-d H:i:sP');
         }
 
-        // first_seen_at в SET нет намеренно: товар, который мы уже видели,
-        // не становится новым от того, что синхронизация прошла снова.
+        // DO NOTHING, а не DO UPDATE: обновлять в этой таблице нечего.
+        // Товар, который мы уже видели, не становится новым от того,
+        // что синхронизация прошла снова, — и повторный прогон
+        // обработчика на том же ответе площадки не меняет ни строки
+        // (CLAUDE.md §4). Тот же принцип, что у sales_fact с его
+        // `WHERE row_hash IS DISTINCT FROM`, только здесь сравнивать
+        // нечего: кроме ключа в строке лишь момент первой встречи.
         $sql = <<<SQL
             INSERT INTO marketplace_listing
-                (company_id, marketplace_account_id, marketplace_sku, first_seen_at, last_seen_at)
+                (company_id, marketplace_account_id, marketplace_sku, first_seen_at)
             VALUES {$this->joinValues($valuesSql)}
             ON CONFLICT (company_id, marketplace_account_id, marketplace_sku)
-            DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at
+            DO NOTHING
             SQL;
 
         $this->connection->executeStatement($sql, $params);
     }
 
+    /**
+     * @param list<MarketplaceListing> $listings
+     */
     private function deleteVanished(
         string $companyId,
         Uuid $marketplaceAccountId,
-        \DateTimeImmutable $syncedAt,
+        array $listings,
     ): void {
+        $skus = array_map(
+            static fn (MarketplaceListing $listing): string => $listing->marketplaceSku(),
+            $listings,
+        );
+
         // companyId в условии, хотя marketplace_account_id уже однозначен:
         // изоляция арендаторов держится на SQL, а не на том, что
         // вызывающий передал согласованную пару (CLAUDE.md §1).
+        //
+        // Пустой список — валидный случай (все товары сняты), и он обязан
+        // очистить каталог подключения: NOT IN пустого множества истинно
+        // для всех строк. Защита от неполной выгрузки не здесь — сюда
+        // список попадает, только когда пройдены все страницы.
+        // NOT EXISTS, а не NOT IN: у NOT IN с подзапросом семантика ломается
+        // об единственный NULL — всё выражение становится NULL, и удаление
+        // тихо не делает ничего. Прийти NULL сюда сегодня неоткуда (парсер
+        // отдаёт непустые строки), но цена ошибки — каталог, который
+        // перестал чиститься, и заметили бы это не скоро. NOT EXISTS
+        // к тому же даёт планировщику обычный анти-join.
         $this->connection->executeStatement(
             <<<'SQL'
-                DELETE FROM marketplace_listing
-                WHERE company_id = :companyId
-                  AND marketplace_account_id = :marketplaceAccountId
-                  AND last_seen_at < :syncedAt
+                DELETE FROM marketplace_listing AS l
+                WHERE l.company_id = :companyId
+                  AND l.marketplace_account_id = :marketplaceAccountId
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM jsonb_array_elements_text(:skus::jsonb) AS uploaded(sku)
+                      WHERE uploaded.sku = l.marketplace_sku
+                  )
                 SQL,
             [
                 'companyId' => $companyId,
                 'marketplaceAccountId' => $marketplaceAccountId->toRfc4122(),
-                'syncedAt' => $syncedAt->format('Y-m-d H:i:sP'),
+                'skus' => json_encode($skus, \JSON_THROW_ON_ERROR),
             ],
         );
     }

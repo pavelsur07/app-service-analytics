@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Query;
 
+use App\Ingestion\Domain\MarketplaceReportType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 use Doctrine\DBAL\Types\Types;
@@ -27,6 +28,15 @@ use Doctrine\DBAL\Types\Types;
  * поэтому новый день даёт новую строку даже при побайтово том же ответе
  * площадки. Пустой ответ — тоже ответ, и он доказывает, что связь с Ozon
  * есть, ключи живы и воркер работает.
+ *
+ * Тип отчёта в условии обязателен. Raw-слой общий для всех выгрузок
+ * подключения, и без фильтра исправная синхронизация каталога — она идёт
+ * тем же тиком — обновляла бы отметку за вставшую синхронизацию продаж.
+ * Сторож молчал бы именно тогда, когда должен кричать.
+ *
+ * Обратная сторона названа прямо: вставший каталог этим сторожем
+ * не отслеживается. Продажи — обещание продукта, каталог — вспомогательный
+ * список для оверлея, и отдельная тревога по нему пока не окупается.
  */
 final readonly class RecentlyIngestedAccountsQuery
 {
@@ -54,7 +64,9 @@ final readonly class RecentlyIngestedAccountsQuery
             // раз в час читал бы всю таблицу raw-документов, а она растёт
             // с каждым днём работы каждого подключения.
             ->where('received_at >= :since')
+            ->andWhere('report_type = :reportType')
             ->setParameter('since', $since, Types::DATETIME_IMMUTABLE)
+            ->setParameter('reportType', MarketplaceReportType::OzonPostingFboList)
             ->groupBy('company_id')
             ->addGroupBy('marketplace_account_id')
             ->setMaxResults(self::MAX_RESULTS + 1);
