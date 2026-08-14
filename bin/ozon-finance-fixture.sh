@@ -71,6 +71,7 @@ if [ -z "$CID" ] || [ -z "$KEY" ]; then
 fi
 
 echo "Период разведки: $MONTH (прошлый полный месяц)"
+echo "Начисления по отправлениям — номера из снятой фикстуры продаж за 2026-07-01."
 echo
 
 # Кандидаты: имя файла | путь | тело запроса.
@@ -112,19 +113,29 @@ SAVED=''
 
 # Методы-замены (объявлены взамен transaction/list с 6 июля 2026).
 # Ради них разведка и повторяется: именно на них придётся строить.
-probe accrual-types /v1/finance/accrual/types \
-    '{}' \
-    "{\"date_from\":\"$DAY_FROM\",\"date_to\":\"$DAY_TO\"}"
+probe accrual-types /v1/finance/accrual/types '{}'
 
-probe accrual-postings /v1/finance/accrual/postings \
-    "{\"date_from\":\"$DAY_FROM\",\"date_to\":\"$DAY_TO\",\"page\":1,\"page_size\":1000}" \
-    "{\"filter\":{\"date\":{\"from\":\"$FROM\",\"to\":\"$TO\"}},\"page\":1,\"page_size\":1000}" \
-    "{\"date\":{\"from\":\"$DAY_FROM\",\"to\":\"$DAY_TO\"},\"limit\":1000,\"offset\":0}"
+# Форму запроса подсказала сама площадка отказами прошлого прогона:
+#   postings: «PostingNumbers: value must contain between 1 and 200 items»
+#             — это не выгрузка за период, а «дай начисления вот по этим
+#             отправлениям». Номера берём из уже снятой фикстуры продаж:
+#             выдумывать их нельзя, а у нас они настоящие.
+#   by-day:   «Date: value length must be 10 runes» — один день строкой
+#             YYYY-MM-DD, не диапазон.
+POSTINGS_BODY=$(python3 - "$DIR/posting-fbo-list-2026-07-01.json" <<'PYNUMBERS'
+import json, sys
 
-probe accrual-by-day /v1/finance/accrual/by-day \
-    "{\"date_from\":\"$DAY_FROM\",\"date_to\":\"$DAY_TO\"}" \
-    "{\"filter\":{\"date\":{\"from\":\"$FROM\",\"to\":\"$TO\"}}}" \
-    "{\"date\":{\"from\":\"$DAY_FROM\",\"to\":\"$DAY_TO\"}}"
+with open(sys.argv[1]) as handle:
+    postings = json.load(handle)['result']
+
+numbers = [p['posting_number'] for p in postings][:200]
+print(json.dumps({'posting_numbers': numbers}, ensure_ascii=False))
+PYNUMBERS
+)
+
+probe accrual-postings /v1/finance/accrual/postings "$POSTINGS_BODY"
+
+probe accrual-by-day /v1/finance/accrual/by-day "{\"date\":\"$DAY_FROM\"}"
 
 # Старый метод — для сверки, а не для стройки: он объявлен отключённым,
 # но пока отвечает, и его итоги дают эталон, с которым сравниваются суммы
