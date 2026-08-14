@@ -40,19 +40,23 @@ final readonly class MailMarketplaceAccountBrokenNotifier implements Marketplace
         }
 
         $shop = $account->externalShopId();
+        // Название площадки — из самого подключения, не константой в тексте:
+        // интерфейс общий, и со вторым коннектором письмо про Ozon ушло бы
+        // клиенту Wildberries.
+        $marketplace = ucfirst($account->marketplace()->value);
 
         $this->mailer->send(
             (new Email())
                 ->to(...$recipients)
-                ->subject('Conwix: подключение Ozon перестало работать')
+                ->subject("Conwix: подключение {$marketplace} перестало работать")
                 ->text(
                     "Площадка отклонила ключи подключения (магазин {$shop}).\n"
                     ."Синхронизация остановлена, данные не удалены — история\n"
                     ."остаётся на месте и продолжит обновляться после починки.\n\n"
-                    ."Что произошло: Ozon ответил отказом в авторизации. Обычно\n"
-                    ."это значит, что Api-Key отозван или перевыпущен в кабинете\n"
-                    ."продавца.\n\n"
-                    ."Что сделать: выпустите новый Api-Key в кабинете Ozon\n"
+                    ."Что произошло: {$marketplace} ответил отказом в авторизации.\n"
+                    ."Обычно это значит, что ключ доступа отозван или перевыпущен\n"
+                    ."в кабинете продавца.\n\n"
+                    ."Что сделать: выпустите новый ключ в кабинете {$marketplace}\n"
                     ."(Настройки → API-ключи) и напишите нам — заменим.\n"
                     ."Своего экрана для замены ключей пока нет.\n\n"
                     ."Пока подключение не восстановлено, цифры в приложении\n"
@@ -69,7 +73,7 @@ final readonly class MailMarketplaceAccountBrokenNotifier implements Marketplace
         $rows = $this->memberEmails->build($companyId)->executeQuery()->fetchAllAssociative();
 
         return array_map(
-            static fn (array $row): string => CompanyMemberEmailsQuery::mapRow($row),
+            static fn (array $row): string => CompanyMemberEmailsQuery::mapRow($row)->email,
             $rows,
         );
     }

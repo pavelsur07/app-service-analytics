@@ -47,13 +47,13 @@ final readonly class CompanyMemberEmailsQuery
     /**
      * @param array<string, mixed> $row
      */
-    public static function mapRow(array $row): string
+    public static function mapRow(array $row): CompanyMemberEmailRow
     {
         $email = $row['email'];
         if (!\is_string($email)) {
             throw new \UnexpectedValueException('Expected a string email in a company member row.');
         }
 
-        return $email;
+        return new CompanyMemberEmailRow($email);
     }
 }
