@@ -129,6 +129,26 @@ class MarketplaceAccount
     }
 
     /**
+     * Клиент выпустил новый ключ в кабинете площадки и заменил его у нас
+     * (ADR-007).
+     *
+     * Заодно возвращает подключение в работу: если оно стояло broken,
+     * причина была ровно в этих учётных данных, и оставлять его сломанным
+     * после замены значило бы требовать второго действия, которого клиент
+     * не поймёт. Проверку нового ключа делает вызывающий сценарий — сюда
+     * учётные данные приходят уже подтверждёнными площадкой.
+     */
+    public function replaceCredentials(string $credentialsCiphertext, int $credentialsKeyVersion): void
+    {
+        $this->credentialsCiphertext = $credentialsCiphertext;
+        $this->credentialsKeyVersion = $credentialsKeyVersion;
+
+        if (MarketplaceAccountState::Broken === $this->state) {
+            $this->state = MarketplaceAccountState::Active;
+        }
+    }
+
+    /**
      * Ответ площадки об отсутствии авторизации (ADR-007).
      *
      * **Боевой код сюда не ходит.** Переход выполняет

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Identity\Application\Facade;
 
 use App\Identity\Application\MarkMarketplaceAccountBrokenAction;
+use App\Identity\Application\ReplaceMarketplaceCredentialsAction;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
@@ -26,7 +27,26 @@ final class IdentityFacade
         private readonly MarketplaceCredentialsEncryptor $credentialsEncryptor,
         private readonly MarkMarketplaceAccountBrokenAction $markAccountBroken,
         private readonly CompanyConnectionsQuery $connections,
+        private readonly ReplaceMarketplaceCredentialsAction $replaceCredentials,
     ) {
+    }
+
+    /**
+     * Замена учётных данных подключения клиентом (ADR-007). Ключ обязан
+     * быть проверен площадкой до вызова — Identity в площадку не ходит.
+     *
+     * @param array<string, string> $credentials
+     *
+     * @return bool false, если подключения у этой компании нет
+     */
+    public function replaceMarketplaceCredentials(string $companyId, string $marketplaceAccountId, array $credentials, string $actorUserId): bool
+    {
+        return ($this->replaceCredentials)(
+            $companyId,
+            Uuid::fromString($marketplaceAccountId),
+            $credentials,
+            Uuid::fromString($actorUserId),
+        );
     }
 
     /**

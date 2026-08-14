@@ -132,6 +132,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/connections/{marketplaceAccountId}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_ingestion_connection_credentials_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/extension/companies/{companyId}/skus/{marketplaceSku}/sales": {
         parameters: {
             query?: never;
@@ -241,6 +257,10 @@ export interface components {
         SalesFactListResponse: {
             items: components["schemas"]["SalesFactListItemResponse"][];
             nextCursor?: string | null;
+        };
+        ReplacedCredentialsResponse: {
+            id: string;
+            state: string;
         };
         SkuSalesTotalResponse: {
             currency: string;
@@ -507,6 +527,63 @@ export interface operations {
                 };
             };
             /** @description Некорректный limit или cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    put_ingestion_connection_credentials_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                marketplaceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    clientId: string;
+                    apiKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Ключ принят площадкой и сохранён; сломанное подключение возвращено в работу */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplacedCredentialsResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description У этой компании нет такого подключения */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Площадка не приняла ключ либо тело запроса неполное */
             422: {
                 headers: {
                     [name: string]: unknown;
