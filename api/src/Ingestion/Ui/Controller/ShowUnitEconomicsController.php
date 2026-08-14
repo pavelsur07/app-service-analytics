@@ -1,0 +1,125 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Ingestion\Ui\Controller;
+
+use App\Ingestion\Application\BuildUnitEconomicsAction;
+use App\Ingestion\Application\UnitEconomicsExpense;
+use App\Ingestion\Application\UnitEconomicsSku;
+use App\Ingestion\Ui\Response\UnitEconomicsExpenseResponse;
+use App\Ingestion\Ui\Response\UnitEconomicsResponse;
+use App\Ingestion\Ui\Response\UnitEconomicsSkuResponse;
+use App\Shared\Ui\Response\ValidationErrorResponse;
+use Nelmio\ApiDocBundle\Attribute\Model;
+use OpenApi\Attributes as OA;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Requirement\Requirement;
+
+/**
+ * Юнит-экономика за период: по товарам и отдельно по кабинету.
+ *
+ * Общие расходы — реклама, хранение — не размазываются по товарам
+ * (ADR-012): базис распределения захочется менять, а показанная строка
+ * «расходы кабинета» честнее доли, происхождение которой клиент
+ * не проверит.
+ */
+#[Route(
+    '/api/companies/{companyId}/unit-economics',
+    name: 'ingestion_unit_economics',
+    requirements: ['companyId' => Requirement::UUID],
+    methods: ['GET'],
+)]
+final class ShowUnitEconomicsController
+{
+    private const int DEFAULT_DAYS = 30;
+    private const int MAX_DAYS = 366;
+    private const string TIMEZONE = 'Europe/Moscow';
+
+    public function __construct(
+        private readonly BuildUnitEconomicsAction $buildReport,
+    ) {
+    }
+
+    #[OA\Parameter(
+        name: 'days',
+        in: 'query',
+        description: 'Окно в днях по бизнес-дате площадки',
+        required: false,
+        schema: new OA\Schema(type: 'integer', default: self::DEFAULT_DAYS, maximum: self::MAX_DAYS, minimum: 1),
+    )]
+    #[OA\Response(
+        response: 200,
+        description: 'Экономика по артикулам и расходы кабинета за период',
+        content: new Model(type: UnitEconomicsResponse::class),
+    )]
+    #[OA\Response(
+        response: 422,
+        description: 'Некорректный days',
+        content: new Model(type: ValidationErrorResponse::class),
+    )]
+    #[OA\Response(
+        response: 403,
+        description: 'Пользователь не состоит в этой компании',
+        content: new Model(type: ValidationErrorResponse::class),
+    )]
+    public function __invoke(string $companyId, Request $request): JsonResponse
+    {
+        $days = self::DEFAULT_DAYS;
+        if ($request->query->has('days')) {
+            $days = (int) $request->query->get('days');
+        }
+
+        if ($days < 1 || $days > self::MAX_DAYS) {
+            return new JsonResponse(
+                new ValidationErrorResponse(
+                    status: Response::HTTP_UNPROCESSABLE_ENTITY,
+                    code: 'invalid_days',
+                    message: \sprintf('days must be an integer between 1 and %d.', self::MAX_DAYS),
+                ),
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        }
+
+        // Граница считается в часовом поясе площадки, а не через
+        // CURRENT_DATE в SQL: бизнес-дата записана по календарю Ozon,
+        // и рядом с полуночью окно съезжало бы на сутки.
+        $to = (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))->setTime(0, 0);
+        $from = $to->modify(\sprintf('-%d day', $days - 1));
+
+        $report = ($this->buildReport)($companyId, $from, $to);
+
+        return new JsonResponse(new UnitEconomicsResponse(
+            from: $from->format('Y-m-d'),
+            to: $to->format('Y-m-d'),
+            currency: $report->currency,
+            skus: array_map(
+                static fn (UnitEconomicsSku $sku): UnitEconomicsSkuResponse => new UnitEconomicsSkuResponse(
+                    marketplaceSku: $sku->marketplaceSku,
+                    deliveredQuantity: $sku->deliveredQuantity,
+                    orderedQuantity: $sku->orderedQuantity,
+                    revenueMinor: $sku->revenueMinor,
+                    commissionMinor: $sku->commissionMinor,
+                    expenses: array_map(self::expense(...), $sku->expenses),
+                    expensesTotalMinor: $sku->expensesTotalMinor,
+                    marginMinor: $sku->marginMinor,
+                ),
+                $report->skus,
+            ),
+            cabinetExpenses: array_map(self::expense(...), $report->cabinetExpenses),
+            cabinetExpensesTotalMinor: $report->cabinetExpensesTotalMinor,
+        ));
+    }
+
+    private static function expense(UnitEconomicsExpense $expense): UnitEconomicsExpenseResponse
+    {
+        return new UnitEconomicsExpenseResponse(
+            feeTypeId: $expense->feeTypeId,
+            name: $expense->name,
+            amountMinor: $expense->amountMinor,
+        );
+    }
+}

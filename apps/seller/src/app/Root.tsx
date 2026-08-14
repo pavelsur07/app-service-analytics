@@ -6,6 +6,7 @@ import { LoginPage } from '../features/auth/ui/LoginPage'
 import { ConnectionsPage } from '../features/connections/ui/ConnectionsPage'
 import { ExtensionConnectPage } from '../features/extension/ui/ExtensionConnectPage'
 import { SalesFactsPage } from '../features/ingestion/ui/SalesFactsPage'
+import { UnitEconomicsPage } from '../features/unit-economics/ui/UnitEconomicsPage'
 import { CompanyLayout } from './CompanyLayout'
 import { RequireAuth } from './RequireAuth'
 
@@ -43,6 +44,7 @@ const router = createBrowserRouter([
       { path: 'sales', element: <SalesFactsPage /> },
       { path: 'extension', element: <ExtensionConnectPage /> },
       { path: 'connections', element: <ConnectionsPage /> },
+      { path: 'unit-economics', element: <UnitEconomicsPage /> },
     ],
   },
 ])

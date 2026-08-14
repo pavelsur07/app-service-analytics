@@ -109,6 +109,14 @@ final class SalesFactBuilder
         return $clone;
     }
 
+    public function withCommissionAmount(Money $commissionAmount): self
+    {
+        $clone = clone $this;
+        $clone->commissionAmount = $commissionAmount;
+
+        return $clone;
+    }
+
     public function build(): SalesFact
     {
         return SalesFact::normalize(

@@ -164,6 +164,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/unit-economics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_unit_economics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/ping": {
         parameters: {
             query?: never;
@@ -280,6 +296,29 @@ export interface components {
             marketplaceSku: string;
             days: number;
             totals: components["schemas"]["SkuSalesTotalResponse"][];
+        };
+        UnitEconomicsExpenseResponse: {
+            feeTypeId: number;
+            name: string;
+            amountMinor: number;
+        };
+        UnitEconomicsSkuResponse: {
+            marketplaceSku: string;
+            deliveredQuantity: number;
+            orderedQuantity: number;
+            revenueMinor: number;
+            commissionMinor: number;
+            expenses: components["schemas"]["UnitEconomicsExpenseResponse"][];
+            expensesTotalMinor: number;
+            marginMinor: number;
+        };
+        UnitEconomicsResponse: {
+            from: string;
+            to: string;
+            currency: string;
+            skus: components["schemas"]["UnitEconomicsSkuResponse"][];
+            cabinetExpenses: components["schemas"]["UnitEconomicsExpenseResponse"][];
+            cabinetExpensesTotalMinor: number;
         };
         AppInfoResponse: {
             app: string;
@@ -636,6 +675,49 @@ export interface operations {
             };
             /** @description Токен отсутствует или недействителен */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректный days */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_unit_economics: {
+        parameters: {
+            query?: {
+                /** @description Окно в днях по бизнес-дате площадки */
+                days?: number;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Экономика по артикулам и расходы кабинета за период */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitEconomicsResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
