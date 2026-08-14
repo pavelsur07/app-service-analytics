@@ -515,6 +515,87 @@
                 ]
             }
         },
+        "/api/companies/{companyId}/unit-economics": {
+            "get": {
+                "operationId": "get_ingestion_unit_economics",
+                "parameters": [
+                    {
+                        "name": "days",
+                        "in": "query",
+                        "description": "\u041e\u043a\u043d\u043e \u0432 \u0434\u043d\u044f\u0445 \u043f\u043e \u0431\u0438\u0437\u043d\u0435\u0441-\u0434\u0430\u0442\u0435 \u043f\u043b\u043e\u0449\u0430\u0434\u043a\u0438",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 30,
+                            "maximum": 366,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "\u0421\u043a\u043e\u043b\u044c\u043a\u043e \u0442\u043e\u0432\u0430\u0440\u043e\u0432 \u0432\u0435\u0440\u043d\u0443\u0442\u044c \u043d\u0430 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0435",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 200,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "description": "\u041a\u0443\u0440\u0441\u043e\u0440 \u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0435\u0439 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b \u0438\u0437 \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0435\u0433\u043e \u043e\u0442\u0432\u0435\u0442\u0430",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u042d\u043a\u043e\u043d\u043e\u043c\u0438\u043a\u0430 \u043f\u043e \u0430\u0440\u0442\u0438\u043a\u0443\u043b\u0430\u043c \u0438 \u0440\u0430\u0441\u0445\u043e\u0434\u044b \u043a\u0430\u0431\u0438\u043d\u0435\u0442\u0430 \u0437\u0430 \u043f\u0435\u0440\u0438\u043e\u0434",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnitEconomicsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0439 days",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/ping": {
             "get": {
                 "operationId": "get_admin_ping",
@@ -853,6 +934,113 @@
                         "items": {
                             "$ref": "#/components/schemas/SkuSalesTotalResponse"
                         }
+                    }
+                },
+                "type": "object"
+            },
+            "UnitEconomicsExpenseResponse": {
+                "required": [
+                    "feeTypeId",
+                    "name",
+                    "amountMinor"
+                ],
+                "properties": {
+                    "feeTypeId": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "amountMinor": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "UnitEconomicsSkuResponse": {
+                "required": [
+                    "marketplaceSku",
+                    "deliveredQuantity",
+                    "orderedQuantity",
+                    "revenueMinor",
+                    "commissionMinor",
+                    "expenses",
+                    "expensesTotalMinor",
+                    "deductionsTotalMinor",
+                    "marginMinor"
+                ],
+                "properties": {
+                    "marketplaceSku": {
+                        "type": "string"
+                    },
+                    "deliveredQuantity": {
+                        "type": "integer"
+                    },
+                    "orderedQuantity": {
+                        "type": "integer"
+                    },
+                    "revenueMinor": {
+                        "type": "integer"
+                    },
+                    "commissionMinor": {
+                        "type": "integer"
+                    },
+                    "expenses": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UnitEconomicsExpenseResponse"
+                        }
+                    },
+                    "expensesTotalMinor": {
+                        "type": "integer"
+                    },
+                    "deductionsTotalMinor": {
+                        "title": "\u041a\u043e\u043c\u0438\u0441\u0441\u0438\u044f \u043f\u043b\u044e\u0441 \u0440\u0430\u0441\u0445\u043e\u0434\u044b: \u0441\u0447\u0438\u0442\u0430\u0435\u0442 \u0431\u044d\u043a\u0435\u043d\u0434, \u043d\u0435 \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442 (\u00a710).",
+                        "type": "integer"
+                    },
+                    "marginMinor": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "UnitEconomicsResponse": {
+                "required": [
+                    "from",
+                    "to",
+                    "currency",
+                    "skus",
+                    "cabinetExpenses",
+                    "cabinetExpensesTotalMinor"
+                ],
+                "properties": {
+                    "from": {
+                        "type": "string"
+                    },
+                    "to": {
+                        "type": "string"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "skus": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UnitEconomicsSkuResponse"
+                        }
+                    },
+                    "cabinetExpenses": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UnitEconomicsExpenseResponse"
+                        }
+                    },
+                    "cabinetExpensesTotalMinor": {
+                        "type": "integer"
+                    },
+                    "nextCursor": {
+                        "type": "string",
+                        "nullable": true
                     }
                 },
                 "type": "object"
