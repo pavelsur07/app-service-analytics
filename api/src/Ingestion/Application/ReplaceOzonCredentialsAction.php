@@ -4,25 +4,24 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application;
 
+use App\Identity\Application\Facade\CompanyConnection;
+use App\Identity\Application\Facade\CredentialsReplacementOutcome;
 use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 
 /**
- * Замена ключей Ozon клиентом: сначала проверить ключ у площадки,
- * потом сохранить.
+ * Замена ключей Ozon клиентом: убедиться, что ключ живой и от этого
+ * кабинета, и только потом сохранить.
  *
- * Порядок именно такой и он важен. Сохранить непроверенный ключ значит
- * вернуть подключение в работу, дать синхронизации упасть на первом же
- * запросе и снова перевести подключение в broken — клиент увидит, что
- * его действие «не сработало», и решит, что сломано у нас.
+ * Порядок важен. Сохранить непроверенный ключ значит вернуть подключение
+ * в работу, дать синхронизации упасть на первом же запросе и снова
+ * перевести подключение в broken — клиент увидит, что его действие
+ * «не сработало», и решит, что сломано у нас.
  *
- * Живёт в Ingestion, хотя меняет данные Identity: проверка требует
- * похода в площадку, а клиент площадки принадлежит Ingestion. Обратное
+ * Живёт в Ingestion, хотя меняет данные Identity: проверка требует похода
+ * в площадку, а клиент площадки принадлежит Ingestion. Обратное
  * направление запрещено — зависимости строго вниз.
- *
- * Проверочный запрос — первая страница каталога размером в один товар:
- * самый дешёвый ответ, который площадка даёт только на живой ключ.
  */
 final readonly class ReplaceOzonCredentialsAction
 {
@@ -39,8 +38,22 @@ final readonly class ReplaceOzonCredentialsAction
         string $marketplaceAccountId,
         string $clientId,
         string $apiKey,
+        int $expectedVersion,
         string $actorUserId,
     ): ReplaceCredentialsResult {
+        $connection = $this->connectionOf($companyId, $marketplaceAccountId);
+        if (null === $connection) {
+            return ReplaceCredentialsResult::NotFound;
+        }
+
+        // Client-Id и есть идентификатор кабинета, под которым заведено
+        // подключение (external_shop_id). Ключ от другого кабинета живой
+        // и проверку у площадки прошёл бы — а данные чужого магазина
+        // записались бы под это подключение и молча испортили аналитику.
+        if ($clientId !== $connection->externalShopId) {
+            return ReplaceCredentialsResult::WrongCabinet;
+        }
+
         try {
             $this->client->fetchPage($clientId, $apiKey, '', self::PROBE_LIMIT);
         } catch (\Throwable $failure) {
@@ -55,13 +68,28 @@ final readonly class ReplaceOzonCredentialsAction
             throw $failure;
         }
 
-        $replaced = $this->identityFacade->replaceMarketplaceCredentials(
+        return match ($this->identityFacade->replaceMarketplaceCredentials(
             $companyId,
             $marketplaceAccountId,
             ['client_id' => $clientId, 'api_key' => $apiKey],
+            $expectedVersion,
             $actorUserId,
-        );
+        )) {
+            CredentialsReplacementOutcome::Replaced => ReplaceCredentialsResult::Replaced,
+            CredentialsReplacementOutcome::NotFound => ReplaceCredentialsResult::NotFound,
+            CredentialsReplacementOutcome::Revoked => ReplaceCredentialsResult::Revoked,
+            CredentialsReplacementOutcome::VersionConflict => ReplaceCredentialsResult::VersionConflict,
+        };
+    }
 
-        return $replaced ? ReplaceCredentialsResult::Replaced : ReplaceCredentialsResult::NotFound;
+    private function connectionOf(string $companyId, string $marketplaceAccountId): ?CompanyConnection
+    {
+        foreach ($this->identityFacade->listConnections($companyId) as $connection) {
+            if ($connection->id === $marketplaceAccountId) {
+                return $connection;
+            }
+        }
+
+        return null;
     }
 }

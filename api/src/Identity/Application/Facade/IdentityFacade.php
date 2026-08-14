@@ -8,6 +8,7 @@ use App\Identity\Application\MarkMarketplaceAccountBrokenAction;
 use App\Identity\Application\ReplaceMarketplaceCredentialsAction;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
+use App\Identity\Domain\ReplaceCredentialsOutcome;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Identity\Infrastructure\Query\CompanyConnectionsQuery;
 use Symfony\Component\Uid\Uuid;
@@ -35,18 +36,30 @@ final class IdentityFacade
      * Замена учётных данных подключения клиентом (ADR-007). Ключ обязан
      * быть проверен площадкой до вызова — Identity в площадку не ходит.
      *
-     * @param array<string, string> $credentials
+     * Версия обязательна в запросе на изменение (ADR-008): принимать
+     * изменение «без версии» как безусловное правило прямо запрещают.
      *
-     * @return bool false, если подключения у этой компании нет
+     * @param array<string, string> $credentials
      */
-    public function replaceMarketplaceCredentials(string $companyId, string $marketplaceAccountId, array $credentials, string $actorUserId): bool
-    {
-        return ($this->replaceCredentials)(
+    public function replaceMarketplaceCredentials(
+        string $companyId,
+        string $marketplaceAccountId,
+        array $credentials,
+        int $expectedVersion,
+        string $actorUserId,
+    ): CredentialsReplacementOutcome {
+        return match (($this->replaceCredentials)(
             $companyId,
             Uuid::fromString($marketplaceAccountId),
             $credentials,
+            $expectedVersion,
             Uuid::fromString($actorUserId),
-        );
+        )) {
+            ReplaceCredentialsOutcome::Replaced => CredentialsReplacementOutcome::Replaced,
+            ReplaceCredentialsOutcome::NotFound => CredentialsReplacementOutcome::NotFound,
+            ReplaceCredentialsOutcome::Revoked => CredentialsReplacementOutcome::Revoked,
+            ReplaceCredentialsOutcome::VersionConflict => CredentialsReplacementOutcome::VersionConflict,
+        };
     }
 
     /**
@@ -81,6 +94,7 @@ final class IdentityFacade
                     externalShopId: $connection->externalShopId,
                     state: $connection->state,
                     createdAt: $connection->createdAt,
+                    version: $connection->version,
                 );
             },
             $rows,

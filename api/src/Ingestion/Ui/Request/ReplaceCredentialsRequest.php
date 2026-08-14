@@ -20,6 +20,7 @@ final readonly class ReplaceCredentialsRequest
     private function __construct(
         public string $clientId,
         public string $apiKey,
+        public int $version,
     ) {
     }
 
@@ -49,6 +50,13 @@ final readonly class ReplaceCredentialsRequest
             throw new \InvalidArgumentException('api_key_required');
         }
 
-        return new self(trim($clientId), trim($apiKey));
+        // Версия обязательна (ADR-008): «принимать изменение без версии
+        // как безусловное запрещено — это возвращает исходную проблему».
+        $version = $decoded['version'] ?? null;
+        if (!\is_int($version)) {
+            throw new \InvalidArgumentException('version_required');
+        }
+
+        return new self(trim($clientId), trim($apiKey), $version);
     }
 }

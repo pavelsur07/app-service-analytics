@@ -239,6 +239,11 @@ export interface components {
             lastLoadedAt: {
                 [key: string]: string;
             };
+            /**
+             * Версия для оптимистической блокировки (ADR-008): клиент
+             *     присылает её обратно при замене ключей.
+             */
+            version: number;
         };
         ConnectionsResponse: {
             connections: components["schemas"]["ConnectionResponse"][];
@@ -552,6 +557,8 @@ export interface operations {
                 "application/json": {
                     clientId: string;
                     apiKey: string;
+                    /** @description Версия подключения из ответа списка (ADR-008) */
+                    version: number;
                 };
             };
         };
@@ -576,6 +583,15 @@ export interface operations {
             };
             /** @description У этой компании нет такого подключения */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Подключение изменил кто-то ещё — перечитать и повторить (ADR-008) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -40,7 +40,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         $account = $this->connection($company, MarketplaceAccountState::Broken);
         $this->ozonAnswers(200);
 
-        $this->put($client, $company, $account, ['clientId' => '123', 'apiKey' => 'fresh-key']);
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'fresh-key', 'version' => 1]);
 
         self::assertSame(200, $client->getResponse()->getStatusCode());
         // Сломанное подключение возвращается в работу самой заменой:
@@ -60,7 +60,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         // запросе и снова сломать его — клиент решил бы, что дело в нас.
         $this->ozonAnswers(401);
 
-        $this->put($client, $company, $account, ['clientId' => '123', 'apiKey' => 'wrong-key']);
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'wrong-key', 'version' => 1]);
 
         self::assertSame(422, $client->getResponse()->getStatusCode());
         self::assertSame('broken', $this->state($account));
@@ -74,18 +74,25 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         $account = $this->connection($company, MarketplaceAccountState::Active);
         $this->ozonAnswers(200);
 
-        $this->put($client, $company, $account, ['clientId' => '123', 'apiKey' => 'rotated-key']);
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'rotated-key', 'version' => 1]);
 
         // «Добавление и изменение учётных данных подключений» — одно
         // из четырёх событий, для которых журнал обязателен (CLAUDE.md,
         // «Безопасность и аудит»).
         $record = $this->connectionOf()->fetchAssociative(
-            'SELECT action, company_id, subject_id FROM audit_record WHERE subject_id = ?',
+            'SELECT action, company_id, subject_id, previous_value, new_value FROM audit_record WHERE subject_id = ?',
             [$account->id()->toRfc4122()],
         );
         self::assertIsArray($record);
         self::assertSame('marketplace_account.credentials_replaced', $record['action']);
         self::assertSame($company->id()->toRfc4122(), $record['company_id']);
+        // «Было» и «стало» обязательны (ADR-011) и обязаны различаться —
+        // иначе запись не отвечает на вопрос, изменилось ли что-нибудь.
+        // И там отпечаток, а не ключ: журнал не место для секрета.
+        self::assertIsString($record['previous_value']);
+        self::assertIsString($record['new_value']);
+        self::assertNotSame($record['previous_value'], $record['new_value']);
+        self::assertStringStartsWith('sha256:', $record['new_value']);
     }
 
     public function testSecretNeverAppearsInTheResponse(): void
@@ -95,7 +102,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         $account = $this->connection($company, MarketplaceAccountState::Broken);
         $this->ozonAnswers(200);
 
-        $this->put($client, $company, $account, ['clientId' => '123', 'apiKey' => 'SUPER-SECRET-KEY']);
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'SUPER-SECRET-KEY', 'version' => 1]);
 
         $content = $client->getResponse()->getContent();
         self::assertIsString($content);
@@ -117,7 +124,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         );
         $this->ozonAnswers(200);
 
-        $this->put($client, $company, $foreign, ['clientId' => '123', 'apiKey' => 'fresh-key']);
+        $this->put($client, $company, $foreign, ['clientId' => 'shop-1', 'apiKey' => 'fresh-key', 'version' => 1]);
 
         self::assertSame(404, $client->getResponse()->getStatusCode());
         self::assertSame('broken', $this->state($foreign));
@@ -130,13 +137,80 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         $account = $this->connection($company, MarketplaceAccountState::Broken);
         // Клиент площадки не подменяется вовсе: если запрос всё-таки
         // уйдёт, тест упадёт на попытке реального HTTP.
-        $this->put($client, $company, $account, ['clientId' => '', 'apiKey' => '']);
+        $this->put($client, $company, $account, ['clientId' => '', 'apiKey' => '', 'version' => 1]);
 
         self::assertSame(422, $client->getResponse()->getStatusCode());
     }
 
+    public function testKeyOfAnotherCabinetIsRejected(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Broken);
+        // Ключ другого кабинета живой и проверку у площадки прошёл бы.
+        // Сохранив его, мы писали бы данные чужого магазина под это
+        // подключение — аналитика испортилась бы молча.
+        $this->ozonAnswers(200);
+
+        $this->put($client, $company, $account, ['clientId' => 'another-shop', 'apiKey' => 'live-key', 'version' => 1]);
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        self::assertSame('broken', $this->state($account));
+    }
+
+    public function testStaleVersionIsRejectedWithConflict(): void
+    {
+        $client = static::createClient();
+        // Два запроса в одном тесте: без этого KernelBrowser перезапускает
+        // ядро между ними, подменённый клиент площадки исчезает вместе
+        // с контейнером, и второй запрос уходит в настоящий Ozon —
+        // ровно то, что ADR-005 запрещает.
+        $client->disableReboot();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Broken);
+        $this->ozonAnswers(200);
+
+        // ADR-008: двое открыли форму, первый сохранил. Второй обязан
+        // получить конфликт, а не молча затереть чужую правку.
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'first-key', 'version' => 1]);
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'second-key', 'version' => 1]);
+
+        self::assertSame(409, $client->getResponse()->getStatusCode());
+    }
+
+    public function testRequestWithoutVersionIsRejected(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Broken);
+
+        // «Принимать изменение без версии как безусловное запрещено —
+        // это возвращает исходную проблему» (ADR-008). Клиент площадки
+        // не подменён: до него запрос дойти не должен.
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'fresh-key']);
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    public function testRevokedConnectionIsNotRevivedByNewKey(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Revoked);
+        $this->ozonAnswers(200);
+
+        // Отзыв необратим (ADR-011). Ответить успехом, оставив подключение
+        // отключённым, — худший из исходов: клиент уверен, что починил.
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'fresh-key', 'version' => 1]);
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        self::assertSame('revoked', $this->state($account));
+    }
+
     /**
-     * @param array<string, string> $body
+     * @param array<string, mixed> $body
      */
     private function put(KernelBrowser $client, Company $company, MarketplaceAccount $account, array $body): void
     {
@@ -178,7 +252,10 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         return MarketplaceAccountBuilder::aMarketplaceAccount()
             ->withCompany($company)
             ->withState($state)
-            ->withPlaintextCredentials(['client_id' => 'old', 'api_key' => 'old-key'], $encryptor)
+            // Client-Id и есть external_shop_id: под ним подключение
+            // заведено, и ключ другого кабинета сюда попадать не должен.
+            ->withExternalShopId('shop-1')
+            ->withPlaintextCredentials(['client_id' => 'shop-1', 'api_key' => 'old-key'], $encryptor)
             ->persistWith($this->companies(), $this->marketplaceAccounts());
     }
 

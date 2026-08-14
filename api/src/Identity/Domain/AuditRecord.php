@@ -15,11 +15,14 @@ use Symfony\Component\Uid\Uuid;
  * Никогда не изменяется и не удаляется — только добавляется. Журнал,
  * который можно поправить, журналом не является.
  *
- * Содержимого изменения здесь нет намеренно. Для учётных данных оно
- * означало бы хранить рядом с записью либо сам ключ, либо его остаток,
- * — а ценность аудита в том, кто и когда действие совершил, а не в том,
- * что именно было в секрете. Понадобится сравнивать «до и после»
- * по неcекретным полям — добавится колонка, это дёшево.
+ * «Было» и «стало» обязательны (ADR-011): у данных, которые правятся
+ * на месте, прежнее значение исчезает, и журнал без него отвечает
+ * на «кто», но не на «что изменилось».
+ *
+ * Для секретов там не значение, а отпечаток: сам ключ в журнале — это
+ * тот же секрет, только в таблице без шифрования (ADR-007 требует
+ * обратного). Отпечаток отвечает на вопрос, ради которого запись
+ * и делается: «тот же ключ или другой».
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'audit_record')]
@@ -53,6 +56,12 @@ class AuditRecord
     #[ORM\Column(type: 'uuid')]
     private readonly Uuid $subjectId;
 
+    #[ORM\Column(type: 'text', nullable: true)]
+    private readonly ?string $previousValue;
+
+    #[ORM\Column(type: 'text', nullable: true)]
+    private readonly ?string $newValue;
+
     #[ORM\Column]
     private readonly \DateTimeImmutable $occurredAt;
 
@@ -62,6 +71,8 @@ class AuditRecord
         Uuid $actorUserId,
         string $action,
         Uuid $subjectId,
+        ?string $previousValue,
+        ?string $newValue,
         \DateTimeImmutable $occurredAt,
     ) {
         $this->id = $id;
@@ -69,6 +80,8 @@ class AuditRecord
         $this->actorUserId = $actorUserId;
         $this->action = $action;
         $this->subjectId = $subjectId;
+        $this->previousValue = $previousValue;
+        $this->newValue = $newValue;
         $this->occurredAt = $occurredAt;
     }
 
@@ -77,9 +90,11 @@ class AuditRecord
         Uuid $actorUserId,
         string $action,
         Uuid $subjectId,
+        ?string $previousValue,
+        ?string $newValue,
         \DateTimeImmutable $occurredAt,
     ): self {
-        return new self(Uuid::v7(), $companyId, $actorUserId, $action, $subjectId, $occurredAt);
+        return new self(Uuid::v7(), $companyId, $actorUserId, $action, $subjectId, $previousValue, $newValue, $occurredAt);
     }
 
     public function id(): Uuid
@@ -105,6 +120,16 @@ class AuditRecord
     public function subjectId(): Uuid
     {
         return $this->subjectId;
+    }
+
+    public function previousValue(): ?string
+    {
+        return $this->previousValue;
+    }
+
+    public function newValue(): ?string
+    {
+        return $this->newValue;
     }
 
     public function occurredAt(): \DateTimeImmutable

@@ -47,10 +47,11 @@ final class ReplaceConnectionCredentialsController
     }
 
     #[OA\RequestBody(content: new OA\JsonContent(
-        required: ['clientId', 'apiKey'],
+        required: ['clientId', 'apiKey', 'version'],
         properties: [
             new OA\Property(property: 'clientId', type: 'string'),
             new OA\Property(property: 'apiKey', type: 'string'),
+            new OA\Property(property: 'version', type: 'integer', description: 'Версия подключения из ответа списка (ADR-008)'),
         ],
     ))]
     #[OA\Response(
@@ -66,6 +67,11 @@ final class ReplaceConnectionCredentialsController
     #[OA\Response(
         response: 422,
         description: 'Площадка не приняла ключ либо тело запроса неполное',
+        content: new Model(type: ValidationErrorResponse::class),
+    )]
+    #[OA\Response(
+        response: 409,
+        description: 'Подключение изменил кто-то ещё — перечитать и повторить (ADR-008)',
         content: new Model(type: ValidationErrorResponse::class),
     )]
     #[OA\Response(
@@ -91,10 +97,14 @@ final class ReplaceConnectionCredentialsController
             $marketplaceAccountId,
             $credentials->clientId,
             $credentials->apiKey,
+            $credentials->version,
             $actorUserId,
         );
 
         return match ($result) {
+            // Состояние берётся не из воздуха: после успешной замены
+            // подключение активно — отозванное сюда не доходит,
+            // сломанное возвращается в работу самой заменой.
             ReplaceCredentialsResult::Replaced => new JsonResponse(
                 new ReplacedCredentialsResponse(id: $marketplaceAccountId, state: 'active'),
             ),
@@ -102,6 +112,21 @@ final class ReplaceConnectionCredentialsController
                 Response::HTTP_UNPROCESSABLE_ENTITY,
                 'credentials_rejected',
                 'Площадка не приняла этот ключ. Проверьте Client-Id и Api-Key в кабинете продавца.',
+            ),
+            ReplaceCredentialsResult::WrongCabinet => $this->error(
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                'credentials_of_another_cabinet',
+                'Этот Client-Id принадлежит другому кабинету. Проверьте, что ключ выпущен в том магазине, который подключён здесь.',
+            ),
+            ReplaceCredentialsResult::Revoked => $this->error(
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                'connection_revoked',
+                'Подключение отключено. Заменой ключа оно не восстанавливается — напишите нам.',
+            ),
+            ReplaceCredentialsResult::VersionConflict => $this->error(
+                Response::HTTP_CONFLICT,
+                'version_conflict',
+                'Подключение изменил кто-то ещё. Обновите страницу и повторите.',
             ),
             ReplaceCredentialsResult::NotFound => $this->error(
                 Response::HTTP_NOT_FOUND,

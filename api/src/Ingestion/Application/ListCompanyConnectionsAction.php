@@ -47,6 +47,7 @@ final readonly class ListCompanyConnectionsAction
                 state: $connection->state,
                 createdAt: $connection->createdAt,
                 lastLoadedAt: $freshness[$connection->id] ?? [],
+                version: $connection->version,
             ),
             $connections,
         );
