@@ -11,10 +11,16 @@
 # Этот — одноразовая разведка, и перебор кандидатов в общем скрипте
 # заставлял бы платить за него при каждом обновлении каталога.
 #
-# Почему перебор, а не один эндпоинт: ADR-009 фиксирует, что
-# /v3/finance/transaction/list разбит на новые эндпоинты 6 июля 2026.
-# Какие из них отвечают этому кабинету — вопрос к кабинету, а не
-# к документации, и отвечает на него только запрос.
+# Почему перебор, а не один эндпоинт: /v3/finance/transaction/list
+# объявлен отключённым 6 июля 2026 и заменён тремя методами
+# finance/accrual/*. При этом у кабинета он отвечает 200 и отдаёт полные
+# данные — то есть «работает» и «на нём можно строить» здесь разные вещи.
+# Разведка отвечает на второй вопрос: живы ли методы-замены и что в них.
+#
+# Тела запросов новых методов — предположения по описанию. Отказ 400
+# такой же полезный результат, как 200: в теле ошибки площадка говорит,
+# чего ждёт. Поэтому у каждого эндпоинта несколько кандидатов тела,
+# и перебор останавливается на первом успешном.
 #
 # Зачем это нужно вообще: в /v2/posting/fbo/list, который мы уже качаем,
 # ровно один расход — комиссия (проверено на фикстуре: у всех строк
@@ -46,6 +52,8 @@ print(f"MONTH={first_of_prev:%Y-%m}")
 print(f"FROM={first_of_prev:%Y-%m-%d}T00:00:00.000Z")
 print(f"TO={last_of_prev:%Y-%m-%d}T23:59:59.999Z")
 print(f"STAMP={first_of_prev:%Y-%m}")
+print(f"DAY_FROM={first_of_prev:%Y-%m-%d}")
+print(f"DAY_TO={last_of_prev:%Y-%m-%d}")
 PYEOF
 )"
 
@@ -72,28 +80,55 @@ echo
 probe() {
     name=$1
     path=$2
-    body=$3
+    shift 2
 
-    code=$(curl -sS -o "$WORK/$name.json" -w '%{http_code}' \
-        -X POST "https://api-seller.ozon.ru$path" \
-        -H "Client-Id: $CID" -H "Api-Key: $KEY" \
-        -H 'Content-Type: application/json' \
-        -d "$body" || echo '000')
+    # Кандидаты тела перебираются до первого успеха: форма запроса новых
+    # методов известна нам по описанию, а не по ответу кабинета.
+    attempt=0
+    for body in "$@"; do
+        attempt=$((attempt + 1))
+        code=$(curl -sS -o "$WORK/$name.json" -w '%{http_code}' \
+            -X POST "https://api-seller.ozon.ru$path" \
+            -H "Client-Id: $CID" -H "Api-Key: $KEY" \
+            -H 'Content-Type: application/json' \
+            -d "$body" || echo '000')
 
-    printf '%-34s %s  HTTP %s\n' "$path" "$name" "$code"
+        printf '%-38s %-22s тело %s  HTTP %s\n' "$path" "$name" "$attempt" "$code"
 
-    if [ "$code" = "200" ]; then
-        cp "$WORK/$name.json" "$DIR/finance-$name-$STAMP.json"
-        SAVED="$SAVED $name"
-    else
+        if [ "$code" = "200" ]; then
+            cp "$WORK/$name.json" "$DIR/finance-$name-$STAMP.json"
+            SAVED="$SAVED $name"
+            return 0
+        fi
+
         # Тело ошибки Ozon — код и сообщение, секретов там нет.
-        head -c 200 "$WORK/$name.json"
+        printf '    '
+        head -c 220 "$WORK/$name.json"
         echo
-    fi
+    done
 }
 
 SAVED=''
 
+# Методы-замены (объявлены взамен transaction/list с 6 июля 2026).
+# Ради них разведка и повторяется: именно на них придётся строить.
+probe accrual-types /v1/finance/accrual/types \
+    '{}' \
+    "{\"date_from\":\"$DAY_FROM\",\"date_to\":\"$DAY_TO\"}"
+
+probe accrual-postings /v1/finance/accrual/postings \
+    "{\"date_from\":\"$DAY_FROM\",\"date_to\":\"$DAY_TO\",\"page\":1,\"page_size\":1000}" \
+    "{\"filter\":{\"date\":{\"from\":\"$FROM\",\"to\":\"$TO\"}},\"page\":1,\"page_size\":1000}" \
+    "{\"date\":{\"from\":\"$DAY_FROM\",\"to\":\"$DAY_TO\"},\"limit\":1000,\"offset\":0}"
+
+probe accrual-by-day /v1/finance/accrual/by-day \
+    "{\"date_from\":\"$DAY_FROM\",\"date_to\":\"$DAY_TO\"}" \
+    "{\"filter\":{\"date\":{\"from\":\"$FROM\",\"to\":\"$TO\"}}}" \
+    "{\"date\":{\"from\":\"$DAY_FROM\",\"to\":\"$DAY_TO\"}}"
+
+# Старый метод — для сверки, а не для стройки: он объявлен отключённым,
+# но пока отвечает, и его итоги дают эталон, с которым сравниваются суммы
+# новых методов. Расхождение — то, о чём документация предупреждает прямо.
 probe transaction-list /v3/finance/transaction/list \
     "{\"filter\":{\"date\":{\"from\":\"$FROM\",\"to\":\"$TO\"},\"operation_type\":[],\"posting_number\":\"\",\"transaction_type\":\"all\"},\"page\":1,\"page_size\":1000}"
 
@@ -102,12 +137,6 @@ probe transaction-totals /v3/finance/transaction/totals \
 
 probe cash-flow /v1/finance/cash-flow-statement/list \
     "{\"date\":{\"from\":\"$FROM\",\"to\":\"$TO\"},\"page\":1,\"page_size\":100,\"with_details\":true}"
-
-probe realization /v1/finance/realization \
-    "{\"date\":\"$MONTH\"}"
-
-probe realization-posting /v2/finance/realization/posting \
-    "{\"date\":\"$MONTH\"}"
 
 echo
 if [ -z "$SAVED" ]; then
