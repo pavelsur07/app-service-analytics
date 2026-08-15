@@ -23,15 +23,83 @@ final class DoctrineMarketplaceListingWriterTest extends KernelTestCase
         $second = new \DateTimeImmutable('2026-08-14 10:00:00');
 
         $this->sync($writer, $companyId, $accountId, ['111'], $first);
+        $writtenIn = $this->writtenInTransaction($companyId, '111');
         $this->sync($writer, $companyId, $accountId, ['111'], $second);
+
+        // Сравниваются не колонки, а сама строка: без
+        // `WHERE ... IS DISTINCT FROM` в писателе значения остались бы
+        // теми же, а строка была бы переписана заново — и проверка
+        // по колонкам прошла бы, ничего не заметив.
+        self::assertSame($writtenIn, $this->writtenInTransaction($companyId, '111'));
 
         $row = $this->row($companyId, '111');
         self::assertNotNull($row);
         self::assertIsString($row['first_seen_at']);
         // Товар, который мы уже видели, не становится новым от того,
-        // что синхронизация прошла снова, — и никакая другая колонка
-        // при этом не меняется: изменяемых в таблице нет (CLAUDE.md §4).
+        // что синхронизация прошла снова (CLAUDE.md §4). Колонки теперь
+        // изменяемые, поэтому проверка не декоративная: без
+        // `WHERE ... IS DISTINCT FROM` в писателе строка переписывалась бы
+        // каждый тик.
         self::assertStringStartsWith('2026-08-13 10:00:00', $row['first_seen_at']);
+    }
+
+    public function testRenamedListingIsUpdated(): void
+    {
+        self::bootKernel();
+        $writer = $this->writer();
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+
+        $this->sync($writer, $companyId, $accountId, ['111'], new \DateTimeImmutable('2026-08-13 10:00:00'));
+        // Селлер переименовал товар в кабинете. Карточка та же — sku
+        // не меняется, — и наша строка обязана показать новое имя:
+        // ради имени она и заводилась.
+        $this->sync(
+            $writer,
+            $companyId,
+            $accountId,
+            ['111'],
+            new \DateTimeImmutable('2026-08-14 10:00:00'),
+            offerId: 'WJ-НОВЫЙ',
+            name: 'Топ Womjoy Logo Basic, чёрный',
+        );
+
+        $row = $this->row($companyId, '111');
+        self::assertNotNull($row);
+        self::assertSame('WJ-НОВЫЙ', $row['offer_id']);
+        self::assertSame('Топ Womjoy Logo Basic, чёрный', $row['name']);
+        // Момент первой встречи переживает переименование: товар,
+        // пришедший снова, новым не становится.
+        self::assertIsString($row['first_seen_at']);
+        self::assertStringStartsWith('2026-08-13 10:00:00', $row['first_seen_at']);
+    }
+
+    public function testMissingNameDoesNotEraseTheKnownOne(): void
+    {
+        self::bootKernel();
+        $writer = $this->writer();
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+
+        $this->sync($writer, $companyId, $accountId, ['111'], new \DateTimeImmutable('2026-08-13 10:00:00'));
+        // Запрос имён вернул неполный ответ, и по этой карточке имени
+        // не пришло. Отсутствие имени — не пустое имя: известное
+        // остаётся, иначе каждый неполный ответ площадки стирал бы
+        // названия у части каталога.
+        $this->sync(
+            $writer,
+            $companyId,
+            $accountId,
+            ['111'],
+            new \DateTimeImmutable('2026-08-14 10:00:00'),
+            name: null,
+        );
+
+        $row = $this->row($companyId, '111');
+        self::assertNotNull($row);
+        self::assertSame('Топ Womjoy Logo Basic', $row['name']);
     }
 
     public function testVanishedListingIsRemoved(): void
@@ -116,12 +184,16 @@ final class DoctrineMarketplaceListingWriterTest extends KernelTestCase
         Uuid $accountId,
         array $skus,
         \DateTimeImmutable $syncedAt,
+        string $offerId = 'WJ1621101211-черный-M',
+        ?string $name = 'Топ Womjoy Logo Basic',
     ): void {
         $listings = array_map(
             static fn (string $sku) => MarketplaceListingBuilder::aMarketplaceListing()
                 ->withCompanyId($companyId)
                 ->withMarketplaceAccountId($accountId)
                 ->withMarketplaceSku($sku)
+                ->withOfferId($offerId)
+                ->withName($name)
                 ->withSeenAt($syncedAt)
                 ->build(),
             $skus,
@@ -136,11 +208,29 @@ final class DoctrineMarketplaceListingWriterTest extends KernelTestCase
     private function row(Uuid $companyId, string $sku): ?array
     {
         $row = $this->connection()->fetchAssociative(
-            'SELECT first_seen_at FROM marketplace_listing WHERE company_id = ? AND marketplace_sku = ?',
+            'SELECT first_seen_at, offer_id, name FROM marketplace_listing WHERE company_id = ? AND marketplace_sku = ?',
             [$companyId->toRfc4122(), $sku],
         );
 
         return false === $row ? null : $row;
+    }
+
+    /**
+     * Системный xmin: номер транзакции, записавшей эту версию строки.
+     * Меняется при любом UPDATE, в том числе переписывающем теми же
+     * значениями, — и это единственный способ отличить «не тронули»
+     * от «переписали тем же».
+     */
+    private function writtenInTransaction(Uuid $companyId, string $sku): string
+    {
+        $xmin = $this->connection()->fetchOne(
+            'SELECT xmin::text FROM marketplace_listing WHERE company_id = ? AND marketplace_sku = ?',
+            [$companyId->toRfc4122(), $sku],
+        );
+
+        self::assertIsString($xmin);
+
+        return $xmin;
     }
 
     private function writer(): DoctrineMarketplaceListingWriter

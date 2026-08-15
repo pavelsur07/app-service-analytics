@@ -15,18 +15,27 @@ use Symfony\Component\Uid\Uuid;
  * Клиент с новинками видел оверлей, который «работает через раз»,
  * и объяснить это было нечем.
  *
- * Хранится только артикул и момент, когда товар впервые увиделся.
- * Название и прочее придут, когда их будет где показывать: это
- * не факт-таблица с миллионами строк, добавить колонку позже дёшево
- * (CLAUDE.md, «не абстрагировать до второго случая»).
+ * Кроме артикула площадки хранятся артикул продавца и наименование.
+ * Появились они тогда, когда стало где показывать: экран ввода
+ * себестоимости работает с карточками, а `1402861293` — не то, в чём
+ * селлер узнаёт свой товар.
  *
- * Изменяемых колонок нет ни одной, и это осознанно. Была `last_seen_at`,
- * но признаком ухода товара она быть перестала (writer сравнивает
- * с самой выгрузкой), а читать её стало некому: «когда каталог
- * синхронизировался в прошлый раз» отвечает raw-слой. Оставленная,
- * она означала бы, что повторный прогон обработчика на том же ответе
- * площадки меняет строку, — ровно то, чего CLAUDE.md §4 не допускает
- * и чего избегает sales_fact своим `WHERE row_hash IS DISTINCT FROM`.
+ * **Изменяемые колонки здесь есть, и это меняет правила записи.**
+ * Раньше их не было ни одной, и писатель обходился `DO NOTHING`.
+ * Артикул и имя селлер правит в кабинете, поэтому запись стала
+ * `DO UPDATE` — но только при фактическом изменении значения,
+ * тем же приёмом, что у sales_fact с его `WHERE row_hash IS DISTINCT
+ * FROM`. Повторный прогон обработчика на том же ответе площадки
+ * по-прежнему не меняет ни строки (CLAUDE.md §4).
+ *
+ * Отличие от удалённой когда-то `last_seen_at` ровно в этом: та менялась
+ * при каждом прогоне независимо от данных, а имя — только когда его
+ * поменяли на площадке. Признаком ухода товара она быть перестала
+ * (writer сравнивает с самой выгрузкой), и читать её стало некому:
+ * «когда каталог синхронизировался в прошлый раз» отвечает raw-слой.
+ *
+ * `first_seen_at` не обновляется никогда: товар, пришедший снова,
+ * не становится новым.
  *
  * Ключ естественный, без суррогата: `(company_id, marketplace_account_id,
  * marketplace_sku)`. Артикул уникален в пределах подключения, а не
@@ -57,6 +66,29 @@ class MarketplaceListing
     #[ORM\Column(length: 64)]
     private readonly string $marketplaceSku;
 
+    /**
+     * Артикул продавца — то, чем товар называет сам селлер. Приходит
+     * тем же ответом, что и sku, и в ключ не входит намеренно: селлер
+     * переименовывает артикул сам, и будь он в ключе, история цен
+     * отвязалась бы при первом переименовании. Длина как у соседней
+     * marketplace_sku; Ozon допускает до 50 символов.
+     *
+     * Nullable, потому что до первой синхронизации после выкладки строки
+     * его не имеют, а придумывать им пустую строку значило бы сделать
+     * «не знаем» неотличимым от «пусто».
+     */
+    #[ORM\Column(length: 64, nullable: true)]
+    private ?string $offerId;
+
+    /**
+     * Наименование карточки. Приходит вторым запросом
+     * (v3/product/info/list), в v3/product/list его нет, — поэтому
+     * отстать от артикула на тик оно может, и nullable здесь по той же
+     * причине. Ozon допускает до 500 символов.
+     */
+    #[ORM\Column(length: 512, nullable: true)]
+    private ?string $name;
+
     #[ORM\Column]
     private readonly \DateTimeImmutable $firstSeenAt;
 
@@ -64,11 +96,15 @@ class MarketplaceListing
         Uuid $companyId,
         Uuid $marketplaceAccountId,
         string $marketplaceSku,
+        ?string $offerId,
+        ?string $name,
         \DateTimeImmutable $firstSeenAt,
     ) {
         $this->companyId = $companyId;
         $this->marketplaceAccountId = $marketplaceAccountId;
         $this->marketplaceSku = $marketplaceSku;
+        $this->offerId = $offerId;
+        $this->name = $name;
         $this->firstSeenAt = $firstSeenAt;
     }
 
@@ -76,9 +112,11 @@ class MarketplaceListing
         Uuid $companyId,
         Uuid $marketplaceAccountId,
         string $marketplaceSku,
+        ?string $offerId,
+        ?string $name,
         \DateTimeImmutable $seenAt,
     ): self {
-        return new self($companyId, $marketplaceAccountId, $marketplaceSku, $seenAt);
+        return new self($companyId, $marketplaceAccountId, $marketplaceSku, $offerId, $name, $seenAt);
     }
 
     public function companyId(): Uuid
@@ -94,6 +132,16 @@ class MarketplaceListing
     public function marketplaceSku(): string
     {
         return $this->marketplaceSku;
+    }
+
+    public function offerId(): ?string
+    {
+        return $this->offerId;
+    }
+
+    public function name(): ?string
+    {
+        return $this->name;
     }
 
     public function firstSeenAt(): \DateTimeImmutable

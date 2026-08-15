@@ -14,6 +14,8 @@ use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonCatalogHandler;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonCatalogFetcher;
+use App\Ingestion\Domain\OzonProductInfoFetcher;
+use App\Ingestion\Infrastructure\Connector\Ozon\OzonProductInfoListClient;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonProductListClient;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
 use App\Tests\Support\Builder\CompanyBuilder;
@@ -21,6 +23,7 @@ use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\Fake\FakeOzonCatalogFetcher;
+use App\Tests\Support\Fake\FakeOzonProductInfoFetcher;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -36,6 +39,8 @@ use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 final class FetchOzonCatalogHandlerTest extends KernelTestCase
 {
     private const string FIXTURE = __DIR__.'/../../Fixtures/Marketplace/ozon/product-list-2026-08-13.json';
+
+    private const string INFO_FIXTURE = __DIR__.'/../../Fixtures/Marketplace/ozon/product-info-list-2026-08-13.json';
 
     public function testCatalogOfRealCabinetIsStored(): void
     {
@@ -196,18 +201,96 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         self::assertInstanceOf(SendEmailMessage::class, $queued[0]->getMessage());
     }
 
+    public function testSellerArticleAndNameReachTheRow(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+
+        // Обе фикстуры целиком, снятые одним днём с боевого кабинета:
+        // артикул приходит первым запросом, имя — вторым, склеиваются
+        // они по sku.
+        $names = new FakeOzonProductInfoFetcher([$this->infoFixtureBody()]);
+        $this->fetcher($container, [$this->fixtureBody()], $names);
+        $this->syncCatalog($container, $account);
+
+        $row = $this->connection($container)->fetchAssociative(
+            'SELECT offer_id, name FROM marketplace_listing WHERE company_id = ? AND marketplace_sku = ?',
+            [$account->companyId()->toRfc4122(), '220280923'],
+        );
+
+        self::assertIsArray($row);
+        self::assertSame('WJ1020101211/черный-M', $row['offer_id']);
+        self::assertSame('Лосины спортивные женские Logo', $row['name']);
+
+        // Имена запрашиваются по товарам этой же страницы, а не по всему
+        // каталогу заново.
+        self::assertCount(1, $names->requestedProductIds);
+        self::assertCount(62, $names->requestedProductIds[0]);
+    }
+
+    public function testFailedNamesRequestLeavesTheCatalogAlone(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+
+        $this->fetcher($container, [$this->fixtureBody()], new class implements OzonProductInfoFetcher {
+            public function fetchNames(string $clientId, string $apiKey, array $productIds): string
+            {
+                throw new \RuntimeException('Ozon недоступен');
+            }
+        });
+
+        // Отказ громкий, а не «запишем без имён». Каталог заменяется
+        // целиком каждый тик, поэтому пропуск одного тика не стоит
+        // ничего, а тихая деградация стоила бы вопроса «почему
+        // у половины товаров нет названий» через месяц, когда искать
+        // причину уже негде.
+        try {
+            $this->syncCatalog($container, $account);
+            self::fail('Отказ запроса имён обязан быть громким.');
+        } catch (\RuntimeException $expected) {
+            self::assertSame('Ozon недоступен', $expected->getMessage());
+        }
+
+        self::assertSame(0, $this->skuCount($container, $account));
+    }
+
+    private function infoFixtureBody(): string
+    {
+        $body = file_get_contents(self::INFO_FIXTURE);
+        self::assertIsString($body);
+
+        return $body;
+    }
+
     /**
      * Заглушка HTTP ставится в контейнер один раз на тест: повторный
      * set() по уже созданному сервису контейнер запрещает. Поэтому
      * страницы всех прогонов задаются одной очередью — она же показывает,
      * что обработчик не запросил лишнего.
      *
+     * Заглушка имён ставится тем же вызовом и по той же причине:
+     * два set() на один сервис контейнер не примет, поэтому вариант
+     * поведения задаётся здесь, а не досылается тестом.
+     *
      * @param list<string> $pages
      */
-    private function fetcher(ContainerInterface $container, array $pages): FakeOzonCatalogFetcher
-    {
+    private function fetcher(
+        ContainerInterface $container,
+        array $pages,
+        ?OzonProductInfoFetcher $names = null,
+    ): FakeOzonCatalogFetcher {
         $fetcher = new FakeOzonCatalogFetcher($pages);
         $container->set(OzonProductListClient::class, $fetcher);
+
+        // Имена запрашиваются на каждую страницу каталога, поэтому
+        // ответов по умолчанию столько же. Пустой items — валидный
+        // ответ: имена в большинстве тестов не предмет проверки,
+        // а строки каталога обязаны появиться и без них.
+        $container->set(
+            OzonProductInfoListClient::class,
+            $names ?? new FakeOzonProductInfoFetcher(array_fill(0, max(1, \count($pages)), '{"items":[]}')),
+        );
 
         return $fetcher;
     }
@@ -241,7 +324,7 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
     private function rows(ContainerInterface $container, MarketplaceAccount $account): array
     {
         return $this->connection($container)->fetchAllAssociative(
-            'SELECT marketplace_sku, first_seen_at FROM marketplace_listing WHERE company_id = ? AND marketplace_account_id = ? ORDER BY marketplace_sku',
+            'SELECT marketplace_sku, offer_id, name, first_seen_at FROM marketplace_listing WHERE company_id = ? AND marketplace_account_id = ? ORDER BY marketplace_sku',
             [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
         );
     }
