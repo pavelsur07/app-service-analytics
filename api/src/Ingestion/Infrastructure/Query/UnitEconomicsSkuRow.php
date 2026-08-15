@@ -19,6 +19,12 @@ final readonly class UnitEconomicsSkuRow
         public int $commissionAmountMinor,
         public int $orderedQuantity,
         public int $expensesTotalMinor,
+        /** Себестоимость проданного, отрицательная — как и прочие вычеты. */
+        public int $costTotalMinor,
+        /** Сколько проданных штук пришлось на дни без заданной цены. */
+        public int $quantityWithoutCost,
+        /** Когда себестоимость, применённую к этому периоду, правили. */
+        public ?string $costCorrectedAt,
     ) {
     }
 }

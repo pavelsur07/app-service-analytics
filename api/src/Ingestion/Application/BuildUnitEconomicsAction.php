@@ -133,6 +133,9 @@ final readonly class BuildUnitEconomicsAction
         // гадать, каким знаком он пришёл.
         $deductions = $commission->plus($expensesTotal);
 
+        $margin = $revenue->plus($deductions);
+        $cost = Money::ofMinor($row->costTotalMinor, $row->currency);
+
         return new UnitEconomicsSku(
             marketplaceSku: $row->marketplaceSku,
             deliveredQuantity: $row->deliveredQuantity,
@@ -142,7 +145,17 @@ final readonly class BuildUnitEconomicsAction
             expenses: $this->grouped($expenses),
             expensesTotalMinor: $expensesTotal->minorAmount(),
             deductionsTotalMinor: $deductions->minorAmount(),
-            marginMinor: $revenue->plus($deductions)->minorAmount(),
+            marginMinor: $margin->minorAmount(),
+            costTotalMinor: $cost->minorAmount(),
+            quantityWithoutCost: $row->quantityWithoutCost,
+            // Хоть одна проданная штука без цены — прибыли нет.
+            // Не «почти прибыль» и не «прибыль по той части, где цена
+            // есть»: обе выглядели бы как настоящее число, а ошибались
+            // бы на всю незаданную закупку.
+            profitMinor: 0 === $row->quantityWithoutCost
+                ? $margin->plus($cost)->minorAmount()
+                : null,
+            costCorrectedAt: $row->costCorrectedAt,
         );
     }
 

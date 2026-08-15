@@ -58,16 +58,43 @@ final readonly class UnitEconomicsQuery
         int $limit,
         ?UnitEconomicsCursor $cursor,
     ): QueryBuilder {
+        // Себестоимость соединяется с КАЖДОЙ строкой продажи по её
+        // бизнес-дате, а не берётся одна на период (ADR-013). Иначе
+        // товар, проданный в июле по 420, посчитался бы по августовской
+        // цене 510 — то есть новая поставка задним числом переписала бы
+        // прибыль за июль, ровно то, что раздельные операции ввода
+        // и запрещают.
+        //
+        // Умножение цены на количество делает PostgreSQL над минорными
+        // единицами (§5, ADR-013): у Money умножения нет, а количество
+        // целое, и округлять здесь нечего.
+        //
+        // Знак отрицательный намеренно — как у комиссии и расходов
+        // площадки. Тогда итог везде складывается, и ни одна строка
+        // расчёта не гадает, каким знаком пришла величина.
         $sales = <<<'SQL'
-            SELECT marketplace_sku,
-                   currency,
-                   COALESCE(SUM(quantity) FILTER (WHERE status = 'delivered'), 0) AS delivered_quantity,
-                   COALESCE(SUM(amount_minor) FILTER (WHERE status = 'delivered'), 0) AS delivered_amount_minor,
-                   COALESCE(SUM(commission_amount_minor) FILTER (WHERE status = 'delivered'), 0) AS commission_amount_minor,
-                   COALESCE(SUM(quantity) FILTER (WHERE status <> 'cancelled'), 0) AS ordered_quantity
-            FROM sales_fact
-            WHERE company_id = :companyId AND business_date >= :from AND business_date <= :to
-            GROUP BY marketplace_sku, currency
+            SELECT f.marketplace_sku,
+                   f.currency,
+                   COALESCE(SUM(f.quantity) FILTER (WHERE f.status = 'delivered'), 0) AS delivered_quantity,
+                   COALESCE(SUM(f.amount_minor) FILTER (WHERE f.status = 'delivered'), 0) AS delivered_amount_minor,
+                   COALESCE(SUM(f.commission_amount_minor) FILTER (WHERE f.status = 'delivered'), 0) AS commission_amount_minor,
+                   COALESCE(SUM(f.quantity) FILTER (WHERE f.status <> 'cancelled'), 0) AS ordered_quantity,
+                   -COALESCE(SUM(f.quantity * c.unit_cost_minor) FILTER (WHERE f.status = 'delivered'), 0) AS cost_total_minor,
+                   COALESCE(SUM(f.quantity) FILTER (WHERE f.status = 'delivered' AND c.unit_cost_minor IS NULL), 0) AS quantity_without_cost,
+                   MAX(c.updated_at) FILTER (WHERE f.status = 'delivered' AND c.updated_at > c.recorded_at) AS cost_corrected_at
+            FROM sales_fact AS f
+            LEFT JOIN LATERAL (
+                SELECT lc.unit_cost_minor, lc.updated_at, lc.recorded_at
+                FROM marketplace_listing_cost AS lc
+                WHERE lc.company_id = f.company_id
+                  AND lc.marketplace_account_id = f.marketplace_account_id
+                  AND lc.marketplace_sku = f.marketplace_sku
+                  AND lc.effective_from <= f.business_date
+                ORDER BY lc.effective_from DESC
+                LIMIT 1
+            ) AS c ON TRUE
+            WHERE f.company_id = :companyId AND f.business_date >= :from AND f.business_date <= :to
+            GROUP BY f.marketplace_sku, f.currency
             SQL;
 
         $expenses = <<<'SQL'
@@ -88,7 +115,10 @@ final readonly class UnitEconomicsQuery
                        COALESCE(s.delivered_amount_minor, 0) AS delivered_amount_minor,
                        COALESCE(s.commission_amount_minor, 0) AS commission_amount_minor,
                        COALESCE(s.ordered_quantity, 0) AS ordered_quantity,
-                       COALESCE(e.expenses_total_minor, 0) AS expenses_total_minor
+                       COALESCE(e.expenses_total_minor, 0) AS expenses_total_minor,
+                       COALESCE(s.cost_total_minor, 0) AS cost_total_minor,
+                       COALESCE(s.quantity_without_cost, 0) AS quantity_without_cost,
+                       s.cost_corrected_at
                 FROM ({$sales}) AS s
                 FULL OUTER JOIN ({$expenses}) AS e
                   ON s.marketplace_sku = e.marketplace_sku AND s.currency = e.currency
@@ -104,6 +134,9 @@ final readonly class UnitEconomicsQuery
                 'commission_amount_minor',
                 'ordered_quantity',
                 'expenses_total_minor',
+                'cost_total_minor',
+                'quantity_without_cost',
+                'cost_corrected_at',
             )
             ->from($joined)
             ->setParameter('companyId', $companyId)
@@ -195,6 +228,9 @@ final readonly class UnitEconomicsQuery
             commissionAmountMinor: self::intValue($row['commission_amount_minor']),
             orderedQuantity: self::intValue($row['ordered_quantity']),
             expensesTotalMinor: self::intValue($row['expenses_total_minor']),
+            costTotalMinor: self::intValue($row['cost_total_minor']),
+            quantityWithoutCost: self::intValue($row['quantity_without_cost']),
+            costCorrectedAt: null === $row['cost_corrected_at'] ? null : self::stringValue($row['cost_corrected_at']),
         );
     }
 
