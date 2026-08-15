@@ -165,6 +165,7 @@ final class ShowUnitEconomicsController
             ),
             cabinetExpenses: array_map(self::expense(...), $report->cabinetExpenses),
             cabinetExpensesTotalMinor: $report->cabinetExpensesTotalMinor,
+            daysWithoutExpenses: $report->daysWithoutExpenses,
             nextCursor: $report->nextCursor,
         ));
     }

@@ -9,14 +9,18 @@ use App\Identity\Domain\CompanyRepository;
 use App\Ingestion\Application\BuildUnitEconomicsAction;
 use App\Ingestion\Application\UnitEconomicsReport;
 use App\Ingestion\Domain\MarketplaceExpenseFactRepository;
+use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsCursor;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
+use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Расчёт юнит-экономики: денежная арифметика и сборка отчёта.
@@ -27,6 +31,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 final class BuildUnitEconomicsActionTest extends KernelTestCase
 {
     private const string DAY = '2026-07-01';
+
+    private const string ACCOUNT_ID = '019fe6ea-cd99-7af8-bf4a-623a5a31cf7b';
 
     public function testMarginIsRevenuePlusNegativeCommissionAndExpenses(): void
     {
@@ -156,22 +162,133 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
         self::assertSame(0, $report->skus[0]->expensesTotalMinor);
     }
 
+    public function testDayWithSalesButWithoutLoadedExpensesIsCounted(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        $this->upload($container, $company, MarketplaceReportType::OzonPostingFboList);
+
+        $report = $this->build($container, $company);
+
+        // За такой день экран показывает выручку минус одну комиссию
+        // и называет это маржой. По самим данным он неотличим от дня,
+        // когда начислений правда не было, — отличает только то, была ли
+        // выгрузка (CLAUDE.md, «Наблюдаемость»).
+        self::assertSame(1, $report->daysWithoutExpenses);
+    }
+
+    public function testDayWithBothUploadsIsNotCounted(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        $this->upload($container, $company, MarketplaceReportType::OzonPostingFboList);
+        $this->upload($container, $company, MarketplaceReportType::OzonAccrualByDay);
+
+        $report = $this->build($container, $company);
+
+        // Расходы выгружены — то, что начислений в них ноль, не дыра:
+        // у продавца бывает день без единого заказа.
+        self::assertSame(0, $report->daysWithoutExpenses);
+    }
+
+    public function testDaysBeforeTheFirstSalesUploadAreNotCounted(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        $this->upload($container, $company, MarketplaceReportType::OzonPostingFboList);
+        $this->upload($container, $company, MarketplaceReportType::OzonAccrualByDay);
+
+        $report = $this->build(
+            $container,
+            $company,
+            from: (new \DateTimeImmutable(self::DAY))->modify('-89 day'),
+        );
+
+        // Окно в 90 дней у клиента, подключившегося вчера, не объявляет
+        // несчитанными восемьдесят девять дней, которых у него никогда
+        // не было. Тревога, которая горит всегда, перестаёт читаться.
+        self::assertSame(0, $report->daysWithoutExpenses);
+    }
+
+    public function testUploadOfOneAccountDoesNotCoverAnother(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $covered = Uuid::v7();
+        $uncovered = Uuid::v7();
+
+        $this->upload($container, $company, MarketplaceReportType::OzonPostingFboList, $covered);
+        $this->upload($container, $company, MarketplaceReportType::OzonAccrualByDay, $covered);
+        $this->upload($container, $company, MarketplaceReportType::OzonPostingFboList, $uncovered);
+
+        $report = $this->build($container, $company);
+
+        // Загруженный день одного кабинета не означает загруженный день
+        // другого: расходы второго в отчёт не попали, и день дырявый.
+        self::assertSame(1, $report->daysWithoutExpenses);
+    }
+
+    public function testUploadOfAnotherCompanyDoesNotCloseTheGap(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $foreign = $this->company($container);
+
+        $this->upload($container, $company, MarketplaceReportType::OzonPostingFboList);
+        $this->upload($container, $foreign, MarketplaceReportType::OzonAccrualByDay);
+
+        $report = $this->build($container, $company);
+
+        // Обязательное покрытие ADR-005: без company_id в запросе чужая
+        // исправная выгрузка закрывала бы нашу дыру, и предупреждение
+        // не показалось бы именно тогда, когда должно.
+        self::assertSame(1, $report->daysWithoutExpenses);
+    }
+
     private function build(
         ContainerInterface $container,
         Company $company,
         int $limit = 50,
         ?UnitEconomicsCursor $cursor = null,
+        ?\DateTimeImmutable $from = null,
     ): UnitEconomicsReport {
         /** @var BuildUnitEconomicsAction $action */
         $action = $container->get(BuildUnitEconomicsAction::class);
 
         return ($action)(
             $company->id()->toRfc4122(),
-            new \DateTimeImmutable(self::DAY),
+            $from ?? new \DateTimeImmutable(self::DAY),
             new \DateTimeImmutable(self::DAY),
             $limit,
             $cursor,
         );
+    }
+
+    /**
+     * Загрузка, а не факты: покрытие меряется появлением raw-документа,
+     * потому что пустой ответ площадки — тоже ответ.
+     */
+    private function upload(
+        ContainerInterface $container,
+        Company $company,
+        string $reportType,
+        ?Uuid $marketplaceAccountId = null,
+    ): void {
+        /** @var MarketplaceRawDocumentRepository $rawDocuments */
+        $rawDocuments = $container->get(MarketplaceRawDocumentRepository::class);
+
+        MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
+            ->withCompanyId($company->id())
+            // Одно подключение по умолчанию: продажи и расходы одного дня
+            // должны прийти из одного кабинета, иначе тест проверял бы
+            // не покрытие, а разные кабинеты.
+            ->withMarketplaceAccountId($marketplaceAccountId ?? Uuid::fromString(self::ACCOUNT_ID))
+            ->withReportType($reportType)
+            ->withPeriod(new \DateTimeImmutable(self::DAY))
+            ->persistWith($rawDocuments);
     }
 
     private function sale(

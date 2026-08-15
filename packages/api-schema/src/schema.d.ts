@@ -321,6 +321,11 @@ export interface components {
             skus: components["schemas"]["UnitEconomicsSkuResponse"][];
             cabinetExpenses: components["schemas"]["UnitEconomicsExpenseResponse"][];
             cabinetExpensesTotalMinor: number;
+            /**
+             * Дни окна, за которые продажи загружены, а расходы нет:
+             *     маржа за них завышена. Ноль — отчёт полон.
+             */
+            daysWithoutExpenses: number;
             nextCursor?: string | null;
         };
         AppInfoResponse: {

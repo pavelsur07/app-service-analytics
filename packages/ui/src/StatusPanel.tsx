@@ -1,11 +1,14 @@
 import type { ReactNode } from "react";
 
-type Tone = "neutral" | "accent" | "negative";
+type Tone = "neutral" | "accent" | "negative" | "warning";
 
 const TONE: Record<Tone, string> = {
   neutral: "bg-border-subtle text-text-secondary",
   accent: "bg-accent-subtle text-accent",
   negative: "bg-negative-bg text-negative-text",
+  // Между neutral и negative: данные не сломаны, но и не полны.
+  // Красный сказал бы «ошибка» там, где ошибки нет.
+  warning: "bg-warning-bg text-warning-text",
 };
 
 export function StatusPanel({

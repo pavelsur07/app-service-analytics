@@ -23,6 +23,15 @@ final readonly class UnitEconomicsReport
         public array $cabinetExpenses,
         public int $cabinetExpensesTotalMinor,
         public string $currency,
+        /**
+         * Сколько дней окна показывают маржу, посчитанную без расходов:
+         * продажи за них загружены, расходы нет. Ноль — отчёт полон.
+         *
+         * Число, а не признак «да/нет»: клиенту важно, четыре это дня
+         * из тридцати или двадцать восемь. В первом случае цифру можно
+         * читать, во втором — нельзя.
+         */
+        public int $daysWithoutExpenses,
         /** Курсор следующей страницы; null — страница последняя. */
         public ?string $nextCursor,
     ) {
