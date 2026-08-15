@@ -375,6 +375,17 @@ export interface components {
             /** Комиссия плюс расходы: считает бэкенд, не компонент (§10). */
             deductionsTotalMinor: number;
             marginMinor: number;
+            /** Себестоимость проданного, отрицательная — как и прочие вычеты. */
+            costTotalMinor: number;
+            /** Сколько проданных штук пришлось на дни без заданной цены. */
+            quantityWithoutCost: number;
+            profitMinor?: number | null;
+            /**
+             * Когда себестоимость этого периода правили. Прибыль считается
+             *     при чтении, поэтому отчёт за прошлый месяц может измениться
+             *     между двумя открытиями — и это называется, а не молчится.
+             */
+            costCorrectedAt?: string | null;
         };
         UnitEconomicsResponse: {
             from: string;

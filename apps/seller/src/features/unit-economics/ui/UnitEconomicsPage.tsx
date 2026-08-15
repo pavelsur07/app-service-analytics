@@ -6,7 +6,7 @@ import {
   TriangleAlert,
   Wallet,
 } from 'lucide-react'
-import { useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../../api/ApiError'
 import {
   Badge,
@@ -21,11 +21,13 @@ import { useUnitEconomics } from '../model/useUnitEconomics'
 const WINDOWS = [7, 30, 90] as const
 
 /**
- * Юнит-экономика: сколько осталось от продажи после расходов площадки.
+ * Юнит-экономика: прибыль там, где задана себестоимость, и маржа там,
+ * где не задана.
  *
- * Это не прибыль, и экран так и говорит: себестоимости в расчёте нет,
- * её ввод — отдельный модуль. Обещать прибыль, не зная закупки, значило
- * бы показать красивое неверное число.
+ * Прибыль показывается только когда цена известна на все проданные дни.
+ * Иначе на месте числа стоит ссылка «задать цену»: ноль вместо
+ * неизвестной закупки завысил бы прибыль ровно на её величину
+ * и выглядел бы при этом настоящей цифрой (ADR-013).
  */
 export function UnitEconomicsPage() {
   const navigate = useNavigate()
@@ -95,9 +97,10 @@ export function UnitEconomicsPage() {
             продажи, иногда на недели, и за короткое окно картина неполна
             по природе источника, а не из-за сбоя (ADR-012). */}
         <p className="text-sm text-muted">
-          Сколько осталось от продажи после расходов площадки. Себестоимость не
-          учтена. Расходы приходят от Ozon позже продажи, поэтому за последние
-          дни картина неполная.
+          Прибыль — выручка за вычетом расходов площадки и себестоимости
+          проданного. Там, где цена закупки не задана, показана маржа: сколько
+          осталось от продажи после расходов площадки. Расходы приходят от Ozon
+          позже продажи, поэтому за последние дни картина неполная.
         </p>
 
         {/* Подпись выше говорит про хвост последних дней — это свойство
@@ -251,16 +254,40 @@ export function UnitEconomicsPage() {
                         {sku.marketplaceSku}
                       </span>
                       <span className="flex items-center gap-2">
-                        <Badge
-                          tone={
-                            isLoss(sku.marginMinor) ? 'negative' : 'positive'
-                          }
-                        >
-                          {formatMinorAmount(
-                            sku.marginMinor,
-                            query.data.currency,
-                          )}
-                        </Badge>
+                        {/* Прибыль, если известна; иначе маржа и прямое
+                            указание, чего не хватает. Молча показать
+                            маржу под видом прибыли — ровно та ошибка,
+                            от которой ADR-013 защищает. */}
+                        {(sku.profitMinor ?? null) === null ? (
+                          <>
+                            <Badge tone="warning">Нет себестоимости</Badge>
+                            <Badge
+                              tone={
+                                isLoss(sku.marginMinor)
+                                  ? 'negative'
+                                  : 'positive'
+                              }
+                            >
+                              {formatMinorAmount(
+                                sku.marginMinor,
+                                query.data.currency,
+                              )}
+                            </Badge>
+                          </>
+                        ) : (
+                          <Badge
+                            tone={
+                              isLoss(sku.profitMinor ?? 0)
+                                ? 'negative'
+                                : 'positive'
+                            }
+                          >
+                            {formatMinorAmount(
+                              sku.profitMinor ?? 0,
+                              query.data.currency,
+                            )}
+                          </Badge>
+                        )}
                       </span>
                     </button>
 
@@ -292,6 +319,48 @@ export function UnitEconomicsPage() {
                         <dd>
                           {formatMinorAmount(
                             sku.expensesTotalMinor,
+                            query.data.currency,
+                          )}
+                        </dd>
+                      </div>
+                      {/* Разложение по компонентам, а не одно итоговое
+                          число: клиент сверяет цифру с отчётом площадки,
+                          и «прибыль 3 000» без слагаемых нечем проверить. */}
+                      <div>
+                        <dt className="text-muted">Себестоимость</dt>
+                        <dd>
+                          {formatMinorAmount(
+                            sku.costTotalMinor,
+                            query.data.currency,
+                          )}
+                          {sku.quantityWithoutCost > 0 && (
+                            <>
+                              {' '}
+                              <Link
+                                className="text-accent underline"
+                                to={`/companies/${companyId}/costs`}
+                              >
+                                нет цены у {sku.quantityWithoutCost} шт
+                              </Link>
+                            </>
+                          )}
+                        </dd>
+                      </div>
+                      {(sku.costCorrectedAt ?? null) !== null && (
+                        <div>
+                          {/* Прибыль считается при чтении, поэтому отчёт
+                              за прошлый месяц меняется под руками.
+                              Это цена решения, и она оплачивается
+                              честностью — цифра не меняется молча. */}
+                          <dt className="text-muted">Цена правилась</dt>
+                          <dd>{(sku.costCorrectedAt ?? '').slice(0, 10)}</dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt className="text-muted">Маржа</dt>
+                        <dd>
+                          {formatMinorAmount(
+                            sku.marginMinor,
                             query.data.currency,
                           )}
                         </dd>
