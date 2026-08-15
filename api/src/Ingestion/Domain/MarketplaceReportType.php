@@ -18,6 +18,13 @@ final class MarketplaceReportType
 
     public const string OzonProductList = 'ozon_product_list';
 
+    /**
+     * Наименования карточек. Отдельный тип, а не часть каталога:
+     * это отдельный ответ площадки, и raw-слой хранит ответы, а не
+     * представление о них (ADR-006).
+     */
+    public const string OzonProductInfoList = 'ozon_product_info_list';
+
     public const string OzonAccrualByDay = 'ozon_accrual_by_day';
 
     private function __construct()

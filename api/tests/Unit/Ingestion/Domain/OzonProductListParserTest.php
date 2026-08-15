@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Ingestion\Domain;
 
+use App\Ingestion\Domain\OzonProductListItem;
+use App\Ingestion\Domain\OzonProductListPage;
 use App\Ingestion\Domain\OzonProductListParser;
 use PHPUnit\Framework\TestCase;
 
@@ -19,12 +21,41 @@ final class OzonProductListParserTest extends TestCase
     {
         $page = (new OzonProductListParser())->parse($this->fixture());
 
-        self::assertCount(62, $page->skus);
+        self::assertCount(62, $page->items);
         self::assertSame(62, $page->itemsOnPage);
         // Артикул из этой же фикстуры, он же встречается в фикстуре
         // продаж — на нём и склеиваются каталог с фактами.
-        self::assertContains('220280923', $page->skus);
+        self::assertContains('220280923', $this->skus($page));
         self::assertNotSame('', $page->lastId);
+    }
+
+    public function testSellerArticleAndProductIdComeFromTheSameResponse(): void
+    {
+        $page = (new OzonProductListParser())->parse($this->fixture());
+
+        // Артикул продавца достаётся бесплатно — тем же запросом,
+        // который каталог уже делает каждый тик. Наименования в этом
+        // ответе нет вовсе, оно берётся вторым запросом.
+        $item = $page->items[0];
+        self::assertNotSame('', $item->offerId);
+        self::assertGreaterThan(0, $item->productId);
+
+        // product_id нужен ровно для запроса имён, и страница отдаёт
+        // их списком, чтобы вызывающему не собирать его самому.
+        self::assertCount(62, $page->productIds());
+    }
+
+    public function testProductWithoutSellerArticleIsRejected(): void
+    {
+        // Артикул у товара обязателен: им товар заводят в кабинете.
+        // Пустая строка вместо него означала бы карточку, которую
+        // селлер не опознает на экране ввода себестоимости, — а ради
+        // этого экрана артикул и берётся.
+        $this->expectException(\UnexpectedValueException::class);
+
+        (new OzonProductListParser())->parse(
+            '{"result":{"items":[{"product_id":1,"sku":220280923}],"total":1,"last_id":""}}',
+        );
     }
 
     public function testNumericSkuBecomesTheStringUsedBySalesFacts(): void
@@ -37,7 +68,7 @@ final class OzonProductListParserTest extends TestCase
             '{"result":{"items":[{"product_id":1,"offer_id":"A","sku":220280923}],"total":1,"last_id":""}}',
         );
 
-        self::assertSame(['220280923'], $page->skus);
+        self::assertSame(['220280923'], $this->skus($page));
     }
 
     public function testProductWithoutCardIsSkipped(): void
@@ -51,7 +82,7 @@ final class OzonProductListParserTest extends TestCase
             '{"result":{"items":[{"product_id":1,"offer_id":"A","sku":0},{"product_id":2,"offer_id":"B","sku":220280923}],"total":2,"last_id":""}}',
         );
 
-        self::assertSame(['220280923'], $page->skus);
+        self::assertSame(['220280923'], $this->skus($page));
         self::assertSame(2, $page->itemsOnPage);
     }
 
@@ -59,7 +90,7 @@ final class OzonProductListParserTest extends TestCase
     {
         $page = (new OzonProductListParser())->parse('{"result":{"items":[],"total":0,"last_id":""}}');
 
-        self::assertSame([], $page->skus);
+        self::assertSame([], $page->items);
         self::assertSame('', $page->lastId);
     }
 
@@ -71,6 +102,17 @@ final class OzonProductListParserTest extends TestCase
         $this->expectException(\UnexpectedValueException::class);
 
         (new OzonProductListParser())->parse('{"code":16,"message":"Client-Id and Api-Key headers are required"}');
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function skus(OzonProductListPage $page): array
+    {
+        return array_map(
+            static fn (OzonProductListItem $item): string => $item->sku,
+            $page->items,
+        );
     }
 
     private function fixture(): string

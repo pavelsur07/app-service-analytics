@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Application\MessageHandler;
 
 use App\Identity\Application\Facade\IdentityFacade;
+use App\Identity\Application\Facade\OzonSyncTarget;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Domain\MarketplaceListing;
 use App\Ingestion\Domain\MarketplaceListingRepository;
@@ -13,6 +14,9 @@ use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
+use App\Ingestion\Domain\OzonProductInfoFetcher;
+use App\Ingestion\Domain\OzonProductInfoListParser;
+use App\Ingestion\Domain\OzonProductListPage;
 use App\Ingestion\Domain\OzonProductListParser;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Uid\Uuid;
@@ -20,9 +24,14 @@ use Symfony\Component\Uid\Uuid;
 /**
  * Клиент -> парсер -> замена каталога подключения целиком.
  *
+ * Запросов к площадке на страницу два: /v3/product/list отдаёт sku
+ * и артикул продавца, но не наименование — его приходится брать
+ * /v3/product/info/list по тем же товарам.
+ *
  * Идемпотентен целиком: raw дедуплицируется по естественному ключу,
- * каталог вставляется без обновления (в строке нет изменяемых колонок),
- * повторный запуск на том же ответе площадки не меняет ни строки.
+ * каталог обновляется только при фактическом изменении артикула или
+ * имени (DoctrineMarketplaceListingWriter), повторный запуск на том же
+ * ответе площадки не меняет ни строки.
  *
  * Ответ сохраняется в raw-слой до разбора, как и у отгрузок (ADR-006):
  * неудача разбора не должна терять сырьё, а строка каталога обязана
@@ -62,7 +71,9 @@ final readonly class FetchOzonCatalogHandler
     public function __construct(
         private IdentityFacade $identityFacade,
         private OzonCatalogFetcher $client,
+        private OzonProductInfoFetcher $infoClient,
         private OzonProductListParser $parser,
+        private OzonProductInfoListParser $infoParser,
         private MarketplaceListingRepository $listings,
         private MarketplaceRawDocumentRepository $rawDocuments,
     ) {
@@ -127,9 +138,17 @@ final readonly class FetchOzonCatalogHandler
             ));
 
             $parsed = $this->parser->parse($rawBody);
+            $names = $this->fetchNames($target, $companyId, $marketplaceAccountId, $period, $parsed);
 
-            foreach ($parsed->skus as $sku) {
-                $listings[] = MarketplaceListing::seen($companyId, $marketplaceAccountId, $sku, $syncedAt);
+            foreach ($parsed->items as $item) {
+                $listings[] = MarketplaceListing::seen(
+                    $companyId,
+                    $marketplaceAccountId,
+                    $item->sku,
+                    $item->offerId,
+                    $names[$item->sku] ?? null,
+                    $syncedAt,
+                );
             }
 
             // Признак конца — пустой курсор либо неполная страница.
@@ -154,5 +173,54 @@ final readonly class FetchOzonCatalogHandler
         // нельзя: replaceForAccount удаляет всё, чего нет в переданном
         // списке, — неполный каталог стёр бы половину товаров продавца.
         throw new \RuntimeException(\sprintf('Каталог подключения %s не уместился в %d страниц — выгрузка не записана.', $message->marketplaceAccountId, self::MAX_PAGES));
+    }
+
+    /**
+     * Наименования страницы: второй запрос к площадке, потому что
+     * /v3/product/list поля name не отдаёт вовсе.
+     *
+     * Запрос один на страницу, а не на товар, — и это ровно то, чего
+     * требует запрет «запросов в цикле» (CLAUDE.md §6): связанные данные
+     * берутся одним запросом по списку идентификаторов. Одним запросом
+     * на весь каталог их взять нельзя: эндпоинт принимает не больше
+     * тысячи идентификаторов за раз, столько же, сколько отдаёт страница
+     * каталога, — нарезка на пачки существовала бы всё равно, только
+     * своя вместо готовой.
+     *
+     * Отказ здесь громкий, а не «запишем без имён». Тихая деградация
+     * стоила бы вопроса «почему у половины товаров нет названий» через
+     * месяц, когда искать причину уже негде. Каталог заменяется целиком
+     * каждый тик, поэтому пропуск одного тика не стоит ничего, а падение
+     * видно: ретраи, а при исчерпании — failed-очередь и трекер.
+     *
+     * Исключение то же, что и у остальных обработчиков: отказ авторизации
+     * — не техническая ошибка, а событие жизненного цикла подключения
+     * (ADR-007). Он проброшен наверх, где обрабатывается общим порядком.
+     *
+     * @return array<string, string> наименование по sku
+     */
+    private function fetchNames(
+        OzonSyncTarget $target,
+        Uuid $companyId,
+        Uuid $marketplaceAccountId,
+        \DateTimeImmutable $period,
+        OzonProductListPage $page,
+    ): array {
+        $productIds = $page->productIds();
+        if ([] === $productIds) {
+            return [];
+        }
+
+        $rawBody = $this->infoClient->fetchNames($target->clientId, $target->apiKey, $productIds);
+
+        $this->rawDocuments->add(MarketplaceRawDocument::capture(
+            companyId: $companyId,
+            marketplaceAccountId: $marketplaceAccountId,
+            reportType: MarketplaceReportType::OzonProductInfoList,
+            period: $period,
+            rawBody: $rawBody,
+        ));
+
+        return $this->infoParser->parse($rawBody);
     }
 }

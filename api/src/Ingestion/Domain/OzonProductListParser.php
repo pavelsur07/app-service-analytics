@@ -9,15 +9,18 @@ namespace App\Ingestion\Domain;
  * ни одного вызова наружу — ни HTTP, ни БД. Проверяется на зафиксированной
  * фикстуре (CLAUDE.md §9), снятой с настоящего кабинета.
  *
- * Берём только sku и ничего больше. Название и цена в каталоге не нужны:
- * он отвечает ровно на один вопрос — «этот товар наш?». Появится, где
- * их показывать, — добавится колонка, это дёшево (MarketplaceListing).
+ * Берём sku, артикул продавца и product_id. Наименования в этом ответе
+ * нет вовсе — оно приходит вторым запросом (OzonProductInfoListParser).
  *
  * Товар без sku пропускается, а не роняет разбор: sku = 0 у товара,
  * которому площадка ещё не завела карточку. Такой товар нельзя встретить
  * на сайте, и в каталоге «своих карточек» ему делать нечего. Молчаливым
  * пропуском это не назвать — их число возвращается вызывающему коду,
  * и обработчик пишет его в лог синхронизации.
+ *
+ * Артикул продавца, наоборот, роняет разбор, если его нет: он у товара
+ * обязателен, им товар заводят в кабинете, и пустая строка вместо него
+ * означала бы карточку, которую селлер не опознает на экране.
  */
 final class OzonProductListParser
 {
@@ -34,7 +37,8 @@ final class OzonProductListParser
             throw new \UnexpectedValueException('Ozon /v3/product/list result.items must be an array.');
         }
 
-        $skus = [];
+        /** @var array<string, OzonProductListItem> $parsed */
+        $parsed = [];
         foreach ($items as $item) {
             if (!\is_array($item)) {
                 throw new \UnexpectedValueException('Ozon product entry must be an object.');
@@ -50,7 +54,21 @@ final class OzonProductListParser
                 continue;
             }
 
-            $skus[] = $sku;
+            $offerId = $item['offer_id'] ?? null;
+            if (!\is_string($offerId) || '' === $offerId) {
+                throw new \UnexpectedValueException("Ozon product {$sku} has no offer_id — the seller's own article is mandatory.");
+            }
+
+            $productId = $item['product_id'] ?? null;
+            if (!\is_int($productId)) {
+                throw new \UnexpectedValueException("Ozon product {$sku} product_id must be an integer.");
+            }
+
+            // Ключ массива, а не array_unique по объектам: дубль sku
+            // в одной странице означал бы две карточки с одним артикулом
+            // площадки, и брать первую — единственное осмысленное
+            // поведение (вторая всё равно та же карточка).
+            $parsed[$sku] ??= new OzonProductListItem($sku, $offerId, $productId);
         }
 
         $lastId = $result['last_id'] ?? '';
@@ -59,7 +77,7 @@ final class OzonProductListParser
         }
 
         return new OzonProductListPage(
-            skus: array_values(array_unique($skus)),
+            items: array_values($parsed),
             lastId: $lastId,
             itemsOnPage: \count($items),
         );

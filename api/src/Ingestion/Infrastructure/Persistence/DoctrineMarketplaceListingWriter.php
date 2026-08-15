@@ -67,27 +67,42 @@ final readonly class DoctrineMarketplaceListingWriter implements MarketplaceList
         $valuesSql = [];
         $params = [];
         foreach ($listings as $i => $listing) {
-            $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :marketplaceSku{$i}, :firstSeenAt{$i})";
+            $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :marketplaceSku{$i}, :offerId{$i}, :name{$i}, :firstSeenAt{$i})";
 
             $params["companyId{$i}"] = $listing->companyId()->toRfc4122();
             $params["marketplaceAccountId{$i}"] = $listing->marketplaceAccountId()->toRfc4122();
             $params["marketplaceSku{$i}"] = $listing->marketplaceSku();
+            $params["offerId{$i}"] = $listing->offerId();
+            $params["name{$i}"] = $listing->name();
             $params["firstSeenAt{$i}"] = $listing->firstSeenAt()->format('Y-m-d H:i:sP');
         }
 
-        // DO NOTHING, а не DO UPDATE: обновлять в этой таблице нечего.
-        // Товар, который мы уже видели, не становится новым от того,
-        // что синхронизация прошла снова, — и повторный прогон
-        // обработчика на том же ответе площадки не меняет ни строки
-        // (CLAUDE.md §4). Тот же принцип, что у sales_fact с его
-        // `WHERE row_hash IS DISTINCT FROM`, только здесь сравнивать
-        // нечего: кроме ключа в строке лишь момент первой встречи.
+        // DO UPDATE, а не DO NOTHING: артикул продавца и наименование
+        // селлер правит в кабинете, и карточка, у которой сменилось имя,
+        // обязана сменить его и у нас.
+        //
+        // Но `WHERE ... IS DISTINCT FROM` обязателен: без него повторный
+        // прогон на том же ответе площадки переписывал бы каждую строку,
+        // и обработчик перестал бы быть идемпотентным (CLAUDE.md §4).
+        // Тот же приём, что у sales_fact.
+        //
+        // COALESCE на имени: отсутствие имени в ответе — не пустое имя.
+        // Если запрос имён по этой карточке ничего не дал, известное имя
+        // остаётся. Обратного случая у площадки нет — имя у карточки
+        // обязательное, пустым оно не приходит.
+        //
+        // first_seen_at в SET отсутствует намеренно: это момент первой
+        // встречи, и товар, пришедший снова, новым не становится.
         $sql = <<<SQL
             INSERT INTO marketplace_listing
-                (company_id, marketplace_account_id, marketplace_sku, first_seen_at)
+                (company_id, marketplace_account_id, marketplace_sku, offer_id, name, first_seen_at)
             VALUES {$this->joinValues($valuesSql)}
             ON CONFLICT (company_id, marketplace_account_id, marketplace_sku)
-            DO NOTHING
+            DO UPDATE SET
+                offer_id = EXCLUDED.offer_id,
+                name = COALESCE(EXCLUDED.name, marketplace_listing.name)
+            WHERE marketplace_listing.offer_id IS DISTINCT FROM EXCLUDED.offer_id
+               OR marketplace_listing.name IS DISTINCT FROM COALESCE(EXCLUDED.name, marketplace_listing.name)
             SQL;
 
         $this->connection->executeStatement($sql, $params);
