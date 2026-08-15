@@ -33,6 +33,25 @@
 #   3. Каталог ./static рядом с этим файлом наполнен сборкой фронтенда
 #      (артефакт прогона frontend-<номер>, раскладка seller/ и admin/).
 
+# Резолверы для сервисов, которые ходят наружу.
+#
+# По умолчанию контейнер спрашивает встроенный резолвер Docker, а тот
+# пересылает запрос резолверу хоста — то есть резолверам хостера, и других
+# у него нет. 15 августа 2026 они перемежающимися отказами (SERVFAIL,
+# «DNS server returned general failure») съели 36 синхронизаций за шесть
+# часов: пять попыток ретрая растянуты на полчаса, а окна отказа были
+# длиннее. Днём раньше та же причина потеряла девять дней добора расходов,
+# и тогда это прошло вовсе незамеченным — failure-транспорта ещё не было.
+#
+# Два независимых провайдера, а не два адреса одного: отказ был у обоих
+# резолверов хостера сразу, значит вторая запись того же провайдера
+# не помогла бы. Резолверы хостера тут не перечислены намеренно — их
+# адреса привязали бы этот файл к конкретной машине, а лечим мы ровно
+# зависимость от них.
+x-egress-dns: &egress-dns
+  - 77.88.8.8
+  - 1.1.1.1
+
 x-api-env: &api-env
   APP_ENV: prod
   APP_SECRET: ${APP_SECRET:?}
@@ -143,6 +162,7 @@ services:
     restart: unless-stopped
     environment: *api-env
     networks: [internal, egress]
+    dns: *egress-dns
     mem_limit: 384m
     depends_on:
       postgres:
@@ -179,6 +199,7 @@ services:
     restart: unless-stopped
     environment: *api-env
     networks: [internal, egress]
+    dns: *egress-dns
     depends_on:
       postgres:
         condition: service_healthy
@@ -287,6 +308,7 @@ services:
     restart: unless-stopped
     environment: *api-env
     networks: [internal, egress]
+    dns: *egress-dns
     depends_on:
       postgres:
         condition: service_healthy
