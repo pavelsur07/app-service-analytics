@@ -12,6 +12,7 @@ use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\UserRepository;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonCatalogHandler;
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonProductListClient;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
@@ -290,7 +291,7 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         $this->syncCatalog($container, $account);
 
         $freshSalesAccounts = (new RecentlyIngestedAccountsQuery($this->connection($container)))
-            ->build(new \DateTimeImmutable('-36 hours'))
+            ->build(new \DateTimeImmutable('-36 hours'), [MarketplaceReportType::OzonPostingFboList])
             ->executeQuery()
             ->fetchAllAssociative();
 
@@ -298,13 +299,17 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
             static function (array $row): string {
                 $fresh = RecentlyIngestedAccountsQuery::mapRow($row);
 
-                return RecentlyIngestedAccountsQuery::key($fresh->companyId, $fresh->marketplaceAccountId);
+                return RecentlyIngestedAccountsQuery::key($fresh->companyId, $fresh->marketplaceAccountId, $fresh->reportType);
             },
             $freshSalesAccounts,
         );
 
         self::assertNotContains(
-            RecentlyIngestedAccountsQuery::key($account->companyId()->toRfc4122(), $account->id()->toRfc4122()),
+            RecentlyIngestedAccountsQuery::key(
+                $account->companyId()->toRfc4122(),
+                $account->id()->toRfc4122(),
+                MarketplaceReportType::OzonPostingFboList,
+            ),
             $keys,
         );
     }

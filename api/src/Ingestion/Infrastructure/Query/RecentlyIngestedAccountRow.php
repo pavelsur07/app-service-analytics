@@ -14,6 +14,8 @@ final readonly class RecentlyIngestedAccountRow
     public function __construct(
         public string $companyId,
         public string $marketplaceAccountId,
+        /** Тип отчёта: свежесть у выгрузок одного подключения раздельная. */
+        public string $reportType,
     ) {
     }
 }

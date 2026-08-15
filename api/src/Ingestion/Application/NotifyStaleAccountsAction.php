@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Application;
 
 use App\Identity\Application\Facade\IdentityScheduleFacade;
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\LockInterface;
@@ -54,6 +55,22 @@ final readonly class NotifyStaleAccountsAction
      */
     private const int ALERT_INTERVAL_SECONDS = 86400;
 
+    /**
+     * Что под контролем и как это называется в письме. Один список,
+     * а не два рядом: тип, добавленный в отслеживание без имени,
+     * пришёл бы к получателю строкой `ozon_accrual_by_day`.
+     *
+     * Расходы здесь потому, что из них складывается цифра на экране
+     * наравне с продажами: вставшая загрузка расходов — не пустой экран,
+     * а рабочий с завышенной маржой, и заметить её без сторожа нельзя.
+     * Каталога здесь нет намеренно — вспомогательный список для оверлея,
+     * отдельная тревога по нему пока не окупается.
+     */
+    private const array WATCHED_REPORTS = [
+        MarketplaceReportType::OzonPostingFboList => 'продажи',
+        MarketplaceReportType::OzonAccrualByDay => 'расходы',
+    ];
+
     public function __construct(
         private IdentityScheduleFacade $identitySchedule,
         private RecentlyIngestedAccountsQuery $recentlyIngested,
@@ -65,8 +82,8 @@ final readonly class NotifyStaleAccountsAction
     }
 
     /**
-     * @return list<string> подключения, о которых отправлено письмо,
-     *                      в форме «companyId:marketplaceAccountId»
+     * @return list<string> выгрузки, о которых отправлено письмо, в форме
+     *                      «companyId:marketplaceAccountId:reportType»
      */
     public function __invoke(): array
     {
@@ -95,16 +112,27 @@ final readonly class NotifyStaleAccountsAction
 
         /** @var array<string, LockInterface> $claimed */
         $claimed = [];
+        /** @var list<string> $lines */
+        $lines = [];
         foreach ($active as $target) {
-            $key = RecentlyIngestedAccountsQuery::key($target->companyId, $target->marketplaceAccountId);
-            if (isset($fresh[$key])) {
-                continue;
+            // Каждая отслеживаемая выгрузка проверяется своей отметкой:
+            // подключение бывает наполовину живым, и «данные по нему
+            // идут» — не ответ на вопрос «идут ли расходы».
+            foreach (self::WATCHED_REPORTS as $reportType => $label) {
+                $key = RecentlyIngestedAccountsQuery::key($target->companyId, $target->marketplaceAccountId, $reportType);
+                if (isset($fresh[$key])) {
+                    continue;
+                }
+                $lock = $this->claimAlert($key);
+                if (null === $lock) {
+                    continue;
+                }
+                $claimed[$key] = $lock;
+                // Строка письма собирается здесь, где тип ещё известен
+                // как значение: разбирать его обратно из ключа означало бы
+                // держать формат ключа в двух местах.
+                $lines[] = \sprintf('  %s:%s — %s', $target->companyId, $target->marketplaceAccountId, $label);
             }
-            $lock = $this->claimAlert($key);
-            if (null === $lock) {
-                continue;
-            }
-            $claimed[$key] = $lock;
         }
 
         if ([] === $claimed) {
@@ -114,7 +142,7 @@ final readonly class NotifyStaleAccountsAction
         $stale = array_keys($claimed);
 
         try {
-            $this->mailer->send($this->alertAbout($stale));
+            $this->mailer->send($this->alertAbout($lines));
         } catch (\Throwable $failure) {
             // Замок снимается, иначе временная недоступность SMTP стоила бы
             // суток тишины: подавление повторов сработало бы на письмо,
@@ -134,21 +162,22 @@ final readonly class NotifyStaleAccountsAction
      */
     private function freshKeys(\DateTimeImmutable $now): array
     {
-        $rows = $this->recentlyIngested->build($now->sub(new \DateInterval(self::STALE_AFTER)))
+        $rows = $this->recentlyIngested->build($now->sub(new \DateInterval(self::STALE_AFTER)), array_keys(self::WATCHED_REPORTS))
             ->executeQuery()
             ->fetchAllAssociative();
 
-        if (\count($rows) > RecentlyIngestedAccountsQuery::MAX_RESULTS) {
+        $ceiling = RecentlyIngestedAccountsQuery::MAX_ACCOUNTS * \count(self::WATCHED_REPORTS);
+        if (\count($rows) > $ceiling) {
             // Тот же приём, что в IdentityScheduleFacade: тихая обрезка
             // до потолка объявила бы часть исправных подключений
             // несвежими и разослала бы ложные письма.
-            throw new \RuntimeException(\sprintf('Подключений со свежими данными больше защитного потолка %d — нужна курсорная выборка.', RecentlyIngestedAccountsQuery::MAX_RESULTS));
+            throw new \RuntimeException(\sprintf('Свежих выгрузок больше защитного потолка %d — нужна курсорная выборка.', $ceiling));
         }
 
         $keys = [];
         foreach ($rows as $row) {
             $fresh = RecentlyIngestedAccountsQuery::mapRow($row);
-            $keys[RecentlyIngestedAccountsQuery::key($fresh->companyId, $fresh->marketplaceAccountId)] = true;
+            $keys[RecentlyIngestedAccountsQuery::key($fresh->companyId, $fresh->marketplaceAccountId, $fresh->reportType)] = true;
         }
 
         return $keys;
@@ -165,27 +194,26 @@ final readonly class NotifyStaleAccountsAction
     }
 
     /**
-     * @param list<string> $stale
+     * @param list<string> $lines готовые строки «подключение — выгрузка»
      */
-    private function alertAbout(array $stale): Email
+    private function alertAbout(array $lines): Email
     {
-        $lines = array_map(
-            static fn (string $key): string => '  '.$key,
-            $stale,
-        );
-
         // From не задаётся здесь: адрес отправителя привязан к учётным
         // данным SMTP, а не к письму (config/packages/mailer.yaml).
         return (new Email())
             ->to($this->alertEmail)
-            ->subject(\sprintf('Conwix: данные не обновляются (%d подключений)', \count($stale)))
+            ->subject(\sprintf('Conwix: данные не обновляются (%d выгрузок)', \count($lines)))
             ->text(
-                "По этим подключениям нет новых raw-документов дольше 36 часов,\n"
+                "По этим выгрузкам нет новых raw-документов дольше 36 часов,\n"
                 ."то есть синхронизация с площадкой не проходит:\n\n"
                 .implode("\n", $lines)."\n\n"
-                ."Формат строки: companyId:marketplaceAccountId — по ним же\n"
-                ."ищутся логи и очередь.\n\n"
-                ."Что смотреть: жив ли воркер async_ingestion, не перешло ли\n"
+                ."Формат строки: companyId:marketplaceAccountId — выгрузка.\n"
+                ."По идентификаторам ищутся логи и очередь.\n\n"
+                ."Названа именно выгрузка, а не подключение: у одного кабинета\n"
+                ."они встают порознь, и вставшие расходы при живых продажах —\n"
+                ."это рабочий экран с завышенной маржой, а не пустой.\n\n"
+                ."Что смотреть: жив ли воркер async_ingestion, нет ли задержанных\n"
+                ."и отказавших сообщений (messenger:failed:show), не перешло ли\n"
                 ."подключение в broken (ADR-007), нет ли отказов в трекере.\n"
             );
     }

@@ -10,6 +10,7 @@ use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Infrastructure\Query\ActiveOzonAccountsQuery;
 use App\Ingestion\Application\NotifyStaleAccountsAction;
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceRawDocumentRepository;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
 use App\Tests\Support\Builder\CompanyBuilder;
@@ -38,15 +39,47 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         $mailer = $this->recordingMailer();
         $alerted = ($this->action($container, $mailer))();
 
-        self::assertSame([$this->key($account)], $alerted);
+        // Обе отслеживаемые выгрузки, а не одна строка на подключение.
+        self::assertSame(
+            [
+                $this->key($account, MarketplaceReportType::OzonPostingFboList),
+                $this->key($account, MarketplaceReportType::OzonAccrualByDay),
+            ],
+            $alerted,
+        );
         self::assertCount(1, $mailer->messages);
 
         $email = $mailer->messages[0] ?? null;
         self::assertInstanceOf(Email::class, $email);
-        self::assertStringContainsString($this->key($account), (string) $email->getTextBody());
+        $body = (string) $email->getTextBody();
+        self::assertStringContainsString($account->id()->toRfc4122().' — продажи', $body);
+        self::assertStringContainsString($account->id()->toRfc4122().' — расходы', $body);
         $to = $email->getTo();
         self::assertNotSame([], $to);
         self::assertSame('ops@example.test', $to[0]->getAddress());
+    }
+
+    public function testEachUploadIsWatchedOnItsOwn(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container);
+
+        $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
+
+        $mailer = $this->recordingMailer();
+        $alerted = ($this->action($container, $mailer))();
+
+        // Продажи идут, расходы встали — и это худший из отказов:
+        // экран не пустеет, а показывает маржу, завышенную на всю
+        // логистику и возвраты. Отметка «по подключению данные идут»
+        // такое не ловит.
+        self::assertSame([$this->key($account, MarketplaceReportType::OzonAccrualByDay)], $alerted);
+
+        $email = $mailer->messages[0] ?? null;
+        self::assertInstanceOf(Email::class, $email);
+        $body = (string) $email->getTextBody();
+        self::assertStringContainsString('расходы', $body);
+        self::assertStringNotContainsString('продажи', $body);
     }
 
     public function testAccountWithRecentDataIsSilent(): void
@@ -54,17 +87,30 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         $container = $this->bootedContainer();
         $account = $this->activeAccount($container);
 
-        MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
-            ->withCompanyId($account->companyId())
-            ->withMarketplaceAccountId($account->id())
-            ->withReceivedAt(new \DateTimeImmutable('-1 hour'))
-            ->persistWith(new DoctrineMarketplaceRawDocumentRepository($this->connection($container)));
+        $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
+        $this->uploaded($container, $account, MarketplaceReportType::OzonAccrualByDay);
 
         $mailer = $this->recordingMailer();
         $alerted = ($this->action($container, $mailer))();
 
         self::assertSame([], $alerted);
         self::assertSame([], $mailer->messages);
+    }
+
+    public function testCatalogUploadDoesNotCountAsFreshness(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container);
+
+        // Каталог идёт тем же тиком и потому обновляется даже тогда,
+        // когда всё остальное встало. Считать его признаком жизни
+        // означало бы молчать ровно в этом случае.
+        $this->uploaded($container, $account, MarketplaceReportType::OzonProductList);
+
+        $mailer = $this->recordingMailer();
+        $alerted = ($this->action($container, $mailer))();
+
+        self::assertCount(2, $alerted);
     }
 
     public function testSecondTickDoesNotRepeatTheSameLetter(): void
@@ -114,7 +160,13 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         $mailer = $this->recordingMailer();
         $retried = ($this->action($container, $mailer, $locks))();
 
-        self::assertSame([$this->key($account)], $retried);
+        self::assertSame(
+            [
+                $this->key($account, MarketplaceReportType::OzonPostingFboList),
+                $this->key($account, MarketplaceReportType::OzonAccrualByDay),
+            ],
+            $retried,
+        );
         self::assertCount(1, $mailer->messages);
     }
 
@@ -149,12 +201,23 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
             ->persistWith($companies, $marketplaceAccounts);
     }
 
-    private function key(MarketplaceAccount $account): string
+    private function key(MarketplaceAccount $account, string $reportType): string
     {
         return RecentlyIngestedAccountsQuery::key(
             $account->companyId()->toRfc4122(),
             $account->id()->toRfc4122(),
+            $reportType,
         );
+    }
+
+    private function uploaded(ContainerInterface $container, MarketplaceAccount $account, string $reportType): void
+    {
+        MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
+            ->withCompanyId($account->companyId())
+            ->withMarketplaceAccountId($account->id())
+            ->withReportType($reportType)
+            ->withReceivedAt(new \DateTimeImmutable('-1 hour'))
+            ->persistWith(new DoctrineMarketplaceRawDocumentRepository($this->connection($container)));
     }
 
     private function connection(ContainerInterface $container): Connection
