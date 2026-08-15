@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
 
-type Tone = "default" | "negative";
+type Tone = "default" | "negative" | "warning";
 
 const TONE: Record<Tone, string> = {
   default: "border-border-default",
   negative: "border-negative-border",
+  // Токены warning заданы в theme.css вместе с остальными и уже
+  // используются Badge — здесь тот же набор, не новый цвет.
+  warning: "border-warning-border",
 };
 
 // Поверхность из макета: surface/raised, border/default, радиус 12

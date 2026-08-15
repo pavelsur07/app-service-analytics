@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, CircleX, Wallet } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  CircleX,
+  TriangleAlert,
+  Wallet,
+} from 'lucide-react'
 import { useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../../api/ApiError'
 import {
@@ -93,6 +99,23 @@ export function UnitEconomicsPage() {
           учтена. Расходы приходят от Ozon позже продажи, поэтому за последние
           дни картина неполная.
         </p>
+
+        {/* Подпись выше говорит про хвост последних дней — это свойство
+            источника. Здесь другое: за эти дни выгрузка расходов не
+            проходила вовсе, и маржа завышена на всю логистику и возвраты.
+            Молчать об этом нельзя — по цифрам такой день неотличим
+            от честного. */}
+        {query.status === 'success' && query.data.daysWithoutExpenses > 0 && (
+          <Card tone="warning">
+            <StatusPanel
+              description={`Расходы загружены не за весь период: за ${query.data.daysWithoutExpenses} из ${days} дней их нет, и маржа за эти дни завышена.`}
+              icon={<TriangleAlert aria-hidden="true" size={20} />}
+              role="status"
+              title="Период посчитан не полностью"
+              tone="warning"
+            />
+          </Card>
+        )}
 
         {query.status === 'pending' && (
           <Card>

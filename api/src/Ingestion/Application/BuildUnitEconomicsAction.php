@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Application;
 
 use App\Ingestion\Domain\OzonFeeTypeNames;
+use App\Ingestion\Infrastructure\Query\ExpenseCoverageQuery;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsCursor;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsExpenseRow;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsQuery;
@@ -25,6 +26,7 @@ final readonly class BuildUnitEconomicsAction
 {
     public function __construct(
         private UnitEconomicsQuery $query,
+        private ExpenseCoverageQuery $coverage,
     ) {
     }
 
@@ -63,10 +65,31 @@ final readonly class BuildUnitEconomicsAction
             cabinetExpenses: $this->grouped($cabinet),
             cabinetExpensesTotalMinor: $this->total($cabinet),
             currency: $currency,
+            // Покрытие считается по всему окну, а не по странице: дыра
+            // в расходах — свойство периода, и на второй странице она
+            // не должна исчезать.
+            daysWithoutExpenses: $this->daysWithoutExpenses($companyId, $from, $to),
             nextCursor: $hasMore && null !== $last
                 ? (new UnitEconomicsCursor($last->deliveredAmountMinor, $last->marketplaceSku))->toString()
                 : null,
         );
+    }
+
+    private function daysWithoutExpenses(string $companyId, \DateTimeImmutable $from, \DateTimeImmutable $to): int
+    {
+        $days = $this->coverage->daysWithoutExpenses($companyId, $from, $to)->executeQuery()->fetchOne();
+
+        // COUNT в PostgreSQL — bigint, и DBAL отдаёт его строкой:
+        // приводим явно, тем же приёмом, что UnitEconomicsQuery::intValue.
+        if (\is_int($days)) {
+            return $days;
+        }
+
+        if (\is_string($days) && 1 === preg_match('/^\d+$/', $days)) {
+            return (int) $days;
+        }
+
+        throw new \UnexpectedValueException('Expected an integer count of days without expenses.');
     }
 
     /**
