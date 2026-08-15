@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Ingestion;
 
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceRawDocumentRepository;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
@@ -22,7 +23,7 @@ final class RecentlyIngestedAccountsQueryTest extends KernelTestCase
         $this->document($companyId, $accountId, new \DateTimeImmutable('-1 hour'));
 
         self::assertContains(
-            RecentlyIngestedAccountsQuery::key($companyId->toRfc4122(), $accountId->toRfc4122()),
+            $this->key($companyId, $accountId),
             $this->freshKeys(),
         );
     }
@@ -39,7 +40,7 @@ final class RecentlyIngestedAccountsQueryTest extends KernelTestCase
         $this->document($companyId, $accountId, new \DateTimeImmutable('-3 days'));
 
         self::assertNotContains(
-            RecentlyIngestedAccountsQuery::key($companyId->toRfc4122(), $accountId->toRfc4122()),
+            $this->key($companyId, $accountId),
             $this->freshKeys(),
         );
     }
@@ -61,8 +62,8 @@ final class RecentlyIngestedAccountsQueryTest extends KernelTestCase
         $this->document($ours, $accountId, new \DateTimeImmutable('-3 days'));
 
         $fresh = $this->freshKeys();
-        self::assertContains(RecentlyIngestedAccountsQuery::key($theirs->toRfc4122(), $accountId->toRfc4122()), $fresh);
-        self::assertNotContains(RecentlyIngestedAccountsQuery::key($ours->toRfc4122(), $accountId->toRfc4122()), $fresh);
+        self::assertContains($this->key($theirs, $accountId), $fresh);
+        self::assertNotContains($this->key($ours, $accountId), $fresh);
     }
 
     /**
@@ -72,15 +73,26 @@ final class RecentlyIngestedAccountsQueryTest extends KernelTestCase
     {
         $query = new RecentlyIngestedAccountsQuery($this->connection());
 
-        $rows = $query->build(new \DateTimeImmutable('-36 hours'))->executeQuery()->fetchAllAssociative();
+        $rows = $query->build(new \DateTimeImmutable('-36 hours'), [MarketplaceReportType::OzonPostingFboList])
+            ->executeQuery()
+            ->fetchAllAssociative();
 
         return array_map(
             static function (array $row): string {
                 $fresh = RecentlyIngestedAccountsQuery::mapRow($row);
 
-                return RecentlyIngestedAccountsQuery::key($fresh->companyId, $fresh->marketplaceAccountId);
+                return RecentlyIngestedAccountsQuery::key($fresh->companyId, $fresh->marketplaceAccountId, $fresh->reportType);
             },
             $rows,
+        );
+    }
+
+    private function key(Uuid $companyId, Uuid $accountId): string
+    {
+        return RecentlyIngestedAccountsQuery::key(
+            $companyId->toRfc4122(),
+            $accountId->toRfc4122(),
+            MarketplaceReportType::OzonPostingFboList,
         );
     }
 

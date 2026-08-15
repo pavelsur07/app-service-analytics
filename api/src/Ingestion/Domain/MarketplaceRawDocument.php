@@ -30,9 +30,14 @@ use Symfony\Component\Uid\Uuid;
 )]
 #[ORM\Index(name: 'idx_marketplace_raw_document_company_id', columns: ['company_id'])]
 // Контроль свежести данных (NotifyStaleAccountsAction): диапазон
-// по received_at с группировкой по подключению. Порядок столбцов —
-// ради index-only scan, см. RecentlyIngestedAccountsQuery.
-#[ORM\Index(name: 'idx_marketplace_raw_document_received_at', columns: ['received_at', 'company_id', 'marketplace_account_id'])]
+// по received_at с группировкой по подключению и типу отчёта. Порядок
+// столбцов — ради index-only scan, см. RecentlyIngestedAccountsQuery.
+//
+// report_type дописан четвёртым, а не поставлен первым: ведущим столбцом
+// обязан остаться диапазон по времени — это единственное неравенство
+// в запросе, и всё, что встанет перед ним, придётся сканировать целиком.
+// Отслеживаемых типов сегодня два из трёх, отсечение по ним экономит мало.
+#[ORM\Index(name: 'idx_marketplace_raw_document_received_at', columns: ['received_at', 'company_id', 'marketplace_account_id', 'report_type'])]
 class MarketplaceRawDocument
 {
     #[ORM\Id]
