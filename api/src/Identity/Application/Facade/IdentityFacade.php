@@ -6,6 +6,8 @@ namespace App\Identity\Application\Facade;
 
 use App\Identity\Application\MarkMarketplaceAccountBrokenAction;
 use App\Identity\Application\ReplaceMarketplaceCredentialsAction;
+use App\Identity\Domain\AuditRecord;
+use App\Identity\Domain\AuditRecordRepository;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\ReplaceCredentialsOutcome;
@@ -29,6 +31,7 @@ final class IdentityFacade
         private readonly MarkMarketplaceAccountBrokenAction $markAccountBroken,
         private readonly CompanyConnectionsQuery $connections,
         private readonly ReplaceMarketplaceCredentialsAction $replaceCredentials,
+        private readonly AuditRecordRepository $auditRecords,
     ) {
     }
 
@@ -143,5 +146,41 @@ final class IdentityFacade
     public function markOzonAccountBroken(string $companyId, string $marketplaceAccountId): bool
     {
         return ($this->markAccountBroken)($companyId, $marketplaceAccountId);
+    }
+
+    /**
+     * Ставит запись аудит-журнала в единицу работы — фиксирует её тот же
+     * flush, что и сущность, которую она описывает (AuditRecordRepository).
+     * Иначе журнал и изменение расходились бы при отказе на полпути,
+     * а журнал, в котором нет части изменений, хуже отсутствующего:
+     * ему верят.
+     *
+     * Действие — строка, и её смысл принадлежит вызывающему модулю.
+     * Identity здесь только хранит журнал и не знает, что такое
+     * «себестоимость»: зависимости строго вниз, и обратное знание
+     * сделало бы Identity зависимым от Ingestion.
+     *
+     * Метод общий, а не «записать изменение себестоимости», по той же
+     * причине. Узкий он только в одном: запись создаётся здесь, и снаружи
+     * нельзя ни изменить, ни удалить уже записанное — журнал, который
+     * можно поправить, журналом не является.
+     */
+    public function recordAuditEntry(
+        string $companyId,
+        string $actorUserId,
+        string $action,
+        string $subjectId,
+        ?string $previousValue,
+        ?string $newValue,
+    ): void {
+        $this->auditRecords->addToUnitOfWork(AuditRecord::record(
+            companyId: Uuid::fromString($companyId),
+            actorUserId: Uuid::fromString($actorUserId),
+            action: $action,
+            subjectId: Uuid::fromString($subjectId),
+            previousValue: $previousValue,
+            newValue: $newValue,
+            occurredAt: new \DateTimeImmutable(),
+        ));
     }
 }

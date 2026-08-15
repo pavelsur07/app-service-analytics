@@ -43,7 +43,12 @@ final class ListCompanyConnectionsActionTest extends KernelTestCase
 
         self::assertCount(1, $connections);
         self::assertSame('active', $connections[0]->state);
-        self::assertSame(
+        // assertEquals, а не assertSame: у ассоциативного массива
+        // последний сравнивает и порядок ключей, а порядок здесь ничей
+        // не контракт — свежесть по типам это отображение, и запрос
+        // не сортирует. С assertSame тест краснел раз через раз,
+        // в зависимости от того, в каком порядке PostgreSQL вернул строки.
+        self::assertEquals(
             [
                 MarketplaceReportType::OzonPostingFboList => '2026-08-10T09:00:00+00:00',
                 MarketplaceReportType::OzonProductList => '2026-08-14T09:00:00+00:00',
