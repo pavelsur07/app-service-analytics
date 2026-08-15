@@ -4,6 +4,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 import { CompanyListPage } from '../features/auth/ui/CompanyListPage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
 import { ConnectionsPage } from '../features/connections/ui/ConnectionsPage'
+import { ListingCostsPage } from '../features/costs/ui/ListingCostsPage'
 import { ExtensionConnectPage } from '../features/extension/ui/ExtensionConnectPage'
 import { SalesFactsPage } from '../features/ingestion/ui/SalesFactsPage'
 import { UnitEconomicsPage } from '../features/unit-economics/ui/UnitEconomicsPage'
@@ -45,6 +46,7 @@ const router = createBrowserRouter([
       { path: 'extension', element: <ExtensionConnectPage /> },
       { path: 'connections', element: <ConnectionsPage /> },
       { path: 'unit-economics', element: <UnitEconomicsPage /> },
+      { path: 'costs', element: <ListingCostsPage /> },
     ],
   },
 ])

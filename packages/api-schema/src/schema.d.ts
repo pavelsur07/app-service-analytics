@@ -84,6 +84,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/listing-costs/{costId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_ingestion_listing_cost_correct"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/extension/companies/{companyId}/skus": {
         parameters: {
             query?: never;
@@ -110,6 +126,22 @@ export interface paths {
         get: operations["get_ingestion_company_connections"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/listing-costs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_listing_costs_list"];
+        put?: never;
+        post: operations["post_ingestion_listing_cost_set"];
         delete?: never;
         options?: never;
         head?: never;
@@ -263,6 +295,36 @@ export interface components {
         };
         ConnectionsResponse: {
             connections: components["schemas"]["ConnectionResponse"][];
+        };
+        ListingCostItemResponse: {
+            marketplaceSku: string;
+            marketplaceAccountId: string;
+            /** Артикул продавца — то, как товар называет он сам. */
+            offerId?: string | null;
+            name?: string | null;
+            revenueMinor: number;
+            deliveredQuantity: number;
+            costId?: string | null;
+            unitCostMinor?: number | null;
+            costCurrency?: string | null;
+            costEffectiveFrom?: string | null;
+            costVersion?: number | null;
+            /**
+             * Продано штук с даты действия цены — число для предупреждения
+             *     перед исправлением: оно затронет столько-то проданных единиц.
+             */
+            deliveredSinceCost?: number | null;
+        };
+        ListingCostListResponse: {
+            from: string;
+            to: string;
+            on: string;
+            items: components["schemas"]["ListingCostItemResponse"][];
+            /** Всего карточек у компании. */
+            listingCount: number;
+            /** Из них с заданной себестоимостью на дату $on. */
+            pricedCount: number;
+            nextCursor?: string | null;
         };
         SalesFactListItemResponse: {
             marketplaceAccountId: string;
@@ -479,6 +541,74 @@ export interface operations {
             };
         };
     };
+    put_ingestion_listing_cost_correct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                costId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Исправленная себестоимость в минорных единицах */
+                    unitCostMinor: number;
+                    /** @description Та же валюта, что у позиции: смена валюты исправлением запрещена (ADR-004) */
+                    currency: string;
+                    /** @description Версия позиции из ответа списка (ADR-008) */
+                    version: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Исправлено; отчёты за прошедшие дни пересчитаны */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description У этой компании нет такой позиции */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Позицию изменил кто-то ещё — перечитать и повторить (ADR-008) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Тело запроса некорректно либо валюта отличается от валюты позиции */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     get_ingestion_extension_company_skus: {
         parameters: {
             query?: {
@@ -545,6 +675,116 @@ export interface operations {
             };
             /** @description Пользователь не состоит в этой компании */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_listing_costs_list: {
+        parameters: {
+            query?: {
+                /** @description Окно в днях, по выручке за которое отсортирован список */
+                days?: number;
+                limit?: number;
+                /** @description Курсор следующей страницы из предыдущего ответа */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Карточки с выручкой и действующей себестоимостью */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingCostListResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректные days, limit или cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_ingestion_listing_cost_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    marketplaceAccountId: string;
+                    marketplaceSku: string;
+                    /**
+                     * Format: date
+                     * @description С какой бизнес-даты цена действует
+                     */
+                    effectiveFrom: string;
+                    /** @description Себестоимость единицы в минорных единицах — копейках (ADR-004) */
+                    unitCostMinor: number;
+                    /** @description Код валюты ISO 4217; умолчания нет */
+                    currency: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Цена сохранена */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Цена с этой датой уже задана — её нужно исправлять, а не заводить вторую */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Тело запроса некорректно */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
