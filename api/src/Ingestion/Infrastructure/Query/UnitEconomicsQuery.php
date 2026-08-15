@@ -119,7 +119,7 @@ final readonly class UnitEconomicsQuery
             ->setMaxResults($limit + 1);
 
         if (null !== $cursor) {
-            $qb->andWhere('(delivered_amount_minor, marketplace_sku) < (:cursorAmount, :cursorSku)')
+            $qb->andWhere($cursor->after('delivered_amount_minor'))
                 ->setParameter('cursorAmount', $cursor->deliveredAmountMinor)
                 ->setParameter('cursorSku', $cursor->marketplaceSku);
         }

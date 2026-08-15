@@ -12,6 +12,7 @@ use App\Ingestion\Infrastructure\Query\UnitEconomicsQuery;
 use App\Ingestion\Ui\Response\UnitEconomicsExpenseResponse;
 use App\Ingestion\Ui\Response\UnitEconomicsResponse;
 use App\Ingestion\Ui\Response\UnitEconomicsSkuResponse;
+use App\Shared\Ui\QueryParameter;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
@@ -86,12 +87,8 @@ final class ShowUnitEconomicsController
     )]
     public function __invoke(string $companyId, Request $request): JsonResponse
     {
-        $days = self::DEFAULT_DAYS;
-        if ($request->query->has('days')) {
-            $days = (int) $request->query->get('days');
-        }
-
-        if ($days < 1 || $days > self::MAX_DAYS) {
+        $days = QueryParameter::int($request, 'days', self::DEFAULT_DAYS);
+        if (null === $days || $days < 1 || $days > self::MAX_DAYS) {
             return new JsonResponse(
                 new ValidationErrorResponse(
                     status: Response::HTTP_UNPROCESSABLE_ENTITY,
@@ -108,12 +105,8 @@ final class ShowUnitEconomicsController
         $to = (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))->setTime(0, 0);
         $from = $to->modify(\sprintf('-%d day', $days - 1));
 
-        $limit = self::DEFAULT_LIMIT;
-        if ($request->query->has('limit')) {
-            $limit = (int) $request->query->get('limit');
-        }
-
-        if ($limit < 1 || $limit > self::MAX_LIMIT) {
+        $limit = QueryParameter::int($request, 'limit', self::DEFAULT_LIMIT);
+        if (null === $limit || $limit < 1 || $limit > self::MAX_LIMIT) {
             // Превышение потолка — 422, а не тихая обрезка до максимума
             // (§5): клиент, попросивший тысячу строк, должен узнать,
             // что получил не тысячу.
