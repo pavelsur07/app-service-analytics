@@ -39,7 +39,7 @@ final readonly class OzonPostingFboListClient implements OzonPostingsFetcher
         string $apiKey,
         \DateTimeImmutable $since,
         \DateTimeImmutable $to,
-        int $limit = 1000,
+        int $limit = OzonPostingsFetcher::MAX_LIMIT,
         int $offset = 0,
     ): string {
         $response = $this->httpClient->request('POST', self::ENDPOINT, [

@@ -46,21 +46,16 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
         $tester->assertCommandIsSuccessful();
 
         $sent = $this->transport($container)->getSent();
-        // Пять задач на подключение: продажи за сегодня, каталог целиком
-        // и расходы за каждый день окна. Окно у расходов есть, а у продаж
-        // нет, потому что начисление приходит позже продажи — иногда
-        // на недели, и день, загруженный один раз, назавтра уже неполон.
-        self::assertCount(10, $sent);
 
-        $postingTargets = [];
+        $postingDates = [];
         $catalogTargets = [];
         $expenseDates = [];
         foreach ($sent as $envelope) {
             $message = $envelope->getMessage();
             if ($message instanceof FetchOzonPostingsMessage) {
-                $postingTargets[] = $message->marketplaceAccountId;
+                $postingDates[$message->marketplaceAccountId][] = $message->businessDate;
             } elseif ($message instanceof FetchOzonCatalogMessage) {
-                $catalogTargets[] = $message->marketplaceAccountId;
+                $catalogTargets[$message->marketplaceAccountId][] = $message->marketplaceAccountId;
             } elseif ($message instanceof FetchOzonExpensesMessage) {
                 $expenseDates[$message->marketplaceAccountId][] = $message->accrualDate;
             } else {
@@ -69,24 +64,25 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
         }
 
         $today = new \DateTimeImmutable('now', new \DateTimeZone('Europe/Moscow'));
+        $window = [
+            $today->format('Y-m-d'),
+            $today->modify('-1 day')->format('Y-m-d'),
+            $today->modify('-2 day')->format('Y-m-d'),
+        ];
+
         foreach ([$accountA, $accountB] as $account) {
             $id = $account->id()->toRfc4122();
-            self::assertContains($id, $postingTargets);
-            self::assertContains($id, $catalogTargets);
-            self::assertSame(
-                [
-                    $today->format('Y-m-d'),
-                    $today->modify('-1 day')->format('Y-m-d'),
-                    $today->modify('-2 day')->format('Y-m-d'),
-                ],
-                $expenseDates[$id] ?? [],
-            );
-        }
+            self::assertSame([$id], array_values(array_unique($catalogTargets[$id] ?? [])));
+            self::assertSame($window, $expenseDates[$id] ?? []);
 
-        $today = new \DateTimeImmutable('now', new \DateTimeZone('Europe/Moscow'));
-        $firstMessage = $sent[0]->getMessage();
-        self::assertInstanceOf(FetchOzonPostingsMessage::class, $firstMessage);
-        self::assertSame($today->format('Y-m-d'), $firstMessage->businessDate);
+            // Окно продаж — не «сегодня»: заказ меняет статус после
+            // загрузки, и день, спрошенный один раз, застывает
+            // (DispatchActiveOzonSyncsAction). Точное число дней здесь
+            // не проверяется намеренно: в час глубокого рескана оно
+            // другое, и жёсткое равенство сделало бы тест зависящим
+            // от времени суток.
+            self::assertSame($window, \array_slice($postingDates[$id] ?? [], 0, 3));
+        }
     }
 
     public function testOnceSkipsTickWhenLockAlreadyHeld(): void
@@ -115,9 +111,11 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
 
         $tester = $this->commandTester();
         $tester->execute(['--once' => true]);
-        // Одно подключение — пять задач: продажи, каталог и расходы
-        // за три дня окна.
-        self::assertCount(5, $this->transport($container)->getSent());
+        // Предмет теста — что замок отпущен и тик состоялся, а не сколько
+        // именно задач он поставил: число дней в окне продаж зависит
+        // от часа (глубокий рескан), и жёсткое равенство сделало бы
+        // тест зависящим от времени суток.
+        self::assertNotEmpty($this->transport($container)->getSent());
     }
 
     private function bootedContainer(): ContainerInterface

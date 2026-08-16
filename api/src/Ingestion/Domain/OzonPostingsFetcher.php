@@ -13,6 +13,14 @@ namespace App\Ingestion\Domain;
 interface OzonPostingsFetcher
 {
     /**
+     * Потолок страницы у метода площадки. Живёт в контракте, а не
+     * в реализации: ответ ровно в потолок — признак непоместившегося
+     * дня, и распознаёт его вызывающий сценарий, который о конкретном
+     * HTTP-клиенте ничего не знает.
+     */
+    public const int MAX_LIMIT = 1000;
+
+    /**
      * Возвращает тело ответа как есть, без разбора (см. OzonPostingFboListClient).
      */
     public function fetch(
