@@ -2,9 +2,11 @@ import { Navigate, Outlet, useParams } from 'react-router'
 
 import { RequireAuth } from './RequireAuth'
 import { Sidebar } from './Sidebar'
+import { Topbar } from './Topbar'
 
 /**
- * Оболочка всего, что внутри компании: сайдбар слева, экран справа.
+ * Оболочка всего, что внутри компании: шапка сверху, сайдбар слева,
+ * экран справа.
  *
  * Это маршрут, а не компонент на странице. Причина в том, что companyId
  * уже первым сегментом пути (CLAUDE.md §1), и смена компании — тот же
@@ -25,11 +27,17 @@ export function CompanyLayout() {
 
   return (
     <RequireAuth>
-      <div className="flex min-h-screen bg-bg-base">
-        <Sidebar companyId={companyId} />
-        <main className="min-w-0 flex-1">
-          <Outlet />
-        </main>
+      {/* Шапка на всю ширину над сайдбаром, а не внутри контента —
+          как в ките (раздел 14, эталонные экраны): компания и свежесть
+          данных не должны уезжать вместе со скроллом экрана. */}
+      <div className="flex min-h-screen flex-col bg-bg-base">
+        <Topbar companyId={companyId} />
+        <div className="flex flex-1">
+          <Sidebar />
+          <main className="min-w-0 flex-1">
+            <Outlet />
+          </main>
+        </div>
       </div>
     </RequireAuth>
   )
