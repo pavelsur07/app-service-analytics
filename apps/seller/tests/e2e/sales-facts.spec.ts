@@ -96,9 +96,10 @@ test.describe('sales facts', () => {
     await loginAndOpen(page, companyId ?? '')
     await expect(page.locator('tbody tr').first()).toBeVisible()
 
-    // Возврат к списку — через название компании в шапке сайдбара.
-    const nav = page.getByRole('navigation', { name: 'Разделы компании' })
-    await nav.getByRole('link', { name: 'E2E Sandbox LLC' }).click()
+    // Возврат к списку — через переключатель компании в топбаре
+    // (docs/design/ui-kit/v0.4.html, раздел 10): в сайдбаре его больше нет.
+    const topbar = page.getByRole('banner')
+    await topbar.getByRole('link', { name: 'E2E Sandbox LLC' }).click()
     await expect(page).toHaveURL('/companies')
 
     await page.getByRole('link', { name: 'E2E Sandbox Two' }).click()
@@ -109,7 +110,7 @@ test.describe('sales facts', () => {
     // бэкенд при этом отработал бы правильно, и заметить было бы нечем.
     await expect(page.locator('tbody tr')).toHaveCount(0)
     await expect(
-      nav.getByRole('link', { name: 'E2E Sandbox Two' }),
+      topbar.getByRole('link', { name: 'E2E Sandbox Two' }),
     ).toBeVisible()
   })
 

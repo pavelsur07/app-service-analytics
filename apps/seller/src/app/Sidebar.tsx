@@ -5,11 +5,14 @@ import { Button } from '../../../../packages/ui/src'
 import { useCurrentUser } from '../features/auth/model/useCurrentUser'
 import { useLogout } from '../features/auth/model/useLogout'
 
-// Раскладка навигации — эталон docs/design/ui-kit/v0.2.html, раздел 08:
-// ширина 240, элемент высотой 36 с отступом 8 и радиусом 6, активный —
-// accent-subtle с accent-hover и полужирным.
+// Раскладка навигации — эталон docs/design/ui-kit/v0.4.html, раздел 14:
+// ширина 240, поле 16 сверху и 12 по бокам, шаг 4, элемент высотой 36
+// с отступом 8 и радиусом 6, активный — accent-subtle с accent-hover
+// и полужирным.
+// no-underline — глобальное a:hover подчёркивает ссылки, а пункт меню
+// в ките на наведении меняет только фон.
 const ITEM =
-  'flex h-9 items-center gap-3 rounded-md px-2 text-sm ' +
+  'flex h-9 items-center gap-3 rounded-md px-2 text-sm no-underline ' +
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-default'
 const ITEM_ACTIVE = 'bg-accent-subtle font-semibold text-accent-hover'
 const ITEM_IDLE = 'text-text-secondary hover:bg-surface-hover'
@@ -30,29 +33,18 @@ const ITEMS = [
   { to: 'connections', label: 'Подключения', icon: Plug },
 ] as const
 
-export function Sidebar({ companyId }: { companyId: string }) {
+export function Sidebar() {
   const currentUser = useCurrentUser()
   const logout = useLogout()
-
-  const company = currentUser.data?.companies.find(
-    (candidate) => candidate.id === companyId,
-  )
 
   return (
     <nav
       aria-label="Разделы компании"
-      className="flex h-full w-60 flex-col gap-1 border-r border-border-default bg-surface-raised p-3"
+      className="flex w-60 flex-col gap-1 border-r border-border-default bg-surface-raised px-3 py-4"
     >
-      {/* Название компании — ссылка на выбор: у первого клиента компания
-          одна, и выпадающий список был бы списком из одного пункта.
-          Экран выбора уже существует, ведём на него. */}
-      <NavLink
-        to="/companies"
-        className="mb-2 truncate rounded-md px-2 py-1 text-sm font-semibold text-text-primary hover:bg-surface-hover"
-      >
-        {company?.name ?? 'Компания'}
-      </NavLink>
-
+      {/* Компании здесь больше нет: переключатель переехал в шапку,
+          как в ките. Дублировать его в двух местах — верный способ
+          получить два разных ответа на вопрос «в какой я компании». */}
       {ITEMS.map(({ to, label, icon: Icon }) => (
         <NavLink
           key={to}
