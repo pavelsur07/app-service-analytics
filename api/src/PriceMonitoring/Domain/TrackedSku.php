@@ -20,11 +20,11 @@ use Symfony\Component\Uid\Uuid;
  * `created_by_user_id`) — скалярные поля без `#[ManyToOne]`: связь
  * по идентификатору, не Doctrine-ассоциация (CLAUDE.md §6).
  *
- * `created_by_user_id` намеренно без своего индекса — то же решение
- * и по той же причине, что у `ExtensionToken::$revokedByUserId`: это
- * поле следа, по нему не фильтруют и не соединяют. Ни один запрос
- * не начинается с «кто включил отслеживание»; индекс, которым
- * не пользуются, оплачивается на каждой записи.
+ * `created_by_user_id` — ссылка на `User` чужого модуля, и §6 требует
+ * индекс в той же миграции без оговорок про размер таблицы: составной,
+ * `company_id` первым столбцом (§1). Оговорка у
+ * `ExtensionToken::$revokedByUserId` сюда не переносится — там и токен,
+ * и пользователь живут в Identity, то есть правило не срабатывает вовсе.
  *
  * ORM эту таблицу не пишет, хотя данные и редактирует человек
  * (CLAUDE.md §6). Причина не в характере данных, а в характере записи:
@@ -40,6 +40,7 @@ use Symfony\Component\Uid\Uuid;
     name: 'uq_tracked_sku_company_account_sku',
     columns: ['company_id', 'marketplace_account_id', 'marketplace_sku'],
 )]
+#[ORM\Index(name: 'idx_tracked_sku_company_created_by', columns: ['company_id', 'created_by_user_id'])]
 class TrackedSku
 {
     #[ORM\Id]

@@ -223,7 +223,30 @@ final class TrackedSkuControllerTest extends WebTestCase
     {
         $client = static::createClient();
         $fixture = $this->connectedCompany();
+        $this->fillToTheLimit($fixture);
 
+        $this->start($client, $fixture, '100000001');
+        self::assertResponseStatusCodeSame(422);
+        self::assertSame('tracked_sku_limit_reached', $this->payload($client)['code']);
+    }
+
+    public function testTheLimitDoesNotBreakARetryOfTheLastSku(): void
+    {
+        $client = static::createClient();
+        $fixture = $this->connectedCompany();
+        $this->fillToTheLimit($fixture);
+
+        // Ровно тот случай, ради которого включение идемпотентно:
+        // расширение отправило запрос, ответ потерялся в сети, запрос
+        // повторён. Потолок обязан отсекать новый артикул, а не повтор
+        // уже принятого — иначе клиент получает отказ на действие,
+        // которое в прошлый раз прошло.
+        $this->start($client, $fixture, '200000049');
+        self::assertResponseStatusCodeSame(200);
+    }
+
+    private function fillToTheLimit(ConnectedCompany $fixture): void
+    {
         for ($i = 0; $i < StartTrackingAction::MAX_TRACKED; ++$i) {
             TrackedSkuBuilder::aTrackedSku()
                 ->withCompany($fixture->company)
@@ -231,10 +254,6 @@ final class TrackedSkuControllerTest extends WebTestCase
                 ->withMarketplaceSku(\sprintf('2000000%02d', $i))
                 ->persistWith($this->trackedSkus());
         }
-
-        $this->start($client, $fixture, '100000001');
-        self::assertResponseStatusCodeSame(422);
-        self::assertSame('tracked_sku_limit_reached', $this->payload($client)['code']);
     }
 
     public function testMalformedInputIsRejected(): void

@@ -35,8 +35,15 @@ interface TrackedSkuRepository
     public function stopIfActive(string $companyId, string $marketplaceSku, \DateTimeImmutable $at): bool;
 
     /**
-     * Сколько артикулов компания отслеживает сейчас. Нужен потолку
-     * на список — см. `StartTrackingAction`.
+     * Сколько **других** артикулов компания отслеживает сейчас. Нужен
+     * потолку на список — см. `StartTrackingAction`.
+     *
+     * Исключение самого артикула — не мелочь, а условие идемпотентности
+     * на границе. Считая его вместе со всеми, повторная отправка
+     * пятидесятого артикула (например, после сетевого таймаута) упиралась
+     * бы в потолок и получала отказ на действие, которое в прошлый раз
+     * прошло, — то есть ровно в том случае, ради которого идемпотентность
+     * и существует.
      */
-    public function countActive(string $companyId): int;
+    public function countActiveExcluding(string $companyId, string $marketplaceSku): int;
 }

@@ -82,16 +82,22 @@ final readonly class DoctrineTrackedSkuRepository implements TrackedSkuRepositor
         return $affected > 0;
     }
 
-    public function countActive(string $companyId): int
+    public function countActiveExcluding(string $companyId, string $marketplaceSku): int
     {
         // COUNT(*) здесь допустим: запрет §5 написан для факт-таблиц,
         // а у этой на компанию несколько десятков строк по построению —
         // потолок, ради которого этот счёт и делается.
         $count = $this->connection->fetchOne(
-            'SELECT COUNT(*) FROM tracked_sku WHERE company_id = :companyId AND status = :active',
+            <<<'SQL'
+                SELECT COUNT(*) FROM tracked_sku
+                WHERE company_id = :companyId
+                  AND status = :active
+                  AND marketplace_sku <> :marketplaceSku
+                SQL,
             [
                 'companyId' => $companyId,
                 'active' => TrackedSkuStatus::Active->value,
+                'marketplaceSku' => $marketplaceSku,
             ],
         );
 

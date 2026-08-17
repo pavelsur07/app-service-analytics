@@ -23,9 +23,11 @@ use Doctrine\Migrations\AbstractMigration;
  * и индекс, оплачиваемый на каждой записи, экономил бы сортировку
  * пятидесяти строк.
  *
- * `created_by_user_id` без индекса — поле следа, по нему не фильтруют
- * и не соединяют; то же решение и та же причина, что
- * у `extension_token.revoked_by_user_id`.
+ * `created_by_user_id` индекс получает: это ссылка на `User` чужого
+ * модуля, а §6 требует индекс в той же миграции и оговорки про размер
+ * таблицы не делает. Составной, `company_id` первым столбцом (§1).
+ * Оговорка у `extension_token.revoked_by_user_id` сюда не переносится:
+ * там оба конца ссылки живут в Identity, и правило не срабатывает.
  *
  * Новая таблица, существующие не трогаются: правило совместимых
  * изменений здесь неприменимо, откатывается удалением.
@@ -41,6 +43,7 @@ final class Version20260817182921 extends AbstractMigration
     {
         $this->addSql('CREATE TABLE tracked_sku (id UUID NOT NULL, company_id UUID NOT NULL, marketplace_account_id UUID NOT NULL, marketplace_sku VARCHAR(64) NOT NULL, status VARCHAR(16) NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, created_by_user_id UUID NOT NULL, stopped_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, PRIMARY KEY (id))');
         $this->addSql('CREATE UNIQUE INDEX uq_tracked_sku_company_account_sku ON tracked_sku (company_id, marketplace_account_id, marketplace_sku)');
+        $this->addSql('CREATE INDEX idx_tracked_sku_company_created_by ON tracked_sku (company_id, created_by_user_id)');
     }
 
     public function down(Schema $schema): void
