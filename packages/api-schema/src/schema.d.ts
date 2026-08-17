@@ -212,6 +212,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/extension/companies/{companyId}/tracked-skus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_price_monitoring_extension_tracked_skus"];
+        put?: never;
+        post: operations["post_price_monitoring_extension_start_tracking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/extension/companies/{companyId}/tracked-skus/{marketplaceSku}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_price_monitoring_extension_stop_tracking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/ping": {
         parameters: {
             query?: never;
@@ -399,6 +431,10 @@ export interface components {
              *     маржа за них завышена. Ноль — отчёт полон.
              */
             daysWithoutExpenses: number;
+            nextCursor?: string | null;
+        };
+        TrackedSkuListResponse: {
+            items: string[];
             nextCursor?: string | null;
         };
         AppInfoResponse: {
@@ -990,6 +1026,170 @@ export interface operations {
             };
             /** @description Некорректный days */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_price_monitoring_extension_tracked_skus: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description Артикул из nextCursor предыдущей страницы */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Отслеживаемые артикулы компании, keyset-пагинация по самому артикулу */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackedSkuListResponse"];
+                };
+            };
+            /** @description Токен отсутствует или недействителен */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Компания недоступна этому токену */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректный limit */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_price_monitoring_extension_start_tracking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Артикул площадки с открытой карточки */
+                    marketplaceSku: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Артикул отслеживается; повторный вызов не создаёт второй записи */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Токен отсутствует или недействителен */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Компания недоступна этому токену */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description У компании больше одного активного подключения Ozon — к какому привязать, решать не нам */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректный артикул, нет активного подключения Ozon либо достигнут потолок отслеживаемых артикулов */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_price_monitoring_extension_stop_tracking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                marketplaceSku: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Отслеживание остановлено */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Токен отсутствует или недействителен */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Компания недоступна этому токену */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Этот артикул компания не отслеживает */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
