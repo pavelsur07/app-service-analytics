@@ -17,7 +17,7 @@ type Props = Omit<
 const FIELD =
   "h-9 w-full rounded-md border px-3 " +
   "hover:border-border-strong " +
-  "focus:border-accent focus:outline-2 focus:outline-border-focus " +
+  "focus:border-accent-default focus:outline-2 focus:outline-border-focus " +
   "disabled:border-border-subtle disabled:bg-surface-sunken disabled:text-text-disabled " +
   "disabled:hover:border-border-subtle";
 
@@ -38,7 +38,7 @@ export function Input({ label, error, hint, ...rest }: Props) {
         aria-describedby={
           error !== undefined || hint !== undefined ? messageId : undefined
         }
-        className={`${FIELD} ${invalid ? "border-negative-solid bg-negative-bg" : "border-border-default bg-surface-raised"}`}
+        className={`${FIELD} ${invalid ? "border-negative-icon bg-negative-bg" : "border-border-default bg-surface-raised"}`}
       />
       {error !== undefined ? (
         <span className="text-xs text-negative-text" id={messageId}>
