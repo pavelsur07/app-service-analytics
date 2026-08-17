@@ -96,7 +96,7 @@ export function UnitEconomicsPage() {
         {/* Прямо на экране, а не в справке: расход начисляется позже
             продажи, иногда на недели, и за короткое окно картина неполна
             по природе источника, а не из-за сбоя (ADR-012). */}
-        <p className="text-sm text-muted">
+        <p className="text-sm text-text-muted">
           Прибыль — выручка за вычетом расходов площадки и себестоимости
           проданного. Там, где цена закупки не задана, показана маржа: сколько
           осталось от продажи после расходов площадки. Расходы приходят от Ozon
@@ -122,7 +122,7 @@ export function UnitEconomicsPage() {
 
         {query.status === 'pending' && (
           <Card>
-            <div className="h-32 animate-pulse rounded bg-surface-muted" />
+            <div className="h-32 animate-pulse rounded bg-border-subtle" />
           </Card>
         )}
 
@@ -188,7 +188,7 @@ export function UnitEconomicsPage() {
                       реклама и хранение относятся к кабинету, и доля,
                       происхождение которой клиент не проверит, хуже
                       честной отдельной строки. */}
-                  <p className="text-sm text-muted">
+                  <p className="text-sm text-text-muted">
                     Реклама, хранение и прочее, что Ozon не относит к
                     конкретному товару.
                   </p>
@@ -200,7 +200,7 @@ export function UnitEconomicsPage() {
                           key={expense.feeTypeId}
                           className="flex items-center justify-between gap-4"
                         >
-                          <dt className="text-muted">{expense.name}</dt>
+                          <dt className="text-text-muted">{expense.name}</dt>
                           <dd>
                             {formatMinorAmount(
                               expense.amountMinor,
@@ -293,11 +293,11 @@ export function UnitEconomicsPage() {
 
                     <dl className="flex flex-wrap gap-x-8 gap-y-1 text-sm">
                       <div>
-                        <dt className="text-muted">Доставлено</dt>
+                        <dt className="text-text-muted">Доставлено</dt>
                         <dd>{sku.deliveredQuantity} шт</dd>
                       </div>
                       <div>
-                        <dt className="text-muted">Выручка</dt>
+                        <dt className="text-text-muted">Выручка</dt>
                         <dd>
                           {formatMinorAmount(
                             sku.revenueMinor,
@@ -306,7 +306,7 @@ export function UnitEconomicsPage() {
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-muted">Комиссия</dt>
+                        <dt className="text-text-muted">Комиссия</dt>
                         <dd>
                           {formatMinorAmount(
                             sku.commissionMinor,
@@ -315,7 +315,7 @@ export function UnitEconomicsPage() {
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-muted">Расходы площадки</dt>
+                        <dt className="text-text-muted">Расходы площадки</dt>
                         <dd>
                           {formatMinorAmount(
                             sku.expensesTotalMinor,
@@ -327,7 +327,7 @@ export function UnitEconomicsPage() {
                           число: клиент сверяет цифру с отчётом площадки,
                           и «прибыль 3 000» без слагаемых нечем проверить. */}
                       <div>
-                        <dt className="text-muted">Себестоимость</dt>
+                        <dt className="text-text-muted">Себестоимость</dt>
                         <dd>
                           {formatMinorAmount(
                             sku.costTotalMinor,
@@ -352,12 +352,12 @@ export function UnitEconomicsPage() {
                               за прошлый месяц меняется под руками.
                               Это цена решения, и она оплачивается
                               честностью — цифра не меняется молча. */}
-                          <dt className="text-muted">Цена правилась</dt>
+                          <dt className="text-text-muted">Цена правилась</dt>
                           <dd>{(sku.costCorrectedAt ?? '').slice(0, 10)}</dd>
                         </div>
                       )}
                       <div>
-                        <dt className="text-muted">Маржа</dt>
+                        <dt className="text-text-muted">Маржа</dt>
                         <dd>
                           {formatMinorAmount(
                             sku.marginMinor,
@@ -367,7 +367,9 @@ export function UnitEconomicsPage() {
                       </div>
                       {share !== null && (
                         <div>
-                          <dt className="text-muted">Съедает от выручки</dt>
+                          <dt className="text-text-muted">
+                            Съедает от выручки
+                          </dt>
                           <dd>{Math.round(share * 100)}%</dd>
                         </div>
                       )}
@@ -376,7 +378,7 @@ export function UnitEconomicsPage() {
                     {expanded[sku.marketplaceSku] === true && (
                       <dl className="flex flex-col gap-1 border-t border-border-subtle pt-2 text-sm">
                         {sku.expenses.length === 0 && (
-                          <p className="text-muted">
+                          <p className="text-text-muted">
                             Расходов по этому товару за период не начислено.
                           </p>
                         )}
@@ -385,7 +387,7 @@ export function UnitEconomicsPage() {
                             key={expense.feeTypeId}
                             className="flex items-center justify-between gap-4"
                           >
-                            <dt className="text-muted">{expense.name}</dt>
+                            <dt className="text-text-muted">{expense.name}</dt>
                             <dd>
                               {formatMinorAmount(
                                 expense.amountMinor,

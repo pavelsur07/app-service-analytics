@@ -1,4 +1,4 @@
-caude# Задача для Claude Code: перенос токенов UI Kit в `packages/ui/src/theme.css`
+# Задача для Claude Code: перенос токенов UI Kit в `packages/ui/src/theme.css`
 
 ## Вход
 
