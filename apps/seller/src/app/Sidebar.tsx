@@ -10,7 +10,7 @@ import { useLogout } from '../features/auth/model/useLogout'
 // accent-subtle с accent-hover и полужирным.
 const ITEM =
   'flex h-9 items-center gap-3 rounded-md px-2 text-sm ' +
-  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-default'
 const ITEM_ACTIVE = 'bg-accent-subtle font-semibold text-accent-hover'
 const ITEM_IDLE = 'text-text-secondary hover:bg-surface-hover'
 

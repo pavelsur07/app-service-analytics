@@ -1,4 +1,4 @@
-/* Источник правды для токенов. Макет docs/design/ui-kit/v0.2.html читает
+/* Источник правды для токенов. Макет docs/design/ui-kit/v0.4.html читает
    человек; сюда значения переносятся вручную, обратной синхронизации нет.
 
    Подключается вместо @import "tailwindcss" в обоих приложениях —
@@ -7,15 +7,21 @@
 @import "tailwindcss";
 
 @theme static {
-  /* Имена ролей — как в макете: text/primary → --color-text-primary.
-     Отсюда многословие вроде text-text-primary; словарь макета важнее
-     краткости класса, иначе перенос перестаёт быть проверяемым. */
+  /* Имена ролей — как в макете, слэш заменён дефисом:
+     text/primary → --color-text-primary, accent-subtle/hover →
+     --color-accent-subtle-hover. Отсюда многословие вроде
+     text-text-primary; словарь макета важнее краткости класса, иначе
+     перенос перестаёт быть проверяемым.
 
-  --color-accent: #1a56db;
+     Порядок и состав — таблица «Таблица токенов — источник правды»
+     раздела 01 макета, строка в строку. Тёмных пар здесь нет намеренно:
+     интерфейс всегда светлый (docs/patterns.md, «Дизайн-система»). */
+
+  --color-accent-default: #1a56db;
   --color-accent-hover: #1e40af;
   --color-accent-active: #16307e;
   --color-accent-subtle: #eef3fe;
-  --color-accent-subtle-hover: #e1eafd;
+  --color-border-focus: #c7d7fb;
 
   --color-text-primary: #0b1220;
   --color-text-secondary: #475569;
@@ -34,49 +40,75 @@
   --color-border-default: #e8ecf3;
   --color-border-subtle: #f1f4f9;
   --color-border-strong: #cbd5e1;
-  --color-border-focus: #c7d7fb;
 
+  --color-positive-icon: #10b981;
   --color-positive-text: #047857;
   --color-positive-bg: #ecfdf5;
   --color-positive-border: #d1fae5;
-  --color-positive-solid: #10b981;
 
+  --color-negative-icon: #ef4444;
   --color-negative-text: #b91c1c;
   --color-negative-bg: #fef2f2;
   --color-negative-border: #fecaca;
-  --color-negative-solid: #ef4444;
 
+  --color-warning-icon: #f59e0b;
   --color-warning-text: #92400e;
   --color-warning-bg: #fffbeb;
   --color-warning-border: #fde68a;
-  --color-warning-solid: #f59e0b;
+
+  --color-negative-hover: #991b1b;
+  --color-accent-subtle-hover: #e1eafd;
 
   /* Цвет статьи затрат закреплён навсегда: пользователь запоминает
      логистику как бирюзовую, и перекраска ломает узнавание отчёта.
      Менять значение здесь — то же, что переименовать статью. */
-  --color-chart-revenue: #1a56db;
-  --color-chart-cost: #8b5cf6;
-  --color-chart-commission: #0ea5e9;
-  --color-chart-logistics: #06b6d4;
-  --color-chart-storage: #ec4899;
-  --color-chart-ads: #a21caf;
-  --color-chart-tax: #ef4444;
-  --color-chart-acquiring: #14b8a6;
-  --color-chart-other: #64748b;
+  --color-chart-cat-1: #8b5cf6; /* себестоимость */
+  --color-chart-cat-2: #0ea5e9; /* комиссия */
+  --color-chart-cat-3: #06b6d4; /* логистика */
+  --color-chart-cat-4: #ec4899; /* хранение */
+  --color-chart-cat-5: #a21caf; /* реклама */
+  --color-chart-cat-6: #ca8a04; /* налоги */
+  --color-chart-cat-7: #14b8a6; /* эквайринг */
+  --color-chart-cat-8: #6366f1; /* прочее */
 
-  --color-heatmap-1: #eef3fe;
-  --color-heatmap-2: #c7d7fb;
-  --color-heatmap-3: #93b4f7;
-  --color-heatmap-4: #5b8def;
-  --color-heatmap-5: #1a56db;
-  --color-heatmap-6: #1e40af;
-  --color-heatmap-7: #16307e;
+  /* Последовательная шкала. Шаги 1, 2, 5, 6, 7 в макете объявлены
+     равными уже существующим ролям — здесь они ссылка, а не второй hex
+     под другим именем: иначе правка accent разошлась бы со шкалой. */
+  --color-chart-seq-1: var(--color-accent-subtle);
+  --color-chart-seq-2: var(--color-border-focus);
+  --color-chart-seq-3: #93b4f7;
+  --color-chart-seq-4: #5b8def;
+  --color-chart-seq-5: var(--color-accent-default);
+  --color-chart-seq-6: var(--color-accent-hover);
+  --color-chart-seq-7: var(--color-accent-active);
 
   --shadow-card: 0 1px 2px rgb(11 18 32 / 0.04);
-  --shadow-overlay: 0 8px 24px rgb(11 18 32 / 0.1);
   --shadow-popover: 0 8px 24px rgb(11 18 32 / 0.1);
   --shadow-modal: 0 24px 48px rgb(11 18 32 / 0.18);
-  --shadow-toast: 0 8px 24px rgb(11 18 32 / 0.18);
+
+  /* Шкала размеров макета: 12 14 16 18 20 24 30 36. Совпадает
+     с умолчанием Tailwind и объявлена явно, чтобы шкала целиком
+     читалась в источнике правды, а не подразумевалась. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+
+  /* 11px — оформленное исключение макета: только значения на осях
+     графиков и столбцах waterfall, нигде больше. Токен, а не
+     text-[11px]: произвольное значение — ошибка линтера
+     local/no-arbitrary-tailwind. */
+  --text-chart-label: 0.6875rem;
+
+  /* Начертаний ровно четыре, других в макете нет. */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
 
   --animate-spin: spin 0.8s linear infinite;
   --animate-shimmer: shimmer 1.4s ease-in-out infinite;
@@ -116,7 +148,7 @@
   }
 
   a {
-    color: var(--color-accent);
+    color: var(--color-accent-default);
     text-decoration: none;
   }
 

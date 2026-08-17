@@ -337,7 +337,7 @@ export function UnitEconomicsPage() {
                             <>
                               {' '}
                               <Link
-                                className="text-accent underline"
+                                className="text-accent-default underline"
                                 to={`/companies/${companyId}/costs`}
                               >
                                 нет цены у {sku.quantityWithoutCost} шт

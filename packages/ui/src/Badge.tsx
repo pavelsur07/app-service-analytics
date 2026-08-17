@@ -1,4 +1,3 @@
-// @ts-ignore
 import type { ReactNode } from "react";
 
 type Tone = "neutral" | "positive" | "negative" | "warning";

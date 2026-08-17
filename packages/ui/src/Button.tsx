@@ -20,7 +20,7 @@ type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> & {
 // TypeScript и так не даст промахнуться мимо ключа.
 const VARIANT: Record<Variant, string> = {
   primary:
-    "border-accent bg-accent text-text-inverse hover:border-accent-hover hover:bg-accent-hover active:border-accent-active active:bg-accent-active",
+    "border-accent-default bg-accent-default text-text-inverse hover:border-accent-hover hover:bg-accent-hover active:border-accent-active active:bg-accent-active",
   secondary:
     "border-border-default bg-surface-raised hover:border-border-strong hover:bg-surface-hover",
   ghost:
@@ -44,7 +44,7 @@ const SECONDARY_TEXT: Record<Size, string> = {
 
 const BASE =
   "inline-flex items-center justify-center gap-2 rounded-md border font-medium " +
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent " +
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-default " +
   "disabled:cursor-not-allowed disabled:border-border-default disabled:bg-border-subtle disabled:text-text-disabled " +
   "disabled:hover:border-border-default disabled:hover:bg-border-subtle";
 
