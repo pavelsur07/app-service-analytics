@@ -57,7 +57,7 @@ export function ConnectionsPage() {
 
         {query.status === 'pending' && (
           <Card>
-            <div className="h-24 animate-pulse rounded bg-surface-muted" />
+            <div className="h-24 animate-pulse rounded bg-border-subtle" />
           </Card>
         )}
 
@@ -112,7 +112,7 @@ export function ConnectionsPage() {
                     <span className="font-medium capitalize">
                       {connection.marketplace}
                     </span>
-                    <span className="text-sm text-muted">
+                    <span className="text-sm text-text-muted">
                       магазин {connection.externalShopId}
                     </span>
                     <Badge tone={state.tone}>{state.label}</Badge>
@@ -123,7 +123,7 @@ export function ConnectionsPage() {
                   <dl className="flex flex-wrap gap-x-8 gap-y-1 text-sm">
                     {loads.length === 0 && (
                       <div>
-                        <dt className="text-muted">Загрузки</dt>
+                        <dt className="text-text-muted">Загрузки</dt>
                         {/* Пусто и у только что заведённого подключения,
                             и у сломанного с первого дня: различает их
                             состояние выше, а не эта строка. */}
@@ -132,7 +132,7 @@ export function ConnectionsPage() {
                     )}
                     {loads.map(([reportType, at]) => (
                       <div key={reportType}>
-                        <dt className="text-muted">
+                        <dt className="text-text-muted">
                           {reportLabel(reportType)}
                         </dt>
                         <dd>
@@ -143,7 +143,7 @@ export function ConnectionsPage() {
                       </div>
                     ))}
                     <div>
-                      <dt className="text-muted">Подключено</dt>
+                      <dt className="text-text-muted">Подключено</dt>
                       <dd>
                         <time dateTime={connection.createdAt}>
                           {new Date(connection.createdAt).toLocaleDateString(

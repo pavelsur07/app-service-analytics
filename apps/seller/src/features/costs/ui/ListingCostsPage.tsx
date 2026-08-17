@@ -173,7 +173,7 @@ export function ListingCostsPage() {
         {/* Прямо на экране: закупочная цена, а не «все затраты».
             Комиссию и логистику мы уже берём у Ozon, и второй раз они
             дали бы задвоенный расход (ADR-012). */}
-        <p className="text-sm text-muted">
+        <p className="text-sm text-text-muted">
           Закупочная цена единицы товара и доставка до склада площадки — без
           комиссий и логистики самого Ozon: их мы уже учитываем отдельно. Список
           отсортирован по выручке за месяц: сверху то, ради чего стоит начинать.
@@ -181,7 +181,7 @@ export function ListingCostsPage() {
 
         {query.status === 'pending' && (
           <Card>
-            <div className="h-32 animate-pulse rounded bg-surface-muted" />
+            <div className="h-32 animate-pulse rounded bg-border-subtle" />
           </Card>
         )}
 
@@ -266,7 +266,7 @@ export function ListingCostsPage() {
                       <div className="font-medium">
                         {item.name ?? item.marketplaceSku}
                       </div>
-                      <div className="text-sm text-muted">
+                      <div className="text-sm text-text-muted">
                         {item.offerId ?? item.marketplaceSku}
                       </div>
                     </div>
@@ -287,11 +287,11 @@ export function ListingCostsPage() {
 
                   <dl className="flex flex-wrap gap-x-8 gap-y-1 text-sm">
                     <div>
-                      <dt className="text-muted">Выручка за месяц</dt>
+                      <dt className="text-text-muted">Выручка за месяц</dt>
                       <dd>{formatMinorAmount(item.revenueMinor, CURRENCY)}</dd>
                     </div>
                     <div>
-                      <dt className="text-muted">Доставлено</dt>
+                      <dt className="text-text-muted">Доставлено</dt>
                       <dd>{item.deliveredQuantity} шт</dd>
                     </div>
                   </dl>
@@ -337,7 +337,7 @@ export function ListingCostsPage() {
                       {/* Разные тексты, потому что разные последствия.
                           Это единственное место, где экран обязан
                           сказать вслух, что прошлое изменится. */}
-                      <p className="text-sm text-muted">
+                      <p className="text-sm text-text-muted">
                         {form.kind === 'correct'
                           ? correctionWarning(item, query.data.to)
                           : 'Новая цена подействует с указанной даты. Отчёты за более ранние дни не изменятся.'}
