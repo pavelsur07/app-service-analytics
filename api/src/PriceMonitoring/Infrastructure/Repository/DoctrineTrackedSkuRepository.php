@@ -34,9 +34,11 @@ final readonly class DoctrineTrackedSkuRepository implements TrackedSkuRepositor
         // ветка «а вдруг она уже активна» была бы проверкой перед записью,
         // от которой §4 и уводит.
         //
-        // created_at и created_by_user_id в SET не входят: первый, кто
-        // завёл артикул, остаётся в следе навсегда — возобновление
-        // отслеживания не переписывает историю задним числом.
+        // marketplace_account_id обновляется: продавец мог переподключить
+        // магазин, и будущие наблюдения обязаны уехать в живой кабинет,
+        // а не в отозванный. created_at и created_by_user_id в SET
+        // не входят — первый, кто завёл артикул, остаётся в следе
+        // навсегда: возобновление не переписывает историю задним числом.
         $this->connection->executeStatement(
             <<<'SQL'
                 INSERT INTO tracked_sku
@@ -45,8 +47,11 @@ final readonly class DoctrineTrackedSkuRepository implements TrackedSkuRepositor
                 VALUES
                     (:id, :companyId, :marketplaceAccountId, :marketplaceSku,
                      :status, :createdAt, :createdByUserId, NULL)
-                ON CONFLICT (company_id, marketplace_account_id, marketplace_sku)
-                DO UPDATE SET status = EXCLUDED.status, stopped_at = NULL
+                ON CONFLICT (company_id, marketplace_sku)
+                DO UPDATE SET
+                    status = EXCLUDED.status,
+                    stopped_at = NULL,
+                    marketplace_account_id = EXCLUDED.marketplace_account_id
                 SQL,
             [
                 'id' => $trackedSku->id()->toRfc4122(),

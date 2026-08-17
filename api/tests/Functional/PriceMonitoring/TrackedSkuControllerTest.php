@@ -22,6 +22,7 @@ use App\Tests\Support\Builder\ExtensionTokenBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\TrackedSkuBuilder;
 use App\Tests\Support\Builder\UserBuilder;
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -65,6 +66,37 @@ final class TrackedSkuControllerTest extends WebTestCase
         $this->start($client, $fixture, '100000001');
         self::assertResponseStatusCodeSame(200);
         self::assertSame(['100000001'], $this->list($client, $fixture)['items']);
+    }
+
+    public function testReconnectingTheShopDoesNotDuplicateATrackedSku(): void
+    {
+        $client = static::createClient();
+        $fixture = $this->connectedCompany();
+
+        $this->start($client, $fixture, '100000001');
+
+        // Продавец переподключил магазин: прежнее подключение отозвано,
+        // заведено новое. Кабинет в ключе отслеживания дал бы вторую
+        // активную строку на тот же артикул — список с дублем и двойной
+        // обход одной карточки за цикл.
+        $fixture->account()->revoke();
+        $this->marketplaceAccounts()->add($fixture->account());
+
+        $reconnected = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany($fixture->company)
+            ->withExternalShopId('reconnected-shop')
+            ->persistWith($this->companies(), $this->marketplaceAccounts());
+
+        $this->start($client, $fixture, '100000001');
+        self::assertResponseStatusCodeSame(200);
+        self::assertSame(['100000001'], $this->list($client, $fixture)['items']);
+
+        // Кабинет в строке — текущий: наблюдения обязаны уехать в живой,
+        // а не в отозванный.
+        self::assertSame(
+            $reconnected->id()->toRfc4122(),
+            $this->accountIdOfTrackedSku($fixture, '100000001'),
+        );
     }
 
     public function testStoppingWhatIsNotTrackedIsNotFound(): void
@@ -348,6 +380,25 @@ final class TrackedSkuControllerTest extends WebTestCase
             ->persistWith($companies, $users, $tokens);
 
         return new ConnectedCompany($company, $user, $secret, $account);
+    }
+
+    /**
+     * Читается прямым SQL: кабинет в строке отслеживания не входит
+     * ни в один ответ API, а проверить его надо — от него зависит,
+     * в какой кабинет уедут будущие наблюдения.
+     */
+    private function accountIdOfTrackedSku(ConnectedCompany $fixture, string $marketplaceSku): string
+    {
+        /** @var Connection $connection */
+        $connection = static::getContainer()->get(Connection::class);
+
+        $accountId = $connection->fetchOne(
+            'SELECT marketplace_account_id FROM tracked_sku WHERE company_id = :companyId AND marketplace_sku = :sku',
+            ['companyId' => $fixture->company->id()->toRfc4122(), 'sku' => $marketplaceSku],
+        );
+        self::assertIsString($accountId);
+
+        return $accountId;
     }
 
     private function trackedSkus(): TrackedSkuRepository

@@ -16,6 +16,15 @@ use Symfony\Component\Uid\Uuid;
  * Естественный ключ здесь тоже есть, но живёт уникальным индексом:
  * он же и защита от второй строки на тот же артикул.
  *
+ * **Ключ — (компания, артикул), без кабинета**, хотя кабинет в строке
+ * и хранится. Продавец отслеживает товар, а не пару «товар в этом
+ * кабинете», и кабинет в ключе означал бы вторую активную строку
+ * на тот же артикул после переподключения магазина: список отдал бы
+ * дубль, расширение обошло бы карточку дважды за цикл, а потолок
+ * посчитал бы её за две. Кабинет при повторном включении обновляется
+ * на текущий — будущие наблюдения должны уехать в живой кабинет,
+ * а не в отозванный.
+ *
  * Ссылки на сущности других модулей (`marketplace_account_id`,
  * `created_by_user_id`) — скалярные поля без `#[ManyToOne]`: связь
  * по идентификатору, не Doctrine-ассоциация (CLAUDE.md §6).
@@ -37,8 +46,8 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Entity]
 #[ORM\Table(name: 'tracked_sku')]
 #[ORM\UniqueConstraint(
-    name: 'uq_tracked_sku_company_account_sku',
-    columns: ['company_id', 'marketplace_account_id', 'marketplace_sku'],
+    name: 'uq_tracked_sku_company_sku',
+    columns: ['company_id', 'marketplace_sku'],
 )]
 #[ORM\Index(name: 'idx_tracked_sku_company_created_by', columns: ['company_id', 'created_by_user_id'])]
 class TrackedSku
