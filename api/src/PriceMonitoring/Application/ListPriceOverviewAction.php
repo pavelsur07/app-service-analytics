@@ -6,6 +6,7 @@ namespace App\PriceMonitoring\Application;
 
 use App\Ingestion\Application\Facade\IngestionFacade;
 use App\Ingestion\Application\Facade\ListingSnapshot;
+use App\Ingestion\Application\Facade\ListingSnapshotRequest;
 use App\PriceMonitoring\Infrastructure\Query\TrackedSkuOverviewQuery;
 use App\PriceMonitoring\Infrastructure\Query\TrackedSkuOverviewRow;
 
@@ -38,7 +39,7 @@ final class ListPriceOverviewAction
         $rawRows = $this->trackedSkus->build($companyId, $limit)->executeQuery()->fetchAllAssociative();
         $rows = array_map(TrackedSkuOverviewQuery::mapRow(...), $rawRows);
 
-        $snapshots = $this->ingestion->listingSnapshotsAt($companyId, $this->momentsBySku($rows));
+        $snapshots = $this->ingestion->listingSnapshotsAt($companyId, $this->snapshotRequests($rows));
 
         return array_map(
             fn (TrackedSkuOverviewRow $row): PriceOverviewRow => $this->compose($row, $snapshots[$row->marketplaceSku] ?? null),
@@ -53,18 +54,22 @@ final class ListPriceOverviewAction
      *
      * @param list<TrackedSkuOverviewRow> $rows
      *
-     * @return array<string, \DateTimeImmutable>
+     * @return list<ListingSnapshotRequest>
      */
-    private function momentsBySku(array $rows): array
+    private function snapshotRequests(array $rows): array
     {
-        $moments = [];
+        $requests = [];
         foreach ($rows as $row) {
             if (null !== $row->observedAt) {
-                $moments[$row->marketplaceSku] = $row->observedAt;
+                $requests[] = new ListingSnapshotRequest(
+                    marketplaceSku: $row->marketplaceSku,
+                    marketplaceAccountId: $row->marketplaceAccountId,
+                    at: $row->observedAt,
+                );
             }
         }
 
-        return $moments;
+        return $requests;
     }
 
     private function compose(TrackedSkuOverviewRow $row, ?ListingSnapshot $snapshot): PriceOverviewRow

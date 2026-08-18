@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Query;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Query\QueryBuilder;
 
 /**
  * Наименование карточки и цена, действовавшая на указанный момент
@@ -18,11 +19,15 @@ use Doctrine\DBAL\Connection;
  * `company_id` в условии самого SQL, не фильтром после выборки, —
  * изоляция арендаторов проверяется запросом (§1).
  *
- * В отличие от `build()`-запросов этого модуля, метод сразу отдаёт
- * строки, а не QueryBuilder: выборка не листается и не расширяется
- * вызывающим — у неё ровно один потребитель и фиксированная форма.
- * Ограничение сверху всё равно есть: список моментов приходит
- * от вызывающего, а тот уже ограничен лимитом своего запроса.
+ * Отдаёт QueryBuilder, как и все Query-классы проекта (CLAUDE.md §5):
+ * выполняет и разбирает Facade. Ограничение сверху здесь не нужно —
+ * запрашивается ровно столько карточек, сколько прислал вызывающий,
+ * а тот уже ограничен лимитом своего запроса.
+ *
+ * **Кабинет участвует в отборе наравне с артикулом.** Без него после
+ * переподключения магазина в истории остаются строки обоих кабинетов,
+ * и выборка взяла бы цену чужого: соинвест вышел бы правдоподобным
+ * и неверным, а от настоящего его не отличить.
  */
 final readonly class ListingSnapshotsQuery
 {
@@ -32,46 +37,40 @@ final readonly class ListingSnapshotsQuery
     }
 
     /**
-     * @param array<string, \DateTimeImmutable> $momentsBySku
-     *
      * @return list<ListingSnapshotRow>
      */
-    public function fetch(string $companyId, array $momentsBySku): array
+    /**
+     * @param list<ListingSnapshotCriteria> $criteria
+     */
+    public function build(string $companyId, array $criteria): QueryBuilder
     {
         $values = [];
         $params = ['companyId' => $companyId];
-        $i = 0;
-        foreach ($momentsBySku as $sku => $at) {
-            $values[] = "(:sku{$i}, :at{$i}::timestamp(0))";
-            $params["sku{$i}"] = $sku;
-            $params["at{$i}"] = $at->format('Y-m-d H:i:s');
-            ++$i;
+        foreach ($criteria as $i => $wanted) {
+            $values[] = "(:sku{$i}, :account{$i}::uuid, :at{$i}::timestamp(0))";
+            $params["sku{$i}"] = $wanted->marketplaceSku;
+            $params["account{$i}"] = $wanted->marketplaceAccountId;
+            $params["at{$i}"] = $wanted->at->format('Y-m-d H:i:s');
         }
-
-        if ([] === $values) {
-            return [];
-        }
-
-        $asked = implode(', ', $values);
 
         // Список VALUES с плейсхолдерами, а не массив Postgres: тип
         // ArrayParameterType разворачивается в перечисление для IN,
         // а не в литерал массива, и собирать литерал руками значило бы
         // заводить своё экранирование там, где его сейчас нет. Тот же
         // приём, что у писателей фактов этого модуля.
-        $sql = <<<SQL
-            SELECT asked.sku AS marketplace_sku,
-                   listing.name,
-                   price.price_minor,
-                   price.currency
-            FROM (VALUES {$asked}) AS asked(sku, at)
+        $asked = implode(', ', $values);
+
+        $from = <<<SQL
+            (VALUES {$asked}) AS asked(sku, account_id, at)
             LEFT JOIN marketplace_listing listing
                    ON listing.company_id = :companyId
+                  AND listing.marketplace_account_id = asked.account_id
                   AND listing.marketplace_sku = asked.sku
             LEFT JOIN LATERAL (
                 SELECT history.price_minor, history.currency
                 FROM marketplace_listing_price history
                 WHERE history.company_id = :companyId
+                  AND history.marketplace_account_id = asked.account_id
                   AND history.marketplace_sku = asked.sku
                   AND history.changed_at <= asked.at
                 ORDER BY history.changed_at DESC
@@ -79,10 +78,15 @@ final readonly class ListingSnapshotsQuery
             ) price ON true
             SQL;
 
-        /** @var list<array<string, mixed>> $rows */
-        $rows = $this->connection->executeQuery($sql, $params)->fetchAllAssociative();
+        $qb = $this->connection->createQueryBuilder()
+            ->select('asked.sku AS marketplace_sku', 'listing.name', 'price.price_minor', 'price.currency')
+            ->from($from);
 
-        return array_map(self::mapRow(...), $rows);
+        foreach ($params as $name => $value) {
+            $qb->setParameter($name, $value);
+        }
+
+        return $qb;
     }
 
     /**

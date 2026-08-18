@@ -14,6 +14,15 @@ export function priceOverviewQueryKey(companyId: string): readonly unknown[] {
   return companyQueryKey(companyId, 'price-monitoring', 'overview')
 }
 
+/**
+ * Обход артикулов идёт раз в полчаса, но экран обновляется чаще
+ * и по своей причине: без обновления «снято только что» застывает
+ * на открытой вкладке навсегда, и остановившийся сбор выглядит как
+ * свежие данные. Ровно тот отказ, ради видимости которого столбец
+ * с возрастом и заведён.
+ */
+const REFETCH_MS = 60_000
+
 export function usePriceOverview(companyId: string) {
   return useQuery({
     queryKey: priceOverviewQueryKey(companyId),
@@ -21,5 +30,6 @@ export function usePriceOverview(companyId: string) {
       createCompanyApiClient(companyId).get<PriceOverviewListResponse>(
         '/prices',
       ),
+    refetchInterval: REFETCH_MS,
   })
 }

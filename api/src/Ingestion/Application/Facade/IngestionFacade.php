@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application\Facade;
 
+use App\Ingestion\Infrastructure\Query\ListingSnapshotCriteria;
 use App\Ingestion\Infrastructure\Query\ListingSnapshotsQuery;
 
 /**
@@ -24,25 +25,44 @@ final class IngestionFacade
 
     /**
      * Карточки на указанные моменты: по одному моменту на артикул,
-     * потому что у каждого наблюдения он свой (ADR-015).
+     * потому что у каждого наблюдения он свой (ADR-015). Кабинет
+     * в запросе обязателен — см. `ListingSnapshotRequest`.
+     *
+     * Выполнение и разбор здесь, а не в Query: тот отдаёт QueryBuilder
+     * (CLAUDE.md §5), а Facade — то место, где строка выборки
+     * превращается в межмодульный DTO.
      *
      * Список целиком, а не артикул за вызов: запрос на строку был бы
      * запросом в цикле (CLAUDE.md §6). Внутри — один SQL на весь экран.
      *
      * $companyId первым параметром (CLAUDE.md §1).
      *
-     * @param array<string, \DateTimeImmutable> $momentsBySku
+     * @param list<ListingSnapshotRequest> $requests
      *
      * @return array<string, ListingSnapshot> по артикулу
      */
-    public function listingSnapshotsAt(string $companyId, array $momentsBySku): array
+    public function listingSnapshotsAt(string $companyId, array $requests): array
     {
-        if ([] === $momentsBySku) {
+        if ([] === $requests) {
             return [];
         }
 
+        // Перевод в тип запроса — здесь: Infrastructure вверх
+        // не смотрит, и свой тип у неё свой (ListingSnapshotCriteria).
+        $criteria = array_map(
+            static fn (ListingSnapshotRequest $request): ListingSnapshotCriteria => new ListingSnapshotCriteria(
+                marketplaceSku: $request->marketplaceSku,
+                marketplaceAccountId: $request->marketplaceAccountId,
+                at: $request->at,
+            ),
+            $requests,
+        );
+
+        /** @var list<array<string, mixed>> $rawRows */
+        $rawRows = $this->snapshots->build($companyId, $criteria)->executeQuery()->fetchAllAssociative();
+
         $snapshots = [];
-        foreach ($this->snapshots->fetch($companyId, $momentsBySku) as $row) {
+        foreach (array_map(ListingSnapshotsQuery::mapRow(...), $rawRows) as $row) {
             $snapshots[$row->marketplaceSku] = new ListingSnapshot(
                 marketplaceSku: $row->marketplaceSku,
                 name: $row->name,

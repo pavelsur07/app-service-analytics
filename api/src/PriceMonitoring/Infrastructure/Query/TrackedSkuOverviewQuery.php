@@ -37,6 +37,7 @@ final readonly class TrackedSkuOverviewQuery
         return $this->connection->createQueryBuilder()
             ->select(
                 'tracked.marketplace_sku',
+                'tracked.marketplace_account_id',
                 'latest.displayed_price_minor',
                 'latest.currency',
                 'latest.observed_at',
@@ -86,8 +87,14 @@ final readonly class TrackedSkuOverviewQuery
         $price = $row['displayed_price_minor'];
         $currency = $row['currency'];
 
+        $accountId = $row['marketplace_account_id'];
+        if (!\is_string($accountId)) {
+            throw new \UnexpectedValueException('Expected a string marketplace_account_id.');
+        }
+
         return new TrackedSkuOverviewRow(
             marketplaceSku: $sku,
+            marketplaceAccountId: $accountId,
             displayedPriceMinor: null === $price ? null : self::intValue($price),
             currency: \is_string($currency) ? $currency : null,
             // Postgres отдаёт timestamp without time zone строкой;

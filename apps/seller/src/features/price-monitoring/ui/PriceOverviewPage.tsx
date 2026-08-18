@@ -96,7 +96,10 @@ export function PriceOverviewPage() {
 }
 
 function PriceRow({ item }: { item: PriceOverviewItem }) {
-  const currency = item.currency ?? 'RUB'
+  // Валюта не подставляется по умолчанию (CLAUDE.md §3, ADR-004):
+  // её отсутствие означает, что цен нет вовсе, и показывать нечего.
+  // Подставленный RUB однажды украсил бы прочерк чужой валютой.
+  const { currency } = item
   const view = coInvestmentView(item.coInvestmentMinor, item.sellerPriceMinor)
   const waiting = null === item.observedAt || undefined === item.observedAt
 
@@ -116,7 +119,9 @@ function PriceRow({ item }: { item: PriceOverviewItem }) {
       </td>
       <td className="py-2 pr-3 text-right tabular-nums">
         {null === item.coInvestmentMinor ||
-        undefined === item.coInvestmentMinor ? (
+        undefined === item.coInvestmentMinor ||
+        null === currency ||
+        undefined === currency ? (
           <span className="text-text-muted">—</span>
         ) : (
           <span className="inline-flex items-center gap-2">
@@ -149,8 +154,14 @@ function PriceRow({ item }: { item: PriceOverviewItem }) {
   )
 }
 
-function money(minor: number | null | undefined, currency: string) {
-  return null === minor || undefined === minor ? (
+function money(
+  minor: number | null | undefined,
+  currency: string | null | undefined,
+) {
+  return null === minor ||
+    undefined === minor ||
+    null === currency ||
+    undefined === currency ? (
     <span className="text-text-muted">—</span>
   ) : (
     formatMinorAmount(minor, currency)

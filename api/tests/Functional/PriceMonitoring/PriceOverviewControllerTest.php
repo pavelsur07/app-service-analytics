@@ -150,6 +150,62 @@ final class PriceOverviewControllerTest extends WebTestCase
         self::assertSame([], $this->overview($client, $fixture));
     }
 
+    /**
+     * Изоляция именно нового межмодульного чтения (ADR-016): своя строка
+     * есть, значит запрос к каталогу действительно выполняется — и он
+     * обязан взять цену своей компании, а не чужой с тем же артикулом.
+     */
+    public function testForeignCabinetPriceDoesNotLeakIntoOurCoInvestment(): void
+    {
+        $client = static::createClient();
+        $fixture = $this->company();
+
+        $this->track($fixture, self::SKU);
+        $this->cabinetPrice($fixture, self::SKU, 253_700, '2026-08-18 08:00:00');
+        $this->observation($fixture, self::SKU, 111_700, '2026-08-18 09:00:00');
+
+        $foreign = $this->company('foreign@example.com');
+        $this->track($foreign, self::SKU);
+        $this->cabinetPrice($foreign, self::SKU, 900_000, '2026-08-18 08:30:00');
+
+        $item = $this->overview($client, $fixture)[0];
+
+        self::assertSame(253_700, $item['sellerPriceMinor'], 'цена своей компании, не чужой');
+        self::assertSame(142_000, $item['coInvestmentMinor']);
+    }
+
+    /**
+     * Кабинет участвует в отборе наравне с артикулом. После
+     * переподключения магазина в истории остаются строки обоих
+     * кабинетов, и выбор без кабинета дал бы правдоподобный,
+     * но неверный соинвест — от настоящего его не отличить.
+     */
+    public function testPriceOfAnotherCabinetOfTheSameCompanyIsNotTaken(): void
+    {
+        $client = static::createClient();
+        $fixture = $this->company();
+
+        $this->track($fixture, self::SKU);
+        $this->cabinetPrice($fixture, self::SKU, 253_700, '2026-08-18 08:00:00');
+        $this->observation($fixture, self::SKU, 111_700, '2026-08-18 09:00:00');
+
+        // Прежний кабинет той же компании с той же карточкой и более
+        // свежей ценой: без кабинета в условии выборка взяла бы её.
+        /** @var MarketplaceListingPriceRepository $prices */
+        $prices = static::getContainer()->get(MarketplaceListingPriceRepository::class);
+        $prices->recordChanged($fixture->company->id()->toRfc4122(), [
+            MarketplaceListingPriceBuilder::aMarketplaceListingPrice()
+                ->withCompanyId($fixture->company->id())
+                ->withMarketplaceAccountId(Uuid::v7())
+                ->withMarketplaceSku(self::SKU)
+                ->withChangedAt(new \DateTimeImmutable('2026-08-18 08:45:00'))
+                ->withPrice(Money::ofMinor(900_000, 'RUB'))
+                ->build(),
+        ]);
+
+        self::assertSame(253_700, $this->overview($client, $fixture)[0]['sellerPriceMinor']);
+    }
+
     public function testInvalidLimitIsRejected(): void
     {
         $client = static::createClient();
@@ -248,7 +304,7 @@ final class PriceOverviewControllerTest extends WebTestCase
         return new DoctrineMarketplaceListingWriter($connection);
     }
 
-    private function company(): CompanyFixture
+    private function company(string $email = 'owner@example.com'): CompanyFixture
     {
         /** @var EntityManagerInterface $entityManager */
         $entityManager = static::getContainer()->get(EntityManagerInterface::class);
@@ -260,7 +316,7 @@ final class PriceOverviewControllerTest extends WebTestCase
         $members = new DoctrineCompanyMemberRepository($entityManager);
 
         $company = CompanyBuilder::aCompany()->withName('Acme LLC')->persistWith($companies);
-        $user = UserBuilder::aUser()->withEmail('owner@example.com')->persistWith($users);
+        $user = UserBuilder::aUser()->withEmail($email)->persistWith($users);
         CompanyMemberBuilder::aCompanyMember()->withCompany($company)->withUser($user)->persistWith($companies, $users, $members);
         $account = MarketplaceAccountBuilder::aMarketplaceAccount()->withCompany($company)->persistWith($companies, $accounts);
 

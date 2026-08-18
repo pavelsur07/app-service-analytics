@@ -14,6 +14,13 @@ final readonly class TrackedSkuOverviewRow
 {
     public function __construct(
         public string $marketplaceSku,
+        /**
+         * Кабинет, к которому привязано отслеживание. Нужен, чтобы
+         * спросить цену именно этого кабинета: после переподключения
+         * магазина в истории остаются строки обоих, и выбор без кабинета
+         * дал бы правдоподобный, но неверный соинвест.
+         */
+        public string $marketplaceAccountId,
         public ?int $displayedPriceMinor,
         public ?string $currency,
         public ?\DateTimeImmutable $observedAt,
