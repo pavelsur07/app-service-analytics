@@ -297,7 +297,12 @@ return static function (DeptracConfig $config): void {
             // ingestionDomain — ради MarketplaceReportType: тип отчёта
             // в условии запроса, не способность модуля.
             Ruleset::forLayer($ingestionOperationalQuery)->accesses($ingestionInfrastructure, $ingestionDomain, $sharedInfrastructure, $symfonyComponent),
-            Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain),
+            // ingestionInfrastructure — ради company-scoped запроса чтения
+            // и его Row-DTO: списки читаются DBAL, а не гидрацией
+            // (CLAUDE.md §5), и Facade — то место, где результат
+            // превращается в межмодульный DTO. Тот же грант и по той же
+            // причине есть у identityFacade.
+            Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $ingestionInfrastructure, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),
 
@@ -313,7 +318,12 @@ return static function (DeptracConfig $config): void {
             // — ради интерфейса репозитория в StopTrackingController: там
             // один условный UPDATE, оркестрировать нечем.
             Ruleset::forLayer($priceMonitoringUi)->accesses($priceMonitoringApplication, $priceMonitoringDomain, $priceMonitoringInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
-            Ruleset::forLayer($priceMonitoringApplication)->accesses($priceMonitoringDomain, $identityFacade, $sharedApplication, $sharedDomain, $symfonyUid),
+            // ingestionFacade — экран СПП соединяет наблюдение с ценой
+            // кабинета, а та живёт в чужом модуле (ADR-016). Зависимость
+            // односторонняя и видна здесь: тем она и отличается
+            // от запроса, пересекающего границу внутри SQL, которого
+            // Deptrac не увидел бы вовсе.
+            Ruleset::forLayer($priceMonitoringApplication)->accesses($priceMonitoringDomain, $priceMonitoringInfrastructure, $identityFacade, $ingestionFacade, $sharedApplication, $sharedDomain, $symfonyUid),
             Ruleset::forLayer($priceMonitoringInfrastructure)->accesses($priceMonitoringDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($priceMonitoringDomain)->accesses($sharedDomain, $symfonyUid),
         )

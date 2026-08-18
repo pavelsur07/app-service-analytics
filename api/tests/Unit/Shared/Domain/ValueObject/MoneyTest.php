@@ -91,6 +91,37 @@ final class MoneyTest extends TestCase
         self::assertSame([0, 0], self::minorAmounts($parts));
     }
 
+    /**
+     * СПП — разница цены кабинета и витринной (ADR-014). Вычитание
+     * появилось ради неё; оговорка «вычитания нет намеренно» у сложения
+     * относится к расходам, приходящим со своим знаком, и здесь
+     * не действует.
+     */
+    public function testSubtractsMoneyOfTheSameCurrency(): void
+    {
+        $cabinet = Money::ofMinor(253_700, 'RUB');
+        $shelf = Money::ofMinor(111_700, 'RUB');
+
+        self::assertSame(142_000, $cabinet->minus($shelf)->minorAmount());
+    }
+
+    public function testSubtractionMayGoNegativeAndIsNotClampedToZero(): void
+    {
+        // Витринная цена выше цены кабинета означает, что прочитали
+        // не тот узел страницы либо продавец поднял цену между двумя
+        // выгрузками. Оба случая должны быть видны, а не спрятаны.
+        $result = Money::ofMinor(100_000, 'RUB')->minus(Money::ofMinor(150_000, 'RUB'));
+
+        self::assertSame(-50_000, $result->minorAmount());
+    }
+
+    public function testSubtractingDifferentCurrenciesIsRejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        Money::ofMinor(100, 'RUB')->minus(Money::ofMinor(100, 'USD'));
+    }
+
     public function testCurrencyIsCarriedAndNotDefaulted(): void
     {
         // Умолчания у валюты нет (ADR-004): что передали, то и в частях.
