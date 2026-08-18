@@ -5,6 +5,8 @@ export type CompanySkuListResponse =
   components['schemas']['CompanySkuListResponse']
 export type SkuSalesSummaryResponse =
   components['schemas']['SkuSalesSummaryResponse']
+export type TrackedSkuListResponse =
+  components['schemas']['TrackedSkuListResponse']
 type ValidationErrorResponse = components['schemas']['ValidationErrorResponse']
 
 /**
@@ -80,9 +82,75 @@ export async function fetchSkuSales(
   )
 }
 
-async function request<T>(token: string, path: string): Promise<T> {
+/**
+ * Одна страница отслеживаемых артикулов. Пагинация — забота
+ * вызывающего, как и у каталога.
+ */
+export async function fetchTrackedSkuPage(
+  token: string,
+  companyId: string,
+  cursor: string | null,
+  limit: number,
+): Promise<TrackedSkuListResponse> {
+  const query = new URLSearchParams({ limit: String(limit) })
+  if (null !== cursor) {
+    query.set('cursor', cursor)
+  }
+
+  return request<TrackedSkuListResponse>(
+    token,
+    `/api/extension/companies/${encodeURIComponent(companyId)}/tracked-skus?${query.toString()}`,
+  )
+}
+
+/**
+ * Включить отслеживание. Идемпотентно на сервере: повторный вызов
+ * по уже отслеживаемому артикулу — тот же успех, а не ошибка.
+ */
+export async function startTracking(
+  token: string,
+  companyId: string,
+  marketplaceSku: string,
+): Promise<void> {
+  await request<null>(
+    token,
+    `/api/extension/companies/${encodeURIComponent(companyId)}/tracked-skus`,
+    { method: 'POST', body: JSON.stringify({ marketplaceSku }) },
+  )
+}
+
+/** Остановить отслеживание. 404, если артикул не отслеживался. */
+export async function stopTracking(
+  token: string,
+  companyId: string,
+  marketplaceSku: string,
+): Promise<void> {
+  await request<null>(
+    token,
+    `/api/extension/companies/${encodeURIComponent(companyId)}/tracked-skus/${encodeURIComponent(marketplaceSku)}/stop`,
+    { method: 'POST' },
+  )
+}
+
+async function request<T>(
+  token: string,
+  path: string,
+  init: { method?: string; body?: string } = {},
+): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    method: init.method ?? 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      // Заголовок только когда есть тело: GET с Content-Type вызывает
+      // предварительный запрос CORS там, где без него его не было бы.
+      ...(undefined === init.body
+        ? {}
+        : { 'Content-Type': 'application/json' }),
+    },
+    // Не `body: init.body`: под exactOptionalPropertyTypes отсутствие
+    // ключа и ключ со значением undefined — разные вещи, и fetch
+    // принимает только первое.
+    ...(undefined === init.body ? {} : { body: init.body }),
   })
 
   if (!response.ok) {

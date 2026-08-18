@@ -1,8 +1,17 @@
-import type { SkuSalesSummaryResponse } from '../api/client'
 import { findAnchor } from '../ozon/anchor'
 import { ozonProductIdFromUrl } from '../ozon/productUrl'
-import { removePanel, renderPanel } from '../overlay/panel'
-import { parseSalesResponse, salesRequest } from '../shared/salesRequest'
+import {
+  removePanel,
+  renderPanel,
+  type TrackingOutcome,
+} from '../overlay/panel'
+import {
+  overlayRequest,
+  parseOverlayData,
+  parseTrackingResult,
+  setTrackingRequest,
+  type OverlayData,
+} from '../shared/overlayRequest'
 
 /**
  * Оверлей на карточке товара Ozon.
@@ -78,8 +87,8 @@ async function handleLocation(): Promise<void> {
 
   // Спрашиваем до ожидания якоря: на чужом товаре ответ придёт сразу
   // и пустой, и незачем десять секунд ждать разметку ради молчания.
-  const summary = await requestSales(marketplaceSku)
-  if (null === summary || isStale(marketplaceSku)) {
+  const data = await requestOverlayData(marketplaceSku)
+  if (null === data || isStale(marketplaceSku)) {
     return
   }
 
@@ -100,9 +109,10 @@ async function handleLocation(): Promise<void> {
     return
   }
 
-  renderPanel(anchor, summary)
+  const toggleTracking = trackingToggle(marketplaceSku)
+  renderPanel(anchor, data, toggleTracking)
   renderedForSku = marketplaceSku
-  keepPanelAlive(anchor, summary, marketplaceSku)
+  keepPanelAlive(anchor, data, marketplaceSku, toggleTracking)
 }
 
 /**
@@ -144,8 +154,9 @@ const MAX_REINSERTS = 5
 
 function keepPanelAlive(
   anchor: Element,
-  summary: SkuSalesSummaryResponse,
+  data: OverlayData,
   marketplaceSku: string,
+  toggleTracking: (tracked: boolean) => Promise<TrackingOutcome>,
 ): void {
   let left = MAX_REINSERTS
 
@@ -169,21 +180,55 @@ function keepPanelAlive(
     // Якорь мог быть заменён вместе с поддеревом — ищем заново.
     const current = findAnchor(document).element ?? anchor
     if (current.isConnected) {
-      renderPanel(current, summary)
+      // Панель перерисовывается из тех же данных, что и в первый раз:
+      // состояние кнопки, изменённое кликом, при этом теряется. Сторож
+      // срабатывает, когда чужой ре-рендер снёс наш узел, — событие
+      // редкое, и переспрашивать сервер ради него дороже, чем показать
+      // исходное состояние.
+      renderPanel(current, data, toggleTracking)
     }
   })
 
   observer.observe(document.body, { childList: true, subtree: true })
 }
 
-async function requestSales(marketplaceSku: string) {
+async function requestOverlayData(
+  marketplaceSku: string,
+): Promise<OverlayData | null> {
   try {
-    return parseSalesResponse(
-      await chrome.runtime.sendMessage(salesRequest(marketplaceSku)),
+    return parseOverlayData(
+      await chrome.runtime.sendMessage(overlayRequest(marketplaceSku)),
     )
   } catch {
     // Service worker перезапускается или расширение обновляют — молчим.
     return null
+  }
+}
+
+/**
+ * Клик по кнопке уезжает в service worker: сеть и токен живут там.
+ * Не ответил — состояние остаётся прежним, и об этом говорится прямо,
+ * а не молча: кнопка, которая переключилась, ничего не изменив, —
+ * тот же класс отказа, что молчаливо устаревшие данные.
+ */
+function trackingToggle(
+  marketplaceSku: string,
+): (tracked: boolean) => Promise<TrackingOutcome> {
+  return async (tracked: boolean): Promise<TrackingOutcome> => {
+    try {
+      const result = parseTrackingResult(
+        await chrome.runtime.sendMessage(
+          setTrackingRequest(marketplaceSku, tracked),
+        ),
+      )
+      if (null !== result) {
+        return result
+      }
+    } catch {
+      // Service worker перезапускается или расширение обновляют.
+    }
+
+    return { tracked: !tracked, error: 'Не удалось связаться с Conwix.' }
   }
 }
 
