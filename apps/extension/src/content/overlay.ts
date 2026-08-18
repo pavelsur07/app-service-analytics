@@ -274,6 +274,13 @@ function trackingToggle(
         ),
       )
       if (null !== result) {
+        // Включили отслеживание — снимаем цену прямо здесь, не дожидаясь
+        // обхода. Карточка открыта, разметка уже в документе, и первые
+        // данные появляются на экране сразу, а не через полчаса.
+        if (result.tracked && null === result.error) {
+          void sendObservation(marketplaceSku)
+        }
+
         return result
       }
     } catch {

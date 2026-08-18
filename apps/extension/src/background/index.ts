@@ -21,6 +21,7 @@ import {
 } from '../shared/overlayRequest'
 
 import {
+  allowFirstCapture,
   createIfAbsent,
   handlePriceSyncAlarm,
   isCaptureVisit,
@@ -110,6 +111,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       },
       sender.tab?.windowId,
       EXTENSION_VERSION,
+      Date.now(),
     )
 
     return false
@@ -211,6 +213,9 @@ async function setTracking(
         connection.companyId,
         marketplaceSku,
       )
+      // Карточка сейчас открыта перед продавцом и уже разобрана: первый
+      // снимок уходит из неё, а не ждёт следующего обхода через полчаса.
+      await allowFirstCapture(browserStorage(), marketplaceSku, Date.now())
     } else {
       await stopTracking(connection.token, connection.companyId, marketplaceSku)
     }
