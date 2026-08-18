@@ -12,6 +12,7 @@ use App\Shared\Ui\RequestAttributes;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -43,6 +44,7 @@ final class RecordPriceObservationController
     public function __construct(
         private readonly RecordPriceObservationAction $recordObservation,
         private readonly RateLimiterFactoryInterface $priceObservationsLimiter,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -141,24 +143,31 @@ final class RecordPriceObservationController
             // 200 с телом `null`, а не 204: клиент всегда разбирает ответ
             // как JSON, и пустое тело уронило бы разбор на успехе.
             RecordObservationOutcome::Recorded, RecordObservationOutcome::Duplicate => new JsonResponse(null),
-            // Предупреждением, не ошибкой (ADR-014): между открытием
-            // фонового окна и отправкой снимка продавец мог нажать
-            // «Остановить», и это обычный ход событий, а не аномалия.
-            //
-            // ponytail: записи в журнал здесь нет, потому что журнала
-            // в проекте нет вовсе — monolog не установлен, а новая
-            // зависимость требует согласования (CLAUDE.md, «Когда
-            // остановиться и спросить»). Отправлять это в Sentry было бы
-            // прямо против замысла: он для ошибок, а шум ожидаемых
-            // условий делает невидимыми настоящие. Признак наружу —
-            // сам код ответа. Появится журнал — предупреждение пишется
-            // здесь.
-            RecordObservationOutcome::NotTracked => $this->error(
-                Response::HTTP_NOT_FOUND,
-                'tracked_sku_not_found',
-                'Этот артикул не отслеживается.',
-            ),
+            RecordObservationOutcome::NotTracked => $this->notTracked($observation->marketplaceSku),
         };
+    }
+
+    /**
+     * Предупреждение, не ошибка (ADR-014): между открытием фонового окна
+     * и отправкой снимка продавец мог нажать «Остановить», и это обычный
+     * ход событий, а не аномалия. В трекер ошибок такое не уходит
+     * намеренно — там оно было бы шумом, делающим невидимыми настоящие
+     * ошибки (config/packages/monolog.yaml).
+     *
+     * Компанию и идентификатор запроса в запись добавляет
+     * RequestContextProcessor, повторять их здесь не нужно.
+     */
+    private function notTracked(string $marketplaceSku): JsonResponse
+    {
+        $this->logger->warning('Наблюдение цены по неотслеживаемому артикулу', [
+            'marketplace_sku' => $marketplaceSku,
+        ]);
+
+        return $this->error(
+            Response::HTTP_NOT_FOUND,
+            'tracked_sku_not_found',
+            'Этот артикул не отслеживается.',
+        );
     }
 
     private function error(int $status, string $code, string $message): JsonResponse

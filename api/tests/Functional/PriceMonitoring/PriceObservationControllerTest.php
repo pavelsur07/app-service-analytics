@@ -23,6 +23,7 @@ use App\Tests\Support\Builder\TrackedSkuBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Handler\TestHandler;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -73,6 +74,17 @@ final class PriceObservationControllerTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
         self::assertSame('tracked_sku_not_found', $this->payload($client)['code']);
         self::assertSame(0, $this->countObservations($fixture));
+
+        // Предупреждением, не ошибкой (ADR-014). Проверяется само наличие
+        // сигнала: между открытием фонового окна и отправкой снимка
+        // продавец мог нажать «Остановить», и молча проглоченный отказ
+        // неотличим от того, что расширение просто ничего не прислало.
+        /** @var TestHandler $handler */
+        $handler = static::getContainer()->get('monolog.handler.in_memory');
+        self::assertTrue(
+            $handler->hasWarningThatContains('неотслеживаемому артикулу'),
+            'приём по неотслеживаемому артикулу обязан оставить предупреждение в журнале',
+        );
     }
 
     public function testObservationForAStoppedSkuIsRejected(): void

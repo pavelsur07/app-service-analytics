@@ -566,6 +566,7 @@ app/        ← импортирует что угодно; из него не �
 | Блокировки | `symfony/lock` | Redis |
 | Очередь | `symfony/messenger` | doctrine-транспорт |
 | Почта | `symfony/mailer` | транспорт строкой в конфиге |
+| Журнал | `symfony/monolog-bundle` | в prod — простой поток в stderr с порога `warning`, **не** `fingers_crossed` из рецепта: тот сбрасывает буфер только вместе с ошибкой, и одиночное предупреждение не попадает в журнал никогда. `company_id` и `request_id` добавляет процессор `Shared\Ui\RequestContextProcessor`, а не каждый вызов по отдельности. Обработчика Sentry в конфиге нет: трекер для ошибок, журнал шире |
 | OpenAPI | `nelmio/api-doc-bundle` | схема генерируется из кода |
 | Миграции | `doctrine/doctrine-migrations-bundle` | стандартный выбор для Doctrine; `migrations/` — одна папка на проект |
 | Тесты | `phpunit/phpunit`, `dama/doctrine-test-bundle` | второй даёт откат транзакции между тестами |

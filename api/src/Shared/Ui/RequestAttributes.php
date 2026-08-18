@@ -23,6 +23,13 @@ final class RequestAttributes
      */
     public const string ActorUserId = '_actor_user_id';
 
+    /**
+     * Идентификатор запроса для журнала. Ставится RequestIdListener
+     * на kernel.request, читается RequestContextProcessor — чтобы строки
+     * одного обращения собирались вместе (CLAUDE.md, «Наблюдаемость»).
+     */
+    public const string RequestId = '_request_id';
+
     private function __construct()
     {
     }
