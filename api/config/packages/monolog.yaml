@@ -72,7 +72,27 @@ when@prod:
                 path: php://stderr
                 level: warning
                 formatter: monolog.formatter.json
-                channels: ["!deprecation"]
+                # Канал `request` исключён, и это не мелочь. Symfony
+                # журналирует HTTP-исключения 4xx на уровне `error`
+                # (ErrorListener::resolveLogLevel), а домен публичный:
+                # сканеры и клиенты старых версий дают постоянный поток
+                # 404 и 401. Порог warning поймал бы их все, и настоящие
+                # предупреждения утонули бы в ожидаемом шуме — ровно то,
+                # ради чего журнал и заводился. Рецепт Flex решал это
+                # через excluded_http_codes у fingers_crossed; здесь
+                # fingers_crossed нет (см. выше), поэтому отсев по каналу.
+                channels: ["!deprecation", "!request"]
+            # Настоящие отказы сервера из того же канала — отдельно
+            # и с порога critical: 5xx Symfony пишет именно им
+            # (4xx — error), так что порог сам отделяет наши поломки
+            # от чужого мусора. Дублирует трекер намеренно: если GlitchTip
+            # недоступен, событие всё равно остаётся в журнале контейнера.
+            server_errors:
+                type: stream
+                path: php://stderr
+                level: critical
+                formatter: monolog.formatter.json
+                channels: [request]
             # stderr, потому что журнал контейнера — это его stdout/stderr:
             # файл внутри контейнера исчезает вместе с ним и никем
             # не читается.
