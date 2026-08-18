@@ -51,8 +51,10 @@ const CYCLE_KEY = 'cycle'
 const CAPTURES_KEY = 'captures'
 
 /**
- * Разрешение прислать один снимок из обычной вкладки — выдаётся
- * в момент включения отслеживания.
+ * Разрешения прислать один снимок из обычной вкладки — по одному
+ * на артикул. Карта, а не единственный слот: два артикула, включённых
+ * подряд, иначе затирали бы разрешение друг друга, и второй остался бы
+ * без первого снимка до фонового обхода.
  */
 const FIRST_CAPTURE_KEY = 'firstCapture'
 
@@ -259,35 +261,84 @@ async function capture(
 export async function allowFirstCapture(
   storage: Storage,
   marketplaceSku: string,
+  companyId: string,
   now: number,
 ): Promise<void> {
+  const stored = await storage.get([FIRST_CAPTURE_KEY])
+
   await storage.set({
-    [FIRST_CAPTURE_KEY]: { marketplaceSku, until: now + FIRST_CAPTURE_TTL_MS },
+    [FIRST_CAPTURE_KEY]: {
+      ...parseGrants(stored[FIRST_CAPTURE_KEY], now),
+      [marketplaceSku]: { companyId, until: now + FIRST_CAPTURE_TTL_MS },
+    },
   })
 }
 
+/**
+ * Компания в разрешении — не формальность. Между выдачей и приходом
+ * снимка продавец может переподключить расширение к другой компании,
+ * и тогда цена, снятая для первой, ушла бы с токеном второй. При
+ * совпавшем отслеживаемом артикуле она записалась бы чужой компании
+ * и выглядела бы там настоящей.
+ */
 async function consumeFirstCapture(
   storage: Storage,
   marketplaceSku: string,
+  companyId: string,
   now: number,
 ): Promise<boolean> {
   const stored = await storage.get([FIRST_CAPTURE_KEY])
-  const granted = stored[FIRST_CAPTURE_KEY]
-  if (null === granted || 'object' !== typeof granted) {
+  const grants = parseGrants(stored[FIRST_CAPTURE_KEY], now)
+  const granted = grants[marketplaceSku]
+
+  if (undefined === granted || granted.companyId !== companyId) {
     return false
   }
 
-  const candidate = granted as Record<string, unknown>
-  const allowed =
-    candidate.marketplaceSku === marketplaceSku &&
-    'number' === typeof candidate.until &&
-    candidate.until > now
+  const remaining = Object.entries(grants).filter(
+    ([sku]) => sku !== marketplaceSku,
+  )
+  await storage.set({ [FIRST_CAPTURE_KEY]: Object.fromEntries(remaining) })
 
-  if (allowed) {
-    await storage.set({ [FIRST_CAPTURE_KEY]: null })
+  return true
+}
+
+interface FirstCaptureGrant {
+  readonly companyId: string
+  readonly until: number
+}
+
+/**
+ * Просроченные разрешения выбрасываются при каждом чтении: иначе карта
+ * росла бы вместе со списком отслеживания и жила бы в хранилище вечно.
+ */
+function parseGrants(
+  value: unknown,
+  now: number,
+): Record<string, FirstCaptureGrant> {
+  if (null === value || 'object' !== typeof value) {
+    return {}
   }
 
-  return allowed
+  const alive: Record<string, FirstCaptureGrant> = {}
+  for (const [sku, granted] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    if (null === granted || 'object' !== typeof granted) {
+      continue
+    }
+
+    const candidate = granted as Record<string, unknown>
+    if (
+      'string' === typeof candidate.companyId &&
+      'number' === typeof candidate.until &&
+      candidate.until > now
+    ) {
+      alive[sku] = { companyId: candidate.companyId, until: candidate.until }
+    }
+  }
+
+  return alive
 }
 
 /**
@@ -333,6 +384,8 @@ export async function submitObservation(
   extensionVersion: string,
   now: number,
 ): Promise<void> {
+  const connection = await readConnection(storage)
+
   const fromCaptureWindow = await isCaptureVisit(
     storage,
     observation.marketplaceSku,
@@ -340,17 +393,23 @@ export async function submitObservation(
   )
 
   // Обычная вкладка принимается ровно один раз и ровно после включения
-  // отслеживания (allowFirstCapture). Всё остальное — опоздавшее или
-  // чужое сообщение: закрывать по нему нечего, а записывать тем более.
+  // отслеживания (allowFirstCapture) — и только той компанией, которой
+  // разрешение выдавалось. Всё остальное это опоздавшее или чужое
+  // сообщение: закрывать по нему нечего, а записывать тем более.
   const firstAfterEnabling =
     !fromCaptureWindow &&
-    (await consumeFirstCapture(storage, observation.marketplaceSku, now))
+    null !== connection &&
+    (await consumeFirstCapture(
+      storage,
+      observation.marketplaceSku,
+      connection.companyId,
+      now,
+    ))
 
   if (!fromCaptureWindow && !firstAfterEnabling) {
     return
   }
 
-  const connection = await readConnection(storage)
   if (null !== connection) {
     try {
       await recordObservation(connection.token, connection.companyId, {

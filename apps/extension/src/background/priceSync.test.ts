@@ -281,7 +281,7 @@ describe('первый снимок при включении отслежива
     // то есть до получаса спустя: экран показывал бы «ещё не снимали»,
     // и человек, только что нажавший кнопку, видел бы то же самое,
     // что при сломанном сборе.
-    await allowFirstCapture(storage, '111', NOW)
+    await allowFirstCapture(storage, '111', COMPANY, NOW)
 
     await submitObservation(
       storage,
@@ -301,7 +301,7 @@ describe('первый снимок при включении отслежива
   })
 
   it('разрешение одноразовое', async () => {
-    await allowFirstCapture(storage, '111', NOW)
+    await allowFirstCapture(storage, '111', COMPANY, NOW)
     const observation = {
       marketplaceSku: '111',
       observedAt: '2026-08-18T09:00:00.000Z',
@@ -318,8 +318,54 @@ describe('первый снимок при включении отслежива
     expect(await consumedAll()).toBe(true)
   })
 
+  it('два артикула подряд не затирают разрешения друг друга', async () => {
+    // Единственный слот на все артикулы означал бы, что второй
+    // включённый товар остаётся без первого снимка до фонового обхода.
+    await allowFirstCapture(storage, '111', COMPANY, NOW)
+    await allowFirstCapture(storage, '222', COMPANY, NOW)
+
+    for (const sku of ['111', '222']) {
+      await submitObservation(
+        storage,
+        {
+          marketplaceSku: sku,
+          observedAt: '2026-08-18T09:00:00.000Z',
+          amountMinor: 350_000,
+          currency: 'RUB',
+        },
+        777,
+        '0.2.0',
+        NOW,
+      )
+    }
+
+    expect(await consumedAll()).toBe(true)
+  })
+
+  it('разрешение чужой компании не принимается', async () => {
+    // Между выдачей и приходом снимка расширение могли переподключить
+    // к другой компании: цена, снятая для первой, ушла бы с токеном
+    // второй и выглядела бы там настоящей.
+    await allowFirstCapture(storage, '111', 'другая-компания', NOW)
+
+    await submitObservation(
+      storage,
+      {
+        marketplaceSku: '111',
+        observedAt: '2026-08-18T09:00:00.000Z',
+        amountMinor: 350_000,
+        currency: 'RUB',
+      },
+      777,
+      '0.2.0',
+      NOW,
+    )
+
+    expect(await consumedAll()).toBe(false)
+  })
+
   it('разрешение не действует на другой артикул и после срока', async () => {
-    await allowFirstCapture(storage, '111', NOW)
+    await allowFirstCapture(storage, '111', COMPANY, NOW)
     await submitObservation(
       storage,
       {
@@ -349,10 +395,16 @@ describe('первый снимок при включении отслежива
     expect(await consumedAll()).toBe(false)
   })
 
+  /** Не осталось ли неиспользованных разрешений. */
   async function consumedAll(): Promise<boolean> {
     const stored = await storage.get(['firstCapture'])
+    const grants = stored.firstCapture
 
-    return null === stored.firstCapture || undefined === stored.firstCapture
+    return (
+      null === grants ||
+      undefined === grants ||
+      0 === Object.keys(grants as Record<string, unknown>).length
+    )
   }
 })
 

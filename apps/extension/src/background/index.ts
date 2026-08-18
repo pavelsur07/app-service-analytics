@@ -215,7 +215,12 @@ async function setTracking(
       )
       // Карточка сейчас открыта перед продавцом и уже разобрана: первый
       // снимок уходит из неё, а не ждёт следующего обхода через полчаса.
-      await allowFirstCapture(browserStorage(), marketplaceSku, Date.now())
+      await allowFirstCapture(
+        browserStorage(),
+        marketplaceSku,
+        connection.companyId,
+        Date.now(),
+      )
     } else {
       await stopTracking(connection.token, connection.companyId, marketplaceSku)
     }
