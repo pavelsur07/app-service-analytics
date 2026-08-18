@@ -38,6 +38,21 @@ final class DoctrineMarketplaceListingPriceWriterTest extends KernelTestCase
         self::assertSame(1, $this->countRows(), 'цена не менялась — строка одна');
     }
 
+    public function testTheSameResponseProcessedTwiceAddsOneRow(): void
+    {
+        // Ключ строки содержит raw-документ, а тот дедуплицируется
+        // по содержимому (ADR-006): повторная обработка того же ответа
+        // площадки — хоть ретраем, хоть параллельным прогоном — упирается
+        // в уникальный индекс, а не в проверку существования
+        // (CLAUDE.md §4).
+        $document = Uuid::v7();
+        $this->record('2026-08-18 09:00:00', 253_700, null, $document);
+        $this->record('2026-08-18 09:00:07', 199_900, null, $document);
+
+        self::assertSame(1, $this->countRows());
+        self::assertSame([253_700], $this->prices());
+    }
+
     public function testChangedPriceAddsARowAndKeepsTheOldOne(): void
     {
         $this->record('2026-08-18 09:00:00', 253_700);
@@ -91,13 +106,14 @@ final class DoctrineMarketplaceListingPriceWriterTest extends KernelTestCase
         self::assertSame(1, $this->countRows($foreign));
     }
 
-    private function record(string $at, int $priceMinor, ?int $oldPriceMinor = null): void
+    private function record(string $at, int $priceMinor, ?int $oldPriceMinor = null, ?Uuid $rawDocumentId = null): void
     {
         $this->repository()->recordChanged($this->companyId->toRfc4122(), [
             MarketplaceListingPriceBuilder::aMarketplaceListingPrice()
                 ->withCompanyId($this->companyId)
                 ->withMarketplaceAccountId($this->accountId)
                 ->withChangedAt(new \DateTimeImmutable($at))
+                ->withRawDocumentId($rawDocumentId ?? Uuid::v7())
                 ->withPrice(
                     Money::ofMinor($priceMinor, 'RUB'),
                     null === $oldPriceMinor ? null : Money::ofMinor($oldPriceMinor, 'RUB'),
@@ -128,7 +144,15 @@ final class DoctrineMarketplaceListingPriceWriterTest extends KernelTestCase
             ['companyId' => $this->companyId->toRfc4122()],
         );
 
-        return array_map(static fn (array $row): int => (int) $row['price_minor'], $rows);
+        return array_map(
+            static function (array $row): int {
+                $value = $row['price_minor'];
+                self::assertTrue(\is_int($value) || \is_string($value));
+
+                return (int) $value;
+            },
+            $rows,
+        );
     }
 
     private function repository(): MarketplaceListingPriceRepository

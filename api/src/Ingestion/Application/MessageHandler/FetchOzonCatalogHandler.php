@@ -16,11 +16,13 @@ use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
+use App\Ingestion\Domain\OzonListingPrice;
 use App\Ingestion\Domain\OzonListingPriceParser;
 use App\Ingestion\Domain\OzonProductInfoFetcher;
 use App\Ingestion\Domain\OzonProductInfoListParser;
 use App\Ingestion\Domain\OzonProductListPage;
 use App\Ingestion\Domain\OzonProductListParser;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Uid\Uuid;
 
@@ -71,7 +73,27 @@ final readonly class FetchOzonCatalogHandler
      */
     private const string TIMEZONE = 'Europe/Moscow';
 
+    /**
+     * Блокировка на подключение: два одновременных прогона каталога
+     * для одного кабинета опасны дважды. `replaceForAccount` удаляет
+     * всё, чего нет в переданном списке, — два списка, собранные
+     * вперемешку, стирали бы товары друг друга. А история цены
+     * (ADR-015) от параллельных прогонов получает худший исход:
+     * подвисший старый прогон дописывает свою цену после нового,
+     * и текущей на полчаса становится устаревшая.
+     *
+     * Условие §4 «идемпотентность держит уникальный индекс, а не
+     * проверка» этим не подменяется, а дополняется: индекс закрывает
+     * повтор, блокировка — одновременность. Тот же приём, что
+     * в ScheduleOzonSyncCommand.
+     *
+     * Не дождавшийся замка прогон уходит молча и без ошибки: раз
+     * синхронизация этого кабинета уже идёт, второй такой же не нужен.
+     */
+    private const int LOCK_TTL_SECONDS = 900;
+
     public function __construct(
+        private LockFactory $lockFactory,
         private IdentityFacade $identityFacade,
         private OzonCatalogFetcher $client,
         private OzonProductInfoFetcher $infoClient,
@@ -98,6 +120,20 @@ final readonly class FetchOzonCatalogHandler
      */
     public function __invoke(FetchOzonCatalogMessage $message): void
     {
+        $lock = $this->lockFactory->createLock('ozon-catalog-'.$message->marketplaceAccountId, self::LOCK_TTL_SECONDS);
+        if (!$lock->acquire()) {
+            return;
+        }
+
+        try {
+            $this->sync($message);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function sync(FetchOzonCatalogMessage $message): void
+    {
         $target = $this->identityFacade->findOzonSyncTarget($message->companyId, $message->marketplaceAccountId);
         if (null === $target) {
             // Громкий отказ, а не молчаливый пропуск — как в обработчике
@@ -112,7 +148,6 @@ final readonly class FetchOzonCatalogHandler
         $period = (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))->setTime(0, 0);
 
         $listings = [];
-        $prices = [];
         $lastId = '';
         $seenCursors = [];
 
@@ -144,22 +179,26 @@ final readonly class FetchOzonCatalogHandler
             ));
 
             $parsed = $this->parser->parse($rawBody);
-            $infoBody = $this->fetchProductInfo($target, $companyId, $marketplaceAccountId, $period, $parsed);
+            [$infoBody, $infoDocumentId] = $this->fetchProductInfo($target, $companyId, $marketplaceAccountId, $period, $parsed);
             $names = null === $infoBody ? [] : $this->infoParser->parse($infoBody);
 
-            // Цены накапливаются по всем страницам и пишутся одним
-            // запросом после цикла: писать на страницу значило бы
-            // делать запросы в цикле (CLAUDE.md §6).
-            foreach (null === $infoBody ? [] : $this->priceParser->parse($infoBody) as $listingPrice) {
-                $prices[] = MarketplaceListingPrice::seen(
-                    $companyId,
-                    $marketplaceAccountId,
-                    $listingPrice->marketplaceSku,
-                    $syncedAt,
-                    $listingPrice->price,
-                    $listingPrice->oldPrice,
-                );
-            }
+            // Цены пишутся страницей, а не копятся до конца цикла
+            // (CLAUDE.md §6: пакет сбрасывается порциями по ходу,
+            // иначе память растёт линейно объёму каталога). Запрос
+            // один на страницу, не на артикул, — запрета «запросов
+            // в цикле» это не нарушает.
+            //
+            // В отличие от каталога, частичная запись здесь безвредна:
+            // история цен только дописывается, ничего не заменяя.
+            // Оборвавшаяся выгрузка оставит цены прочитанных страниц,
+            // и это лучше, чем не оставить ничего.
+            $this->listingPrices->recordChanged($target->companyId, $this->pricesOf(
+                $infoBody,
+                $companyId,
+                $marketplaceAccountId,
+                $infoDocumentId,
+                $syncedAt,
+            ));
 
             foreach ($parsed->items as $item) {
                 $listings[] = MarketplaceListing::seen(
@@ -179,10 +218,6 @@ final readonly class FetchOzonCatalogHandler
             // числе товаров — уходила бы на пустую страницу.
             if ('' === $parsed->lastId || $parsed->itemsOnPage < self::PAGE_SIZE) {
                 $this->listings->replaceForAccount($target->companyId, $marketplaceAccountId, $listings);
-                // После каталога: строка истории цены ссылается
-                // на артикул, и порядок делает эту ссылку осмысленной
-                // даже при первой синхронизации.
-                $this->listingPrices->recordChanged($target->companyId, $prices);
 
                 return;
             }
@@ -222,9 +257,12 @@ final readonly class FetchOzonCatalogHandler
      * — не техническая ошибка, а событие жизненного цикла подключения
      * (ADR-007). Он проброшен наверх, где обрабатывается общим порядком.
      *
-     * Отдаёт сырое тело, а не разобранные имена: из того же ответа
-     * берутся ещё и цены (ADR-015), и второй запрос ради них был бы
-     * лишним обращением к площадке.
+     * Отдаёт сырое тело и идентификатор raw-документа, а не разобранные
+     * имена: из того же ответа берутся ещё и цены (ADR-015), а документ
+     * нужен строке истории цены как происхождение (ADR-006,
+     * «Прослеживаемость»).
+     *
+     * @return array{0: string|null, 1: Uuid|null}
      */
     private function fetchProductInfo(
         OzonSyncTarget $target,
@@ -232,15 +270,15 @@ final readonly class FetchOzonCatalogHandler
         Uuid $marketplaceAccountId,
         \DateTimeImmutable $period,
         OzonProductListPage $page,
-    ): ?string {
+    ): array {
         $productIds = $page->productIds();
         if ([] === $productIds) {
-            return null;
+            return [null, null];
         }
 
         $rawBody = $this->infoClient->fetchNames($target->clientId, $target->apiKey, $productIds);
 
-        $this->rawDocuments->add(MarketplaceRawDocument::capture(
+        $documentId = $this->rawDocuments->add(MarketplaceRawDocument::capture(
             companyId: $companyId,
             marketplaceAccountId: $marketplaceAccountId,
             reportType: MarketplaceReportType::OzonProductInfoList,
@@ -248,6 +286,34 @@ final readonly class FetchOzonCatalogHandler
             rawBody: $rawBody,
         ));
 
-        return $rawBody;
+        return [$rawBody, $documentId];
+    }
+
+    /**
+     * @return list<MarketplaceListingPrice>
+     */
+    private function pricesOf(
+        ?string $infoBody,
+        Uuid $companyId,
+        Uuid $marketplaceAccountId,
+        ?Uuid $rawDocumentId,
+        \DateTimeImmutable $seenAt,
+    ): array {
+        if (null === $infoBody || null === $rawDocumentId) {
+            return [];
+        }
+
+        return array_map(
+            static fn (OzonListingPrice $price): MarketplaceListingPrice => MarketplaceListingPrice::seen(
+                companyId: $companyId,
+                marketplaceAccountId: $marketplaceAccountId,
+                marketplaceSku: $price->marketplaceSku,
+                changedAt: $seenAt,
+                price: $price->price,
+                oldPrice: $price->oldPrice,
+                rawDocumentId: $rawDocumentId,
+            ),
+            $this->priceParser->parse($infoBody),
+        );
     }
 }

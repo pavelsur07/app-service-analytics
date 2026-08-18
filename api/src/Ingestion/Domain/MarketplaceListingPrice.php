@@ -30,12 +30,30 @@ use Symfony\Component\Uid\Uuid;
  * причине, что в ADR-013 — вторая дата рядом с первой неизбежно
  * рассинхронизируется.
  *
+ * **В ключе — raw-документ, а не момент наблюдения.** Так строка
+ * идемпотентна по уникальному индексу, как того и требует §4: два
+ * одновременных прогона синхронизации читают один и тот же ответ
+ * площадки, а тот дедуплицируется по содержимому (ADR-006) и даёт им
+ * один и тот же документ — вторая вставка упирается в ключ, а не
+ * в проверку существования. `changed_at` при этом остаётся обычной
+ * колонкой: по ней строится порядок и по ней читатель находит цену,
+ * действовавшую на момент наблюдения.
+ *
+ * Ссылка на документ обязательна и по другой причине — ADR-006,
+ * «Прослеживаемость»: каждая строка факта знает, из какого сырья
+ * получена.
+ *
  * Ключ естественный, суррогата нет (CLAUDE.md §2). Не пишется ORM
  * (§6): наполняется синхронизацией, не человеком. Класс существует
  * ради migrations:diff, schema:validate и билдера тестов.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'marketplace_listing_price')]
+// Читающий расчёт СПП ищет цену, действовавшую на момент наблюдения:
+// три первых столбца с ограничением сверху по времени. Первичный ключ
+// эту выборку не обслуживает — в нём на четвёртом месте документ,
+// а не время, — поэтому отдельный индекс. `company_id` первым (§1).
+#[ORM\Index(name: 'idx_marketplace_listing_price_effective', columns: ['company_id', 'marketplace_account_id', 'marketplace_sku', 'changed_at'])]
 class MarketplaceListingPrice
 {
     #[ORM\Id]
@@ -54,6 +72,9 @@ class MarketplaceListingPrice
     private readonly string $marketplaceSku;
 
     #[ORM\Id]
+    #[ORM\Column(type: 'uuid')]
+    private readonly Uuid $rawDocumentId;
+
     #[ORM\Column]
     private readonly \DateTimeImmutable $changedAt;
 
@@ -80,10 +101,12 @@ class MarketplaceListingPrice
         \DateTimeImmutable $changedAt,
         Money $price,
         ?Money $oldPrice,
+        Uuid $rawDocumentId,
     ) {
         $this->companyId = $companyId;
         $this->marketplaceAccountId = $marketplaceAccountId;
         $this->marketplaceSku = $marketplaceSku;
+        $this->rawDocumentId = $rawDocumentId;
         $this->changedAt = $changedAt;
         $this->priceMinor = $price->minorAmount();
         $this->oldPriceMinor = $oldPrice?->minorAmount();
@@ -97,6 +120,7 @@ class MarketplaceListingPrice
         \DateTimeImmutable $changedAt,
         Money $price,
         ?Money $oldPrice,
+        Uuid $rawDocumentId,
     ): self {
         if (null !== $oldPrice && $oldPrice->currency() !== $price->currency()) {
             // Обе цены одной карточки в одной валюте; разные означали бы
@@ -104,7 +128,7 @@ class MarketplaceListingPrice
             throw new \InvalidArgumentException(\sprintf('Цена и цена до скидки обязаны быть в одной валюте, пришли %s и %s (ADR-004).', $price->currency(), $oldPrice->currency()));
         }
 
-        return new self($companyId, $marketplaceAccountId, $marketplaceSku, $changedAt, $price, $oldPrice);
+        return new self($companyId, $marketplaceAccountId, $marketplaceSku, $changedAt, $price, $oldPrice, $rawDocumentId);
     }
 
     public function companyId(): Uuid
@@ -120,6 +144,11 @@ class MarketplaceListingPrice
     public function marketplaceSku(): string
     {
         return $this->marketplaceSku;
+    }
+
+    public function rawDocumentId(): Uuid
+    {
+        return $this->rawDocumentId;
     }
 
     public function changedAt(): \DateTimeImmutable

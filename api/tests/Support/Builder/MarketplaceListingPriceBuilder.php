@@ -23,6 +23,7 @@ final class MarketplaceListingPriceBuilder
     private ?\DateTimeImmutable $changedAt = null;
     private ?Money $price = null;
     private ?Money $oldPrice = null;
+    private ?Uuid $rawDocumentId = null;
 
     private function __construct()
     {
@@ -74,6 +75,19 @@ final class MarketplaceListingPriceBuilder
         return $clone;
     }
 
+    /**
+     * Документ-происхождение задаётся явно там, где тест проверяет
+     * идемпотентность: повтор той же выгрузки даёт тот же документ,
+     * и на этом держится ключ (ADR-006, ADR-015).
+     */
+    public function withRawDocumentId(Uuid $rawDocumentId): self
+    {
+        $clone = clone $this;
+        $clone->rawDocumentId = $rawDocumentId;
+
+        return $clone;
+    }
+
     public function build(): MarketplaceListingPrice
     {
         return MarketplaceListingPrice::seen(
@@ -83,6 +97,7 @@ final class MarketplaceListingPriceBuilder
             changedAt: $this->changedAt ?? new \DateTimeImmutable('2026-08-18 09:00:00'),
             price: $this->price ?? Money::ofMinor(253_700, 'RUB'),
             oldPrice: $this->oldPrice,
+            rawDocumentId: $this->rawDocumentId ?? Uuid::v7(),
         );
     }
 }

@@ -23,9 +23,13 @@ use App\Shared\Domain\ValueObject\Money;
  * нечего — строка разбирается целочисленно как есть, и копейки
  * не размываются в принципе (ADR-004).
  *
- * Позиция без цены или без sku пропускается, а не роняет разбор:
- * товар может быть заведён и не выставлен, и это не повод потерять
- * остальные шестьдесят.
+ * **Отсутствие цены и неожиданный формат — разные вещи.** Товар без
+ * цены пропускается: он заведён, но не выставлен, и это не повод
+ * потерять остальные шестьдесят. А `price`, приехавший числом вместо
+ * строки или с непонятной точностью, роняет разбор исключением —
+ * это дрейф схемы площадки, и тихо записать ноль цен означало бы
+ * оставить прежние значения действующими навсегда, ни разу
+ * не пожаловавшись.
  */
 final class OzonListingPriceParser
 {
@@ -62,7 +66,7 @@ final class OzonListingPriceParser
                 continue;
             }
 
-            $price = self::money($item['price'] ?? null, $currency);
+            $price = self::money($item['price'] ?? null, $currency, 'price');
             if (null === $price) {
                 continue;
             }
@@ -72,7 +76,7 @@ final class OzonListingPriceParser
                 price: $price,
                 // Ozon присылает «0.00» у товара без зачёркнутой цены —
                 // это отсутствие скидки, а не скидка до нуля.
-                oldPrice: self::money($item['old_price'] ?? null, $currency),
+                oldPrice: self::money($item['old_price'] ?? null, $currency, 'old_price'),
             );
         }
 
@@ -82,11 +86,19 @@ final class OzonListingPriceParser
     /**
      * Строка «3300.00» → Money. Целочисленный разбор без промежуточного
      * float: ADR-004 запрещает его и в промежуточных значениях.
+     *
+     * null — поля нет или оно пустое: цена не назначена. Значение
+     * непонятного вида — исключение: значит, площадка сменила формат,
+     * и молчать об этом нельзя.
      */
-    private static function money(mixed $value, string $currency): ?Money
+    private static function money(mixed $value, string $currency, string $field): ?Money
     {
-        if (!\is_string($value) || 1 !== preg_match('/^\d+(\.\d{1,2})?$/', $value)) {
+        if (null === $value || '' === $value) {
             return null;
+        }
+
+        if (!\is_string($value) || 1 !== preg_match('/^\d+(\.\d{1,2})?$/', $value)) {
+            throw new \UnexpectedValueException(\sprintf('Ozon product info %s must be a decimal string like "3300.00", got %s.', $field, get_debug_type($value)));
         }
 
         [$whole, $fraction] = explode('.', $value.'.0');

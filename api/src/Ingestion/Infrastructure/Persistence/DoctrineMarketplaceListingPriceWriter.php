@@ -18,9 +18,16 @@ use Doctrine\DBAL\Connection;
  *
  * Условие внутри запроса, а не «прочитать последнюю и сравнить»:
  * два параллельных прогона прошли бы такую проверку оба (CLAUDE.md §4).
- * `ON CONFLICT DO NOTHING` закрывает остаток гонки — совпадение
- * по ключу возможно, если два прогона увидели новое значение
- * в одну и ту же секунду.
+ * Идемпотентность при этом держит не оно, а уникальный ключ, в котором
+ * стоит raw-документ: повтор того же ответа площадки даёт тот же
+ * документ (ADR-006 дедуплицирует сырьё по содержимому) и упирается
+ * в `ON CONFLICT DO NOTHING`. Условие `NOT EXISTS` отвечает
+ * за другое — чтобы неизменившаяся цена не заводила строку каждые
+ * полчаса.
+ *
+ * Одновременность двух прогонов по одному кабинету закрыта выше
+ * по стеку, блокировкой в `FetchOzonCatalogHandler`: без неё подвисший
+ * старый прогон дописывал бы устаревшую цену после нового.
  *
  * Один запрос на всю выгрузку, не запрос на артикул (§6): значения
  * едут списком в `VALUES`, чанками — как у `DoctrineSalesFactWriter`.
@@ -53,7 +60,8 @@ final readonly class DoctrineMarketplaceListingPriceWriter implements Marketplac
         $values = [];
         $params = ['companyId' => $companyId];
         foreach ($prices as $i => $price) {
-            $values[] = "(:companyId, :accountId{$i}, :sku{$i}, :changedAt{$i}, :price{$i}, :oldPrice{$i}, :currency{$i})";
+            $values[] = "(:companyId, :accountId{$i}, :sku{$i}, :rawDocumentId{$i}, :changedAt{$i}, :price{$i}, :oldPrice{$i}, :currency{$i})";
+            $params["rawDocumentId{$i}"] = $price->rawDocumentId()->toRfc4122();
             $params["accountId{$i}"] = $price->marketplaceAccountId()->toRfc4122();
             $params["sku{$i}"] = $price->marketplaceSku();
             $params["changedAt{$i}"] = $price->changedAt()->format('Y-m-d H:i:s');
@@ -70,11 +78,11 @@ final readonly class DoctrineMarketplaceListingPriceWriter implements Marketplac
         // синхронизации.
         $sql = <<<SQL
             INSERT INTO marketplace_listing_price
-                (company_id, marketplace_account_id, marketplace_sku, changed_at,
-                 price_minor, old_price_minor, currency)
-            SELECT v.company_id::uuid, v.account_id::uuid, v.sku, v.changed_at::timestamp(0),
-                   v.price::bigint, v.old_price::bigint, v.currency
-            FROM (VALUES {$rows}) AS v(company_id, account_id, sku, changed_at, price, old_price, currency)
+                (company_id, marketplace_account_id, marketplace_sku, raw_document_id,
+                 changed_at, price_minor, old_price_minor, currency)
+            SELECT v.company_id::uuid, v.account_id::uuid, v.sku, v.raw_document_id::uuid,
+                   v.changed_at::timestamp(0), v.price::bigint, v.old_price::bigint, v.currency
+            FROM (VALUES {$rows}) AS v(company_id, account_id, sku, raw_document_id, changed_at, price, old_price, currency)
             WHERE NOT EXISTS (
                 SELECT 1
                 FROM marketplace_listing_price last
@@ -92,7 +100,7 @@ final readonly class DoctrineMarketplaceListingPriceWriter implements Marketplac
                   AND last.old_price_minor IS NOT DISTINCT FROM v.old_price::bigint
                   AND last.currency = v.currency
             )
-            ON CONFLICT (company_id, marketplace_account_id, marketplace_sku, changed_at) DO NOTHING
+            ON CONFLICT (company_id, marketplace_account_id, marketplace_sku, raw_document_id) DO NOTHING
             SQL;
 
         $this->connection->executeStatement($sql, $params);
