@@ -24,12 +24,12 @@ final class RequestContextProcessorTest extends TestCase
     public function testAddsRequestIdAndCompanyIdFromTheCurrentRequest(): void
     {
         $request = new Request();
-        $request->attributes->set(RequestAttributes::RequestId, 'a1b2c3d4e5f60718');
+        $request->attributes->set(RequestAttributes::RequestId, '01a01104-8634-7bee-9c85-8f524802c241');
         $request->attributes->set('companyId', '01a01104-8634-7bee-9c85-8f524802c241');
 
         $record = ($this->processorFor($request))($this->record());
 
-        self::assertSame('a1b2c3d4e5f60718', $record->extra['request_id']);
+        self::assertSame('01a01104-8634-7bee-9c85-8f524802c241', $record->extra['request_id']);
         self::assertSame('01a01104-8634-7bee-9c85-8f524802c241', $record->extra['company_id']);
     }
 
@@ -39,11 +39,11 @@ final class RequestContextProcessorTest extends TestCase
         // Подставлять «unknown» незачем: отсутствие ключа читается так же
         // однозначно, а выдуманное значение однажды примут за настоящее.
         $request = new Request();
-        $request->attributes->set(RequestAttributes::RequestId, 'a1b2c3d4e5f60718');
+        $request->attributes->set(RequestAttributes::RequestId, '01a01104-8634-7bee-9c85-8f524802c241');
 
         $record = ($this->processorFor($request))($this->record());
 
-        self::assertSame('a1b2c3d4e5f60718', $record->extra['request_id']);
+        self::assertSame('01a01104-8634-7bee-9c85-8f524802c241', $record->extra['request_id']);
         self::assertArrayNotHasKey('company_id', $record->extra);
     }
 

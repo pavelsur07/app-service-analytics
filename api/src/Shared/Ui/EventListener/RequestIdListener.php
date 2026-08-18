@@ -8,6 +8,7 @@ use App\Shared\Ui\RequestAttributes;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Идентификатор запроса — то, по чему строки журнала одного обращения
@@ -20,9 +21,11 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * Появится доверенный прокси, проставляющий заголовок, — решение
  * пересматривается.
  *
- * Восемь байт, не UUID: идентификатор нужен только чтобы отличать
- * запросы друг от друга в пределах разбора одного обращения, и короткий
- * читается глазами.
+ * UUIDv7 через `symfony/uid`, как все идентификаторы проекта (ADR-003).
+ * Хранения в базе у него нет и не будет — он живёт только в строке
+ * журнала, — но заводить второй способ порождать идентификаторы ради
+ * шестнадцати сэкономленных символов незачем. Побочно v7 упорядочен
+ * по времени, и это здесь кстати.
  */
 final class RequestIdListener implements EventSubscriberInterface
 {
@@ -43,7 +46,7 @@ final class RequestIdListener implements EventSubscriberInterface
 
         $event->getRequest()->attributes->set(
             RequestAttributes::RequestId,
-            bin2hex(random_bytes(8)),
+            Uuid::v7()->toRfc4122(),
         );
     }
 }

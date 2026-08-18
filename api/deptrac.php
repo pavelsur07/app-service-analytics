@@ -221,7 +221,11 @@ return static function (DeptracConfig $config): void {
         ->rulesets(
             // Shared — технический слой, свободно используется всеми,
             // сам никогда не поднимается вверх к Identity/Ingestion.
-            Ruleset::forLayer($sharedUi)->accesses($sharedApplication, $sharedDomain, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
+            // symfonyUid — тот же грант и по той же причине, что у Ui
+            // остальных модулей: идентификаторы порождаются и принимаются
+            // на границе HTTP (здесь — идентификатор запроса для журнала,
+            // ADR-003).
+            Ruleset::forLayer($sharedUi)->accesses($sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($sharedApplication)->accesses($sharedDomain),
             // Sentry — SentryEventScrubber (before_send, config/packages/sentry.yaml).
             Ruleset::forLayer($sharedInfrastructure)->accesses($sharedDomain, $sentry),
