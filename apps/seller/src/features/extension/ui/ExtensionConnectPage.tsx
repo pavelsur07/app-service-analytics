@@ -19,7 +19,7 @@ export function ExtensionConnectPage() {
   }
 
   return (
-    <div className="p-6">
+    <div>
       <Card>
         {recipient.kind === 'not-installed' ? (
           <StatusPanel

@@ -49,7 +49,7 @@ export function UnitEconomicsPage() {
 
   if (companyId === undefined) {
     return (
-      <div className="p-6">
+      <div>
         <Card tone="negative">
           <StatusPanel
             description="В адресе не указан companyId."
@@ -68,7 +68,7 @@ export function UnitEconomicsPage() {
   }
 
   return (
-    <div className="p-6">
+    <div>
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-semibold">Юнит-экономика</h1>

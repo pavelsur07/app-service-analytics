@@ -101,7 +101,7 @@ export function ListingCostsPage() {
 
   if (companyId === undefined) {
     return (
-      <div className="p-6">
+      <div>
         <Card tone="negative">
           <StatusPanel
             description="В адресе не указан companyId."
@@ -166,7 +166,7 @@ export function ListingCostsPage() {
   const failure = setCost.error ?? correctCost.error
 
   return (
-    <div className="p-6">
+    <div>
       <div className="flex flex-col gap-4">
         <h1 className="text-xl font-semibold">Себестоимость</h1>
 
