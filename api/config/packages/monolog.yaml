@@ -1,0 +1,84 @@
+# Журнал приложения. CLAUDE.md, «Наблюдаемость»: «В логах — идентификатор
+# запроса и company_id. Обращение вида "не сходится за 15 июля" должно
+# превращаться в один запрос по логам». Оба поля добавляет процессор
+# App\Shared\Ui\RequestContextProcessor
+# ко всем записям сразу — иначе их пришлось бы не забыть в каждом вызове.
+#
+# Обработчика Sentry здесь нет намеренно. Трекер ловит ошибки
+# (config/packages/sentry.yaml, слушатель исключений и финальные отказы
+# очереди); журнал пишет и то, что ошибкой не является. Предупреждение
+# об ожидаемом доменном условии — например, наблюдение цены по уже
+# остановленному артикулу — в трекере было бы шумом, который делает
+# невидимыми настоящие ошибки.
+monolog:
+    channels:
+        # Отдельный канал, чтобы предупреждения об устаревших вызовах
+        # Symfony читались списком: CLAUDE.md держит их на нуле ради
+        # перехода на следующую LTS.
+        - deprecation
+
+when@dev:
+    monolog:
+        handlers:
+            main:
+                type: stream
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                level: debug
+                channels: ["!event"]
+            console:
+                type: console
+                process_psr_3_messages: false
+                channels: ["!event", "!doctrine", "!console"]
+
+when@test:
+    monolog:
+        handlers:
+            # Только ошибки и только в файл: тест, засыпающий консоль
+            # предупреждениями, перестают читать вместе с настоящими
+            # падениями.
+            main:
+                type: stream
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                level: error
+                channels: ["!event"]
+            # Monolog\Handler\TestHandler — держит записи в памяти,
+            # чтобы тест мог проверить, что предупреждение вообще было.
+            # Сигнал, который никто не проверяет, однажды пропадёт
+            # незамеченным, и узнаем мы об этом ровно тогда, когда
+            # журнал понадобится.
+            in_memory:
+                type: test
+                level: debug
+                channels: ["!event"]
+
+when@prod:
+    monolog:
+        handlers:
+            # Простой поток с порогом warning, а НЕ fingers_crossed
+            # из рецепта. Тот буферизует всё до первой ошибки и сбрасывает
+            # буфер только вместе с ней — то есть одиночное предупреждение,
+            # за которым ошибки не следует, не попадает в журнал никогда.
+            # Ровно такие предупреждения здесь и нужны: они сообщают
+            # о состоянии, которое ошибкой не является и потому само
+            # о себе не заявит.
+            #
+            # Плата — при ошибке нет предшествующего debug-контекста,
+            # который сбросил бы fingers_crossed. Она невелика: разбор
+            # ошибок идёт через трекер со стеком (ADR отсутствует, см.
+            # sentry.yaml), а debug-записи на боевой нагрузке дороги сами
+            # по себе.
+            main:
+                type: stream
+                path: php://stderr
+                level: warning
+                formatter: monolog.formatter.json
+                channels: ["!deprecation"]
+            # stderr, потому что журнал контейнера — это его stdout/stderr:
+            # файл внутри контейнера исчезает вместе с ним и никем
+            # не читается.
+            deprecation:
+                type: stream
+                path: php://stderr
+                level: info
+                formatter: monolog.formatter.json
+                channels: [deprecation]

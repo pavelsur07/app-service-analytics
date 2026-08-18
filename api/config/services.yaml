@@ -60,3 +60,8 @@ services:
     App\Ingestion\Application\NotifyStaleAccountsAction:
         arguments:
             $mailer: '@mailer.sync'
+
+    # Тег вешается явно: автоконфигурация Monolog подхватывает процессоры
+    # по интерфейсу только внутри самого бандла, не в App\.
+    App\Shared\Ui\RequestContextProcessor:
+        tags: [monolog.processor]
