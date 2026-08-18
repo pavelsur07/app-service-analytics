@@ -1,11 +1,23 @@
-import { fetchMe, fetchSkuSales } from '../api/client'
+import {
+  ApiError,
+  fetchMe,
+  fetchSkuSales,
+  fetchTrackedSkuPage,
+  startTracking,
+  stopTracking,
+} from '../api/client'
 import {
   isOwnSku,
   isStale,
   readCatalog,
   refreshCatalog,
 } from '../shared/catalog'
-import { isSalesRequest } from '../shared/salesRequest'
+import {
+  isOverlayRequest,
+  isSetTrackingRequest,
+  type OverlayData,
+  type TrackingResult,
+} from '../shared/overlayRequest'
 import {
   browserStorage,
   readConnection,
@@ -57,9 +69,9 @@ chrome.runtime.onMessageExternal.addListener(
 )
 
 /**
- * Запрос итога продаж от оверлея. Сеть живёт здесь, а не в content-script:
- * тот выполняется в origin страницы маркетплейса и его fetch подчиняется
- * CORS (shared/salesRequest.ts). Заодно токен и хранилище не покидают
+ * Разговор с оверлеем. Сеть живёт здесь, а не в content-script: тот
+ * выполняется в origin страницы маркетплейса и его fetch подчиняется
+ * CORS (shared/overlayRequest.ts). Заодно токен и хранилище не покидают
  * service worker.
  */
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -67,13 +79,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // может быть несколько, и ответивший первым закрывает канал. Ответить
   // «не знаю» на всё подряд — значит сломать любой обработчик, который
   // появится следом.
-  if (!isSalesRequest(message)) {
-    return false
+  if (isOverlayRequest(message)) {
+    void overlayDataFor(message.marketplaceSku).then(sendResponse)
+
+    return true
   }
 
-  void salesFor(message.marketplaceSku).then(sendResponse)
+  if (isSetTrackingRequest(message)) {
+    void setTracking(message.marketplaceSku, message.tracked).then(sendResponse)
 
-  return true
+    return true
+  }
+
+  return false
 })
 
 /**
@@ -83,7 +101,109 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
  * Проверка принадлежности здесь и остаётся локальной: артикул чужого
  * товара никуда не уходит, сервер о нём не узнаёт.
  */
-async function salesFor(marketplaceSku: string) {
+async function overlayDataFor(
+  marketplaceSku: string,
+): Promise<OverlayData | null> {
+  const connection = await ownSkuConnection(marketplaceSku)
+  if (null === connection) {
+    return null
+  }
+
+  try {
+    // Оба запроса разом: панель рисуется целиком или не рисуется вовсе,
+    // и ждать их по очереди значило бы удвоить задержку до появления
+    // цифр на карточке.
+    const [sales, tracked] = await Promise.all([
+      fetchSkuSales(connection.token, connection.companyId, marketplaceSku),
+      isTracked(connection, marketplaceSku),
+    ])
+
+    return { sales, tracked }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Отслеживается ли артикул. Спрашивается у сервера каждый раз, без
+ * локального кэша: список меняется не только с этого устройства
+ * (ADR-014), и кнопка, показывающая устаревшее состояние, хуже кнопки,
+ * которая стоила одного запроса.
+ */
+async function isTracked(
+  connection: Connection,
+  marketplaceSku: string,
+): Promise<boolean> {
+  let cursor: string | null = null
+
+  // Страниц у списка практически всегда одна: сервер держит потолок
+  // в полсотни артикулов на компанию, а страница вмещает двести.
+  for (let page = 0; page < TRACKED_MAX_PAGES; page += 1) {
+    const response = await fetchTrackedSkuPage(
+      connection.token,
+      connection.companyId,
+      cursor,
+      TRACKED_PAGE_SIZE,
+    )
+    if (response.items.includes(marketplaceSku)) {
+      return true
+    }
+
+    cursor = response.nextCursor ?? null
+    if (null === cursor) {
+      return false
+    }
+  }
+
+  return false
+}
+
+/**
+ * Включение и выключение отслеживания. Ошибку сервера отдаём как есть:
+ * «нет активного подключения Ozon» и «больше 50 артикулов» продавец
+ * должен прочитать, а не гадать по общему «не удалось».
+ */
+async function setTracking(
+  marketplaceSku: string,
+  tracked: boolean,
+): Promise<TrackingResult | null> {
+  const connection = await ownSkuConnection(marketplaceSku)
+  if (null === connection) {
+    return null
+  }
+
+  try {
+    if (tracked) {
+      await startTracking(
+        connection.token,
+        connection.companyId,
+        marketplaceSku,
+      )
+    } else {
+      await stopTracking(connection.token, connection.companyId, marketplaceSku)
+    }
+
+    return { tracked, error: null }
+  } catch (caught) {
+    return {
+      // Состояние не изменилось — кнопка обязана вернуться в прежнее
+      // положение, а не показывать желаемое как случившееся.
+      tracked: !tracked,
+      error:
+        caught instanceof ApiError
+          ? caught.message
+          : 'Не удалось связаться с Conwix.',
+    }
+  }
+}
+
+/**
+ * Подключение, если оно есть и артикул принадлежит компании. Общая
+ * прихожая обоих сценариев: с чужой карточки к серверу не уходит ничего.
+ */
+async function ownSkuConnection(
+  marketplaceSku: string,
+): Promise<Connection | null> {
   const storage = browserStorage()
   const connection = await readConnection(storage)
   if (null === connection) {
@@ -95,16 +215,14 @@ async function salesFor(marketplaceSku: string) {
     return null
   }
 
-  try {
-    return await fetchSkuSales(
-      connection.token,
-      connection.companyId,
-      marketplaceSku,
-    )
-  } catch {
-    return null
-  }
+  return connection
 }
+
+// Двести — максимум страницы у эндпоинта; потолок страниц страхует
+// от бесконечного цикла, если сервер начнёт отдавать nextCursor,
+// не двигая выборку.
+const TRACKED_PAGE_SIZE = 200
+const TRACKED_MAX_PAGES = 5
 
 const CATALOG_ALARM = 'conwix:catalog'
 const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000

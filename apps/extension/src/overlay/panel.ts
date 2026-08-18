@@ -1,5 +1,6 @@
 import type { SkuSalesSummaryResponse } from '../api/client'
 import { formatMinorAmount } from '../shared/lib/formatMinorAmount'
+import type { OverlayData } from '../shared/overlayRequest'
 
 /**
  * Панель Conwix на карточке маркетплейса.
@@ -33,17 +34,46 @@ const STYLE = `
 .row { display: flex; justify-content: space-between; gap: 16px; padding: 2px 0; }
 .muted { opacity: .6; }
 .value { font-variant-numeric: tabular-nums; }
+/* Кнопка отслеживания. Своя, не из packages/ui: чужая поверхность —
+   чужой дизайн (docs/patterns.md, «Расширение браузера»). */
+.track {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid rgba(0, 0, 0, .16);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.track:hover:not(:disabled) { background: rgba(0, 0, 0, .04); }
+.track:disabled { opacity: .5; cursor: default; }
+.error { margin-top: 6px; font-size: 12px; color: #b3261e; }
 /* Тёмная тема Ozon: панель обязана её видеть, иначе на тёмной странице
    получится белый прямоугольник. Ориентируемся на системную тему —
    переключатель самого Ozon отсюда не виден, и это известный предел. */
 @media (prefers-color-scheme: dark) {
   .panel { background: #1a1a1a; color: #f5f5f5; border-color: rgba(255, 255, 255, .14); }
+  .track { border-color: rgba(255, 255, 255, .2); }
+  .track:hover:not(:disabled) { background: rgba(255, 255, 255, .08); }
+  .error { color: #f2b8b5; }
 }
 `
 
+/**
+ * `onToggleTracking` возвращает состояние, которое установилось на самом
+ * деле, и текст ошибки, если сервер отказал. Панель не решает сама,
+ * что произошло: включение может упереться в потолок артикулов или
+ * в неактивное подключение, и показать «отслеживается» в этот момент
+ * значило бы соврать.
+ */
 export function renderPanel(
   anchor: Element,
-  summary: SkuSalesSummaryResponse,
+  data: OverlayData,
+  onToggleTracking: (tracked: boolean) => Promise<TrackingOutcome>,
 ): void {
   const host = ensureHost(anchor)
   const shadow = host.shadowRoot
@@ -51,7 +81,12 @@ export function renderPanel(
     return
   }
 
-  shadow.replaceChildren(styleElement(), panelElement(summary))
+  shadow.replaceChildren(styleElement(), panelElement(data, onToggleTracking))
+}
+
+export interface TrackingOutcome {
+  readonly tracked: boolean
+  readonly error: string | null
 }
 
 export function removePanel(): void {
@@ -87,19 +122,68 @@ function styleElement(): HTMLStyleElement {
   return style
 }
 
-function panelElement(summary: SkuSalesSummaryResponse): HTMLElement {
+function panelElement(
+  data: OverlayData,
+  onToggleTracking: (tracked: boolean) => Promise<TrackingOutcome>,
+): HTMLElement {
   const panel = document.createElement('div')
   panel.className = 'panel'
-  panel.append(titleElement(summary.days))
+  panel.append(titleElement(data.sales.days))
+  panel.append(...salesRows(data.sales))
+  panel.append(...trackingControls(data.tracked, onToggleTracking))
 
+  return panel
+}
+
+/**
+ * Кнопка и место под ошибку. Пока запрос в пути, кнопка выключена:
+ * второй клик по ней означал бы второй запрос на то же самое, а сервер
+ * и так идемпотентен — просто незачем.
+ */
+function trackingControls(
+  tracked: boolean,
+  onToggleTracking: (tracked: boolean) => Promise<TrackingOutcome>,
+): readonly HTMLElement[] {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'track'
+
+  const error = document.createElement('div')
+  error.className = 'error'
+  error.hidden = true
+
+  let current = tracked
+  const paint = (): void => {
+    button.textContent = current ? 'Не отслеживать цену' : 'Отслеживать цену'
+  }
+  paint()
+
+  button.addEventListener('click', () => {
+    button.disabled = true
+    error.hidden = true
+    button.textContent = 'Сохраняем…'
+
+    void onToggleTracking(!current).then((outcome) => {
+      current = outcome.tracked
+      paint()
+      button.disabled = false
+      if (null !== outcome.error) {
+        error.textContent = outcome.error
+        error.hidden = false
+      }
+    })
+  })
+
+  return [button, error]
+}
+
+function salesRows(summary: SkuSalesSummaryResponse): readonly HTMLElement[] {
   const total = summary.totals[0]
   if (undefined === total) {
-    panel.append(row('Продаж за период нет', '', true))
-
-    return panel
+    return [row('Продаж за период нет', '', true)]
   }
 
-  panel.append(
+  const rows = [
     row(
       'Заказано',
       `${total.orderedQuantity} шт · ${formatMinorAmount(total.orderedAmountMinor, total.currency)}`,
@@ -113,15 +197,15 @@ function panelElement(summary: SkuSalesSummaryResponse): HTMLElement {
       `${total.cancelledQuantity} шт`,
       0 === total.cancelledQuantity,
     ),
-  )
+  ]
 
   // Больше одной валюты — показываем это прямо, а не складываем
   // (CLAUDE.md §3). В реальности сегодня не встречается.
   if (summary.totals.length > 1) {
-    panel.append(row('Есть продажи в других валютах', '', true))
+    rows.push(row('Есть продажи в других валютах', '', true))
   }
 
-  return panel
+  return rows
 }
 
 function titleElement(days: number): HTMLElement {
