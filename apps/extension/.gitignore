@@ -1,3 +1,7 @@
 /node_modules/
 /dist/
+# Локально собранный пакет: артефакт сборки, в репозитории ему
+# не место. Из конвейера тот же пакет приезжает артефактом задачи
+# frontend (.github/workflows/ci.yml).
+/conwix-extension.zip
 /.eslintcache
