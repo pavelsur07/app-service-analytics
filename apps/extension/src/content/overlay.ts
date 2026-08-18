@@ -1,4 +1,5 @@
 import { findAnchor } from '../ozon/anchor'
+import { readDisplayedPrice } from '../ozon/price'
 import { ozonProductIdFromUrl } from '../ozon/productUrl'
 import {
   removePanel,
@@ -6,6 +7,7 @@ import {
   type TrackingOutcome,
 } from '../overlay/panel'
 import {
+  observationMessage,
   overlayRequest,
   parseOverlayData,
   parseTrackingResult,
@@ -89,6 +91,15 @@ async function handleLocation(): Promise<void> {
   // и пустой, и незачем десять секунд ждать разметку ради молчания.
   const data = await requestOverlayData(marketplaceSku)
   if (null === data || isStale(marketplaceSku)) {
+    return
+  }
+
+  // Фоновый визит: окно открыл service worker ради цены. Панель здесь
+  // не нужна — её никто не увидит, а гидратацию чужой страницы она
+  // всё равно тревожит.
+  if (data.capture) {
+    await sendObservation(marketplaceSku)
+
     return
   }
 
@@ -202,6 +213,47 @@ async function requestOverlayData(
   } catch {
     // Service worker перезапускается или расширение обновляют — молчим.
     return null
+  }
+}
+
+/**
+ * Снимок витринной цены на фоновом визите.
+ *
+ * Ждём загрузки страницы: разметка schema.org приезжает с сервера,
+ * но до `load` её может ещё не быть в документе. Дальше — один разбор
+ * и одно сообщение; ответа не ждём, окно закроет service worker.
+ *
+ * Не нашли цену — предупреждение в консоль, как и с ненайденным
+ * якорем. Молчаливый пропуск неотличим от «расширение не запускалось»,
+ * а поломка здесь означает, что Ozon перестал публиковать разметку,
+ * и узнать об этом надо сразу.
+ */
+async function sendObservation(marketplaceSku: string): Promise<void> {
+  await pageSettled()
+
+  const result = readDisplayedPrice(document, marketplaceSku)
+  if (!result.ok) {
+    console.warn('[conwix] витринная цена не прочитана', {
+      marketplaceSku,
+      reason: result.reason,
+      url: location.href,
+    })
+
+    return
+  }
+
+  try {
+    await chrome.runtime.sendMessage(
+      observationMessage(
+        marketplaceSku,
+        new Date().toISOString(),
+        result.price.amountMinor,
+        result.price.currency,
+      ),
+    )
+  } catch {
+    // Service worker перезапускается или расширение обновляют.
+    // Следующий цикл снимет заново.
   }
 }
 

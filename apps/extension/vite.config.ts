@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, type Plugin } from 'vite'
 
-import { appOrigin, buildManifest } from './manifest.config'
+import { appOrigin, buildManifest, EXTENSION_VERSION } from './manifest.config'
 
 // Манифест пишется в dist на этапе сборки — сгенерированный файл,
 // в репозитории его нет (см. manifest.config.ts, почему не статический JSON).
@@ -38,6 +38,10 @@ export default defineConfig(({ mode }) => ({
     __APP_ORIGIN__: JSON.stringify(
       appOrigin(mode, process.env.CONWIX_APP_ORIGIN),
     ),
+    // Та же версия, что в манифесте: расширение сообщает её с каждым
+    // наблюдением цены, и два источника разъехались бы на первой же
+    // публикации.
+    __EXTENSION_VERSION__: JSON.stringify(EXTENSION_VERSION),
   },
   resolve: {
     // Та же причина, что у seller: packages/ui без своего node_modules,

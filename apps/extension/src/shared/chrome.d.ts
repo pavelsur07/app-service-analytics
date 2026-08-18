@@ -1,5 +1,5 @@
-// Ручное объявление вместо пакета @types/chrome: используются четыре
-// вызова, а пакет тянет полное DefinitelyTyped-описание всех API
+// Ручное объявление вместо пакета @types/chrome: используется десяток
+// вызовов, а пакет тянет полное DefinitelyTyped-описание всех API
 // расширений. Новая внешняя зависимость требует согласования
 // (CLAUDE.md, «Когда остановиться и спросить»), и ради двадцати строк
 // её заводить незачем. Появится десяток разных API — вернуться
@@ -24,6 +24,11 @@ declare namespace chrome {
       id?: string
       origin?: string
       url?: string
+      /**
+       * Вкладка отправителя. windowId доступен без разрешения `tabs` —
+       * оно нужно только для url и title чужой вкладки.
+       */
+      tab?: { id?: number; windowId?: number }
     }
 
     interface ExternalMessageEvent {
@@ -52,6 +57,17 @@ declare namespace chrome {
     const onMessage: MessageEvent
 
     function sendMessage(message: unknown): Promise<unknown>
+  }
+
+  namespace windows {
+    /** Фоновое окно под снятие цены (ADR-014). Разрешений не требует. */
+    function create(info: {
+      url: string
+      focused?: boolean
+      state?: 'minimized' | 'normal'
+    }): Promise<{ id?: number }>
+
+    function remove(windowId: number): Promise<void>
   }
 
   namespace alarms {
