@@ -50,25 +50,16 @@ final class RecordPriceObservationController
 
     #[OA\Post(security: [['ExtensionToken' => []]])]
     #[OA\RequestBody(content: new OA\JsonContent(
-        required: ['marketplaceSku', 'observedAt', 'displayedPrice', 'sellerPrice', 'extensionVersion'],
+        required: ['marketplaceSku', 'observedAt', 'displayedPrice', 'extensionVersion'],
         properties: [
             new OA\Property(property: 'marketplaceSku', type: 'string', description: 'Артикул площадки с карточки'),
             new OA\Property(property: 'observedAt', type: 'string', format: 'date-time', description: 'Момент снимка, ISO 8601 в UTC (Date.toISOString)'),
             new OA\Property(
                 property: 'displayedPrice',
-                description: 'Витринная цена Ozon — до скидки банка и платёжной системы',
+                description: 'Витринная цена Ozon — то, что видит покупатель, до скидки банка. Цену продавца расширение не присылает: на карточке её нет (ADR-015)',
                 properties: [
                     new OA\Property(property: 'amount', type: 'integer', description: 'Сумма в минорных единицах; дробные числа не принимаются (ADR-004)'),
                     new OA\Property(property: 'currency', type: 'string', description: 'Код ISO 4217'),
-                ],
-                type: 'object',
-            ),
-            new OA\Property(
-                property: 'sellerPrice',
-                description: 'Цена продавца с его собственной скидкой; валюта обязана совпадать с витринной',
-                properties: [
-                    new OA\Property(property: 'amount', type: 'integer'),
-                    new OA\Property(property: 'currency', type: 'string'),
                 ],
                 type: 'object',
             ),
@@ -83,7 +74,7 @@ final class RecordPriceObservationController
     )]
     #[OA\Response(
         response: 422,
-        description: 'Тело запроса некорректно: артикул, момент, суммы или валюта',
+        description: 'Тело запроса некорректно: артикул, момент, сумма или валюта',
         content: new Model(type: ValidationErrorResponse::class),
     )]
     #[OA\Response(
@@ -133,7 +124,6 @@ final class RecordPriceObservationController
             $observation->marketplaceSku,
             $observation->observedAt,
             Money::ofMinor($observation->displayedPriceMinor, $observation->currency),
-            Money::ofMinor($observation->sellerPriceMinor, $observation->currency),
             $actorUserId,
             $observation->extensionVersion,
             new \DateTimeImmutable(),

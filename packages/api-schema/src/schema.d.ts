@@ -1186,16 +1186,11 @@ export interface operations {
                      * @description Момент снимка, ISO 8601 в UTC (Date.toISOString)
                      */
                     observedAt: string;
-                    /** @description Витринная цена Ozon — до скидки банка и платёжной системы */
+                    /** @description Витринная цена Ozon — то, что видит покупатель, до скидки банка. Цену продавца расширение не присылает: на карточке её нет (ADR-015) */
                     displayedPrice: {
                         /** @description Сумма в минорных единицах; дробные числа не принимаются (ADR-004) */
                         amount?: number;
                         /** @description Код ISO 4217 */
-                        currency?: string;
-                    };
-                    /** @description Цена продавца с его собственной скидкой; валюта обязана совпадать с витринной */
-                    sellerPrice: {
-                        amount?: number;
                         currency?: string;
                     };
                     /** @description Версия сборки расширения — по ней читаются массовые пропуски */
@@ -1238,7 +1233,7 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
-            /** @description Тело запроса некорректно: артикул, момент, суммы или валюта */
+            /** @description Тело запроса некорректно: артикул, момент, сумма или валюта */
             422: {
                 headers: {
                     [name: string]: unknown;

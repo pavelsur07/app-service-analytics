@@ -177,8 +177,7 @@ final class PriceObservationControllerTest extends WebTestCase
         // Кабинет берётся из строки отслеживания, а не из тела запроса:
         // расширение его не знает и знать не должно.
         self::assertSame($fixture->account->id()->toRfc4122(), $row['marketplace_account_id']);
-        self::assertSame(129_900, self::intColumn($row, 'displayed_price_minor'));
-        self::assertSame(139_900, self::intColumn($row, 'seller_price_minor'));
+        self::assertSame(111_700, self::intColumn($row, 'displayed_price_minor'));
         self::assertSame('RUB', $row['currency']);
         self::assertSame(PriceObservation::SourceExtension, $row['source']);
         self::assertSame($fixture->user->id()->toRfc4122(), $row['captured_by_user_id']);
@@ -186,26 +185,19 @@ final class PriceObservationControllerTest extends WebTestCase
     }
 
     /**
-     * СПП считается при чтении как seller_price − displayed_price
-     * (ADR-014). Хранятся обе цены как есть, включая случай, когда
-     * витринная выше цены продавца: поджать его к нулю на входе значило
-     * бы потерять сам признак того, что страницу разобрали неверно.
+     * Цена пишется как есть, без округлений и поджатий. СПП считается
+     * при чтении разницей с ценой продавца из каталога (ADR-015),
+     * и любое «исправление» на входе потеряло бы признак того, что
+     * страницу разобрали неверно.
      */
-    public function testPricesAreStoredAsGivenIncludingTheNegativeSppCase(): void
+    public function testPriceIsStoredExactlyAsGiven(): void
     {
         $client = static::createClient();
         $fixture = $this->trackingCompany();
 
-        $this->post($client, $fixture, displayedMinor: 150_000, sellerMinor: 120_000);
+        $this->post($client, $fixture, displayedMinor: 100_501);
 
-        $row = $this->observationRow($fixture);
-        self::assertSame(150_000, self::intColumn($row, 'displayed_price_minor'));
-        self::assertSame(120_000, self::intColumn($row, 'seller_price_minor'));
-        self::assertSame(
-            -30_000,
-            self::intColumn($row, 'seller_price_minor') - self::intColumn($row, 'displayed_price_minor'),
-            'СПП отрицателен и хранится как есть, а не поджимается к нулю',
-        );
+        self::assertSame(100_501, self::intColumn($this->observationRow($fixture), 'displayed_price_minor'));
     }
 
     public function testMalformedInputIsRejected(): void
@@ -223,23 +215,10 @@ final class PriceObservationControllerTest extends WebTestCase
             'marketplaceSku' => '100000001',
             'observedAt' => self::OBSERVED_AT,
             'displayedPrice' => ['amount' => 1299.99, 'currency' => 'RUB'],
-            'sellerPrice' => ['amount' => 139_900, 'currency' => 'RUB'],
             'extensionVersion' => '0.1.0',
         ], \JSON_THROW_ON_ERROR));
         self::assertResponseStatusCodeSame(422);
         self::assertSame('displayed_price_required', $this->payload($client)['code']);
-
-        // Разные валюты в одном снимке — ошибка разбора страницы,
-        // а не повод искать курс (ADR-004).
-        $this->postRaw($client, $fixture, json_encode([
-            'marketplaceSku' => '100000001',
-            'observedAt' => self::OBSERVED_AT,
-            'displayedPrice' => ['amount' => 129_900, 'currency' => 'RUB'],
-            'sellerPrice' => ['amount' => 139_900, 'currency' => 'USD'],
-            'extensionVersion' => '0.1.0',
-        ], \JSON_THROW_ON_ERROR));
-        self::assertResponseStatusCodeSame(422);
-        self::assertSame('currency_mismatch', $this->payload($client)['code']);
 
         $this->postRaw($client, $fixture, 'not json');
         self::assertResponseStatusCodeSame(422);
@@ -273,10 +252,9 @@ final class PriceObservationControllerTest extends WebTestCase
         TrackingCompany $fixture,
         string $marketplaceSku = '100000001',
         string $observedAt = self::OBSERVED_AT,
-        int $displayedMinor = 129_900,
-        int $sellerMinor = 139_900,
+        int $displayedMinor = 111_700,
     ): void {
-        $this->postRaw($client, $fixture, $this->body($marketplaceSku, $observedAt, $displayedMinor, $sellerMinor));
+        $this->postRaw($client, $fixture, $this->body($marketplaceSku, $observedAt, $displayedMinor));
     }
 
     private function postRaw(KernelBrowser $client, TrackingCompany $fixture, string $body): void
@@ -292,14 +270,12 @@ final class PriceObservationControllerTest extends WebTestCase
     private function body(
         string $marketplaceSku = '100000001',
         string $observedAt = self::OBSERVED_AT,
-        int $displayedMinor = 129_900,
-        int $sellerMinor = 139_900,
+        int $displayedMinor = 111_700,
     ): string {
         return json_encode([
             'marketplaceSku' => $marketplaceSku,
             'observedAt' => $observedAt,
             'displayedPrice' => ['amount' => $displayedMinor, 'currency' => 'RUB'],
-            'sellerPrice' => ['amount' => $sellerMinor, 'currency' => 'RUB'],
             'extensionVersion' => '0.1.0',
         ], \JSON_THROW_ON_ERROR);
     }

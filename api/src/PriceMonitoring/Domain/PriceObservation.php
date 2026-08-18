@@ -37,8 +37,16 @@ use Symfony\Component\Uid\Uuid;
  * пятиполевого JSON рядом со строкой означало бы держать одни и те же
  * данные дважды.
  *
- * **СПП не хранится** — вычисляется при чтении как
- * `seller_price − displayed_price`, по прецеденту ADR-013 §4.
+ * **Цена продавца здесь не хранится, и прислать её клиент не может**
+ * (ADR-015). Спайк по живой карточке показал, что на странице её нет
+ * вовсе: продавец видит её в кабинете, покупатель — никогда. Зато она
+ * приходит в ответе `/v3/product/info/list`, за которым синхронизация
+ * каталога и так ходит, и живёт историей в `marketplace_listing_price`.
+ *
+ * Поэтому наблюдение несёт ровно одно число — то единственное, чего
+ * не отдаёт ни один API площадки. СПП считается при чтении как разница
+ * цены продавца, действовавшей на момент снимка, и этой витринной
+ * (ADR-013 §4: не хранить то, что выводится).
  *
  * `captured_by_user_id` — ссылка на `User` чужого модуля, и §6 требует
  * для такой ссылки индекс. Здесь его сознательно нет: по этой колонке
@@ -82,14 +90,25 @@ class PriceObservation
     #[ORM\Column(type: 'money_minor_amount')]
     private readonly int $displayedPriceMinor;
 
-    /** Цена продавца с его собственной скидкой. */
-    #[ORM\Column(type: 'money_minor_amount')]
-    private readonly int $sellerPriceMinor;
+    /**
+     * Остаток от прежней схемы, где расширение присылало две цены
+     * (ADR-015 отменил вторую). Колонка ещё существует и всегда NULL:
+     * удаление идёт в два шага, как требует правило совместимых
+     * изменений на факт-таблицах.
+     *
+     * Одношаговое удаление сломало бы выкладку в любом порядке:
+     * миграция вперёд кода — прежний writer пишет в исчезнувшую
+     * колонку; код вперёд миграции — новый writer не заполняет
+     * NOT NULL. Снятие NOT NULL совместимо с обоими, и окна
+     * несовместимости не остаётся вовсе.
+     *
+     * ponytail: следующим изменением, когда новый код везде, — вместе
+     * с колонкой. Держать этот остаток дольше одного релиза незачем.
+     */
+    #[ORM\Column(type: 'money_minor_amount', nullable: true)]
+    private readonly ?int $sellerPriceMinor;
 
     // options: ['fixed' => true] — ADR-004 требует именно char(3).
-    // Одна колонка на строку: обе цены одной карточки в одной валюте,
-    // а разные валюты в одном снимке — не «смешанный случай», а ошибка
-    // разбора страницы.
     #[ORM\Column(length: 3, options: ['fixed' => true])]
     private readonly string $currency;
 
@@ -112,7 +131,6 @@ class PriceObservation
         string $marketplaceSku,
         \DateTimeImmutable $observedAt,
         Money $displayedPrice,
-        Money $sellerPrice,
         string $source,
         Uuid $capturedByUserId,
         string $extensionVersion,
@@ -123,7 +141,7 @@ class PriceObservation
         $this->marketplaceSku = $marketplaceSku;
         $this->observedAt = $observedAt;
         $this->displayedPriceMinor = $displayedPrice->minorAmount();
-        $this->sellerPriceMinor = $sellerPrice->minorAmount();
+        $this->sellerPriceMinor = null;
         $this->currency = $displayedPrice->currency();
         $this->source = $source;
         $this->capturedByUserId = $capturedByUserId;
@@ -143,25 +161,16 @@ class PriceObservation
         string $marketplaceSku,
         \DateTimeImmutable $observedAt,
         Money $displayedPrice,
-        Money $sellerPrice,
         Uuid $capturedByUserId,
         string $extensionVersion,
         \DateTimeImmutable $receivedAt,
     ): self {
-        if ($displayedPrice->currency() !== $sellerPrice->currency()) {
-            // Молчаливое приведение по курсу ADR-004 запрещает, но здесь
-            // дело даже не в курсе: две цены одной карточки в разных
-            // валютах означают, что прочитали не те узлы страницы.
-            throw new \InvalidArgumentException(\sprintf('Обе цены снимка обязаны быть в одной валюте, пришли %s и %s (ADR-004).', $displayedPrice->currency(), $sellerPrice->currency()));
-        }
-
         return new self(
             $companyId,
             $marketplaceAccountId,
             $marketplaceSku,
             $observedAt,
             $displayedPrice,
-            $sellerPrice,
             self::SourceExtension,
             $capturedByUserId,
             $extensionVersion,
@@ -192,11 +201,6 @@ class PriceObservation
     public function displayedPrice(): Money
     {
         return Money::ofMinor($this->displayedPriceMinor, $this->currency);
-    }
-
-    public function sellerPrice(): Money
-    {
-        return Money::ofMinor($this->sellerPriceMinor, $this->currency);
     }
 
     public function source(): string

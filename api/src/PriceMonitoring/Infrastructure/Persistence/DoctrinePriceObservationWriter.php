@@ -36,11 +36,11 @@ final readonly class DoctrinePriceObservationWriter implements PriceObservationR
             <<<'SQL'
                 INSERT INTO price_observation
                     (company_id, marketplace_account_id, marketplace_sku, observed_at,
-                     displayed_price_minor, seller_price_minor, currency,
+                     displayed_price_minor, currency,
                      source, captured_by_user_id, extension_version, received_at)
                 VALUES
                     (:companyId, :marketplaceAccountId, :marketplaceSku, :observedAt,
-                     :displayedPriceMinor, :sellerPriceMinor, :currency,
+                     :displayedPriceMinor, :currency,
                      :source, :capturedByUserId, :extensionVersion, :receivedAt)
                 ON CONFLICT (company_id, marketplace_account_id, marketplace_sku, observed_at)
                 DO NOTHING
@@ -51,7 +51,6 @@ final readonly class DoctrinePriceObservationWriter implements PriceObservationR
                 'marketplaceSku' => $observation->marketplaceSku(),
                 'observedAt' => $observation->observedAt()->format('Y-m-d H:i:s'),
                 'displayedPriceMinor' => $observation->displayedPrice()->minorAmount(),
-                'sellerPriceMinor' => $observation->sellerPrice()->minorAmount(),
                 'currency' => $observation->displayedPrice()->currency(),
                 'source' => $observation->source(),
                 'capturedByUserId' => $observation->capturedByUserId()->toRfc4122(),
