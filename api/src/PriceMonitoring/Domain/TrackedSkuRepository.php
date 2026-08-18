@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\PriceMonitoring\Domain;
 
+use Symfony\Component\Uid\Uuid;
+
 interface TrackedSkuRepository
 {
     /**
@@ -31,6 +33,19 @@ interface TrackedSkuRepository
      * в `ExtensionTokenRepository::revokeIfActive`.
      */
     public function stopIfActive(string $companyId, string $marketplaceSku, \DateTimeImmutable $at): bool;
+
+    /**
+     * Кабинет, к которому привязано активное отслеживание артикула,
+     * либо null, если компания его не отслеживает.
+     *
+     * Один вопрос, а не два: приём наблюдения обязан и проверить право
+     * его прислать, и узнать, в какой кабинет строку отнести, — а это
+     * ровно одна и та же строка. Разделив, мы читали бы её дважды
+     * и могли бы получить разные ответы.
+     *
+     * $companyId первым параметром (CLAUDE.md §1).
+     */
+    public function activeAccountIdFor(string $companyId, string $marketplaceSku): ?Uuid;
 
     /**
      * Сколько **других** артикулов компания отслеживает сейчас. Нужен

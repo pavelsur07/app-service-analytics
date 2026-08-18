@@ -228,6 +228,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/extension/companies/{companyId}/price-observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_price_monitoring_extension_record_observation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/extension/companies/{companyId}/tracked-skus/{marketplaceSku}/stop": {
         parameters: {
             query?: never;
@@ -1142,6 +1158,97 @@ export interface operations {
             };
             /** @description Некорректный артикул, нет активного подключения Ozon либо достигнут потолок отслеживаемых артикулов */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_price_monitoring_extension_record_observation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Артикул площадки с карточки */
+                    marketplaceSku: string;
+                    /**
+                     * Format: date-time
+                     * @description Момент снимка, ISO 8601 в UTC (Date.toISOString)
+                     */
+                    observedAt: string;
+                    /** @description Витринная цена Ozon — до скидки банка и платёжной системы */
+                    displayedPrice: {
+                        /** @description Сумма в минорных единицах; дробные числа не принимаются (ADR-004) */
+                        amount?: number;
+                        /** @description Код ISO 4217 */
+                        currency?: string;
+                    };
+                    /** @description Цена продавца с его собственной скидкой; валюта обязана совпадать с витринной */
+                    sellerPrice: {
+                        amount?: number;
+                        currency?: string;
+                    };
+                    /** @description Версия сборки расширения — по ней читаются массовые пропуски */
+                    extensionVersion: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Снимок принят; повтор того же момента не создаёт второй строки */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Токен отсутствует или недействителен */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Компания недоступна этому токену */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Компания этот артикул не отслеживает */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Тело запроса некорректно: артикул, момент, суммы или валюта */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Слишком много наблюдений от компании за час; в Retry-After — когда повторить */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

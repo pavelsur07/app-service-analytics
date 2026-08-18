@@ -8,6 +8,7 @@ use App\PriceMonitoring\Domain\TrackedSku;
 use App\PriceMonitoring\Domain\TrackedSkuRepository;
 use App\PriceMonitoring\Domain\TrackedSkuStatus;
 use Doctrine\DBAL\Connection;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * DBAL, не ORM, хотя таблицу и редактирует человек (CLAUDE.md §6).
@@ -85,6 +86,31 @@ final readonly class DoctrineTrackedSkuRepository implements TrackedSkuRepositor
         );
 
         return $affected > 0;
+    }
+
+    public function activeAccountIdFor(string $companyId, string $marketplaceSku): ?Uuid
+    {
+        $accountId = $this->connection->fetchOne(
+            <<<'SQL'
+                SELECT marketplace_account_id FROM tracked_sku
+                WHERE company_id = :companyId
+                  AND marketplace_sku = :marketplaceSku
+                  AND status = :active
+                SQL,
+            [
+                'companyId' => $companyId,
+                'marketplaceSku' => $marketplaceSku,
+                'active' => TrackedSkuStatus::Active->value,
+            ],
+        );
+
+        // false — строки нет вовсе; fetchOne не различает «нет строки»
+        // и «в строке NULL», но колонка объявлена NOT NULL.
+        if (!\is_string($accountId)) {
+            return null;
+        }
+
+        return Uuid::fromString($accountId);
     }
 
     public function countActiveExcluding(string $companyId, string $marketplaceSku): int
