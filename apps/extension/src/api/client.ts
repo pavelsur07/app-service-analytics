@@ -132,6 +132,39 @@ export async function stopTracking(
   )
 }
 
+/**
+ * Снимок витринной цены. Одно число: цену продавца расширение прислать
+ * не может — на карточке её нет вовсе (ADR-015), она приходит из каталога.
+ */
+export async function recordObservation(
+  token: string,
+  companyId: string,
+  observation: {
+    marketplaceSku: string
+    observedAt: string
+    amountMinor: number
+    currency: string
+    extensionVersion: string
+  },
+): Promise<void> {
+  await request<null>(
+    token,
+    `/api/extension/companies/${encodeURIComponent(companyId)}/price-observations`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        marketplaceSku: observation.marketplaceSku,
+        observedAt: observation.observedAt,
+        displayedPrice: {
+          amount: observation.amountMinor,
+          currency: observation.currency,
+        },
+        extensionVersion: observation.extensionVersion,
+      }),
+    },
+  )
+}
+
 async function request<T>(
   token: string,
   path: string,

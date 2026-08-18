@@ -34,6 +34,21 @@ export interface SetTrackingRequest {
 export interface OverlayData {
   readonly sales: SkuSalesSummaryResponse
   readonly tracked: boolean
+  /**
+   * Визит открыт service worker'ом ради снятия цены, а не человеком.
+   * Признак приходит от него же, а не выводится из адреса: параметр
+   * в URL пережил бы копирование ссылки, а редирект Ozon — нет.
+   */
+  readonly capture: boolean
+}
+
+/** Снятая с карточки витринная цена — от content-script к service worker. */
+export interface ObservationMessage {
+  readonly type: 'conwix:observation'
+  readonly marketplaceSku: string
+  readonly observedAt: string
+  readonly amountMinor: number
+  readonly currency: string
 }
 
 /**
@@ -56,6 +71,37 @@ export function setTrackingRequest(
   tracked: boolean,
 ): SetTrackingRequest {
   return { type: 'conwix:set-tracking', marketplaceSku, tracked }
+}
+
+export function observationMessage(
+  marketplaceSku: string,
+  observedAt: string,
+  amountMinor: number,
+  currency: string,
+): ObservationMessage {
+  return {
+    type: 'conwix:observation',
+    marketplaceSku,
+    observedAt,
+    amountMinor,
+    currency,
+  }
+}
+
+export function isObservationMessage(
+  value: unknown,
+): value is ObservationMessage {
+  const candidate = asRecord(value)
+
+  return (
+    null !== candidate &&
+    'conwix:observation' === candidate.type &&
+    isNonEmptyString(candidate.marketplaceSku) &&
+    isNonEmptyString(candidate.observedAt) &&
+    'number' === typeof candidate.amountMinor &&
+    Number.isInteger(candidate.amountMinor) &&
+    isNonEmptyString(candidate.currency)
+  )
 }
 
 export function isOverlayRequest(value: unknown): value is OverlayRequest {
@@ -98,7 +144,8 @@ export function parseOverlayData(value: unknown): OverlayData | null {
     'string' !== typeof sales.marketplaceSku ||
     'number' !== typeof sales.days ||
     !Array.isArray(sales.totals) ||
-    'boolean' !== typeof candidate.tracked
+    'boolean' !== typeof candidate.tracked ||
+    'boolean' !== typeof candidate.capture
   ) {
     return null
   }
@@ -106,6 +153,7 @@ export function parseOverlayData(value: unknown): OverlayData | null {
   return {
     sales: candidate.sales as SkuSalesSummaryResponse,
     tracked: candidate.tracked,
+    capture: candidate.capture,
   }
 }
 

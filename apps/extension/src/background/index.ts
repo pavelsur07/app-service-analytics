@@ -13,11 +13,21 @@ import {
   refreshCatalog,
 } from '../shared/catalog'
 import {
+  isObservationMessage,
   isOverlayRequest,
   isSetTrackingRequest,
   type OverlayData,
   type TrackingResult,
 } from '../shared/overlayRequest'
+
+import {
+  createIfAbsent,
+  handlePriceSyncAlarm,
+  isCaptureVisit,
+  isPriceSyncAlarm,
+  schedulePriceSync,
+  submitObservation,
+} from './priceSync'
 import {
   browserStorage,
   readConnection,
@@ -74,15 +84,35 @@ chrome.runtime.onMessageExternal.addListener(
  * CORS (shared/overlayRequest.ts). Заодно токен и хранилище не покидают
  * service worker.
  */
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Чужое сообщение оставляем без ответа и без sendResponse: слушателей
   // может быть несколько, и ответивший первым закрывает канал. Ответить
   // «не знаю» на всё подряд — значит сломать любой обработчик, который
   // появится следом.
   if (isOverlayRequest(message)) {
-    void overlayDataFor(message.marketplaceSku).then(sendResponse)
+    void overlayDataFor(message.marketplaceSku, sender.tab?.windowId).then(
+      sendResponse,
+    )
 
     return true
+  }
+
+  // Снимок цены с фонового визита. Ответа не ждём: content-script
+  // после отправки делать нечего — окно всё равно закроет service worker.
+  if (isObservationMessage(message)) {
+    void submitObservation(
+      browserStorage(),
+      {
+        marketplaceSku: message.marketplaceSku,
+        observedAt: message.observedAt,
+        amountMinor: message.amountMinor,
+        currency: message.currency,
+      },
+      sender.tab?.windowId,
+      EXTENSION_VERSION,
+    )
+
+    return false
   }
 
   if (isSetTrackingRequest(message)) {
@@ -103,6 +133,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
  */
 async function overlayDataFor(
   marketplaceSku: string,
+  windowId: number | undefined,
 ): Promise<OverlayData | null> {
   const connection = await ownSkuConnection(marketplaceSku)
   if (null === connection) {
@@ -113,12 +144,13 @@ async function overlayDataFor(
     // Оба запроса разом: панель рисуется целиком или не рисуется вовсе,
     // и ждать их по очереди значило бы удвоить задержку до появления
     // цифр на карточке.
-    const [sales, tracked] = await Promise.all([
+    const [sales, tracked, capture] = await Promise.all([
       fetchSkuSales(connection.token, connection.companyId, marketplaceSku),
       isTracked(connection, marketplaceSku),
+      isCaptureVisit(browserStorage(), marketplaceSku, windowId),
     ])
 
-    return { sales, tracked }
+    return { sales, tracked, capture }
   } catch {
     return null
   }
@@ -218,6 +250,12 @@ async function ownSkuConnection(
   return connection
 }
 
+// Версия сборки уезжает с каждым наблюдением: по ней читаются массовые
+// пропуски, когда у части клиентов расширение старое.
+declare const __EXTENSION_VERSION__: string
+
+const EXTENSION_VERSION: string = __EXTENSION_VERSION__
+
 // Двести — максимум страницы у эндпоинта; потолок страниц страхует
 // от бесконечного цикла, если сервер начнёт отдавать nextCursor,
 // не двигая выборку.
@@ -230,18 +268,30 @@ const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000
 // Будильник, не setInterval: service worker засыпает через полминуты
 // простоя, и таймер в памяти умирает вместе с ним. Период чуть меньше
 // суток — чтобы каталог успевал обновиться до того, как признан устаревшим.
-chrome.alarms.create(CATALOG_ALARM, {
+//
+// createIfAbsent, а не create: одноимённый будильник Chrome заменяет,
+// сбрасывая отсчёт, — а воркер просыпается на каждое сообщение
+// от оверлея. Каталог с суточным периодом и минутной задержкой
+// не обновлялся бы вовсе у активного продавца.
+void createIfAbsent(CATALOG_ALARM, {
   periodInMinutes: 12 * 60,
   delayInMinutes: 1,
 })
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (CATALOG_ALARM !== alarm.name) {
+  if (CATALOG_ALARM === alarm.name) {
+    void refreshCatalogIfStale()
+
     return
   }
 
-  void refreshCatalogIfStale()
+  if (isPriceSyncAlarm(alarm.name)) {
+    void handlePriceSyncAlarm(browserStorage(), alarm.name)
+  }
 })
+
+// Обход отслеживаемых артикулов ради витринной цены (ADR-014).
+void schedulePriceSync()
 
 async function connect(token: string): Promise<ConnectResult> {
   try {

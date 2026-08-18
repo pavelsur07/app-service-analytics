@@ -26,6 +26,13 @@
 const EXTENSION_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApDsVTjxcpbXPABYeNM2C4JEolc7TX2xTA/OWNtDP1++FqwyOydl6lefd4a1HZeVxlQceb8mJ4oEpYTF4/LugdAFnK6mMhaOuVBK9hTqbcR7xc7BylWo/RGuEPFhY1uosRtRr0+/aj7lSFuoCpmlcz4IOLgbgtiTC6lL/txmI7qaJbwOzMbREmnf46fSHg5Uwvtq8iRAEJVTxF0aIM8vXJsaxUc8Z2zhPAbUWjK3APuxaZAdnPqoICJRpXurLmUfUH6LY0lKuGIwuPrl4sI8qMpHnO12zMkME+7j5AEducZ5R1oqy0yAh9c5LWLVIYziNw9XZzzd+WJmDx67JfxTulwIDAQAB'
 
+/**
+ * Одно значение и для манифеста, и для наблюдений цены: расширение
+ * сообщает версию с каждым снимком (ADR-014), и разъехавшиеся числа
+ * означали бы, что по журналу нельзя понять, какая сборка их прислала.
+ */
+export const EXTENSION_VERSION = '0.2.0'
+
 const PROD_HOSTS = ['https://app.conwix.com/*']
 const DEV_HOSTS = [
   'http://app.conwix.localhost/*',
@@ -70,7 +77,7 @@ export function buildManifest(mode: string): Record<string, unknown> {
     name: isDev ? 'Conwix (dev)' : 'Conwix',
     // Версия расширения живёт отдельно от версии сервиса: в сторе она
     // обязана только возрастать, а выкладка бэкенда происходит чаще.
-    version: '0.1.0',
+    version: EXTENSION_VERSION,
     description: 'Аналитика карточек товаров Ozon поверх кабинета продавца.',
     ...(EXTENSION_KEY ? { key: EXTENSION_KEY } : {}),
 
@@ -83,16 +90,22 @@ export function buildManifest(mode: string): Record<string, unknown> {
       type: 'module',
     },
 
-    // Только домен приложения. Ozon сюда не добавлен намеренно:
-    // host_permissions нужны, чтобы ходить к хосту сетью, а оверлей
-    // к Ozon не обращается вовсе — он читает свою же страницу через
-    // content_scripts и берёт цифры из нашего API. Запросы к Ozon
-    // появятся вместе со сбором наблюдений (этап 3), тогда же и разрешение.
+    // Только домен приложения, и со сбором наблюдений это не изменилось.
+    // host_permissions нужны, чтобы ходить к хосту сетью; мы к Ozon
+    // сетью не ходим — открываем его страницу окном и читаем её тем же
+    // content-script'ом, который уже объявлен в content_scripts.matches.
     host_permissions: isDev ? DEV_HOSTS : PROD_HOSTS,
     // Разрешения добавляются по одному под конкретную задачу: каждое
     // лишнее удлиняет ревью в сторе и требует обоснования.
-    // alarms — обновление каталога артикулов раз в сутки; setInterval
-    // для этого не годится, service worker засыпает через полминуты.
+    // alarms — обновление каталога артикулов и обход отслеживаемых
+    // артикулов раз в полчаса; setInterval для этого не годится,
+    // service worker засыпает через полминуты.
+    //
+    // Разрешения на окна здесь нет намеренно: chrome.windows.create
+    // и remove его не требуют, а `tabs` понадобился бы только чтобы
+    // читать адрес чужой вкладки — своё окно мы и так знаем
+    // по идентификатору. Каждое лишнее разрешение удлиняет ревью
+    // в сторе и требует обоснования.
     permissions: ['storage', 'alarms'],
 
     // Кто имеет право обратиться к расширению снаружи. Только наше

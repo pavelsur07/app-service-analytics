@@ -1,0 +1,21 @@
+{
+  "@context": "http://schema.org",
+  "@type": "Product",
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "4.9",
+    "reviewCount": "2605"
+  },
+  "brand": "WOMJOY",
+  "description": "Представляем вашему вниманию идеальные легинсы для фитнеса, которые помогут вам …",
+  "image": "https://ir.ozone.ru/s3/multimedia-1-y/8017564570.jpg",
+  "name": "Легинсы WOMJOY Sexy",
+  "offers": {
+    "@type": "Offer",
+    "url": "https://www.ozon.ru/product/leginsy-womjoy-sexy-308403988/",
+    "availability": "http://schema.org/InStock",
+    "price": "1117",
+    "priceCurrency": "RUB"
+  },
+  "sku": "308403988"
+}
