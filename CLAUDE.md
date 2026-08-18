@@ -74,13 +74,17 @@ Identity      Company, User, CompanyMember (членство, ADR-002), Marketpl
               Источник companyId.
 Ingestion     коннекторы к площадкам, raw-слой, расписание, лимиты запросов,
               нормализация в факты.
+PriceMonitoring  список отслеживаемых артикулов и наблюдения цены,
+              снятые расширением с карточки Ozon (ADR-014). Не коннектор:
+              данные приносит клиент, мы их не забираем у площадки.
 ```
 
 Новый модуль создаётся, когда появляется задача, которую некуда положить,
 и решение по нему записано в ADR. Заранее пустые модули не заводятся.
 
-**Зависимости строго вниз.** Ingestion → Identity → Shared.
-Обратных вызовов нет ни одного. Межмодульное общение — только через Facade
+**Зависимости строго вниз.** Ingestion → Identity → Shared;
+PriceMonitoring → Identity → Shared. Ingestion и PriceMonitoring друг
+о друге не знают вовсе. Обратных вызовов нет ни одного. Межмодульное общение — только через Facade
 в `Application`. Прямой импорт чего-либо из чужого модуля мимо Facade
 запрещён и проверяется Deptrac.
 
@@ -836,6 +840,7 @@ merge в `master` и на **каждое** применение миграции
 | ADR-011 | Что считается достаточным аудиторским следом |
 | ADR-012 | Источник расходов площадки для юнит-экономики |
 | ADR-013 | Себестоимость: к чему привязана и как меняется во времени |
+| ADR-014 | Сбор наблюдений цены с карточки Ozon через расширение |
 
 ---
 
@@ -885,7 +890,7 @@ make test-cov          покрытие — драйвер pcov в php-cli (dock
 make lint / make lint-fix   PHP-CS-Fixer: проверка / автоисправление
 make stan               PHPStan
 make deptrac             границы модулей
-make structure-check     api/src содержит только Shared/Identity/Ingestion/Kernel.php
+make structure-check     api/src содержит только спроектированные модули и Kernel.php
 make audit               composer audit + npm audit (оба приложения)
 make front-typecheck     tsc --noEmit
 make front-lint          ESLint + Prettier --check

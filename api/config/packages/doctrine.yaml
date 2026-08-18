@@ -40,6 +40,12 @@ doctrine:
                 dir: '%kernel.project_dir%/src/Ingestion/Domain'
                 prefix: 'App\Ingestion\Domain'
                 alias: Ingestion
+            PriceMonitoring:
+                type: attribute
+                is_bundle: false
+                dir: '%kernel.project_dir%/src/PriceMonitoring/Domain'
+                prefix: 'App\PriceMonitoring\Domain'
+                alias: PriceMonitoring
 
 when@test:
     doctrine:

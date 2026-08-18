@@ -157,7 +157,7 @@ stan: ## PHPStan
 deptrac: ## границы модулей
 	$(COMPOSE) exec php-cli composer deptrac
 
-structure-check: ## api/src содержит только Shared/Identity/Ingestion/Kernel.php
+structure-check: ## api/src содержит только Shared/Identity/Ingestion/PriceMonitoring/Kernel.php
 	$(COMPOSE) exec php-cli sh bin/check-src-structure.sh
 
 audit: ## composer audit + npm audit (оба приложения и packages/api-schema)

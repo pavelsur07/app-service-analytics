@@ -155,6 +155,24 @@ return static function (DeptracConfig $config): void {
                 ),
             ),
 
+            // PriceMonitoring (ADR-014) — четыре обычных слоя без узких
+            // исключений: межарендаторных чтений в модуле нет ни одного,
+            // каждый запрос идёт с companyId. Появится операционная задача
+            // (обход всех компаний) — она получит свой узкий слой тем же
+            // приёмом, что ActiveOzonAccountsQuery, а не грант широкому.
+            $priceMonitoringDomain = Layer::withName('PriceMonitoringDomain')->collectors(
+                DirectoryConfig::create('src/PriceMonitoring/Domain/.*'),
+            ),
+            $priceMonitoringApplication = Layer::withName('PriceMonitoringApplication')->collectors(
+                DirectoryConfig::create('src/PriceMonitoring/Application/.*'),
+            ),
+            $priceMonitoringInfrastructure = Layer::withName('PriceMonitoringInfrastructure')->collectors(
+                DirectoryConfig::create('src/PriceMonitoring/Infrastructure/.*'),
+            ),
+            $priceMonitoringUi = Layer::withName('PriceMonitoringUi')->collectors(
+                DirectoryConfig::create('src/PriceMonitoring/Ui/.*'),
+            ),
+
             // Внешние библиотеки — не наши модули, но зависимость на них
             // реальна и должна быть покрыта правилом, а не висеть Uncovered.
             $brickMoney = Layer::withName('BrickMoney')->collectors(
@@ -278,6 +296,22 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),
+
+            // PriceMonitoring — ниже Ingestion и от него не зависит вовсе
+            // (ADR-014): это самостоятельный источник данных, не коннектор.
+            // Вход в Identity — только identityFacade и только у Application:
+            // Ui границу модуля не пересекает даже через Facade, как
+            // и в Ingestion.
+            //
+            // priceMonitoringInfrastructure у Ui — синхронные запросы
+            // чтения (ListTrackedSkusController → TrackedSkusQuery), тот же
+            // принцип, что у ListCompanySkusController; priceMonitoringDomain
+            // — ради интерфейса репозитория в StopTrackingController: там
+            // один условный UPDATE, оркестрировать нечем.
+            Ruleset::forLayer($priceMonitoringUi)->accesses($priceMonitoringApplication, $priceMonitoringDomain, $priceMonitoringInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($priceMonitoringApplication)->accesses($priceMonitoringDomain, $identityFacade, $sharedApplication, $sharedDomain, $symfonyUid),
+            Ruleset::forLayer($priceMonitoringInfrastructure)->accesses($priceMonitoringDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($priceMonitoringDomain)->accesses($sharedDomain, $symfonyUid),
         )
     ;
 };
