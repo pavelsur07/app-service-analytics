@@ -21,8 +21,9 @@ use Symfony\Component\Uid\Uuid;
  * окружения, и билдер, порождающий его молча, прятал бы от теста те
  * самые связи, изоляцию которых он проверяет.
  *
- * Цены задаются целиком через Money — билдер не вычисляет ни СПП,
- * ни разницу, потому что именно их проверяет тест (ADR-005).
+ * Цена задаётся целиком через Money — билдер не вычисляет ни СПП,
+ * ни разницу, потому что именно их проверяет тест (ADR-005). Цена одна:
+ * вторую слагаемую СПП расширение не присылает вовсе (ADR-015).
  */
 final class PriceObservationBuilder
 {
@@ -31,7 +32,6 @@ final class PriceObservationBuilder
     private string $marketplaceSku = '100000001';
     private ?\DateTimeImmutable $observedAt = null;
     private ?Money $displayedPrice = null;
-    private ?Money $sellerPrice = null;
     private ?Uuid $capturedByUserId = null;
     private string $extensionVersion = '0.1.0';
     private ?\DateTimeImmutable $receivedAt = null;
@@ -93,11 +93,10 @@ final class PriceObservationBuilder
         return $clone;
     }
 
-    public function withPrices(Money $displayedPrice, Money $sellerPrice): self
+    public function withDisplayedPrice(Money $displayedPrice): self
     {
         $clone = clone $this;
         $clone->displayedPrice = $displayedPrice;
-        $clone->sellerPrice = $sellerPrice;
 
         return $clone;
     }
@@ -135,8 +134,7 @@ final class PriceObservationBuilder
             marketplaceAccountId: $this->marketplaceAccountId ?? Uuid::v7(),
             marketplaceSku: $this->marketplaceSku,
             observedAt: $observedAt,
-            displayedPrice: $this->displayedPrice ?? Money::ofMinor(129_900, 'RUB'),
-            sellerPrice: $this->sellerPrice ?? Money::ofMinor(139_900, 'RUB'),
+            displayedPrice: $this->displayedPrice ?? Money::ofMinor(111_700, 'RUB'),
             capturedByUserId: $this->capturedByUserId ?? Uuid::v7(),
             extensionVersion: $this->extensionVersion,
             receivedAt: $this->receivedAt ?? $observedAt,

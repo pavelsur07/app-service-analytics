@@ -10,7 +10,11 @@ namespace App\PriceMonitoring\Ui\Request;
  * Тело приходит от кода на машине клиента — это граница доверия,
  * и проверяется здесь всё, что дальше уедет в базу.
  *
- * Суммы — целые минорные единицы. Рубли с копейками дробным числом
+ * Цена одна — витринная (ADR-015). Цену продавца расширение прислать
+ * не может: на карточке её нет, она приходит из каталога и живёт
+ * историей в Ingestion.
+ *
+ * Сумма — целые минорные единицы. Рубли с копейками дробным числом
  * не принимаются вовсе: JSON-число это double, и `420.10` приезжает
  * как 420.09999999999997 (ADR-004 запрещает float в денежных величинах,
  * а граница, где это проще всего нарушить незаметно, — ровно здесь).
@@ -29,7 +33,6 @@ final readonly class PriceObservationRequest
         public string $marketplaceSku,
         public \DateTimeImmutable $observedAt,
         public int $displayedPriceMinor,
-        public int $sellerPriceMinor,
         public string $currency,
         public string $extensionVersion,
     ) {
@@ -61,19 +64,11 @@ final readonly class PriceObservationRequest
         }
 
         $displayed = self::price($decoded, 'displayedPrice', 'displayed_price');
-        $seller = self::price($decoded, 'sellerPrice', 'seller_price');
-
-        if ($displayed['currency'] !== $seller['currency']) {
-            // Две цены одной карточки в разных валютах означают, что
-            // прочитали не те узлы страницы, а не что нужен курс.
-            throw new \InvalidArgumentException('currency_mismatch');
-        }
 
         return new self(
             $sku,
             self::observedAt($decoded),
             $displayed['amount'],
-            $seller['amount'],
             $displayed['currency'],
             trim($version),
         );
