@@ -8,12 +8,15 @@ use App\Identity\Application\Facade\IdentityFacade;
 use App\Identity\Application\Facade\OzonSyncTarget;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Domain\MarketplaceListing;
+use App\Ingestion\Domain\MarketplaceListingPrice;
+use App\Ingestion\Domain\MarketplaceListingPriceRepository;
 use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
+use App\Ingestion\Domain\OzonListingPriceParser;
 use App\Ingestion\Domain\OzonProductInfoFetcher;
 use App\Ingestion\Domain\OzonProductInfoListParser;
 use App\Ingestion\Domain\OzonProductListPage;
@@ -74,7 +77,9 @@ final readonly class FetchOzonCatalogHandler
         private OzonProductInfoFetcher $infoClient,
         private OzonProductListParser $parser,
         private OzonProductInfoListParser $infoParser,
+        private OzonListingPriceParser $priceParser,
         private MarketplaceListingRepository $listings,
+        private MarketplaceListingPriceRepository $listingPrices,
         private MarketplaceRawDocumentRepository $rawDocuments,
     ) {
     }
@@ -107,6 +112,7 @@ final readonly class FetchOzonCatalogHandler
         $period = (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))->setTime(0, 0);
 
         $listings = [];
+        $prices = [];
         $lastId = '';
         $seenCursors = [];
 
@@ -138,7 +144,22 @@ final readonly class FetchOzonCatalogHandler
             ));
 
             $parsed = $this->parser->parse($rawBody);
-            $names = $this->fetchNames($target, $companyId, $marketplaceAccountId, $period, $parsed);
+            $infoBody = $this->fetchProductInfo($target, $companyId, $marketplaceAccountId, $period, $parsed);
+            $names = null === $infoBody ? [] : $this->infoParser->parse($infoBody);
+
+            // Цены накапливаются по всем страницам и пишутся одним
+            // запросом после цикла: писать на страницу значило бы
+            // делать запросы в цикле (CLAUDE.md §6).
+            foreach (null === $infoBody ? [] : $this->priceParser->parse($infoBody) as $listingPrice) {
+                $prices[] = MarketplaceListingPrice::seen(
+                    $companyId,
+                    $marketplaceAccountId,
+                    $listingPrice->marketplaceSku,
+                    $syncedAt,
+                    $listingPrice->price,
+                    $listingPrice->oldPrice,
+                );
+            }
 
             foreach ($parsed->items as $item) {
                 $listings[] = MarketplaceListing::seen(
@@ -158,6 +179,10 @@ final readonly class FetchOzonCatalogHandler
             // числе товаров — уходила бы на пустую страницу.
             if ('' === $parsed->lastId || $parsed->itemsOnPage < self::PAGE_SIZE) {
                 $this->listings->replaceForAccount($target->companyId, $marketplaceAccountId, $listings);
+                // После каталога: строка истории цены ссылается
+                // на артикул, и порядок делает эту ссылку осмысленной
+                // даже при первой синхронизации.
+                $this->listingPrices->recordChanged($target->companyId, $prices);
 
                 return;
             }
@@ -197,18 +222,20 @@ final readonly class FetchOzonCatalogHandler
      * — не техническая ошибка, а событие жизненного цикла подключения
      * (ADR-007). Он проброшен наверх, где обрабатывается общим порядком.
      *
-     * @return array<string, string> наименование по sku
+     * Отдаёт сырое тело, а не разобранные имена: из того же ответа
+     * берутся ещё и цены (ADR-015), и второй запрос ради них был бы
+     * лишним обращением к площадке.
      */
-    private function fetchNames(
+    private function fetchProductInfo(
         OzonSyncTarget $target,
         Uuid $companyId,
         Uuid $marketplaceAccountId,
         \DateTimeImmutable $period,
         OzonProductListPage $page,
-    ): array {
+    ): ?string {
         $productIds = $page->productIds();
         if ([] === $productIds) {
-            return [];
+            return null;
         }
 
         $rawBody = $this->infoClient->fetchNames($target->clientId, $target->apiKey, $productIds);
@@ -221,6 +248,6 @@ final readonly class FetchOzonCatalogHandler
             rawBody: $rawBody,
         ));
 
-        return $this->infoParser->parse($rawBody);
+        return $rawBody;
     }
 }
