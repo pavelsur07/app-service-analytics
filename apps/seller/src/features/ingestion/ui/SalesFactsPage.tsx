@@ -28,7 +28,7 @@ export function SalesFactsPage() {
 
   if (companyId === undefined) {
     return (
-      <div className="p-6">
+      <div>
         <Card tone="negative">
           <StatusPanel
             action={
@@ -57,7 +57,7 @@ export function SalesFactsPage() {
   const nextCursor = query.data?.nextCursor ?? null
 
   return (
-    <div className="p-6">
+    <div>
       <div className="flex flex-col gap-4">
         <h1 className="text-xl font-semibold">Продажи Ozon</h1>
 
