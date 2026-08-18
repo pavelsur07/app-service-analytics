@@ -33,7 +33,7 @@ DB_TEST_NAME := $(DB_NAME)_test
 	front-typecheck front-lint front-test front-knip \
 	api-doc-export api-types api-types-check \
 	front-install front-install-apps e2e-install front-dev front-build \
-	review-prepare review-codex review-kimi review \
+	review-prepare review-codex review-defects review \
 	ci-local
 
 help: ## список целей с описаниями
@@ -277,24 +277,21 @@ review-codex: ## роль «соответствие» (5A): запрос в pac
 	$(call review_request,5A,var/review/package-rules.md)
 	timeout 900 codex exec --sandbox read-only -o var/review/codex.md - < var/review/package-rules.md
 
-# Промпт — ссылка на файл, а не его содержимое. Codex читает запрос
-# со stdin, kimi так не умеет: у него источник промпта только -p, а один
-# аргумент в Linux ограничен 128 КиБ (MAX_ARG_STRLEN). Пакет с дифом
-# и всеми ADR давно больше, и `kimi -p "$(cat ...)"` падал с
-# «Argument list too long» — то есть роль «дефекты» просто не прогонялась.
-#
-# Read-only здесь просьбой в промпте, а не флагом: у kimi нет аналога
-# codex --sandbox read-only, а --plan несовместим с -p. Слабее, чем
-# у Codex, и это осознанная разница, а не недосмотр.
-review-kimi: ## роль «дефекты» (5B): запрос в package-defects.md, ответ в kimi.md
+# Тот же инструмент, что и выше, и это не лень, а замена выбывшего:
+# Kimi CLI занимал эту роль до 2026-08-18 и снят после шести таймаутов
+# из восьми прогонов (CLAUDE.md, «Роли инструментов разведены»).
+# Роли разводит теперь промпт, а не вторая модель: раздел 5B спрашивает
+# «сломается ли это в проде», 5A — «нарушено ли записанное правило».
+# Ответ уходит в свой файл, иначе второй прогон затирал бы первый.
+review-defects: ## роль «дефекты» (5B): запрос в package-defects.md, ответ в codex-defects.md
 	@mkdir -p var/review
 	$(call review_request,5B,var/review/package-defects.md)
-	timeout 900 kimi --output-format text -p "Ты внешний ревьюер. Прочитай файл var/review/package-defects.md целиком и выполни то, что написано в его разделе «5B». Ответ дай строго в формате из раздела 6 этого файла. Работай только на чтение: ничего не редактируй, не создавай и не удаляй, тесты и сборку не запускай." > var/review/kimi.md
+	timeout 900 codex exec --sandbox read-only -o var/review/codex-defects.md - < var/review/package-defects.md
 
-review: review-prepare ## review-prepare + оба инструмента: make review TASK="..."
+review: review-prepare ## review-prepare + оба прогона: make review TASK="..."
 	$(MAKE) review-codex
-	$(MAKE) review-kimi
-	@echo "Ответы: var/review/codex.md, var/review/kimi.md"
+	$(MAKE) review-defects
+	@echo "Ответы: var/review/codex.md (соответствие), var/review/codex-defects.md (дефекты)"
 
 # --- Сводная ---------------------------------------------------------------
 # Предполагает уже поднятое и установленное окружение (make init) —
