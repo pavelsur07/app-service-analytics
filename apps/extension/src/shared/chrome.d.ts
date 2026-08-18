@@ -80,6 +80,13 @@ declare namespace chrome {
       info: { periodInMinutes?: number; delayInMinutes?: number },
     ): void
 
+    /** Есть ли уже такой будильник — чтобы не сбрасывать его отсчёт. */
+    function get(name: string): Promise<Alarm | undefined>
+
+    function getAll(): Promise<Alarm[]>
+
+    function clear(name: string): Promise<boolean>
+
     const onAlarm: {
       addListener(callback: (alarm: Alarm) => void): void
     }

@@ -13,28 +13,33 @@ import {
  * покупатель, не отдаёт ни один API площадки, и взять её можно только
  * с отрисованной страницы.
  *
- * **Визиты размазаны по окну, а не идут пачкой.** Полсотни окон подряд —
- * это и всплеск, похожий на бота, и полсотни окон, мигающих у человека
- * перед глазами. Каждому артикулу заводится свой одноразовый будильник
- * со сдвигом `i × 30мин / N`.
+ * **Всё здесь построено вокруг того, что воркер засыпает и просыпается
+ * в произвольный момент.** Это не абстрактная осторожность: Chrome
+ * гасит воркер через полминуты простоя, копит пропущенные будильники
+ * на спящем устройстве и доставляет их пачкой при пробуждении. Отсюда
+ * три решения, каждое из которых чинит целый класс отказов, а не случай.
  *
- * **Будильники, а не таймеры.** Service worker MV3 засыпает через
- * полминуты простоя, и `setTimeout` умирает вместе с ним — из тридцати
- * минут ожидания не пережил бы ни один.
+ * **Состояние — карта «окно → артикул», а не единственный слот.** Слот
+ * требовал бы, чтобы проверка «свободен ли» и его занятие были одним
+ * действием, а между ними лежат `await` к хранилищу; при доставке
+ * пачки будильников несколько обработчиков увидели бы слот свободным,
+ * и лишние окна остались бы бесхозными. Карта делает лишнее окно
+ * безвредным: каждое записано и каждое будет закрыто.
  *
- * **Разрешений манифеста не добавляется ни одного.** `chrome.windows`
- * их не требует; `tabs` понадобился бы только чтобы читать адрес чужой
- * вкладки, а мы своё окно и так знаем по идентификатору.
+ * **Будильник закрытия несёт в имени идентификатор окна** и ставится
+ * до записи в хранилище. Поэтому окно закроется, даже если воркер
+ * умрёт сразу после его открытия: будильник переживает смерть воркера,
+ * а хранилище к тому моменту ещё пусто. Общий будильник закрывал бы
+ * «текущий» захват — то есть после сна устройства закрыл бы чужой.
  *
- * ponytail: захват идёт по одному, без очереди и без параллельности.
- * Потолок в 50 артикулов держит бэкенд, и при нём шаг между визитами —
- * 36 секунд, вчетверо больше, чем занимает сам визит. Понадобится
- * больше — обсуждать параллельность, а не растягивать окно.
+ * **Периодический будильник создаётся, только если его ещё нет.**
+ * Chrome заменяет одноимённый, сбрасывая отсчёт; воркер, просыпающийся
+ * чаще, чем раз в отведённую задержку, откладывал бы цикл вечно.
  */
 
 const CYCLE_ALARM = 'conwix:price-sync'
 const CAPTURE_PREFIX = 'conwix:capture:'
-const CAPTURE_TIMEOUT_ALARM = 'conwix:capture-timeout'
+const TIMEOUT_PREFIX = 'conwix:capture-timeout:'
 
 const CYCLE_MINUTES = 30
 
@@ -42,26 +47,44 @@ const CYCLE_MINUTES = 30
 const PAGE_SIZE = 200
 const MAX_PAGES = 5
 
-/** Что сейчас снимается. В storage, а не в памяти: воркер засыпает. */
-const CAPTURE_KEY = 'capture'
+const CYCLE_KEY = 'cycle'
+const CAPTURES_KEY = 'captures'
 
-interface PendingCapture {
-  readonly marketplaceSku: string
-  readonly windowId: number
-}
+/**
+ * Сколько окон держим одновременно. Один: при потолке в 50 артикулов
+ * шаг между визитами 36 секунд, вчетверо больше самого визита.
+ * Проверка не строгая — доставленная пачка будильников может открыть
+ * второе окно, и это безвредно: оба записаны, оба закроются.
+ */
+const MAX_OPEN_WINDOWS = 1
 
-export function schedulePriceSync(): void {
-  chrome.alarms.create(CYCLE_ALARM, {
+export async function schedulePriceSync(): Promise<void> {
+  await createIfAbsent(CYCLE_ALARM, {
     periodInMinutes: CYCLE_MINUTES,
     delayInMinutes: 1,
   })
 }
 
+/**
+ * Создаёт будильник, только если такого ещё нет. `chrome.alarms.create`
+ * с существующим именем заменяет его и сбрасывает отсчёт: воркер,
+ * просыпающийся чаще задержки, откладывал бы срабатывание бесконечно.
+ */
+export async function createIfAbsent(
+  name: string,
+  info: { periodInMinutes?: number; delayInMinutes?: number },
+): Promise<void> {
+  const existing = await chrome.alarms.get(name)
+  if (undefined === existing) {
+    chrome.alarms.create(name, info)
+  }
+}
+
 export function isPriceSyncAlarm(name: string): boolean {
   return (
     CYCLE_ALARM === name ||
-    CAPTURE_TIMEOUT_ALARM === name ||
-    name.startsWith(CAPTURE_PREFIX)
+    name.startsWith(CAPTURE_PREFIX) ||
+    name.startsWith(TIMEOUT_PREFIX)
   )
 }
 
@@ -75,11 +98,12 @@ export async function handlePriceSyncAlarm(
     return
   }
 
-  if (CAPTURE_TIMEOUT_ALARM === name) {
-    // Страница не отдала цену за отведённое время: не загрузилась,
-    // разметки не оказалось, увели редиректом. Окно закрывается
-    // в любом случае — брошенное окно хуже пропущенного наблюдения.
-    await finishCapture(storage)
+  if (name.startsWith(TIMEOUT_PREFIX)) {
+    // Страница не отдала цену: не загрузилась, разметки не оказалось,
+    // увели редиректом. Закрываем ровно то окно, ради которого этот
+    // будильник заводился, — «текущее» после сна устройства было бы
+    // уже чужим.
+    await closeWindow(storage, Number(name.slice(TIMEOUT_PREFIX.length)))
 
     return
   }
@@ -91,31 +115,50 @@ export async function handlePriceSyncAlarm(
  * Список берётся у сервера, а не из локального хранилища: он меняется
  * не только с этого устройства (ADR-014), и обход по устаревшей копии
  * ходил бы за снятыми артикулами и пропускал добавленные.
+ *
+ * Открытые окна прошлого цикла не трогаются: их закроют собственные
+ * будильники. Обнулять их здесь значило бы бросить окно, до которого
+ * цикл дотянулся на двадцать девятой минуте.
  */
 async function startCycle(storage: Storage): Promise<void> {
   const connection = await readConnection(storage)
-  if (null === connection) {
-    return
-  }
+  const skus = null === connection ? [] : await trackedSkus(connection)
 
-  const skus = await trackedSkus(connection)
+  // Список пишется всегда, в том числе пустой: иначе будильники
+  // прошлого цикла, доставленные после сна устройства, прошли бы
+  // проверку по старому списку и открыли окна для артикулов, которые
+  // продавец уже снял с отслеживания.
+  await storage.set({ [CYCLE_KEY]: skus })
+  await clearStaleCaptureAlarms(skus)
+
   if (0 === skus.length) {
     return
   }
 
-  // Список цикла сохраняется, чтобы будильник снятого артикула
-  // не открывал окно впустую: имена будильников переживают цикл,
-  // а список отслеживания между циклами меняется.
-  await storage.set({ [CAPTURE_KEY]: null, cycle: skus })
-
   const step = CYCLE_MINUTES / skus.length
   skus.forEach((sku, index) => {
     chrome.alarms.create(CAPTURE_PREFIX + sku, {
-      // Chrome округляет задержку вверх до получаса минимум лишь для
-      // повторяющихся будильников; одноразовым хватает и долей минуты.
       delayInMinutes: Math.max(0.5, index * step),
     })
   })
+}
+
+/**
+ * Будильники артикулов, снятых с отслеживания, отменяются: имена
+ * переживают цикл, а список между циклами меняется.
+ */
+async function clearStaleCaptureAlarms(skus: readonly string[]): Promise<void> {
+  const alarms = await chrome.alarms.getAll()
+  const kept = new Set(skus.map((sku) => CAPTURE_PREFIX + sku))
+
+  await Promise.all(
+    alarms
+      .filter(
+        (alarm) =>
+          alarm.name.startsWith(CAPTURE_PREFIX) && !kept.has(alarm.name),
+      )
+      .map((alarm) => chrome.alarms.clear(alarm.name)),
+  )
 }
 
 async function trackedSkus(connection: Connection): Promise<string[]> {
@@ -151,16 +194,16 @@ async function capture(
   storage: Storage,
   marketplaceSku: string,
 ): Promise<void> {
-  const stored = await storage.get([CAPTURE_KEY, 'cycle'])
-  const cycle = stored.cycle
+  const stored = await storage.get([CYCLE_KEY, CAPTURES_KEY])
+  const cycle = stored[CYCLE_KEY]
   if (!Array.isArray(cycle) || !cycle.includes(marketplaceSku)) {
-    // Артикул сняли с отслеживания между циклами — будильник остался
-    // от прошлого. Открывать окно незачем.
     return
   }
-  if (null !== parseCapture(stored[CAPTURE_KEY])) {
-    // Предыдущий захват ещё не завершился. Пропускаем: артикул придёт
-    // в следующем цикле, а два окна разом — то, чего мы избегаем.
+  if (
+    Object.keys(parseCaptures(stored[CAPTURES_KEY])).length >= MAX_OPEN_WINDOWS
+  ) {
+    // Предыдущий визит ещё идёт. Артикул придёт в следующем цикле:
+    // пропущенный снимок дешевле десятка окон разом.
     return
   }
 
@@ -170,17 +213,17 @@ async function capture(
     state: 'minimized',
   })
 
-  if (undefined === created.id) {
+  const windowId = created.id
+  if (undefined === windowId) {
     return
   }
 
-  await storage.set({
-    [CAPTURE_KEY]: {
-      marketplaceSku,
-      windowId: created.id,
-    } satisfies PendingCapture,
-  })
-  chrome.alarms.create(CAPTURE_TIMEOUT_ALARM, { delayInMinutes: 1 })
+  // Будильник закрытия — до записи в хранилище, и это важно: если
+  // воркер умрёт здесь, окно всё равно закроется, потому что имя
+  // будильника несёт его идентификатор.
+  chrome.alarms.create(TIMEOUT_PREFIX + windowId, { delayInMinutes: 1 })
+
+  await rememberCapture(storage, windowId, marketplaceSku)
 }
 
 /**
@@ -194,20 +237,25 @@ export async function isCaptureVisit(
   marketplaceSku: string,
   windowId: number | undefined,
 ): Promise<boolean> {
-  const stored = await storage.get([CAPTURE_KEY])
-  const pending = parseCapture(stored[CAPTURE_KEY])
+  if (undefined === windowId) {
+    return false
+  }
+
+  const stored = await storage.get([CAPTURES_KEY])
 
   return (
-    null !== pending &&
-    pending.marketplaceSku === marketplaceSku &&
-    pending.windowId === windowId
+    parseCaptures(stored[CAPTURES_KEY])[String(windowId)] === marketplaceSku
   )
 }
 
 /**
- * Наблюдение доехало: отправляем и закрываем окно. Отказ сети
- * наблюдение теряет — повторять его нельзя, потому что цена уже
- * не та, которую мы видели. Следующий цикл снимет заново.
+ * Наблюдение доехало. Принимается только от того окна, которому этот
+ * артикул и поручали: повторно запущенный content-script присылает
+ * новый момент снимка, и естественный ключ базы такой дубль
+ * не отсекает — отсекать его должны здесь.
+ *
+ * Отказ отправки наблюдение теряет, и повторять его нельзя: цена
+ * уже не та, которую мы видели. Следующий цикл снимет заново.
  */
 export async function submitObservation(
   storage: Storage,
@@ -217,8 +265,15 @@ export async function submitObservation(
     amountMinor: number
     currency: string
   },
+  windowId: number | undefined,
   extensionVersion: string,
 ): Promise<void> {
+  if (!(await isCaptureVisit(storage, observation.marketplaceSku, windowId))) {
+    // Опоздавшее или чужое сообщение: закрывать по нему нечего —
+    // окно, которое сейчас открыто, принадлежит другому артикулу.
+    return
+  }
+
   const connection = await readConnection(storage)
   if (null !== connection) {
     try {
@@ -232,34 +287,61 @@ export async function submitObservation(
     }
   }
 
-  await finishCapture(storage)
+  await closeWindow(storage, Number(windowId))
 }
 
-async function finishCapture(storage: Storage): Promise<void> {
-  const stored = await storage.get([CAPTURE_KEY])
-  const pending = parseCapture(stored[CAPTURE_KEY])
-  await storage.set({ [CAPTURE_KEY]: null })
-
-  if (null !== pending) {
-    await chrome.windows.remove(pending.windowId).catch(() => undefined)
+/**
+ * Закрывает окно и забывает его. Порядок обратный интуитивному:
+ * сначала закрытие, потом очистка состояния. Если закрытие не удалось,
+ * запись остаётся, и окно ещё можно найти; очистив состояние первой,
+ * мы потеряли бы единственный след, по которому его закрывают.
+ */
+async function closeWindow(storage: Storage, windowId: number): Promise<void> {
+  try {
+    await chrome.windows.remove(windowId)
+  } catch {
+    // Окно уже закрыто — человеком или прошлым вызовом. Запись
+    // всё равно надо убрать.
   }
+
+  await chrome.alarms.clear(TIMEOUT_PREFIX + windowId)
+  await forgetCapture(storage, windowId)
 }
 
-function parseCapture(value: unknown): PendingCapture | null {
+async function rememberCapture(
+  storage: Storage,
+  windowId: number,
+  marketplaceSku: string,
+): Promise<void> {
+  const stored = await storage.get([CAPTURES_KEY])
+  await storage.set({
+    [CAPTURES_KEY]: {
+      ...parseCaptures(stored[CAPTURES_KEY]),
+      [String(windowId)]: marketplaceSku,
+    },
+  })
+}
+
+async function forgetCapture(
+  storage: Storage,
+  windowId: number,
+): Promise<void> {
+  const stored = await storage.get([CAPTURES_KEY])
+  const remaining = Object.entries(parseCaptures(stored[CAPTURES_KEY])).filter(
+    ([id]) => id !== String(windowId),
+  )
+
+  await storage.set({ [CAPTURES_KEY]: Object.fromEntries(remaining) })
+}
+
+function parseCaptures(value: unknown): Record<string, string> {
   if (null === value || 'object' !== typeof value) {
-    return null
+    return {}
   }
 
-  const candidate = value as Record<string, unknown>
-  if (
-    'string' !== typeof candidate.marketplaceSku ||
-    'number' !== typeof candidate.windowId
-  ) {
-    return null
-  }
+  const entries = Object.entries(value as Record<string, unknown>).filter(
+    (entry): entry is [string, string] => 'string' === typeof entry[1],
+  )
 
-  return {
-    marketplaceSku: candidate.marketplaceSku,
-    windowId: candidate.windowId,
-  }
+  return Object.fromEntries(entries)
 }

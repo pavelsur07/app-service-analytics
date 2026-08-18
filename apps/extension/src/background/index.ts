@@ -21,6 +21,7 @@ import {
 } from '../shared/overlayRequest'
 
 import {
+  createIfAbsent,
   handlePriceSyncAlarm,
   isCaptureVisit,
   isPriceSyncAlarm,
@@ -107,6 +108,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         amountMinor: message.amountMinor,
         currency: message.currency,
       },
+      sender.tab?.windowId,
       EXTENSION_VERSION,
     )
 
@@ -266,7 +268,12 @@ const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000
 // Будильник, не setInterval: service worker засыпает через полминуты
 // простоя, и таймер в памяти умирает вместе с ним. Период чуть меньше
 // суток — чтобы каталог успевал обновиться до того, как признан устаревшим.
-chrome.alarms.create(CATALOG_ALARM, {
+//
+// createIfAbsent, а не create: одноимённый будильник Chrome заменяет,
+// сбрасывая отсчёт, — а воркер просыпается на каждое сообщение
+// от оверлея. Каталог с суточным периодом и минутной задержкой
+// не обновлялся бы вовсе у активного продавца.
+void createIfAbsent(CATALOG_ALARM, {
   periodInMinutes: 12 * 60,
   delayInMinutes: 1,
 })
@@ -284,7 +291,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 })
 
 // Обход отслеживаемых артикулов ради витринной цены (ADR-014).
-schedulePriceSync()
+void schedulePriceSync()
 
 async function connect(token: string): Promise<ConnectResult> {
   try {
