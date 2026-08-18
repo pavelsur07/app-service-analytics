@@ -5,6 +5,7 @@ import { CompanyListPage } from '../features/auth/ui/CompanyListPage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
 import { ConnectionsPage } from '../features/connections/ui/ConnectionsPage'
 import { ListingCostsPage } from '../features/costs/ui/ListingCostsPage'
+import { PriceOverviewPage } from '../features/price-monitoring/ui/PriceOverviewPage'
 import { ExtensionConnectPage } from '../features/extension/ui/ExtensionConnectPage'
 import { SalesFactsPage } from '../features/ingestion/ui/SalesFactsPage'
 import { UnitEconomicsPage } from '../features/unit-economics/ui/UnitEconomicsPage'
@@ -47,6 +48,9 @@ const router = createBrowserRouter([
       { path: 'connections', element: <ConnectionsPage /> },
       { path: 'unit-economics', element: <UnitEconomicsPage /> },
       { path: 'costs', element: <ListingCostsPage /> },
+      // Адрес про предметную область, а не про модуль (docs/structure.md):
+      // продавцу «price-monitoring» ничего не говорит.
+      { path: 'prices', element: <PriceOverviewPage /> },
     ],
   },
 ])

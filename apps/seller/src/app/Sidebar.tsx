@@ -1,4 +1,12 @@
-import { Calculator, LogOut, Plug, Puzzle, Tag, TrendingUp } from 'lucide-react'
+import {
+  Calculator,
+  TrendingDown,
+  LogOut,
+  Plug,
+  Puzzle,
+  Tag,
+  TrendingUp,
+} from 'lucide-react'
 import { NavLink } from 'react-router'
 
 import { Button } from '../../../../packages/ui/src'
@@ -29,6 +37,7 @@ const ITEMS = [
   { to: 'sales', label: 'Продажи', icon: TrendingUp },
   { to: 'unit-economics', label: 'Экономика', icon: Calculator },
   { to: 'costs', label: 'Себестоимость', icon: Tag },
+  { to: 'prices', label: 'Цены и соинвест', icon: TrendingDown },
   { to: 'extension', label: 'Расширение', icon: Puzzle },
   { to: 'connections', label: 'Подключения', icon: Plug },
 ] as const

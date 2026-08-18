@@ -212,6 +212,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_price_monitoring_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/extension/companies/{companyId}/tracked-skus": {
         parameters: {
             query?: never;
@@ -448,6 +464,19 @@ export interface components {
              */
             daysWithoutExpenses: number;
             nextCursor?: string | null;
+        };
+        PriceOverviewItemResponse: {
+            marketplaceSku: string;
+            name?: string | null;
+            sellerPriceMinor?: number | null;
+            displayedPriceMinor?: number | null;
+            coInvestmentMinor?: number | null;
+            currency?: string | null;
+            /** ISO 8601 в UTC; null — наблюдений ещё не было. */
+            observedAt?: string | null;
+        };
+        PriceOverviewListResponse: {
+            items: components["schemas"]["PriceOverviewItemResponse"][];
         };
         TrackedSkuListResponse: {
             items: string[];
@@ -1041,6 +1070,48 @@ export interface operations {
                 };
             };
             /** @description Некорректный days */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_price_monitoring_overview: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Отслеживаемые артикулы с ценами и соинвестом */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PriceOverviewListResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректный limit */
             422: {
                 headers: {
                     [name: string]: unknown;

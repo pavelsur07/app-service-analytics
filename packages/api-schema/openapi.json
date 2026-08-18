@@ -861,6 +861,65 @@
                 }
             }
         },
+        "/api/companies/{companyId}/prices": {
+            "get": {
+                "operationId": "get_price_monitoring_overview",
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 200,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u041e\u0442\u0441\u043b\u0435\u0436\u0438\u0432\u0430\u0435\u043c\u044b\u0435 \u0430\u0440\u0442\u0438\u043a\u0443\u043b\u044b \u0441 \u0446\u0435\u043d\u0430\u043c\u0438 \u0438 \u0441\u043e\u0438\u043d\u0432\u0435\u0441\u0442\u043e\u043c",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PriceOverviewListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0439 limit",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/extension/companies/{companyId}/tracked-skus": {
             "get": {
                 "operationId": "get_price_monitoring_extension_tracked_skus",
@@ -1777,6 +1836,56 @@
                     "nextCursor": {
                         "type": "string",
                         "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "PriceOverviewItemResponse": {
+                "required": [
+                    "marketplaceSku"
+                ],
+                "properties": {
+                    "marketplaceSku": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "sellerPriceMinor": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "displayedPriceMinor": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "coInvestmentMinor": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "currency": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "observedAt": {
+                        "title": "ISO 8601 \u0432 UTC; null \u2014 \u043d\u0430\u0431\u043b\u044e\u0434\u0435\u043d\u0438\u0439 \u0435\u0449\u0451 \u043d\u0435 \u0431\u044b\u043b\u043e.",
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "PriceOverviewListResponse": {
+                "required": [
+                    "items"
+                ],
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PriceOverviewItemResponse"
+                        }
                     }
                 },
                 "type": "object"
