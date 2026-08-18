@@ -5,6 +5,7 @@ import { http, server } from '../../tests/msw/server'
 import type { Storage } from '../shared/connection'
 
 import {
+  allowFirstCapture,
   handlePriceSyncAlarm,
   isCaptureVisit,
   isPriceSyncAlarm,
@@ -19,6 +20,7 @@ import {
  */
 
 const COMPANY = '01a01104-8634-7bee-9c85-8f524802c241'
+const NOW = 1_755_000_000_000
 const TRACKED = '/api/extension/companies/{companyId}/tracked-skus'
 const OBSERVATIONS = '/api/extension/companies/{companyId}/price-observations'
 
@@ -182,6 +184,7 @@ describe('захват одного артикула', () => {
       },
       first?.id,
       '0.2.0',
+      NOW,
     )
     await fireCapture('222')
     const second = windows[1]
@@ -223,6 +226,7 @@ describe('приём наблюдения', () => {
       },
       windows[0]?.id,
       '0.2.0',
+      NOW,
     )
 
     expect(windows[0]?.closed).toBe(true)
@@ -246,6 +250,7 @@ describe('приём наблюдения', () => {
       },
       999,
       '0.2.0',
+      NOW,
     )
 
     expect(windows[0]?.closed).toBe(false)
@@ -264,6 +269,143 @@ describe('приём наблюдения', () => {
     expect(await isCaptureVisit(storage, '111', 42)).toBe(false)
     expect(await isCaptureVisit(storage, '222', windowId)).toBe(false)
   })
+})
+
+describe('первый снимок при включении отслеживания', () => {
+  beforeEach(() => {
+    server.use(http.post(OBSERVATIONS, () => HttpResponse.json(null)))
+  })
+
+  it('принимает снимок из обычной вкладки сразу после включения', async () => {
+    // Без этого первые данные появлялись бы только со следующим обходом,
+    // то есть до получаса спустя: экран показывал бы «ещё не снимали»,
+    // и человек, только что нажавший кнопку, видел бы то же самое,
+    // что при сломанном сборе.
+    await allowFirstCapture(storage, '111', COMPANY, NOW)
+
+    await submitObservation(
+      storage,
+      {
+        marketplaceSku: '111',
+        observedAt: '2026-08-18T09:00:00.000Z',
+        amountMinor: 350_000,
+        currency: 'RUB',
+      },
+      777,
+      '0.2.0',
+      NOW,
+    )
+
+    // Вкладку продавца закрывать нельзя — он в ней работает.
+    expect(windows).toHaveLength(0)
+  })
+
+  it('разрешение одноразовое', async () => {
+    await allowFirstCapture(storage, '111', COMPANY, NOW)
+    const observation = {
+      marketplaceSku: '111',
+      observedAt: '2026-08-18T09:00:00.000Z',
+      amountMinor: 350_000,
+      currency: 'RUB',
+    }
+
+    await submitObservation(storage, observation, 777, '0.2.0', NOW)
+    // Второй снимок из той же вкладки уже не принимается: иначе
+    // content-script слал бы наблюдение при каждом визите на карточку,
+    // и история цен зависела бы от того, как часто туда заходят.
+    await submitObservation(storage, observation, 777, '0.2.0', NOW)
+
+    expect(await consumedAll()).toBe(true)
+  })
+
+  it('два артикула подряд не затирают разрешения друг друга', async () => {
+    // Единственный слот на все артикулы означал бы, что второй
+    // включённый товар остаётся без первого снимка до фонового обхода.
+    await allowFirstCapture(storage, '111', COMPANY, NOW)
+    await allowFirstCapture(storage, '222', COMPANY, NOW)
+
+    for (const sku of ['111', '222']) {
+      await submitObservation(
+        storage,
+        {
+          marketplaceSku: sku,
+          observedAt: '2026-08-18T09:00:00.000Z',
+          amountMinor: 350_000,
+          currency: 'RUB',
+        },
+        777,
+        '0.2.0',
+        NOW,
+      )
+    }
+
+    expect(await consumedAll()).toBe(true)
+  })
+
+  it('разрешение чужой компании не принимается', async () => {
+    // Между выдачей и приходом снимка расширение могли переподключить
+    // к другой компании: цена, снятая для первой, ушла бы с токеном
+    // второй и выглядела бы там настоящей.
+    await allowFirstCapture(storage, '111', 'другая-компания', NOW)
+
+    await submitObservation(
+      storage,
+      {
+        marketplaceSku: '111',
+        observedAt: '2026-08-18T09:00:00.000Z',
+        amountMinor: 350_000,
+        currency: 'RUB',
+      },
+      777,
+      '0.2.0',
+      NOW,
+    )
+
+    expect(await consumedAll()).toBe(false)
+  })
+
+  it('разрешение не действует на другой артикул и после срока', async () => {
+    await allowFirstCapture(storage, '111', COMPANY, NOW)
+    await submitObservation(
+      storage,
+      {
+        marketplaceSku: '222',
+        observedAt: '2026-08-18T09:00:00.000Z',
+        amountMinor: 1,
+        currency: 'RUB',
+      },
+      777,
+      '0.2.0',
+      NOW,
+    )
+    expect(await consumedAll()).toBe(false)
+
+    await submitObservation(
+      storage,
+      {
+        marketplaceSku: '111',
+        observedAt: '2026-08-18T09:00:00.000Z',
+        amountMinor: 1,
+        currency: 'RUB',
+      },
+      777,
+      '0.2.0',
+      NOW + 10 * 60_000,
+    )
+    expect(await consumedAll()).toBe(false)
+  })
+
+  /** Не осталось ли неиспользованных разрешений. */
+  async function consumedAll(): Promise<boolean> {
+    const stored = await storage.get(['firstCapture'])
+    const grants = stored.firstCapture
+
+    return (
+      null === grants ||
+      undefined === grants ||
+      0 === Object.keys(grants as Record<string, unknown>).length
+    )
+  }
 })
 
 describe('имена будильников', () => {

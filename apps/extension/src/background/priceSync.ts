@@ -51,6 +51,21 @@ const CYCLE_KEY = 'cycle'
 const CAPTURES_KEY = 'captures'
 
 /**
+ * Разрешения прислать один снимок из обычной вкладки — по одному
+ * на артикул. Карта, а не единственный слот: два артикула, включённых
+ * подряд, иначе затирали бы разрешение друг друга, и второй остался бы
+ * без первого снимка до фонового обхода.
+ */
+const FIRST_CAPTURE_KEY = 'firstCapture'
+
+/**
+ * Сколько это разрешение живёт. Продавец только что нажал кнопку,
+ * карточка перед ним открыта, и снимок уходит в ту же секунду; две
+ * минуты — запас на медленную сеть, а не окно возможностей.
+ */
+const FIRST_CAPTURE_TTL_MS = 120_000
+
+/**
  * Сколько окон держим одновременно. Один: при потолке в 50 артикулов
  * шаг между визитами 36 секунд, вчетверо больше самого визита.
  * Проверка не строгая — доставленная пачка будильников может открыть
@@ -227,6 +242,106 @@ async function capture(
 }
 
 /**
+ * Разрешает один снимок из обычной вкладки продавца — той самой,
+ * где он нажал «Отслеживать цену».
+ *
+ * Зачем: без этого первые данные появлялись бы только со следующим
+ * обходом, то есть до получаса спустя. Экран всё это время показывал
+ * бы «ещё не снимали», и человек, только что включивший отслеживание,
+ * видел бы ровно то же, что при сломанном сборе.
+ *
+ * Карточка в этот момент уже открыта и уже разобрана — снимать её
+ * фоновым окном значило бы открыть заново то, что и так перед глазами.
+ *
+ * Разрешение одноразовое и с коротким сроком: снимок принимается один,
+ * дальше артикул обходится общим порядком. Иначе content-script слал бы
+ * наблюдение при каждом обычном визите на карточку, и история цен
+ * зависела бы от того, как часто продавец на неё заходит.
+ */
+export async function allowFirstCapture(
+  storage: Storage,
+  marketplaceSku: string,
+  companyId: string,
+  now: number,
+): Promise<void> {
+  const stored = await storage.get([FIRST_CAPTURE_KEY])
+
+  await storage.set({
+    [FIRST_CAPTURE_KEY]: {
+      ...parseGrants(stored[FIRST_CAPTURE_KEY], now),
+      [marketplaceSku]: { companyId, until: now + FIRST_CAPTURE_TTL_MS },
+    },
+  })
+}
+
+/**
+ * Компания в разрешении — не формальность. Между выдачей и приходом
+ * снимка продавец может переподключить расширение к другой компании,
+ * и тогда цена, снятая для первой, ушла бы с токеном второй. При
+ * совпавшем отслеживаемом артикуле она записалась бы чужой компании
+ * и выглядела бы там настоящей.
+ */
+async function consumeFirstCapture(
+  storage: Storage,
+  marketplaceSku: string,
+  companyId: string,
+  now: number,
+): Promise<boolean> {
+  const stored = await storage.get([FIRST_CAPTURE_KEY])
+  const grants = parseGrants(stored[FIRST_CAPTURE_KEY], now)
+  const granted = grants[marketplaceSku]
+
+  if (undefined === granted || granted.companyId !== companyId) {
+    return false
+  }
+
+  const remaining = Object.entries(grants).filter(
+    ([sku]) => sku !== marketplaceSku,
+  )
+  await storage.set({ [FIRST_CAPTURE_KEY]: Object.fromEntries(remaining) })
+
+  return true
+}
+
+interface FirstCaptureGrant {
+  readonly companyId: string
+  readonly until: number
+}
+
+/**
+ * Просроченные разрешения выбрасываются при каждом чтении: иначе карта
+ * росла бы вместе со списком отслеживания и жила бы в хранилище вечно.
+ */
+function parseGrants(
+  value: unknown,
+  now: number,
+): Record<string, FirstCaptureGrant> {
+  if (null === value || 'object' !== typeof value) {
+    return {}
+  }
+
+  const alive: Record<string, FirstCaptureGrant> = {}
+  for (const [sku, granted] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    if (null === granted || 'object' !== typeof granted) {
+      continue
+    }
+
+    const candidate = granted as Record<string, unknown>
+    if (
+      'string' === typeof candidate.companyId &&
+      'number' === typeof candidate.until &&
+      candidate.until > now
+    ) {
+      alive[sku] = { companyId: candidate.companyId, until: candidate.until }
+    }
+  }
+
+  return alive
+}
+
+/**
  * Идёт ли сейчас захват этого артикула в этом окне. Спрашивает
  * обработчик сообщений: content-script один и тот же и на обычном
  * визите человека, и на фоновом, а слать наблюдение он должен только
@@ -267,14 +382,34 @@ export async function submitObservation(
   },
   windowId: number | undefined,
   extensionVersion: string,
+  now: number,
 ): Promise<void> {
-  if (!(await isCaptureVisit(storage, observation.marketplaceSku, windowId))) {
-    // Опоздавшее или чужое сообщение: закрывать по нему нечего —
-    // окно, которое сейчас открыто, принадлежит другому артикулу.
+  const connection = await readConnection(storage)
+
+  const fromCaptureWindow = await isCaptureVisit(
+    storage,
+    observation.marketplaceSku,
+    windowId,
+  )
+
+  // Обычная вкладка принимается ровно один раз и ровно после включения
+  // отслеживания (allowFirstCapture) — и только той компанией, которой
+  // разрешение выдавалось. Всё остальное это опоздавшее или чужое
+  // сообщение: закрывать по нему нечего, а записывать тем более.
+  const firstAfterEnabling =
+    !fromCaptureWindow &&
+    null !== connection &&
+    (await consumeFirstCapture(
+      storage,
+      observation.marketplaceSku,
+      connection.companyId,
+      now,
+    ))
+
+  if (!fromCaptureWindow && !firstAfterEnabling) {
     return
   }
 
-  const connection = await readConnection(storage)
   if (null !== connection) {
     try {
       await recordObservation(connection.token, connection.companyId, {
@@ -287,7 +422,11 @@ export async function submitObservation(
     }
   }
 
-  await closeWindow(storage, Number(windowId))
+  // Закрываем только своё окно. Вкладку продавца трогать нельзя —
+  // он в ней работает.
+  if (fromCaptureWindow) {
+    await closeWindow(storage, Number(windowId))
+  }
 }
 
 /**
