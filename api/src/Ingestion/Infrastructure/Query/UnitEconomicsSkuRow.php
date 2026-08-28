@@ -35,6 +35,8 @@ final readonly class UnitEconomicsSkuRow
         public ?string $name,
         /** Артикул селлера — то, чем товар зовут в кабинете. */
         public ?string $offerId,
+        /** Адрес главного фото на CDN площадки. Размер подставит фронтенд. */
+        public ?string $photoUrl,
     ) {
     }
 }

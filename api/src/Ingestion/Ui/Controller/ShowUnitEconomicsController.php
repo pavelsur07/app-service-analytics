@@ -189,6 +189,7 @@ final class ShowUnitEconomicsController
                     marketplaceSku: $sku->marketplaceSku,
                     name: $sku->name,
                     offerId: $sku->offerId,
+                    photoUrl: $sku->photoUrl,
                     deliveredQuantity: $sku->deliveredQuantity,
                     orderedQuantity: $sku->orderedQuantity,
                     revenueMinor: $sku->revenueMinor,

@@ -36,6 +36,7 @@ final class UnitEconomicsSortTest extends TestCase
             marginMinor: 88,
             name: null,
             offerId: null,
+            photoUrl: null,
         );
 
         $byColumn = [

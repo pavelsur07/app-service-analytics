@@ -157,6 +157,7 @@ final readonly class BuildUnitEconomicsAction
             marketplaceSku: $row->marketplaceSku,
             name: $row->name,
             offerId: $row->offerId,
+            photoUrl: $row->photoUrl,
             deliveredQuantity: $row->deliveredQuantity,
             orderedQuantity: $row->orderedQuantity,
             revenueMinor: $revenue->minorAmount(),

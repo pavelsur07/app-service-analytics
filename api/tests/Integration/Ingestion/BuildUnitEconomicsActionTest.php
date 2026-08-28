@@ -236,10 +236,12 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
 
         self::assertSame('Товар 111', $report->skus[0]->name);
         self::assertSame('offer-111', $report->skus[0]->offerId);
+        self::assertNotNull($report->skus[0]->photoUrl);
         // Карточки нет — но строка есть, и это главное.
         self::assertSame('222', $report->skus[1]->marketplaceSku);
         self::assertNull($report->skus[1]->name);
         self::assertNull($report->skus[1]->offerId);
+        self::assertNull($report->skus[1]->photoUrl);
     }
 
     /**
