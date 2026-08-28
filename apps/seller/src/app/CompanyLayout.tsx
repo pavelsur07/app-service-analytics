@@ -42,7 +42,7 @@ export function CompanyLayout() {
         <div className="flex min-h-0 flex-1">
           <Sidebar />
           {/* Отступ и вертикальный ритм — свойство рабочей зоны, а не
-              каждого экрана (docs/design/ui-kit/v0.4.html, раздел 13:
+              каждого экрана (docs/design/ui-kit/v0.6.html, раздел 13:
               padding 24px, gap 16px). Пока их проставляла каждая
               страница, забыть их было делом времени — и забыли
               на первом же новом экране. */}

@@ -13,7 +13,7 @@ import { Button } from '../../../../packages/ui/src'
 import { useCurrentUser } from '../features/auth/model/useCurrentUser'
 import { useLogout } from '../features/auth/model/useLogout'
 
-// Раскладка навигации — эталон docs/design/ui-kit/v0.4.html, раздел 14:
+// Раскладка навигации — эталон docs/design/ui-kit/v0.6.html, раздел 9:
 // ширина 240, поле 16 сверху и 12 по бокам, шаг 4, элемент высотой 36
 // с отступом 8 и радиусом 6, активный — accent-subtle с accent-hover
 // и полужирным.
