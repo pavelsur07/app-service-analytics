@@ -31,9 +31,17 @@ describe('thumbnailUrl', () => {
     expect(thumbnailUrl(once)).toBe(once)
   })
 
-  it('незнакомую форму возвращает как есть, а не калечит', () => {
-    // Лучше оригинал во всю ширину, чем битый адрес: картинка хотя бы
-    // покажется.
+  it('трогает только проверенный CDN, остальное отдаёт как есть', () => {
+    // Сегмент размера замерен ровно на ir.ozone.ru/s3. Вставлять его
+    // куда попало значит однажды превратить рабочий адрес чужого CDN
+    // в битый — и заметит это клиент пустыми квадратами. Лучше
+    // оригинал во всю ширину, чем ничего.
     expect(thumbnailUrl('https://example.test')).toBe('https://example.test')
+    expect(thumbnailUrl('https://cdn.example/image.jpg')).toBe(
+      'https://cdn.example/image.jpg',
+    )
+    expect(thumbnailUrl('https://ir.ozone.ru/other/11107018133.jpg')).toBe(
+      'https://ir.ozone.ru/other/11107018133.jpg',
+    )
   })
 })
