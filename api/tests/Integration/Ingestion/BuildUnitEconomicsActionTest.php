@@ -263,6 +263,33 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
         self::assertSame('111', $report->skus[0]->marketplaceSku);
     }
 
+    /**
+     * Курсор от другой сортировки не должен молча дать страницу:
+     * выборка отсеклась бы по одному показателю, а порядок шёл бы
+     * по другому. HTTP-граница это проверяет, но сценарий публичный.
+     */
+    public function testCursorFromAnotherSortOrderIsRefused(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        $this->sale($container, $company, '111', 300_000, -1_000, 'sale-1');
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->build(
+            $container,
+            $company,
+            cursor: new UnitEconomicsCursor(
+                UnitEconomicsSort::Revenue,
+                UnitEconomicsDirection::Desc,
+                100,
+                '111',
+            ),
+            sort: UnitEconomicsSort::Margin,
+        );
+    }
+
     public function testDataOfAnotherCompanyIsNotCounted(): void
     {
         $container = $this->bootedContainer();
