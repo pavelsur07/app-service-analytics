@@ -22,7 +22,7 @@ use Symfony\Component\Uid\Uuid;
  *
  * **Изменяемые колонки здесь есть, и это меняет правила записи.**
  * Раньше их не было ни одной, и писатель обходился `DO NOTHING`.
- * Артикул и имя селлер правит в кабинете, поэтому запись стала
+ * Артикул, имя и фото селлер правит в кабинете, поэтому запись стала
  * `DO UPDATE` — но только при фактическом изменении значения,
  * тем же приёмом, что у sales_fact с его `WHERE row_hash IS DISTINCT
  * FROM`. Повторный прогон обработчика на том же ответе площадки
@@ -89,6 +89,19 @@ class MarketplaceListing
     #[ORM\Column(length: 512, nullable: true)]
     private ?string $name;
 
+    /**
+     * Адрес главного фото карточки на CDN площадки. Приходит тем же
+     * вторым запросом, что и наименование, и nullable по тем же двум
+     * причинам: отстать на тик и просто не быть у карточки.
+     *
+     * Хранится адрес, а не идентификатор: собрать его обратно нельзя —
+     * ни медиа-идентификатор, ни шард бакета не выводятся из артикула.
+     * Размер запрашивает уже фронтенд, вставляя сегмент в этот адрес:
+     * какого размера нужно превью, решает вёрстка, а не каталог.
+     */
+    #[ORM\Column(length: 512, nullable: true)]
+    private ?string $photoUrl;
+
     #[ORM\Column]
     private readonly \DateTimeImmutable $firstSeenAt;
 
@@ -98,6 +111,7 @@ class MarketplaceListing
         string $marketplaceSku,
         ?string $offerId,
         ?string $name,
+        ?string $photoUrl,
         \DateTimeImmutable $firstSeenAt,
     ) {
         $this->companyId = $companyId;
@@ -105,6 +119,7 @@ class MarketplaceListing
         $this->marketplaceSku = $marketplaceSku;
         $this->offerId = $offerId;
         $this->name = $name;
+        $this->photoUrl = $photoUrl;
         $this->firstSeenAt = $firstSeenAt;
     }
 
@@ -114,9 +129,10 @@ class MarketplaceListing
         string $marketplaceSku,
         ?string $offerId,
         ?string $name,
+        ?string $photoUrl,
         \DateTimeImmutable $seenAt,
     ): self {
-        return new self($companyId, $marketplaceAccountId, $marketplaceSku, $offerId, $name, $seenAt);
+        return new self($companyId, $marketplaceAccountId, $marketplaceSku, $offerId, $name, $photoUrl, $seenAt);
     }
 
     public function companyId(): Uuid
@@ -142,6 +158,11 @@ class MarketplaceListing
     public function name(): ?string
     {
         return $this->name;
+    }
+
+    public function photoUrl(): ?string
+    {
+        return $this->photoUrl;
     }
 
     public function firstSeenAt(): \DateTimeImmutable

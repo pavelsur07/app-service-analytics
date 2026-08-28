@@ -102,6 +102,34 @@ final class DoctrineMarketplaceListingWriterTest extends KernelTestCase
         self::assertSame('Топ Womjoy Logo Basic', $row['name']);
     }
 
+    /**
+     * Та же половина правила, что и у имени, но для фото: COALESCE
+     * в SET. Вторую половину — строку в WHERE — сторожит
+     * testRepeatedSyncLeavesTheRowUntouched по xmin.
+     */
+    public function testMissingPhotoDoesNotEraseTheKnownOne(): void
+    {
+        self::bootKernel();
+        $writer = $this->writer();
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+
+        $this->sync($writer, $companyId, $accountId, ['111'], new \DateTimeImmutable('2026-08-13 10:00:00'));
+        $this->sync(
+            $writer,
+            $companyId,
+            $accountId,
+            ['111'],
+            new \DateTimeImmutable('2026-08-14 10:00:00'),
+            photoUrl: null,
+        );
+
+        $row = $this->row($companyId, '111');
+        self::assertNotNull($row);
+        self::assertSame('https://ir.ozone.ru/s3/multimedia-1-h/11107018133.jpg', $row['photo_url']);
+    }
+
     public function testVanishedListingIsRemoved(): void
     {
         self::bootKernel();
@@ -186,6 +214,7 @@ final class DoctrineMarketplaceListingWriterTest extends KernelTestCase
         \DateTimeImmutable $syncedAt,
         string $offerId = 'WJ1621101211-черный-M',
         ?string $name = 'Топ Womjoy Logo Basic',
+        ?string $photoUrl = 'https://ir.ozone.ru/s3/multimedia-1-h/11107018133.jpg',
     ): void {
         $listings = array_map(
             static fn (string $sku) => MarketplaceListingBuilder::aMarketplaceListing()
@@ -194,6 +223,7 @@ final class DoctrineMarketplaceListingWriterTest extends KernelTestCase
                 ->withMarketplaceSku($sku)
                 ->withOfferId($offerId)
                 ->withName($name)
+                ->withPhotoUrl($photoUrl)
                 ->withSeenAt($syncedAt)
                 ->build(),
             $skus,
@@ -208,7 +238,7 @@ final class DoctrineMarketplaceListingWriterTest extends KernelTestCase
     private function row(Uuid $companyId, string $sku): ?array
     {
         $row = $this->connection()->fetchAssociative(
-            'SELECT first_seen_at, offer_id, name FROM marketplace_listing WHERE company_id = ? AND marketplace_sku = ?',
+            'SELECT first_seen_at, offer_id, name, photo_url FROM marketplace_listing WHERE company_id = ? AND marketplace_sku = ?',
             [$companyId->toRfc4122(), $sku],
         );
 
