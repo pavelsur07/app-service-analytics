@@ -28,11 +28,17 @@ export type MarginTone = 'positive' | 'negative' | 'neutral'
 // Порог ±1% от выручки: маржа в полпроцента — это не «заработали»
 // и не «потеряли», а шум, и красить её в зелёный значит обещать
 // прибыль там, где её нет.
-const THRESHOLD = 0.01
+const THRESHOLD_PERCENT = 1
 
 /**
  * Тон бейджа маржи. Считается здесь, а не в компоненте: арифметика
  * над денежными величинами в .tsx запрещена линтером (CLAUDE.md §10).
+ *
+ * Сравнение целочисленное, без промежуточной доли: `маржа / выручка
+ * > 0.01` и `маржа * 100 > выручка` отвечают на один вопрос, но первое
+ * заводит float из денежных величин, что §3 и ADR-004 запрещают вместе
+ * с промежуточными значениями. Порог — граница, а границу целые числа
+ * проводят точно.
  *
  * Нулевая выручка не делает строку нейтральной сама по себе. У товара
  * за период бывают расходы без продаж — возврат обработан сейчас,
@@ -51,13 +57,13 @@ export function marginTone(
         : 'positive'
   }
 
-  const share = marginMinor / revenueMinor
+  const scaled = marginMinor * 100
 
-  if (share > THRESHOLD) {
+  if (scaled > revenueMinor * THRESHOLD_PERCENT) {
     return 'positive'
   }
 
-  return share < -THRESHOLD ? 'negative' : 'neutral'
+  return scaled < -revenueMinor * THRESHOLD_PERCENT ? 'negative' : 'neutral'
 }
 
 /**
