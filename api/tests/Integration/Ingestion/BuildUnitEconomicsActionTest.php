@@ -9,13 +9,17 @@ use App\Identity\Domain\CompanyRepository;
 use App\Ingestion\Application\BuildUnitEconomicsAction;
 use App\Ingestion\Application\UnitEconomicsReport;
 use App\Ingestion\Domain\MarketplaceExpenseFactRepository;
+use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsCursor;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsDirection;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsSort;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
+use App\Tests\Support\Builder\MarketplaceListingBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -143,6 +147,158 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
         self::assertNull($second->nextCursor);
     }
 
+    /**
+     * Сортировка по марже: она считается запросом ради ORDER BY,
+     * а в ответ приходит с Money. Тест держит два источника одной
+     * цифры вместе — разъедься они, страница упорядочилась бы
+     * по величине, которой на экране нет.
+     */
+    public function testPageIsOrderedByTheRequestedMetric(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        // Маржа = выручка + комиссия + расходы, все знаковые.
+        $this->sale($container, $company, '111', 300_000, -10_000, 'sale-1');
+        $this->expense($container, $company, '111', 32, -250_000);
+        $this->sale($container, $company, '222', 200_000, -10_000, 'sale-2');
+        $this->sale($container, $company, '333', 100_000, -10_000, 'sale-3');
+
+        $report = $this->build($container, $company, sort: UnitEconomicsSort::Margin, direction: UnitEconomicsDirection::Asc);
+
+        self::assertSame(['111', '333', '222'], array_map(
+            static fn ($sku): string => $sku->marketplaceSku,
+            $report->skus,
+        ));
+
+        $margins = array_map(static fn ($sku): int => $sku->marginMinor, $report->skus);
+        $sorted = $margins;
+        sort($sorted);
+        self::assertSame($sorted, $margins, 'Порядок обязан быть монотонным по marginMinor из ответа.');
+    }
+
+    /**
+     * Равные значения сортируемой колонки — не край, а норма: у товаров
+     * без продаж доставленных штук ноль у всех. Устойчивость держит
+     * тай-брейк по артикулу; без него строки на границе страницы
+     * пропадают и повторяются.
+     */
+    public function testTiedSortValuesPaginateWithoutGapsOrRepeats(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        foreach (['111', '222', '333'] as $sku) {
+            $this->expense($container, $company, $sku, 32, -10_000);
+        }
+
+        $seen = [];
+        $cursor = null;
+
+        do {
+            $page = $this->build(
+                $container,
+                $company,
+                limit: 2,
+                cursor: $cursor,
+                sort: UnitEconomicsSort::Delivered,
+                direction: UnitEconomicsDirection::Desc,
+            );
+
+            foreach ($page->skus as $sku) {
+                $seen[] = $sku->marketplaceSku;
+            }
+
+            $cursor = null === $page->nextCursor
+                ? null
+                : UnitEconomicsCursor::fromString($page->nextCursor);
+        } while (null !== $cursor);
+
+        self::assertSame(['111', '222', '333'], $seen);
+    }
+
+    /**
+     * Название и артикул селлера берутся из каталога, но строка расчёта
+     * от него не зависит: артикул площадки встречается в фактах раньше,
+     * чем карточка, и терять из-за этого продажи нельзя.
+     */
+    public function testCatalogFillsNameAndOfferIdWithoutDroppingRows(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $accountId = Uuid::v7();
+
+        $this->sale($container, $company, '111', 300_000, -1_000, 'sale-1');
+        $this->sale($container, $company, '222', 200_000, -1_000, 'sale-2');
+        $this->listings($container, $company, $accountId, ['111']);
+
+        $report = $this->build($container, $company);
+
+        self::assertSame('Товар 111', $report->skus[0]->name);
+        self::assertSame('offer-111', $report->skus[0]->offerId);
+        // Карточки нет — но строка есть, и это главное.
+        self::assertSame('222', $report->skus[1]->marketplaceSku);
+        self::assertNull($report->skus[1]->name);
+        self::assertNull($report->skus[1]->offerId);
+    }
+
+    /**
+     * Ключ каталога — (компания, подключение, артикул), а агрегат
+     * схлопнут по артикулу. Один и тот же артикул под двумя
+     * подключениями обязан дать одну строку: иначе страница задвоится
+     * и под лимитом придёт меньше товаров, чем обещано.
+     */
+    public function testSameSkuInTwoConnectionsStaysOneRow(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        $this->sale($container, $company, '111', 300_000, -1_000, 'sale-1');
+
+        // Карточки намеренно разные: с одинаковыми тест не заметил бы,
+        // какую из двух выбрал DISTINCT ON, и «детерминированный выбор»
+        // остался бы словами в комментарии.
+        $this->listing($container, $company, Uuid::v7(), '111', 'Старая карточка', 'offer-old', '2026-06-01');
+        $this->listing($container, $company, Uuid::v7(), '111', 'Новая карточка', 'offer-new', '2026-06-15');
+
+        $report = $this->build($container, $company);
+
+        self::assertCount(1, $report->skus);
+        self::assertSame('111', $report->skus[0]->marketplaceSku);
+        // Тай-брейк — первая увиденная: выбор обязан быть устойчивым,
+        // иначе название товара менялось бы между обновлениями страницы.
+        self::assertSame('Старая карточка', $report->skus[0]->name);
+        self::assertSame('offer-old', $report->skus[0]->offerId);
+    }
+
+    /**
+     * Курсор от другой сортировки не должен молча дать страницу:
+     * выборка отсеклась бы по одному показателю, а порядок шёл бы
+     * по другому. HTTP-граница это проверяет, но сценарий публичный.
+     */
+    public function testCursorFromAnotherSortOrderIsRefused(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        $this->sale($container, $company, '111', 300_000, -1_000, 'sale-1');
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->build(
+            $container,
+            $company,
+            cursor: new UnitEconomicsCursor(
+                UnitEconomicsSort::Revenue,
+                UnitEconomicsDirection::Desc,
+                1,
+                100,
+                '111',
+            ),
+            sort: UnitEconomicsSort::Margin,
+        );
+    }
+
     public function testDataOfAnotherCompanyIsNotCounted(): void
     {
         $container = $this->bootedContainer();
@@ -254,6 +410,9 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
         int $limit = 50,
         ?UnitEconomicsCursor $cursor = null,
         ?\DateTimeImmutable $from = null,
+        UnitEconomicsSort $sort = UnitEconomicsSort::Revenue,
+        UnitEconomicsDirection $direction = UnitEconomicsDirection::Desc,
+        int $days = 1,
     ): UnitEconomicsReport {
         /** @var BuildUnitEconomicsAction $action */
         $action = $container->get(BuildUnitEconomicsAction::class);
@@ -263,6 +422,9 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
             $from ?? new \DateTimeImmutable(self::DAY),
             new \DateTimeImmutable(self::DAY),
             $limit,
+            $days,
+            $sort,
+            $direction,
             $cursor,
         );
     }
@@ -332,6 +494,58 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
             ->withAccrualId($accrualId)
             ->withAmount(Money::ofMinor($amountMinor, 'RUB'))
             ->persistWith($expenseFacts);
+    }
+
+    private function listing(
+        ContainerInterface $container,
+        Company $company,
+        Uuid $accountId,
+        string $sku,
+        string $name,
+        string $offerId,
+        string $seenAt,
+    ): void {
+        /** @var MarketplaceListingRepository $listings */
+        $listings = $container->get(MarketplaceListingRepository::class);
+
+        $listings->replaceForAccount($company->id()->toRfc4122(), $accountId, [
+            MarketplaceListingBuilder::aMarketplaceListing()
+                ->withCompanyId($company->id())
+                ->withMarketplaceAccountId($accountId)
+                ->withMarketplaceSku($sku)
+                ->withOfferId($offerId)
+                ->withName($name)
+                ->withSeenAt(new \DateTimeImmutable($seenAt))
+                ->build(),
+        ]);
+    }
+
+    /**
+     * @param list<string> $skus
+     */
+    private function listings(
+        ContainerInterface $container,
+        Company $company,
+        Uuid $accountId,
+        array $skus,
+    ): void {
+        /** @var MarketplaceListingRepository $listings */
+        $listings = $container->get(MarketplaceListingRepository::class);
+
+        $listings->replaceForAccount(
+            $company->id()->toRfc4122(),
+            $accountId,
+            array_map(
+                static fn (string $sku) => MarketplaceListingBuilder::aMarketplaceListing()
+                    ->withCompanyId($company->id())
+                    ->withMarketplaceAccountId($accountId)
+                    ->withMarketplaceSku($sku)
+                    ->withOfferId('offer-'.$sku)
+                    ->withName('Товар '.$sku)
+                    ->build(),
+                $skus,
+            ),
+        );
     }
 
     private function company(ContainerInterface $container): Company

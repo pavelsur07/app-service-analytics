@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #F4F6FA; font-family: "IBM Plex Sans", system-ui, sans-serif; color: #0B1220; -webkit-font-smoothing: antialiased; }
+    a { color: #1A56DB; text-decoration: none; }
+    a:hover { color: #1E40AF; text-decoration: underline; }
+  </style>
+</helmet>
+
+<div style="min-height: 100vh; display: grid; grid-template-columns: 240px 1fr">
+  <nav style="padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; background: #fff; border-right: 1px solid #E8ECF3">
+    <span style="display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 8px; margin-bottom: 8px"><span style="width: 28px; height: 28px; border-radius: 6px; background: #1A56DB; display: grid; place-items: center; color: #fff; font-size: 14px; font-weight: 700">М</span></span>
+    <span style="display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 8px; border-radius: 6px; color: #475569; font-size: 14px">◧ План-факт</span>
+    <span style="display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 8px; border-radius: 6px; color: #475569; font-size: 14px">▤ Листинг</span>
+    <span style="display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 8px; border-radius: 6px; color: #475569; font-size: 14px">▤ Остатки<span style="margin-left: auto; font-size: 12px; font-weight: 600; padding: 0 6px; border-radius: 9999px; background: #FEF2F2; color: #B91C1C; font-variant-numeric: tabular-nums">7</span></span>
+    <span style="display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 8px; border-radius: 6px; background: #EEF3FE; color: #1E40AF; font-size: 14px; font-weight: 600">₽ Unit-экономика</span>
+    <span style="display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 8px; border-radius: 6px; color: #475569; font-size: 14px">⚙ Настройки</span>
+  </nav>
+
+  <div style="display: flex; flex-direction: column; min-width: 0">
+    <div style="display: flex; align-items: center; gap: 16px; padding: 0 24px; height: 56px; background: #fff; border-bottom: 1px solid #E8ECF3">
+      <span style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #E8ECF3; font-size: 14px; font-weight: 500"><span style="width: 20px; height: 20px; border-radius: 4px; background: #EEF3FE; color: #1E40AF; display: grid; place-items: center; font-size: 12px; font-weight: 700">W</span>Wildberries · Тренд-Обувь<span style="color: #64748B">▾</span></span>
+      <span style="font-size: 14px; color: #64748B; font-variant-numeric: tabular-nums">01.08 — 10.08 · vs июль</span>
+      <span style="margin-left: auto; width: 32px; height: 32px; border-radius: 9999px; background: #EEF3FE; color: #1E40AF; display: grid; place-items: center; font-size: 12px; font-weight: 600">АК</span>
+    </div>
+
+    <div style="padding: 24px; display: flex; flex-direction: column; gap: 16px; min-width: 0">
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #64748B">
+        <a href="#">Каталог</a><span style="color: #CBD5E1">/</span><span style="color: #0B1220; font-weight: 500">Unit-экономика</span>
+      </div>
+      <h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em">Unit-экономика</h1>
+
+      <div style="background: #fff; border: 1px solid #E8ECF3; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(11,18,32,.04); min-width: 0">
+        <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #E8ECF3">
+          <span style="font-size: 14px; font-weight: 600">Unit-экономика</span>
+          <span style="font-size: 12px; color: #64748B; font-variant-numeric: tabular-nums">{{ rowCount }} строк</span>
+          <div style="margin-left: auto; display: flex; align-items: center; gap: 8px">
+            <button style="height: 28px; padding: 0 10px; border: 1px solid #E8ECF3; border-radius: 6px; background: #fff; color: #475569; font: 500 12px 'IBM Plex Sans'; cursor: pointer" style-hover="background: #FAFBFD">Колонки</button>
+            <button style="height: 28px; padding: 0 10px; border: 1px solid #E8ECF3; border-radius: 6px; background: #fff; color: #475569; font: 500 12px 'IBM Plex Sans'; cursor: pointer" style-hover="background: #FAFBFD">Экспорт</button>
+          </div>
+        </div>
+
+        <div style="overflow-x: auto">
+          <table style="width: 1420px; font-size: 14px; border-collapse: collapse; table-layout: fixed">
+            <thead>
+              <tr style="background: #F7F9FC">
+                <th style="width: 56px; position: sticky; left: 0; z-index: 30; text-align: left; font-size: 12px; font-weight: 600; color: #475569; padding: 8px 12px; border-bottom: 1px solid #E8ECF3; background: #F7F9FC">Фото</th>
+                <th style="width: 110px; position: sticky; left: 56px; z-index: 30; text-align: left; font-size: 12px; font-weight: 600; color: #475569; padding: 8px 12px; border-bottom: 1px solid #E8ECF3; white-space: nowrap; background: #F7F9FC">SKU</th>
+                <th style="position: sticky; left: 166px; z-index: 30; text-align: left; font-size: 12px; font-weight: 600; color: #475569; padding: 8px 12px; border-bottom: 1px solid #E8ECF3; background: #F7F9FC; box-shadow: 1px 0 0 #E8ECF3">Название</th>
+                <th style="width: 120px; text-align: left; font-size: 12px; font-weight: 600; color: #475569; padding: 8px 12px; border-bottom: 1px solid #E8ECF3; white-space: nowrap">Артик.</th>
+                <th style="width: 130px; text-align: right; font-size: 12px; font-weight: 600; color: #475569; padding: 8px 12px; border-bottom: 1px solid #E8ECF3; white-space: nowrap">Доставлено, шт.</th>
+                <th style="width: 130px; text-align: right; font-size: 12px; font-weight: 600; color: #475569; padding: 8px 12px; border-bottom: 1px solid #E8ECF3; white-space: nowrap">Выручка</th>
+                <th style="width: 120px; text-align: right; font-size: 12px; font-weight: 600; color: #475569; padding: 8px 12px; border-bottom: 1px solid #E8ECF3; white-space: nowrap">Комиссия</th>
+                <th style="width: 170px; text-align: right; font-size: 12px; font-weight: 600; color: #475569; padding: 8px 12px; border-bottom: 1px solid #E8ECF3; white-space: nowrap">Расходы площадки</th>
+                <th title="Себестоимость" style="width: 130px; text-align: right; font-size: 12px; font-weight: 600; color: #475569; padding: 8px 12px; border-bottom: 1px solid #E8ECF3; white-space: nowrap; cursor: help; text-decoration: underline dotted #94A3B8; text-underline-offset: 3px">Себестоимость</th>
+                <th style="width: 150px; text-align: right; font-size: 12px; font-weight: 600; color: #475569; padding: 8px 12px; border-bottom: 1px solid #E8ECF3; white-space: nowrap">Маржа <span style="color: #1A56DB">↓</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ rows }}" as="row" hint-placeholder-count="8">
+                <tr style="background: {{ row.rowBg }}">
+                  <td style="padding: 6px 12px; border-bottom: 1px solid #F1F4F9; position: sticky; left: 0; z-index: 20; background: {{ row.rowBg }}">
+                    <span title="Просмотреть фото" style="display: block; width: 32px; height: 32px; border-radius: 4px; background: #F1F4F9; cursor: pointer"></span>
+                  </td>
+                  <td style="padding: 6px 12px; border-bottom: 1px solid #F1F4F9; color: #475569; font-variant-numeric: tabular-nums; white-space: nowrap; position: sticky; left: 56px; z-index: 20; background: {{ row.rowBg }}">{{ row.sku }}</td>
+                  <td style="padding: 6px 12px; border-bottom: 1px solid #F1F4F9; font-weight: 500; position: sticky; left: 166px; z-index: 20; background: {{ row.rowBg }}; box-shadow: 1px 0 0 #F1F4F9">{{ row.name }}</td>
+                  <td style="padding: 6px 12px; border-bottom: 1px solid #F1F4F9; color: #475569; font-variant-numeric: tabular-nums; white-space: nowrap">{{ row.artikul }}</td>
+                  <td style="padding: 6px 12px; border-bottom: 1px solid #F1F4F9; text-align: right; font-variant-numeric: tabular-nums">{{ row.deliveredFmt }}</td>
+                  <td style="padding: 6px 12px; border-bottom: 1px solid #F1F4F9; text-align: right; font-variant-numeric: tabular-nums">{{ row.revenueFmt }}</td>
+                  <td style="padding: 6px 12px; border-bottom: 1px solid #F1F4F9; text-align: right; color: #475569; font-variant-numeric: tabular-nums">{{ row.commissionFmt }}</td>
+                  <td style="padding: 6px 12px; border-bottom: 1px solid #F1F4F9; text-align: right; color: #475569; font-variant-numeric: tabular-nums">
+                    <span style="display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px">
+                      {{ row.platformFmt }}
+                      <button onClick="{{ row.toggleExpand }}" aria-label="Развернуть расходы площадки" style="width: 20px; height: 20px; border: 1px solid #E8ECF3; border-radius: 4px; background: #fff; color: #94A3B8; font-size: 10px; cursor: pointer; display: grid; place-items: center; flex: none" style-hover="background: #FAFBFD">{{ row.chevron }}</button>
+                    </span>
+                  </td>
+                  <td style="padding: 6px 12px; border-bottom: 1px solid #F1F4F9; text-align: right; color: #475569; font-variant-numeric: tabular-nums">{{ row.costFmt }}</td>
+                  <td style="padding: 6px 12px; border-bottom: 1px solid #F1F4F9; text-align: right">
+                    <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 6px; background: {{ row.marginBg }}; color: {{ row.marginText }}; border: 1px solid {{ row.marginBorder }}; font-variant-numeric: tabular-nums; white-space: nowrap">{{ row.marginSign }} {{ row.marginRubFmt }}</span>
+                  </td>
+                </tr>
+                <sc-if value="{{ row.expanded }}" hint-placeholder-val="{{ false }}">
+                  <tr style="background: {{ row.rowBg }}">
+                    <td colspan="10" style="padding: 0 12px 12px 12px; border-bottom: 1px solid #F1F4F9">
+                      <div style="background: #FAFBFD; border: 1px solid #E8ECF3; border-radius: 8px; padding: 12px 20px; display: flex; flex-direction: column; gap: 4px; width: 920px; box-sizing: border-box; position: sticky; left: 166px; z-index: 1">
+                        <div style="display: grid; grid-template-columns: 1fr 130px 130px 130px; gap: 16px; padding: 6px 0; border-bottom: 1px solid #E8ECF3">
+                          <span style="font-size: 11px; font-weight: 600; color: #64748B">Расходы площадки</span>
+                          <span style="font-size: 11px; font-weight: 600; color: #64748B; text-align: right">Начислено</span>
+                          <span style="font-size: 11px; font-weight: 600; color: #64748B; text-align: right">Сторно</span>
+                          <span style="font-size: 11px; font-weight: 600; color: #64748B; text-align: right">Итого</span>
+                        </div>
+                        <sc-for list="{{ row.breakdown }}" as="item" hint-placeholder-count="10">
+                          <div style="display: grid; grid-template-columns: 1fr 130px 130px 130px; gap: 16px; align-items: center; font-size: 13px; padding: 4px 0">
+                            <span style="color: #1A56DB">{{ item.name }}</span>
+                            <span style="font-variant-numeric: tabular-nums; font-weight: 500; color: #0B1220; text-align: right; white-space: nowrap">{{ item.accruedFmt }}</span>
+                            <span style="font-variant-numeric: tabular-nums; font-weight: 500; color: {{ item.stornoColor }}; text-align: right; white-space: nowrap">{{ item.stornoFmt }}</span>
+                            <span style="font-variant-numeric: tabular-nums; font-weight: 600; color: {{ item.totalColor }}; text-align: right; white-space: nowrap">{{ item.totalFmt }}</span>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </td>
+                  </tr>
+                </sc-if>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid #E8ECF3">
+          <span style="font-size: 12px; color: #64748B; font-variant-numeric: tabular-nums">Показаны 1–8 из {{ rowCount }}</span>
+          <span style="display: flex; align-items: center; height: 28px; padding: 0 8px; border: 1px solid #E8ECF3; border-radius: 6px; font-size: 12px; color: #475569">50 на странице ▾</span>
+          <div style="margin-left: auto; display: flex; align-items: center; gap: 8px">
+            <span style="font-size: 12px; color: #64748B; font-variant-numeric: tabular-nums">Стр. 1 из 1</span>
+            <span style="height: 28px; width: 28px; border: 1px solid #E8ECF3; border-radius: 6px; display: grid; place-items: center; color: #94A3B8">‹</span>
+            <span style="height: 28px; width: 28px; border: 1px solid #E8ECF3; border-radius: 6px; display: grid; place-items: center; color: #94A3B8">›</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const DATA = [
+  { sku: "WB-1428301", name: "Кроссовки летние", artikul: "1428-BLK-38", delivered: 214, revenue: 533260, commission: 74656, platform: 42660, cost: 190460 },
+  { sku: "WB-1428302", name: "Кроссовки летние", artikul: "1428-BLK-39", delivered: 148, revenue: 368520, commission: 51593, platform: 29482, cost: 131720 },
+  { sku: "WB-3390143", name: "Ботинки зимние", artikul: "3390-BRN-43", delivered: 39, revenue: 233610, commission: 32705, platform: 18689, cost: 92820 },
+  { sku: "WB-3390144", name: "Ботинки зимние", artikul: "3390-BRN-44", delivered: 17, revenue: 101830, commission: 14256, platform: 8146, cost: 40460 },
+  { sku: "WB-2205237", name: "Кеды классические", artikul: "2205-WHT-37", delivered: 302, revenue: 601980, commission: 84277, platform: 48158, cost: 217440 },
+  { sku: "WB-4410141", name: "Кроссовки беговые", artikul: "4410-GRY-41", delivered: 91, revenue: 317590, commission: 44463, platform: 25407, cost: 107380 },
+  { sku: "WB-5540101", name: "Туфли лодочки", artikul: "5540-RED-38", delivered: 26, revenue: 116220, commission: 16271, platform: 9298, cost: 88192 },
+  { sku: "WB-6612501", name: "Слипоны текстильные", artikul: "6612-GRY-40", delivered: 58, revenue: 133400, commission: 18676, platform: 10672, cost: 108300 },
+];
+
+function fmt(n) { return n.toLocaleString("ru-RU") + " \u20BD"; }
+function fmt2(n) { return n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " \u20BD"; }
+
+const EXPENSE_CATEGORIES = [
+  { name: "Логистика", accrued: -14288.80, storno: 0 },
+  { name: "Обратная логистика", accrued: -6663.00, storno: 1200.00 },
+  { name: "Эквайринг", accrued: -1396.01, storno: 0 },
+  { name: "Доставка до места выдачи", accrued: -1376.96, storno: 0 },
+  { name: "Обработка возвратов, отмен и невыкупов партнёрами", accrued: -1200.00, storno: 0 },
+  { name: "Упаковка товара партнёрами", accrued: -600.00, storno: 0 },
+  { name: "Обеспечение материалами для упаковки товара", accrued: -300.00, storno: 0 },
+  { name: "Доставка до места выдачи силами Ozon", accrued: -200.00, storno: 0 },
+  { name: "Временное размещение товара партнерами", accrued: -48.00, storno: 0 },
+  { name: "Вывоз товара со склада силами Ozon", accrued: -48.00, storno: 0 },
+];
+
+function signedFmt(n) {
+  if (n === 0) return "—";
+  return (n >= 0 ? "+" : "\u2212") + fmt2(Math.abs(n));
+}
+
+function buildBreakdown() {
+  return EXPENSE_CATEGORIES.map(c => {
+    const total = c.accrued + c.storno;
+    return {
+      name: c.name,
+      accruedFmt: signedFmt(c.accrued),
+      stornoFmt: signedFmt(c.storno),
+      totalFmt: signedFmt(total),
+      stornoColor: c.storno > 0 ? "#047857" : "#94A3B8",
+      totalColor: total >= 0 ? "#047857" : "#0B1220",
+    };
+  });
+}
+
+class Component extends DCLogic {
+  state = { expanded: {} };
+
+  renderVals() {
+    const withMargin = DATA.map(d => {
+      const margin = d.revenue - d.commission - d.platform - d.cost;
+      const marginPct = d.revenue ? (margin / d.revenue) * 100 : 0;
+      return { ...d, margin, marginPct };
+    }).sort((a, b) => a.marginPct - b.marginPct);
+
+    const rows = withMargin.map((d, i) => {
+      let marginBg, marginText, marginBorder, marginSign;
+      if (d.marginPct > 1) { marginBg = "#ECFDF5"; marginText = "#047857"; marginBorder = "#D1FAE5"; marginSign = "+"; }
+      else if (d.marginPct < -1) { marginBg = "#FEF2F2"; marginText = "#B91C1C"; marginBorder = "#FECACA"; marginSign = "\u2212"; }
+      else { marginBg = "#F7F9FC"; marginText = "#475569"; marginBorder = "#E8ECF3"; marginSign = "="; }
+
+      return {
+        sku: d.sku,
+        name: d.name,
+        artikul: d.artikul,
+        deliveredFmt: d.delivered.toLocaleString("ru-RU"),
+        revenueFmt: fmt(d.revenue),
+        commissionFmt: fmt(d.commission),
+        platformFmt: fmt(d.platform),
+        costFmt: fmt(d.cost),
+        marginPctFmt: Math.abs(d.marginPct).toFixed(1).replace(".", ",") + "%",
+        marginRubFmt: fmt(Math.abs(Math.round(d.margin))),
+        marginBg, marginText, marginBorder, marginSign,
+        rowBg: i % 2 ? "#FAFBFD" : "#fff",
+        expanded: !!this.state.expanded[d.sku],
+        chevron: this.state.expanded[d.sku] ? "▾" : "▸",
+        breakdown: buildBreakdown(),
+        toggleExpand: () => this.setState(s => ({ expanded: { ...s.expanded, [d.sku]: !s.expanded[d.sku] } })),
+      };
+    });
+
+    return { rows, rowCount: rows.length };
+  }
+}
+
+</script>
+</body>
+</html>

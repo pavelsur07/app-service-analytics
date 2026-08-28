@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application;
 
+use App\Ingestion\Infrastructure\Query\ListingCostsCursor;
 use App\Ingestion\Infrastructure\Query\ListingCostsQuery;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsCursor;
 
 /**
  * Список карточек для экрана ввода себестоимости.
@@ -29,7 +29,7 @@ final readonly class ListListingCostsAction
         \DateTimeImmutable $to,
         \DateTimeImmutable $on,
         int $limit,
-        ?UnitEconomicsCursor $cursor,
+        ?ListingCostsCursor $cursor,
     ): ListingCostsPage {
         /** @var list<array<string, mixed>> $rows */
         $rows = $this->query->build($companyId, $from, $to, $on, $limit, $cursor)
@@ -52,7 +52,7 @@ final readonly class ListListingCostsAction
             listingCount: self::count($coverage, 'listings'),
             pricedCount: self::count($coverage, 'priced'),
             nextCursor: $hasMore && null !== $last
-                ? (new UnitEconomicsCursor($last->revenueMinor, $last->marketplaceSku))->toString()
+                ? (new ListingCostsCursor($last->revenueMinor, $last->marketplaceSku))->toString()
                 : null,
         );
     }

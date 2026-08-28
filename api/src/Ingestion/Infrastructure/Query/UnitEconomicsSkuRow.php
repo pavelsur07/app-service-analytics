@@ -25,6 +25,16 @@ final readonly class UnitEconomicsSkuRow
         public int $quantityWithoutCost,
         /** Когда себестоимость, применённую к этому периоду, правили. */
         public ?string $costCorrectedAt,
+        /**
+         * Маржа, посчитанная запросом — только чтобы по ней сортировать
+         * и строить курсор. Цифру для клиента считает Money в сценарии;
+         * совпадение двух источников закреплено тестом.
+         */
+        public int $marginMinor,
+        /** Название карточки. null, пока каталог не подтянулся. */
+        public ?string $name,
+        /** Артикул селлера — то, чем товар зовут в кабинете. */
+        public ?string $offerId,
     ) {
     }
 }

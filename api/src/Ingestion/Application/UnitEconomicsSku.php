@@ -23,6 +23,14 @@ final readonly class UnitEconomicsSku
      */
     public function __construct(
         public string $marketplaceSku,
+        /**
+         * Название и артикул селлера из каталога. null, пока карточка
+         * не подтянулась синхронизацией: артикул встречается в фактах
+         * раньше, чем в каталоге, и терять из-за этого строку расчёта
+         * нельзя.
+         */
+        public ?string $name,
+        public ?string $offerId,
         public int $deliveredQuantity,
         public int $orderedQuantity,
         public int $revenueMinor,

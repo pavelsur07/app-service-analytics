@@ -89,6 +89,69 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
     }
 
     /**
+     * Имя сортировки подставляется в текст SQL, поэтому белый список —
+     * не удобство, а граница доверия. Проверяется через HTTP именно
+     * поэтому: отсечь значение обязано до запроса, а не в запросе.
+     */
+    public function testUnknownSortIsRejected(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+
+        $client->request('GET', "/api/companies/{$company->id()->toRfc4122()}/unit-economics?sort=name");
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    public function testUnknownDirectionIsRejected(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+
+        $client->request('GET', "/api/companies/{$company->id()->toRfc4122()}/unit-economics?direction=sideways");
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    /**
+     * Курсор, снятый при другой сортировке, указывает на другое место.
+     * Отдать по нему страницу значило бы показать правдоподобные
+     * и неверные цифры — поэтому отказ, а не тихая выдача.
+     */
+    public function testCursorFromAnotherSortOrderIsRejected(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+
+        // Курсор намеренно правильной формы: иначе тест проходил бы
+        // на разборе строки и не проверял бы сверку представления.
+        $client->request(
+            'GET',
+            "/api/companies/{$company->id()->toRfc4122()}/unit-economics?sort=margin&cursor=revenue:desc:30:100:111",
+        );
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    /**
+     * Значения сортировки посчитаны за окно. Курсор от 90 дней,
+     * применённый к 7, отсёк бы почти весь список — страница вышла бы
+     * аккуратной и почти пустой, без единого признака ошибки.
+     */
+    public function testCursorFromAnotherWindowIsRejected(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+
+        $client->request(
+            'GET',
+            "/api/companies/{$company->id()->toRfc4122()}/unit-economics?days=7&cursor=revenue:desc:90:100:111",
+        );
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    /**
      * @return array{skus: list<array<string, mixed>>, cabinetExpenses: list<array<string, mixed>>, cabinetExpensesTotalMinor: int}
      */
     private function get(KernelBrowser $client, Company $company): array
