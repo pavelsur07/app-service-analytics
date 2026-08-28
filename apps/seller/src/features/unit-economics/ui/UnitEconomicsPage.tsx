@@ -35,7 +35,7 @@ import {
 export function UnitEconomicsPage() {
   const navigate = useNavigate()
   const { companyId } = useParams<{ companyId: string }>()
-  const view = useUnitEconomicsView()
+  const view = useUnitEconomicsView(companyId ?? '')
   const [cabinetOpen, setCabinetOpen] = useState(false)
 
   const query = useUnitEconomics(companyId ?? '', view.params, {
@@ -200,7 +200,14 @@ export function UnitEconomicsPage() {
           </Card>
         )}
 
-      {query.status === 'success' && query.data.skus.length === 0 ? (
+      {/* «Нечего считать» — только про первую страницу. Дальше по списку
+          пустой ответ значит другое: данные изменились между двумя
+          keyset-запросами, и страница, на которой клиент стоит, опустела.
+          Сказать ему там «нет ни продаж, ни расходов» и убрать таблицу
+          вместе с кнопкой «Назад» — соврать и запереть. */}
+      {query.status === 'success' &&
+      query.data.skus.length === 0 &&
+      view.params.cursor === null ? (
         <Card>
           <StatusPanel
             description="За выбранный период нет ни продаж, ни расходов по товарам."
@@ -212,7 +219,8 @@ export function UnitEconomicsPage() {
       ) : null}
 
       {query.status === 'pending' ||
-      (query.status === 'success' && query.data.skus.length > 0) ? (
+      (query.status === 'success' &&
+        (query.data.skus.length > 0 || view.params.cursor !== null)) ? (
         <div className="overflow-hidden rounded-xl border border-border-default bg-surface-raised shadow-card">
           <div className="flex items-center gap-3 border-b border-border-default px-4 py-3">
             <span className="font-semibold">Юнит-экономика</span>

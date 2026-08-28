@@ -46,7 +46,7 @@ describe('ключ кэша юнит-экономики', () => {
     expect(
       unitEconomicsQueryKey(
         ONE,
-        withParams({ cursor: 'revenue:desc:100:111' }),
+        withParams({ cursor: 'revenue:desc:30:100:111' }),
       ),
     ).not.toEqual(unitEconomicsQueryKey(ONE, BASE))
   })
@@ -81,9 +81,9 @@ describe('строка запроса', () => {
 
   it('добавляет курсор только когда он есть', () => {
     expect(
-      unitEconomicsPath(withParams({ cursor: 'margin:asc:-500:111' })),
+      unitEconomicsPath(withParams({ cursor: 'margin:asc:30:-500:111' })),
     ).toBe(
-      '/unit-economics?days=30&limit=25&sort=revenue&direction=desc&cursor=margin%3Aasc%3A-500%3A111',
+      '/unit-economics?days=30&limit=25&sort=revenue&direction=desc&cursor=margin%3Aasc%3A30%3A-500%3A111',
     )
   })
 })

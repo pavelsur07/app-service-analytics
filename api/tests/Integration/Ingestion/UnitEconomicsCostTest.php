@@ -189,6 +189,7 @@ final class UnitEconomicsCostTest extends KernelTestCase
             $from ?? new \DateTimeImmutable('2026-07-01'),
             $to ?? new \DateTimeImmutable('2026-07-31'),
             50,
+            31,
             UnitEconomicsSort::Revenue,
             UnitEconomicsDirection::Desc,
             null,

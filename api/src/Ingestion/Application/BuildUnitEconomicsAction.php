@@ -37,13 +37,14 @@ final readonly class BuildUnitEconomicsAction
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         int $limit,
+        int $days,
         UnitEconomicsSort $sort,
         UnitEconomicsDirection $direction,
         ?UnitEconomicsCursor $cursor,
     ): UnitEconomicsReport {
         /** @var list<array<string, mixed>> $skuRows */
         $skuRows = $this->query
-            ->skus($companyId, $from, $to, $limit, $sort, $direction, $cursor)
+            ->skus($companyId, $from, $to, $limit, $days, $sort, $direction, $cursor)
             ->executeQuery()
             ->fetchAllAssociative();
 
@@ -83,6 +84,7 @@ final readonly class BuildUnitEconomicsAction
                 ? (new UnitEconomicsCursor(
                     $sort,
                     $direction,
+                    $days,
                     $sort->valueOf($last),
                     $last->marketplaceSku,
                 ))->toString()

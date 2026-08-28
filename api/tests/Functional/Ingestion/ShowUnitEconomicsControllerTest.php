@@ -123,9 +123,29 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
         $client = static::createClient();
         $company = $this->loginAsCompanyMember($client);
 
+        // Курсор намеренно правильной формы: иначе тест проходил бы
+        // на разборе строки и не проверял бы сверку представления.
         $client->request(
             'GET',
-            "/api/companies/{$company->id()->toRfc4122()}/unit-economics?sort=margin&cursor=revenue:desc:100:111",
+            "/api/companies/{$company->id()->toRfc4122()}/unit-economics?sort=margin&cursor=revenue:desc:30:100:111",
+        );
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+    }
+
+    /**
+     * Значения сортировки посчитаны за окно. Курсор от 90 дней,
+     * применённый к 7, отсёк бы почти весь список — страница вышла бы
+     * аккуратной и почти пустой, без единого признака ошибки.
+     */
+    public function testCursorFromAnotherWindowIsRejected(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+
+        $client->request(
+            'GET',
+            "/api/companies/{$company->id()->toRfc4122()}/unit-economics?days=7&cursor=revenue:desc:90:100:111",
         );
 
         self::assertSame(422, $client->getResponse()->getStatusCode());

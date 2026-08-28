@@ -24,30 +24,35 @@ final readonly class UnitEconomicsCursor
     public function __construct(
         public UnitEconomicsSort $sort,
         public UnitEconomicsDirection $direction,
+        /** Окно отчёта в днях: значения сортировки посчитаны за него. */
+        public int $days,
         public int $sortValue,
         public string $marketplaceSku,
     ) {
     }
 
     /**
-     * Форма «сортировка:направление:значение:артикул» — читаемая
+     * Форма «сортировка:направление:окно:значение:артикул» — читаемая
      * и без base64: кодировать нечего, а непрозрачность ради
      * единообразия мешала бы читать логи (docs/patterns.md,
      * «Форма курсора»).
      *
-     * Предел разбора — четыре части: артикул забирает весь остаток,
+     * Предел разбора — пять частей: артикул забирает весь остаток,
      * даже если содержит двоеточие.
      */
     public static function fromString(string $raw): ?self
     {
-        $parts = explode(':', $raw, 4);
-        if (4 !== \count($parts)) {
+        $parts = explode(':', $raw, 5);
+        if (5 !== \count($parts)) {
             return null;
         }
 
-        [$sort, $direction, $value, $sku] = $parts;
+        [$sort, $direction, $days, $value, $sku] = $parts;
 
-        if (1 !== preg_match('/^-?\d+$/', $value) || '' === $sku) {
+        if (1 !== preg_match('/^\d+$/', $days)
+            || 1 !== preg_match('/^-?\d+$/', $value)
+            || '' === $sku
+        ) {
             return null;
         }
 
@@ -58,7 +63,7 @@ final readonly class UnitEconomicsCursor
             return null;
         }
 
-        return new self($sortCase, $directionCase, (int) $value, $sku);
+        return new self($sortCase, $directionCase, (int) $days, (int) $value, $sku);
     }
 
     public function toString(): string
@@ -66,18 +71,28 @@ final readonly class UnitEconomicsCursor
         return implode(':', [
             $this->sort->value,
             $this->direction->value,
+            (string) $this->days,
             (string) $this->sortValue,
             $this->marketplaceSku,
         ]);
     }
 
     /**
-     * Снят ли курсор в том же порядке, в котором его сейчас применяют.
+     * Снят ли курсор в том же представлении, в котором его применяют:
+     * тот же порядок и то же окно.
+     *
+     * Окно значимо не меньше порядка. Значения сортировки посчитаны
+     * за период: выручка за 90 дней, сравненная с выручкой за 7,
+     * отсекла бы почти весь список — страница вышла бы аккуратной
+     * и почти пустой, без единого признака ошибки.
+     *
      * Несовпадение — отказ, а не молчаливая выдача чужой страницы.
      */
-    public function matches(UnitEconomicsSort $sort, UnitEconomicsDirection $direction): bool
+    public function matches(UnitEconomicsSort $sort, UnitEconomicsDirection $direction, int $days): bool
     {
-        return $this->sort === $sort && $this->direction === $direction;
+        return $this->sort === $sort
+            && $this->direction === $direction
+            && $this->days === $days;
     }
 
     /**

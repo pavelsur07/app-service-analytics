@@ -10,7 +10,7 @@ import { Link } from 'react-router'
 import { Badge } from '../../../../../../packages/ui/src'
 import type { components } from '../../../api/schema'
 import { formatMinorAmount } from '../../../shared/lib/formatMinorAmount'
-import { marginSign, marginTone, shareOfRevenue } from '../lib/margin'
+import { marginBadge, shareOfRevenue } from '../lib/margin'
 import type { SortDirection, SortKey } from '../lib/tableParams'
 
 type UnitEconomicsSku = components['schemas']['UnitEconomicsSkuResponse']
@@ -246,7 +246,7 @@ function Row({
   onToggle: () => void
 }) {
   const zebra = striped ? 'bg-surface-hover' : 'bg-surface-raised'
-  const tone = marginTone(sku.marginMinor, sku.revenueMinor)
+  const margin = marginBadge(sku.marginMinor, sku.revenueMinor)
 
   return (
     <>
@@ -316,8 +316,8 @@ function Row({
         <td className={`${BODY_CELL} text-right`}>
           {/* Знак обязателен: статус читается без цвета — дальтонизм
               и чёрно-белая печать отчёта для бухгалтера. */}
-          <Badge size="compact" tone={tone}>
-            {marginSign(tone)} {formatMinorAmount(sku.marginMinor, currency)}
+          <Badge size="compact" tone={margin.tone}>
+            {margin.sign} {formatMinorAmount(margin.magnitudeMinor, currency)}
           </Badge>
         </td>
       </tr>
@@ -406,6 +406,21 @@ export function UnitEconomicsTable({
             striped={index % 2 === 1}
           />
         ))}
+        {/* Пустая страница не на первой позиции: данные изменились между
+            двумя keyset-запросами. Пустое тело таблицы выглядело бы
+            поломкой, поэтому случай назван словами, а «Назад» остаётся
+            под таблицей рабочим. */}
+        {skus.length === 0 ? (
+          <tr>
+            <td
+              className="px-3 py-6 text-center text-text-muted"
+              colSpan={COLUMNS.length}
+            >
+              На этой странице товаров не осталось — список изменился, пока вы
+              его листали. Вернитесь назад.
+            </td>
+          </tr>
+        ) : null}
       </tbody>
     </table>
   )

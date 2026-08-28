@@ -169,15 +169,16 @@ final class ShowUnitEconomicsController
                 return self::invalid('invalid_cursor', 'cursor is malformed.');
             }
 
-            // Курсор снят в каком-то порядке, и в другом означает другую
-            // точку. Применить его к иной сортировке значило бы отдать
+            // Курсор снят в каком-то представлении, и в другом означает
+            // другую точку — и по порядку, и по окну: значения сортировки
+            // посчитаны за период. Применить его к иному значило бы отдать
             // страницу, которая выглядит правдоподобно и при этом неверна.
-            if (!$cursor->matches($sort, $direction)) {
-                return self::invalid('invalid_cursor', 'cursor was issued for a different sort order.');
+            if (!$cursor->matches($sort, $direction, $days)) {
+                return self::invalid('invalid_cursor', 'cursor was issued for a different sort order or window.');
             }
         }
 
-        $report = ($this->buildReport)($companyId, $from, $to, $limit, $sort, $direction, $cursor);
+        $report = ($this->buildReport)($companyId, $from, $to, $limit, $days, $sort, $direction, $cursor);
 
         return new JsonResponse(new UnitEconomicsResponse(
             from: $from->format('Y-m-d'),

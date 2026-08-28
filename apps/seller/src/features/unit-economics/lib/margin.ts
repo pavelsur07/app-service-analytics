@@ -66,11 +66,36 @@ export function marginTone(
   return scaled < -revenueMinor * THRESHOLD_PERCENT ? 'negative' : 'neutral'
 }
 
+export interface MarginBadge {
+  tone: MarginTone
+  /**
+   * Знак обязателен, а не украшение: статус читается без цвета
+   * (docs/patterns.md, «Данные и статусы») — дальтонизм и чёрно-белая
+   * печать отчёта, который клиент несёт бухгалтеру.
+   */
+  sign: string
+  /** Величина без знака: знак уже отдельно, иначе минусов было бы два. */
+  magnitudeMinor: number
+}
+
 /**
- * Знак перед суммой маржи. Обязателен, а не украшение: статус читается
- * без цвета (docs/patterns.md, «Данные и статусы») — дальтонизм
- * и чёрно-белая печать отчёта, который клиент несёт бухгалтеру.
+ * Тон, знак и величина одним вызовом — а не тремя, которые вызывающий
+ * код обязан не перепутать.
+ *
+ * Разделение их и было дефектом: знак брался из тона, а сумма
+ * форматировалась исходная, со своим минусом. Убыток выходил
+ * «− −500 ₽», а отрицательная нейтральная маржа — «= −500 ₽».
+ * Собранные вместе, знак и величина разойтись уже не могут.
  */
-export function marginSign(tone: MarginTone): string {
-  return tone === 'positive' ? '+' : tone === 'negative' ? '−' : '='
+export function marginBadge(
+  marginMinor: number,
+  revenueMinor: number,
+): MarginBadge {
+  const tone = marginTone(marginMinor, revenueMinor)
+
+  return {
+    tone,
+    sign: marginMinor > 0 ? '+' : marginMinor < 0 ? '−' : '=',
+    magnitudeMinor: Math.abs(marginMinor),
+  }
 }

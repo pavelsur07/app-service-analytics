@@ -25,7 +25,7 @@ interface Stack {
  * требует стопку предыдущих курсоров, а стопка в query-параметре
  * хуже задачи, которую решает.
  */
-export function useUnitEconomicsView(): {
+export function useUnitEconomicsView(companyId: string): {
   params: UnitEconomicsParams
   canGoBack: boolean
   setDays: (days: number) => void
@@ -41,7 +41,13 @@ export function useUnitEconomicsView(): {
   const sort = parseSort(search.get('sort'))
   const direction = parseDirection(search.get('direction'))
 
-  const viewKey = `${days}:${limit}:${sort}:${direction}`
+  // companyId в ключе обязателен. Маршрут у экранов компаний один
+  // и тот же, меняется только параметр пути, поэтому React Router
+  // сохраняет экземпляр компонента — вместе с ним пережила бы
+  // переключение и стопка курсоров. Запрос второй компании ушёл бы
+  // с курсором первой: не утечка (выборка ограничена companyId), но
+  // отчёт, начатый с середины и выглядящий целым.
+  const viewKey = `${companyId}:${days}:${limit}:${sort}:${direction}`
   const [stack, setStack] = useState<Stack>({ key: viewKey, cursors: [null] })
 
   // Курсор принадлежит представлению: при другом окне, размере страницы

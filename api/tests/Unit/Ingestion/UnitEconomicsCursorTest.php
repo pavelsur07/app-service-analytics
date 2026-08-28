@@ -16,6 +16,7 @@ final class UnitEconomicsCursorTest extends TestCase
         $condition = (new UnitEconomicsCursor(
             UnitEconomicsSort::Revenue,
             UnitEconomicsDirection::Desc,
+            30,
             1000,
             'abc',
         ))->after();
@@ -45,6 +46,7 @@ final class UnitEconomicsCursorTest extends TestCase
         $condition = (new UnitEconomicsCursor(
             UnitEconomicsSort::Margin,
             UnitEconomicsDirection::Asc,
+            30,
             -500,
             'abc',
         ))->after();
@@ -55,14 +57,15 @@ final class UnitEconomicsCursorTest extends TestCase
 
     public function testRoundTrip(): void
     {
-        $cursor = UnitEconomicsCursor::fromString('margin:asc:-500:abc');
+        $cursor = UnitEconomicsCursor::fromString('margin:asc:90:-500:abc');
 
         self::assertNotNull($cursor);
         self::assertSame(UnitEconomicsSort::Margin, $cursor->sort);
         self::assertSame(UnitEconomicsDirection::Asc, $cursor->direction);
+        self::assertSame(90, $cursor->days);
         self::assertSame(-500, $cursor->sortValue);
         self::assertSame('abc', $cursor->marketplaceSku);
-        self::assertSame('margin:asc:-500:abc', $cursor->toString());
+        self::assertSame('margin:asc:90:-500:abc', $cursor->toString());
     }
 
     /**
@@ -71,7 +74,7 @@ final class UnitEconomicsCursorTest extends TestCase
      */
     public function testSkuKeepsItsColons(): void
     {
-        $cursor = UnitEconomicsCursor::fromString('revenue:desc:10:a:b:c');
+        $cursor = UnitEconomicsCursor::fromString('revenue:desc:30:10:a:b:c');
 
         self::assertNotNull($cursor);
         self::assertSame('a:b:c', $cursor->marketplaceSku);
@@ -81,12 +84,14 @@ final class UnitEconomicsCursorTest extends TestCase
     {
         self::assertNull(UnitEconomicsCursor::fromString('abc'));
         self::assertNull(UnitEconomicsCursor::fromString('nope:abc'));
-        // Старая форма «сумма:артикул» — курсоров без порядка больше нет.
+        // Прежние формы — без порядка и без окна — больше не курсоры.
         self::assertNull(UnitEconomicsCursor::fromString('1000:abc'));
-        self::assertNull(UnitEconomicsCursor::fromString('bogus:desc:10:abc'));
-        self::assertNull(UnitEconomicsCursor::fromString('revenue:sideways:10:abc'));
-        self::assertNull(UnitEconomicsCursor::fromString('revenue:desc:notanumber:abc'));
-        self::assertNull(UnitEconomicsCursor::fromString('revenue:desc:10:'));
+        self::assertNull(UnitEconomicsCursor::fromString('revenue:desc:10:abc'));
+        self::assertNull(UnitEconomicsCursor::fromString('bogus:desc:30:10:abc'));
+        self::assertNull(UnitEconomicsCursor::fromString('revenue:sideways:30:10:abc'));
+        self::assertNull(UnitEconomicsCursor::fromString('revenue:desc:x:10:abc'));
+        self::assertNull(UnitEconomicsCursor::fromString('revenue:desc:30:notanumber:abc'));
+        self::assertNull(UnitEconomicsCursor::fromString('revenue:desc:30:10:'));
     }
 
     /**
@@ -99,12 +104,17 @@ final class UnitEconomicsCursorTest extends TestCase
         $cursor = new UnitEconomicsCursor(
             UnitEconomicsSort::Revenue,
             UnitEconomicsDirection::Desc,
+            30,
             1000,
             'abc',
         );
 
-        self::assertTrue($cursor->matches(UnitEconomicsSort::Revenue, UnitEconomicsDirection::Desc));
-        self::assertFalse($cursor->matches(UnitEconomicsSort::Margin, UnitEconomicsDirection::Desc));
-        self::assertFalse($cursor->matches(UnitEconomicsSort::Revenue, UnitEconomicsDirection::Asc));
+        self::assertTrue($cursor->matches(UnitEconomicsSort::Revenue, UnitEconomicsDirection::Desc, 30));
+        self::assertFalse($cursor->matches(UnitEconomicsSort::Margin, UnitEconomicsDirection::Desc, 30));
+        self::assertFalse($cursor->matches(UnitEconomicsSort::Revenue, UnitEconomicsDirection::Asc, 30));
+        // Окно значимо не меньше порядка: значения сортировки посчитаны
+        // за период, и выручка за 90 дней против выручки за 7 отсекла бы
+        // почти весь список без единого признака ошибки.
+        self::assertFalse($cursor->matches(UnitEconomicsSort::Revenue, UnitEconomicsDirection::Desc, 7));
     }
 }

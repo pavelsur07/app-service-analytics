@@ -61,6 +61,7 @@ final readonly class UnitEconomicsQuery
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         int $limit,
+        int $days,
         UnitEconomicsSort $sort,
         UnitEconomicsDirection $direction,
         ?UnitEconomicsCursor $cursor,
@@ -71,7 +72,7 @@ final readonly class UnitEconomicsQuery
         // правдоподобной и неверной, и никто бы не заметил. HTTP-граница
         // это уже проверяет, но сценарий публичный, и проверка на границе
         // проверкой здесь не является.
-        if (null !== $cursor && !$cursor->matches($sort, $direction)) {
+        if (null !== $cursor && !$cursor->matches($sort, $direction, $days)) {
             throw new \InvalidArgumentException('Cursor was issued for a different sort order.');
         }
 

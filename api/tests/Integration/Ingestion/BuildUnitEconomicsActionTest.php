@@ -254,13 +254,21 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
         $company = $this->company($container);
 
         $this->sale($container, $company, '111', 300_000, -1_000, 'sale-1');
-        $this->listings($container, $company, Uuid::v7(), ['111']);
-        $this->listings($container, $company, Uuid::v7(), ['111']);
+
+        // Карточки намеренно разные: с одинаковыми тест не заметил бы,
+        // какую из двух выбрал DISTINCT ON, и «детерминированный выбор»
+        // остался бы словами в комментарии.
+        $this->listing($container, $company, Uuid::v7(), '111', 'Старая карточка', 'offer-old', '2026-06-01');
+        $this->listing($container, $company, Uuid::v7(), '111', 'Новая карточка', 'offer-new', '2026-06-15');
 
         $report = $this->build($container, $company);
 
         self::assertCount(1, $report->skus);
         self::assertSame('111', $report->skus[0]->marketplaceSku);
+        // Тай-брейк — первая увиденная: выбор обязан быть устойчивым,
+        // иначе название товара менялось бы между обновлениями страницы.
+        self::assertSame('Старая карточка', $report->skus[0]->name);
+        self::assertSame('offer-old', $report->skus[0]->offerId);
     }
 
     /**
@@ -283,6 +291,7 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
             cursor: new UnitEconomicsCursor(
                 UnitEconomicsSort::Revenue,
                 UnitEconomicsDirection::Desc,
+                1,
                 100,
                 '111',
             ),
@@ -403,6 +412,7 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
         ?\DateTimeImmutable $from = null,
         UnitEconomicsSort $sort = UnitEconomicsSort::Revenue,
         UnitEconomicsDirection $direction = UnitEconomicsDirection::Desc,
+        int $days = 1,
     ): UnitEconomicsReport {
         /** @var BuildUnitEconomicsAction $action */
         $action = $container->get(BuildUnitEconomicsAction::class);
@@ -412,6 +422,7 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
             $from ?? new \DateTimeImmutable(self::DAY),
             new \DateTimeImmutable(self::DAY),
             $limit,
+            $days,
             $sort,
             $direction,
             $cursor,
@@ -483,6 +494,30 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
             ->withAccrualId($accrualId)
             ->withAmount(Money::ofMinor($amountMinor, 'RUB'))
             ->persistWith($expenseFacts);
+    }
+
+    private function listing(
+        ContainerInterface $container,
+        Company $company,
+        Uuid $accountId,
+        string $sku,
+        string $name,
+        string $offerId,
+        string $seenAt,
+    ): void {
+        /** @var MarketplaceListingRepository $listings */
+        $listings = $container->get(MarketplaceListingRepository::class);
+
+        $listings->replaceForAccount($company->id()->toRfc4122(), $accountId, [
+            MarketplaceListingBuilder::aMarketplaceListing()
+                ->withCompanyId($company->id())
+                ->withMarketplaceAccountId($accountId)
+                ->withMarketplaceSku($sku)
+                ->withOfferId($offerId)
+                ->withName($name)
+                ->withSeenAt(new \DateTimeImmutable($seenAt))
+                ->build(),
+        ]);
     }
 
     /**
