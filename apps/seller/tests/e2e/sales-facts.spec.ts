@@ -97,7 +97,7 @@ test.describe('sales facts', () => {
     await expect(page.locator('tbody tr').first()).toBeVisible()
 
     // Возврат к списку — через переключатель компании в топбаре
-    // (docs/design/ui-kit/v0.4.html, раздел 10): в сайдбаре его больше нет.
+    // (docs/design/ui-kit/v0.6.html, раздел 10): в сайдбаре его больше нет.
     const topbar = page.getByRole('banner')
     await topbar.getByRole('link', { name: 'E2E Sandbox LLC' }).click()
     await expect(page).toHaveURL('/companies')

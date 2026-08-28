@@ -6,7 +6,7 @@ import { dataFreshness } from '../features/connections/lib/dataFreshness'
 import type { DataFreshness } from '../features/connections/lib/dataFreshness'
 import { useConnections } from '../features/connections/model/useConnections'
 
-// Шапка — эталон docs/design/ui-kit/v0.4.html, разделы 10 и 14: высота 56,
+// Шапка — эталон docs/design/ui-kit/v0.6.html, разделы 10 и 14: высота 56,
 // поверхность surface/raised, нижняя граница border/default, отступы 24,
 // шаг 16. Логотип 28, переключатель компании 36, аватар 32.
 const CHIP =
