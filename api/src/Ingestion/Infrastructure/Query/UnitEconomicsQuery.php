@@ -56,6 +56,8 @@ final readonly class UnitEconomicsQuery
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         int $limit,
+        UnitEconomicsSort $sort,
+        UnitEconomicsDirection $direction,
         ?UnitEconomicsCursor $cursor,
     ): QueryBuilder {
         // Себестоимость соединяется с КАЖДОЙ строкой продажи по её
@@ -107,21 +109,56 @@ final readonly class UnitEconomicsQuery
             GROUP BY marketplace_sku, currency
             SQL;
 
+        // Карточка товара: название и артикул селлера. Ключ каталога —
+        // (company_id, marketplace_account_id, marketplace_sku), а агрегат
+        // выше схлопнут по (marketplace_sku, currency) и подключения уже
+        // не знает. Артикул площадки уникален в пределах подключения,
+        // а не площадки вообще, поэтому join по company_id + артикулу мог
+        // бы вернуть две карточки на одну строку расчёта и задвоить
+        // страницу — под лимитом пришло бы меньше товаров, чем обещано.
+        //
+        // DISTINCT ON снимает ровно одну. Тай-брейк обязателен и не
+        // косметика: без него PostgreSQL волен взять любую, и название
+        // товара менялось бы между обновлениями страницы само по себе.
+        $listing = <<<'SQL'
+            SELECT DISTINCT ON (marketplace_sku) marketplace_sku, name, offer_id
+            FROM marketplace_listing
+            WHERE company_id = :companyId
+            ORDER BY marketplace_sku, first_seen_at ASC, marketplace_account_id ASC
+            SQL;
+
+        // Два уровня, а не один: маржа складывается из колонок, которые
+        // сами появляются COALESCE-ами уровнем ниже, а PostgreSQL
+        // не разрешает ссылаться на псевдоним в том же списке выборки.
+        // Повторять три COALESCE ради одного уровня — верный способ
+        // однажды поправить их в одном месте и забыть в другом.
+        //
+        // Маржа здесь нужна только для ORDER BY и курсора. Цифру для
+        // клиента по-прежнему считает Money в BuildUnitEconomicsAction:
+        // денежная арифметика живёт в типе, а не в базе. Совпадение
+        // двух источников закреплено тестом.
         $joined = <<<SQL
             (
-                SELECT COALESCE(s.marketplace_sku, e.marketplace_sku) AS marketplace_sku,
-                       COALESCE(s.currency, e.currency) AS currency,
-                       COALESCE(s.delivered_quantity, 0) AS delivered_quantity,
-                       COALESCE(s.delivered_amount_minor, 0) AS delivered_amount_minor,
-                       COALESCE(s.commission_amount_minor, 0) AS commission_amount_minor,
-                       COALESCE(s.ordered_quantity, 0) AS ordered_quantity,
-                       COALESCE(e.expenses_total_minor, 0) AS expenses_total_minor,
-                       COALESCE(s.cost_total_minor, 0) AS cost_total_minor,
-                       COALESCE(s.quantity_without_cost, 0) AS quantity_without_cost,
-                       s.cost_corrected_at
-                FROM ({$sales}) AS s
-                FULL OUTER JOIN ({$expenses}) AS e
-                  ON s.marketplace_sku = e.marketplace_sku AND s.currency = e.currency
+                SELECT j.*,
+                       j.delivered_amount_minor + j.commission_amount_minor + j.expenses_total_minor AS margin_minor,
+                       l.name,
+                       l.offer_id
+                FROM (
+                    SELECT COALESCE(s.marketplace_sku, e.marketplace_sku) AS marketplace_sku,
+                           COALESCE(s.currency, e.currency) AS currency,
+                           COALESCE(s.delivered_quantity, 0) AS delivered_quantity,
+                           COALESCE(s.delivered_amount_minor, 0) AS delivered_amount_minor,
+                           COALESCE(s.commission_amount_minor, 0) AS commission_amount_minor,
+                           COALESCE(s.ordered_quantity, 0) AS ordered_quantity,
+                           COALESCE(e.expenses_total_minor, 0) AS expenses_total_minor,
+                           COALESCE(s.cost_total_minor, 0) AS cost_total_minor,
+                           COALESCE(s.quantity_without_cost, 0) AS quantity_without_cost,
+                           s.cost_corrected_at
+                    FROM ({$sales}) AS s
+                    FULL OUTER JOIN ({$expenses}) AS e
+                      ON s.marketplace_sku = e.marketplace_sku AND s.currency = e.currency
+                ) AS j
+                LEFT JOIN ({$listing}) AS l ON l.marketplace_sku = j.marketplace_sku
             ) AS sku
             SQL;
 
@@ -137,23 +174,27 @@ final readonly class UnitEconomicsQuery
                 'cost_total_minor',
                 'quantity_without_cost',
                 'cost_corrected_at',
+                'margin_minor',
+                'name',
+                'offer_id',
             )
             ->from($joined)
             ->setParameter('companyId', $companyId)
             ->setParameter('from', $from->format('Y-m-d'))
             ->setParameter('to', $to->format('Y-m-d'))
-            // Сначала то, что приносит больше всего: ради этого экран
-            // и открывают. Артикул вторым столбцом — чтобы порядок был
-            // устойчивым, иначе курсор перескакивал бы строки.
-            ->orderBy('delivered_amount_minor', 'DESC')
+            // Порядок выбирает клиент; умолчание — выручка по убыванию,
+            // ради неё экран и открывают. Артикул вторым столбцом
+            // и всегда по возрастанию — чтобы порядок был устойчивым
+            // при равных значениях, иначе курсор перескакивал бы строки.
+            ->orderBy($sort->column(), $direction->sql())
             ->addOrderBy('marketplace_sku', 'ASC')
             // +1 — узнать, есть ли следующая страница, без COUNT(*)
             // на факт-таблице (§5).
             ->setMaxResults($limit + 1);
 
         if (null !== $cursor) {
-            $qb->andWhere($cursor->after('delivered_amount_minor'))
-                ->setParameter('cursorAmount', $cursor->deliveredAmountMinor)
+            $qb->andWhere($cursor->after())
+                ->setParameter('cursorValue', $cursor->sortValue)
                 ->setParameter('cursorSku', $cursor->marketplaceSku);
         }
 
@@ -231,6 +272,9 @@ final readonly class UnitEconomicsQuery
             costTotalMinor: self::intValue($row['cost_total_minor']),
             quantityWithoutCost: self::intValue($row['quantity_without_cost']),
             costCorrectedAt: null === $row['cost_corrected_at'] ? null : self::stringValue($row['cost_corrected_at']),
+            marginMinor: self::intValue($row['margin_minor']),
+            name: null === $row['name'] ? null : self::stringValue($row['name']),
+            offerId: null === $row['offer_id'] ? null : self::stringValue($row['offer_id']),
         );
     }
 

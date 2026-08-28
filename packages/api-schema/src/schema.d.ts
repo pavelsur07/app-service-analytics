@@ -430,6 +430,13 @@ export interface components {
         };
         UnitEconomicsSkuResponse: {
             marketplaceSku: string;
+            /**
+             * Название карточки и артикул селлера. null, пока каталог
+             *     не подтянулся: артикул площадки встречается в фактах раньше,
+             *     чем карточка, и строка расчёта из-за этого не теряется.
+             */
+            name?: string | null;
+            offerId?: string | null;
             deliveredQuantity: number;
             orderedQuantity: number;
             revenueMinor: number;
@@ -1040,7 +1047,11 @@ export interface operations {
                 days?: number;
                 /** @description Сколько товаров вернуть на странице */
                 limit?: number;
-                /** @description Курсор следующей страницы из предыдущего ответа */
+                /** @description Показатель, по которому упорядочена страница */
+                sort?: "delivered" | "revenue" | "commission" | "expenses" | "cost" | "margin";
+                /** @description Направление сортировки */
+                direction?: "asc" | "desc";
+                /** @description Курсор следующей страницы из предыдущего ответа. Действителен только для той сортировки, при которой выдан */
                 cursor?: string;
             };
             header?: never;
@@ -1069,7 +1080,7 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
-            /** @description Некорректный days */
+            /** @description Некорректные days, limit, sort, direction или cursor */
             422: {
                 headers: {
                     [name: string]: unknown;

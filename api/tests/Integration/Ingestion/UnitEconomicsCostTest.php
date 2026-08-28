@@ -11,6 +11,8 @@ use App\Ingestion\Application\UnitEconomicsReport;
 use App\Ingestion\Domain\MarketplaceListingCost;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceListingCostRepository;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsDirection;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsSort;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceListingCostBuilder;
@@ -187,6 +189,8 @@ final class UnitEconomicsCostTest extends KernelTestCase
             $from ?? new \DateTimeImmutable('2026-07-01'),
             $to ?? new \DateTimeImmutable('2026-07-31'),
             50,
+            UnitEconomicsSort::Revenue,
+            UnitEconomicsDirection::Desc,
             null,
         );
     }

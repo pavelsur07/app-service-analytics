@@ -6,8 +6,8 @@ namespace App\Ingestion\Ui\Controller;
 
 use App\Ingestion\Application\ListListingCostsAction;
 use App\Ingestion\Infrastructure\Query\ListingCostRow;
+use App\Ingestion\Infrastructure\Query\ListingCostsCursor;
 use App\Ingestion\Infrastructure\Query\ListingCostsQuery;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsCursor;
 use App\Ingestion\Ui\Response\ListingCostItemResponse;
 use App\Ingestion\Ui\Response\ListingCostListResponse;
 use App\Shared\Ui\QueryParameter;
@@ -106,7 +106,7 @@ final class ListListingCostsController
             // fromString отдаёт null, а не исключение: битый курсор
             // без этой проверки молча отдавал бы первую страницу вместо
             // отказа — то есть выглядел бы как «дальше ничего нет».
-            $cursor = UnitEconomicsCursor::fromString($raw);
+            $cursor = ListingCostsCursor::fromString($raw);
             if (null === $cursor) {
                 return $this->error('invalid_cursor', 'cursor is malformed.');
             }

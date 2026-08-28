@@ -7,9 +7,11 @@ namespace App\Ingestion\Application;
 use App\Ingestion\Domain\OzonFeeTypeNames;
 use App\Ingestion\Infrastructure\Query\ExpenseCoverageQuery;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsCursor;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsDirection;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsExpenseRow;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsQuery;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsSkuRow;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsSort;
 use App\Shared\Domain\ValueObject\Money;
 
 /**
@@ -35,10 +37,15 @@ final readonly class BuildUnitEconomicsAction
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         int $limit,
+        UnitEconomicsSort $sort,
+        UnitEconomicsDirection $direction,
         ?UnitEconomicsCursor $cursor,
     ): UnitEconomicsReport {
         /** @var list<array<string, mixed>> $skuRows */
-        $skuRows = $this->query->skus($companyId, $from, $to, $limit, $cursor)->executeQuery()->fetchAllAssociative();
+        $skuRows = $this->query
+            ->skus($companyId, $from, $to, $limit, $sort, $direction, $cursor)
+            ->executeQuery()
+            ->fetchAllAssociative();
 
         $rows = array_map(UnitEconomicsQuery::mapSkuRow(...), $skuRows);
         // +1 строка запрошена ради ответа на «есть ли ещё» — в отчёт
@@ -69,8 +76,16 @@ final readonly class BuildUnitEconomicsAction
             // в расходах — свойство периода, и на второй странице она
             // не должна исчезать.
             daysWithoutExpenses: $this->daysWithoutExpenses($companyId, $from, $to),
+            // Курсор снимается с той колонки, по которой страница
+            // упорядочена, и несёт сам порядок: точка «после этой
+            // строки» осмысленна только внутри него.
             nextCursor: $hasMore && null !== $last
-                ? (new UnitEconomicsCursor($last->deliveredAmountMinor, $last->marketplaceSku))->toString()
+                ? (new UnitEconomicsCursor(
+                    $sort,
+                    $direction,
+                    $sort->valueOf($last),
+                    $last->marketplaceSku,
+                ))->toString()
                 : null,
         );
     }
@@ -138,6 +153,8 @@ final readonly class BuildUnitEconomicsAction
 
         return new UnitEconomicsSku(
             marketplaceSku: $row->marketplaceSku,
+            name: $row->name,
+            offerId: $row->offerId,
             deliveredQuantity: $row->deliveredQuantity,
             orderedQuantity: $row->orderedQuantity,
             revenueMinor: $revenue->minorAmount(),

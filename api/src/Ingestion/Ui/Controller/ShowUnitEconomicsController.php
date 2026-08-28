@@ -8,7 +8,9 @@ use App\Ingestion\Application\BuildUnitEconomicsAction;
 use App\Ingestion\Application\UnitEconomicsExpense;
 use App\Ingestion\Application\UnitEconomicsSku;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsCursor;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsDirection;
 use App\Ingestion\Infrastructure\Query\UnitEconomicsQuery;
+use App\Ingestion\Infrastructure\Query\UnitEconomicsSort;
 use App\Ingestion\Ui\Response\UnitEconomicsExpenseResponse;
 use App\Ingestion\Ui\Response\UnitEconomicsResponse;
 use App\Ingestion\Ui\Response\UnitEconomicsSkuResponse;
@@ -64,9 +66,27 @@ final class ShowUnitEconomicsController
         schema: new OA\Schema(type: 'integer', default: self::DEFAULT_LIMIT, maximum: self::MAX_LIMIT, minimum: 1),
     )]
     #[OA\Parameter(
+        name: 'sort',
+        in: 'query',
+        description: 'Показатель, по которому упорядочена страница',
+        required: false,
+        schema: new OA\Schema(
+            type: 'string',
+            default: 'revenue',
+            enum: ['delivered', 'revenue', 'commission', 'expenses', 'cost', 'margin'],
+        ),
+    )]
+    #[OA\Parameter(
+        name: 'direction',
+        in: 'query',
+        description: 'Направление сортировки',
+        required: false,
+        schema: new OA\Schema(type: 'string', default: 'desc', enum: ['asc', 'desc']),
+    )]
+    #[OA\Parameter(
         name: 'cursor',
         in: 'query',
-        description: 'Курсор следующей страницы из предыдущего ответа',
+        description: 'Курсор следующей страницы из предыдущего ответа. Действителен только для той сортировки, при которой выдан',
         required: false,
         schema: new OA\Schema(type: 'string'),
     )]
@@ -77,7 +97,7 @@ final class ShowUnitEconomicsController
     )]
     #[OA\Response(
         response: 422,
-        description: 'Некорректный days',
+        description: 'Некорректные days, limit, sort, direction или cursor',
         content: new Model(type: ValidationErrorResponse::class),
     )]
     #[OA\Response(
@@ -120,23 +140,44 @@ final class ShowUnitEconomicsController
             );
         }
 
+        // Имя сортировки уходит в SQL подстановкой, поэтому оно
+        // становится типом здесь или не становится вовсе. Неизвестное
+        // значение — отказ, а не молчаливый откат на умолчание: тем же
+        // правилом, что и превышение limit.
+        $sort = UnitEconomicsSort::tryFrom(
+            $request->query->getString('sort', UnitEconomicsSort::Revenue->value),
+        );
+        if (null === $sort) {
+            return self::invalid('invalid_sort', \sprintf(
+                'sort must be one of: %s.',
+                implode(', ', array_column(UnitEconomicsSort::cases(), 'value')),
+            ));
+        }
+
+        $direction = UnitEconomicsDirection::tryFrom(
+            $request->query->getString('direction', UnitEconomicsDirection::Desc->value),
+        );
+        if (null === $direction) {
+            return self::invalid('invalid_direction', 'direction must be one of: asc, desc.');
+        }
+
         $cursor = null;
         if ($request->query->has('cursor')) {
             $raw = (string) $request->query->get('cursor');
             $cursor = UnitEconomicsCursor::fromString($raw);
             if (null === $cursor) {
-                return new JsonResponse(
-                    new ValidationErrorResponse(
-                        status: Response::HTTP_UNPROCESSABLE_ENTITY,
-                        code: 'invalid_cursor',
-                        message: 'cursor is malformed.',
-                    ),
-                    Response::HTTP_UNPROCESSABLE_ENTITY,
-                );
+                return self::invalid('invalid_cursor', 'cursor is malformed.');
+            }
+
+            // Курсор снят в каком-то порядке, и в другом означает другую
+            // точку. Применить его к иной сортировке значило бы отдать
+            // страницу, которая выглядит правдоподобно и при этом неверна.
+            if (!$cursor->matches($sort, $direction)) {
+                return self::invalid('invalid_cursor', 'cursor was issued for a different sort order.');
             }
         }
 
-        $report = ($this->buildReport)($companyId, $from, $to, $limit, $cursor);
+        $report = ($this->buildReport)($companyId, $from, $to, $limit, $sort, $direction, $cursor);
 
         return new JsonResponse(new UnitEconomicsResponse(
             from: $from->format('Y-m-d'),
@@ -145,6 +186,8 @@ final class ShowUnitEconomicsController
             skus: array_map(
                 static fn (UnitEconomicsSku $sku): UnitEconomicsSkuResponse => new UnitEconomicsSkuResponse(
                     marketplaceSku: $sku->marketplaceSku,
+                    name: $sku->name,
+                    offerId: $sku->offerId,
                     deliveredQuantity: $sku->deliveredQuantity,
                     orderedQuantity: $sku->orderedQuantity,
                     revenueMinor: $sku->revenueMinor,
@@ -165,6 +208,22 @@ final class ShowUnitEconomicsController
             daysWithoutExpenses: $report->daysWithoutExpenses,
             nextCursor: $report->nextCursor,
         ));
+    }
+
+    /**
+     * Отказ на разборе ввода. Один вид ответа на все параметры: три
+     * копии одного JsonResponse разъезжаются, и разъезжаются молча.
+     */
+    private static function invalid(string $code, string $message): JsonResponse
+    {
+        return new JsonResponse(
+            new ValidationErrorResponse(
+                status: Response::HTTP_UNPROCESSABLE_ENTITY,
+                code: $code,
+                message: $message,
+            ),
+            Response::HTTP_UNPROCESSABLE_ENTITY,
+        );
     }
 
     private static function expense(UnitEconomicsExpense $expense): UnitEconomicsExpenseResponse

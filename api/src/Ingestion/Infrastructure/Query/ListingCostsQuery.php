@@ -42,7 +42,7 @@ final readonly class ListingCostsQuery
         \DateTimeImmutable $to,
         \DateTimeImmutable $on,
         int $limit,
-        ?UnitEconomicsCursor $cursor,
+        ?ListingCostsCursor $cursor,
     ): QueryBuilder {
         // Выручка отдельным агрегатом, а не соединением по строкам:
         // у карточки их за период тысячи, и соединение до свёртки
@@ -128,7 +128,7 @@ final readonly class ListingCostsQuery
 
         if (null !== $cursor) {
             $qb->andWhere($cursor->after('revenue_minor'))
-                ->setParameter('cursorAmount', $cursor->deliveredAmountMinor)
+                ->setParameter('cursorAmount', $cursor->revenueMinor)
                 ->setParameter('cursorSku', $cursor->marketplaceSku);
         }
 
