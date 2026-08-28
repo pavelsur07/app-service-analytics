@@ -180,7 +180,7 @@ final readonly class FetchOzonCatalogHandler
 
             $parsed = $this->parser->parse($rawBody);
             [$infoBody, $infoDocumentId] = $this->fetchProductInfo($target, $companyId, $marketplaceAccountId, $period, $parsed);
-            $names = null === $infoBody ? [] : $this->infoParser->parse($infoBody);
+            $cards = null === $infoBody ? [] : $this->infoParser->parse($infoBody);
 
             // Цены пишутся страницей, а не копятся до конца цикла
             // (CLAUDE.md §6: пакет сбрасывается порциями по ходу,
@@ -201,12 +201,14 @@ final readonly class FetchOzonCatalogHandler
             ));
 
             foreach ($parsed->items as $item) {
+                $card = $cards[$item->sku] ?? null;
                 $listings[] = MarketplaceListing::seen(
                     $companyId,
                     $marketplaceAccountId,
                     $item->sku,
                     $item->offerId,
-                    $names[$item->sku] ?? null,
+                    $card?->name,
+                    $card?->photoUrl,
                     $syncedAt,
                 );
             }

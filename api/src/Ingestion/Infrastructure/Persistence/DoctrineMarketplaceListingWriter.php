@@ -67,13 +67,14 @@ final readonly class DoctrineMarketplaceListingWriter implements MarketplaceList
         $valuesSql = [];
         $params = [];
         foreach ($listings as $i => $listing) {
-            $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :marketplaceSku{$i}, :offerId{$i}, :name{$i}, :firstSeenAt{$i})";
+            $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :marketplaceSku{$i}, :offerId{$i}, :name{$i}, :photoUrl{$i}, :firstSeenAt{$i})";
 
             $params["companyId{$i}"] = $listing->companyId()->toRfc4122();
             $params["marketplaceAccountId{$i}"] = $listing->marketplaceAccountId()->toRfc4122();
             $params["marketplaceSku{$i}"] = $listing->marketplaceSku();
             $params["offerId{$i}"] = $listing->offerId();
             $params["name{$i}"] = $listing->name();
+            $params["photoUrl{$i}"] = $listing->photoUrl();
             $params["firstSeenAt{$i}"] = $listing->firstSeenAt()->format('Y-m-d H:i:sP');
         }
 
@@ -95,14 +96,16 @@ final readonly class DoctrineMarketplaceListingWriter implements MarketplaceList
         // встречи, и товар, пришедший снова, новым не становится.
         $sql = <<<SQL
             INSERT INTO marketplace_listing
-                (company_id, marketplace_account_id, marketplace_sku, offer_id, name, first_seen_at)
+                (company_id, marketplace_account_id, marketplace_sku, offer_id, name, photo_url, first_seen_at)
             VALUES {$this->joinValues($valuesSql)}
             ON CONFLICT (company_id, marketplace_account_id, marketplace_sku)
             DO UPDATE SET
                 offer_id = EXCLUDED.offer_id,
-                name = COALESCE(EXCLUDED.name, marketplace_listing.name)
+                name = COALESCE(EXCLUDED.name, marketplace_listing.name),
+                photo_url = COALESCE(EXCLUDED.photo_url, marketplace_listing.photo_url)
             WHERE marketplace_listing.offer_id IS DISTINCT FROM EXCLUDED.offer_id
                OR marketplace_listing.name IS DISTINCT FROM COALESCE(EXCLUDED.name, marketplace_listing.name)
+               OR marketplace_listing.photo_url IS DISTINCT FROM COALESCE(EXCLUDED.photo_url, marketplace_listing.photo_url)
             SQL;
 
         $this->connection->executeStatement($sql, $params);

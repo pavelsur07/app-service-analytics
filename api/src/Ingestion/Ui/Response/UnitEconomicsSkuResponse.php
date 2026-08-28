@@ -31,6 +31,12 @@ final readonly class UnitEconomicsSkuResponse
          */
         public ?string $name,
         public ?string $offerId,
+        /**
+         * Адрес главного фото карточки на CDN площадки. Размер превью
+         * подставляет клиент: какого размера нужна картинка, решает
+         * вёрстка, а не каталог.
+         */
+        public ?string $photoUrl,
         public int $deliveredQuantity,
         public int $orderedQuantity,
         public int $revenueMinor,

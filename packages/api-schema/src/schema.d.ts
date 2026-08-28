@@ -437,6 +437,12 @@ export interface components {
              */
             name?: string | null;
             offerId?: string | null;
+            /**
+             * Адрес главного фото карточки на CDN площадки. Размер превью
+             *     подставляет клиент: какого размера нужна картинка, решает
+             *     вёрстка, а не каталог.
+             */
+            photoUrl?: string | null;
             deliveredQuantity: number;
             orderedQuantity: number;
             revenueMinor: number;

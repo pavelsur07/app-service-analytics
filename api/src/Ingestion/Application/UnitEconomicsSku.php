@@ -31,6 +31,7 @@ final readonly class UnitEconomicsSku
          */
         public ?string $name,
         public ?string $offerId,
+        public ?string $photoUrl,
         public int $deliveredQuantity,
         public int $orderedQuantity,
         public int $revenueMinor,

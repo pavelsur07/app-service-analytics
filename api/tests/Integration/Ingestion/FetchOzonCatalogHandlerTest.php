@@ -201,7 +201,7 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         self::assertInstanceOf(SendEmailMessage::class, $queued[0]->getMessage());
     }
 
-    public function testSellerArticleAndNameReachTheRow(): void
+    public function testSellerArticleNameAndPhotoReachTheRow(): void
     {
         $container = $this->bootedContainer();
         $account = $this->account($container);
@@ -214,13 +214,17 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         $this->syncCatalog($container, $account);
 
         $row = $this->connection($container)->fetchAssociative(
-            'SELECT offer_id, name FROM marketplace_listing WHERE company_id = ? AND marketplace_sku = ?',
+            'SELECT offer_id, name, photo_url FROM marketplace_listing WHERE company_id = ? AND marketplace_sku = ?',
             [$account->companyId()->toRfc4122(), '220280923'],
         );
 
         self::assertIsArray($row);
         self::assertSame('WJ1020101211/черный-M', $row['offer_id']);
         self::assertSame('Лосины спортивные женские Logo', $row['name']);
+        // Единственное сквозное доказательство, что цепочка
+        // парсер → обработчик → писатель собрана: адрес из боевого
+        // ответа доехал до строки каталога.
+        self::assertSame('https://ir.ozone.ru/s3/multimedia-1-z/7120158587.jpg', $row['photo_url']);
 
         // Имена запрашиваются по товарам этой же страницы, а не по всему
         // каталогу заново.
@@ -324,7 +328,7 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
     private function rows(ContainerInterface $container, MarketplaceAccount $account): array
     {
         return $this->connection($container)->fetchAllAssociative(
-            'SELECT marketplace_sku, offer_id, name, first_seen_at FROM marketplace_listing WHERE company_id = ? AND marketplace_account_id = ? ORDER BY marketplace_sku',
+            'SELECT marketplace_sku, offer_id, name, photo_url, first_seen_at FROM marketplace_listing WHERE company_id = ? AND marketplace_account_id = ? ORDER BY marketplace_sku',
             [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
         );
     }

@@ -10,9 +10,10 @@ use Symfony\Component\Uid\Uuid;
 /**
  * ADR-005: валидные умолчания, неизменяем.
  *
- * Момент первой встречи задаётся снаружи: это единственная неключевая
- * колонка таблицы и ровно то, что проверяет тест идемпотентности —
- * билдер не должен вычислять проверяемое значение сам.
+ * Изменяемые колонки — артикул, имя и фото — задаются снаружи: ровно их
+ * проверяет тест идемпотентности, и билдер не должен вычислять
+ * проверяемое значение сам. Момент первой встречи тоже снаружи
+ * по той же причине.
  */
 final class MarketplaceListingBuilder
 {
@@ -21,6 +22,7 @@ final class MarketplaceListingBuilder
     private string $marketplaceSku = '1988146647';
     private ?string $offerId = 'WJ1621101211-черный-M';
     private ?string $name = 'Топ Womjoy Logo Basic';
+    private ?string $photoUrl = 'https://ir.ozone.ru/s3/multimedia-1-h/11107018133.jpg';
     private \DateTimeImmutable $seenAt;
 
     private function __construct()
@@ -75,6 +77,14 @@ final class MarketplaceListingBuilder
         return $clone;
     }
 
+    public function withPhotoUrl(?string $photoUrl): self
+    {
+        $clone = clone $this;
+        $clone->photoUrl = $photoUrl;
+
+        return $clone;
+    }
+
     public function withSeenAt(\DateTimeImmutable $seenAt): self
     {
         $clone = clone $this;
@@ -91,6 +101,7 @@ final class MarketplaceListingBuilder
             $this->marketplaceSku,
             $this->offerId,
             $this->name,
+            $this->photoUrl,
             $this->seenAt,
         );
     }

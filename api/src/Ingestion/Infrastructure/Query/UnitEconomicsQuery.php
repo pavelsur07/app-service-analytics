@@ -137,7 +137,7 @@ final readonly class UnitEconomicsQuery
         // косметика: без него PostgreSQL волен взять любую, и название
         // товара менялось бы между обновлениями страницы само по себе.
         $listing = <<<'SQL'
-            SELECT DISTINCT ON (marketplace_sku) marketplace_sku, name, offer_id
+            SELECT DISTINCT ON (marketplace_sku) marketplace_sku, name, offer_id, photo_url
             FROM marketplace_listing
             WHERE company_id = :companyId
             ORDER BY marketplace_sku, first_seen_at ASC, marketplace_account_id ASC
@@ -158,7 +158,8 @@ final readonly class UnitEconomicsQuery
                 SELECT j.*,
                        j.delivered_amount_minor + j.commission_amount_minor + j.expenses_total_minor AS margin_minor,
                        l.name,
-                       l.offer_id
+                       l.offer_id,
+                       l.photo_url
                 FROM (
                     SELECT COALESCE(s.marketplace_sku, e.marketplace_sku) AS marketplace_sku,
                            COALESCE(s.currency, e.currency) AS currency,
@@ -193,6 +194,7 @@ final readonly class UnitEconomicsQuery
                 'margin_minor',
                 'name',
                 'offer_id',
+                'photo_url',
             )
             ->from($joined)
             ->setParameter('companyId', $companyId)
@@ -291,6 +293,7 @@ final readonly class UnitEconomicsQuery
             marginMinor: self::intValue($row['margin_minor']),
             name: null === $row['name'] ? null : self::stringValue($row['name']),
             offerId: null === $row['offer_id'] ? null : self::stringValue($row['offer_id']),
+            photoUrl: null === $row['photo_url'] ? null : self::stringValue($row['photo_url']),
         );
     }
 
