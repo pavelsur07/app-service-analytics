@@ -29,17 +29,24 @@ export function CompanyLayout() {
     <RequireAuth>
       {/* Шапка на всю ширину над сайдбаром, а не внутри контента —
           как в ките (раздел 14, эталонные экраны): компания и свежесть
-          данных не должны уезжать вместе со скроллом экрана. */}
-      <div className="flex min-h-screen flex-col bg-bg-base">
+          данных не должны уезжать вместе со скроллом экрана. Поэтому же
+          оболочка ровно в высоту вьюпорта (h-screen, а не min-h-screen):
+          прокручивается рабочая зона, а не документ.
+
+          min-h-0 на строке выглядит лишним ровно до того, как его уберут:
+          без него flex-ребёнок не сжимается ниже своего содержимого,
+          main никогда не переполняется — и скролла не появляется
+          нигде. */}
+      <div className="flex h-screen flex-col overflow-hidden bg-bg-base">
         <Topbar companyId={companyId} />
-        <div className="flex flex-1">
+        <div className="flex min-h-0 flex-1">
           <Sidebar />
           {/* Отступ и вертикальный ритм — свойство рабочей зоны, а не
               каждого экрана (docs/design/ui-kit/v0.4.html, раздел 13:
               padding 24px, gap 16px). Пока их проставляла каждая
               страница, забыть их было делом времени — и забыли
               на первом же новом экране. */}
-          <main className="flex min-w-0 flex-1 flex-col gap-4 p-6">
+          <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
             <Outlet />
           </main>
         </div>

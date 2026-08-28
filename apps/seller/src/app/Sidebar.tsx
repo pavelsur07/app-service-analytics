@@ -47,9 +47,12 @@ export function Sidebar() {
   const logout = useLogout()
 
   return (
+    // overflow-y-auto — на низком окне и при зуме шесть пунктов и блок
+    // выхода не помещаются; без своего скролла «Выйти» просто отрезана,
+    // доскроллить до неё нечем — документ больше не прокручивается.
     <nav
       aria-label="Разделы компании"
-      className="flex w-60 flex-col gap-1 border-r border-border-default bg-surface-raised px-3 py-4"
+      className="flex w-60 flex-col gap-1 overflow-y-auto border-r border-border-default bg-surface-raised px-3 py-4"
     >
       {/* Компании здесь больше нет: переключатель переехал в шапку,
           как в ките. Дублировать его в двух местах — верный способ
