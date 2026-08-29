@@ -26,6 +26,9 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // Мок-сервер по схеме OpenAPI поднимается для всех тестов
+    // (CLAUDE.md §10): без него запрос без хендлера ушёл бы в сеть.
+    setupFiles: ['./tests/msw/setup.ts'],
     // tests/e2e — Playwright, отдельный тест-раннер; Vitest его не трогает.
     exclude: ['node_modules/**', 'tests/e2e/**'],
   },

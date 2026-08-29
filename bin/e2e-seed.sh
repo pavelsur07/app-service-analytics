@@ -58,7 +58,25 @@ fi
 docker compose exec -T php-cli php bin/console app:identity:add-company-member \
     "$user_email" "$second_company_id"
 
+# Администратор системного контура (ADR-017). Сначала удаление, потом
+# создание: строка без автора в таблице возможна ровно одна
+# (uq_administrator_bootstrap), поэтому повторный запуск сида иначе
+# упёрся бы в ограничение. Сид — не боевые данные, детерминированность
+# здесь важнее сохранности.
+admin_email="e2e-admin@example.com"
+admin_password="e2e-admin-password"
+
+docker compose exec -T postgres psql -U app -d app -q \
+    -c "DELETE FROM audit_record WHERE actor_admin_id IS NOT NULL" \
+    -c "DELETE FROM administrator" > /dev/null
+
+# Пароль приходит из пайпа: аргументом он оседал бы в истории оболочки
+# и был бы виден в списке процессов, поэтому команда его не принимает.
+printf '%s\n' "$admin_password" | docker compose exec -T php-cli \
+    php bin/console app:identity:create-super-admin "$admin_email"
+
 mkdir -p var
+printf '%s\n%s\n' "$admin_email" "$admin_password" > var/e2e-admin-credentials
 printf '%s' "$company_id" > var/e2e-company-id
 printf '%s' "$second_company_id" > var/e2e-second-company-id
 printf '%s\n%s\n' "$user_email" "$user_password" > var/e2e-user-credentials
@@ -66,3 +84,4 @@ printf '%s\n%s\n' "$user_email" "$user_password" > var/e2e-user-credentials
 echo "e2e-seed: companyId=$company_id"
 echo "e2e-seed: secondCompanyId=$second_company_id"
 echo "e2e-seed: userEmail=$user_email"
+echo "e2e-seed: adminEmail=$admin_email"
