@@ -177,7 +177,18 @@ function Breakdown({
         className="border-b border-border-subtle px-3 pb-3"
         colSpan={COLUMNS.length}
       >
-        <div className="flex flex-col gap-2 rounded-lg border border-border-default bg-surface-hover p-3">
+        {/* Панель прижата к левому краю прокрутки и имеет свою ширину,
+            а не наследует ячейку. Ячейка занимает всю таблицу — 1480px, —
+            и суммы в панели оказывались прижаты к её правому краю, то есть
+            за пределами экрана: чтобы увидеть итог, приходилось листать
+            таблицу вбок.
+
+            920px, а не «во всю ячейку»: это влезает и в рабочую зону
+            узкого окна 1280 (там около 990px), и в широкое. Макет
+            закрепляет панель на краю замороженной группы (168px), но
+            168 + 920 = 1088 обрезалось бы как раз на 1280 — поэтому
+            здесь left-0, а не left-42. */}
+        <div className="sticky left-0 flex w-230 max-w-full flex-col gap-2 rounded-lg border border-border-default bg-surface-hover p-3">
           <dl className="flex flex-wrap gap-x-8 gap-y-1 text-sm">
             <div>
               <dt className="text-xs text-text-muted">Прибыль</dt>
