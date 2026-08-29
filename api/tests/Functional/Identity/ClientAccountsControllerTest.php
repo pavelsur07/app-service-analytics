@@ -12,6 +12,7 @@ use App\Identity\Infrastructure\Repository\DoctrineAdministratorRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Tests\Support\Builder\AdministratorBuilder;
 use App\Tests\Support\Builder\CompanyBuilder;
+use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -129,16 +130,22 @@ final class ClientAccountsControllerTest extends WebTestCase
         $client = static::createClient();
         $this->loginAdmin($client);
 
-        $body = static fn (string $name): string => json_encode([
-            'name' => $name,
-            'ownerEmail' => 'dup@romashka.test',
-            'ownerPassword' => 'long-enough-password',
-        ], \JSON_THROW_ON_ERROR);
+        // Занятый email готовит билдер, а не первый запрос к тому же
+        // эндпоинту (§9): предмет проверки — одна регистрация,
+        // столкнувшаяся с существующим пользователем, и лишний успешный
+        // вызов в подготовке только запутывал бы, что именно упало.
+        UserBuilder::aUser()->withEmail('dup@romashka.test')->persistWith(new DoctrineUserRepository($this->entityManager()));
 
-        $client->request('POST', '/api/admin/companies', server: ['CONTENT_TYPE' => 'application/json'], content: $body('Первая'));
-        self::assertResponseStatusCodeSame(201);
-
-        $client->request('POST', '/api/admin/companies', server: ['CONTENT_TYPE' => 'application/json'], content: $body('Вторая'));
+        $client->request(
+            'POST',
+            '/api/admin/companies',
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: json_encode([
+                'name' => 'Вторая',
+                'ownerEmail' => 'dup@romashka.test',
+                'ownerPassword' => 'long-enough-password',
+            ], \JSON_THROW_ON_ERROR),
+        );
         self::assertResponseStatusCodeSame(409);
 
         // Главное здесь: транзакция откатилась целиком. Компания

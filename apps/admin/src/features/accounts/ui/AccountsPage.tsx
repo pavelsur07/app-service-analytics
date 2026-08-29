@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CircleX, LoaderCircle } from 'lucide-react'
+import { CircleAlert, CircleX, LoaderCircle } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -57,6 +57,24 @@ export function AccountsPage() {
             title="Ошибка"
             tone="negative"
           />
+        )}
+
+        {setStatus.isError && (
+          // Молчаливый отказ здесь опаснее обычного: кнопка перестаёт
+          // грузиться, строка остаётся в прежнем состоянии, и со стороны
+          // это неотличимо от «уже было так». Администратор ушёл бы
+          // с экрана уверенным, что аккаунт заблокирован.
+          <div
+            className="mb-4 flex items-center gap-2 rounded-lg border border-negative-border bg-negative-bg p-3 text-xs text-negative-text"
+            role="alert"
+          >
+            <CircleAlert aria-hidden="true" size={16} />
+            <span>
+              {setStatus.error instanceof Error
+                ? setStatus.error.message
+                : 'Не удалось изменить состояние аккаунта'}
+            </span>
+          </div>
         )}
 
         {accounts.status === 'success' && (
