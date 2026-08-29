@@ -49,12 +49,13 @@ final class AdministratorTest extends TestCase
         self::assertNull($administrator->createdByAdminId());
     }
 
-    public function testEveryOtherAdministratorHasAnAuthor(): void
+    public function testAuthorIsCarriedFromTheAdministratorWhoCreated(): void
     {
-        // Умолчание билдера обязано быть валидным (ADR-005), а строку
-        // без автора база принимает только одну и только с верхней ролью.
-        $administrator = AdministratorBuilder::anAdministrator()->build();
+        $boss = AdministratorBuilder::aBootstrapSuperAdmin()->build();
+
+        $administrator = AdministratorBuilder::anAdministrator()->createdBy($boss)->build();
 
         self::assertNotNull($administrator->createdByAdminId());
+        self::assertSame((string) $boss->id(), (string) $administrator->createdByAdminId());
     }
 }

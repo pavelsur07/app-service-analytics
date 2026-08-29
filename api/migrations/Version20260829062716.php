@@ -26,8 +26,15 @@ use Doctrine\Migrations\AbstractMigration;
  *
  * created_by_admin_id nullable ровно для первого SuperAdmin: его заводит
  * консольная команда, автора у него в системе нет по построению.
- * Внешнего ключа нет — как и везде в этом модуле; ссылка на строку
- * той же таблицы, и цикл FK на самого себя ничего бы не добавил.
+ *
+ * Внешний ключ здесь есть, и это первый FK в проекте — отличие
+ * от company_id, где FK сознательно нет. Там ссылка идёт на таблицу
+ * другого агрегата и её отсутствие оплачено осознанно; здесь ссылка
+ * ведёт на соседнюю строку той же таблицы, и без FK «автор известен»
+ * означало бы всего лишь «в колонке что-то есть». Произвольный uuid
+ * прошёл бы проверку и оставил бы аудиторский след, ведущий в никуда.
+ * ON DELETE не задан: строки администраторов не удаляются, а если
+ * когда-нибудь начнут — пусть отказ придёт от базы, а не тишина.
  *
  * Два ограничения держат «у каждого администратора известен автор»,
  * и держат его база, а не дисциплина вызывающего. Признак ADR-011,
@@ -35,6 +42,7 @@ use Doctrine\Migrations\AbstractMigration;
  * каждый переход хранил, кто его выполнил; строка без автора этому
  * не отвечает, поэтому таких строк может быть ровно одна — первая:
  *
+ *   fk_administrator_author   — автор существует, а не просто указан;
  *   chk_administrator_author  — без автора допустим только super_admin;
  *                               Admin заводится действием SuperAdmin
  *                               и актор у него есть всегда (ADR-017);
@@ -80,6 +88,11 @@ final class Version20260829062716 extends AbstractMigration
             ALTER TABLE administrator ADD CONSTRAINT chk_administrator_author
                 CHECK (created_by_admin_id IS NOT NULL OR role = 'super_admin')
             SQL);
+        $this->addSql(<<<'SQL'
+            ALTER TABLE administrator ADD CONSTRAINT fk_administrator_author
+                FOREIGN KEY (created_by_admin_id) REFERENCES administrator (id)
+            SQL);
+        $this->addSql('CREATE INDEX idx_administrator_created_by ON administrator (created_by_admin_id)');
         $this->addSql(<<<'SQL'
             CREATE UNIQUE INDEX uq_administrator_bootstrap
                 ON administrator ((created_by_admin_id IS NULL))
