@@ -16,21 +16,41 @@ use Symfony\Component\Uid\Uuid;
  * Умолчание — нижняя роль: тест, которому нужен `SuperAdmin`, обязан
  * попросить его явно. Наоборот было бы опаснее — забытый вызов давал бы
  * тесту больше прав, чем он проверяет.
+ *
+ * Автор по умолчанию задан: строку без автора база принимает только
+ * одну и только с верхней ролью (chk_administrator_author,
+ * uq_administrator_bootstrap). Умолчание обязано быть валидным
+ * по ADR-005, поэтому bootstrap собирается явно — aBootstrapSuperAdmin().
  */
 final class AdministratorBuilder
 {
     private string $email = 'ops@example.com';
     private string $passwordHash = 'stub-hash';
     private AdminRole $role = AdminRole::Admin;
-    private ?Uuid $createdByAdminId = null;
+    private ?Uuid $createdByAdminId;
 
     private function __construct()
     {
+        $this->createdByAdminId = Uuid::v7();
     }
 
     public static function anAdministrator(): self
     {
         return new self();
+    }
+
+    /**
+     * Первый администратор системы: верхняя роль и автора нет. Такая
+     * строка в таблице возможна ровно одна, поэтому в одном тесте
+     * их не бывает две.
+     */
+    public static function aBootstrapSuperAdmin(): self
+    {
+        $builder = new self();
+        $builder->role = AdminRole::SuperAdmin;
+        $builder->createdByAdminId = null;
+
+        return $builder;
     }
 
     public function withEmail(string $email): self

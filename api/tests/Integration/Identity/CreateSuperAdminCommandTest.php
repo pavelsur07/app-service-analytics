@@ -88,11 +88,29 @@ final class CreateSuperAdminCommandTest extends KernelTestCase
 
         $exitCode = $this->runCommand('twice@conwix.local', 'second-password');
 
-        self::assertSame(Command::SUCCESS, $exitCode);
+        self::assertSame(Command::FAILURE, $exitCode);
         $again = $administrators->findByEmail('twice@conwix.local');
         self::assertNotNull($again);
         self::assertSame((string) $first->id(), (string) $again->id());
         self::assertSame($first->passwordHash(), $again->passwordHash(), 'повторный запуск не должен менять пароль');
+    }
+
+    public function testSecondBootstrapWithAnotherEmailIsRefusedByTheDatabase(): void
+    {
+        self::bootKernel();
+        $administrators = $this->administrators();
+
+        self::assertSame(Command::SUCCESS, $this->runCommand('first@conwix.local', 'first-password'));
+
+        // Другой email — уникальность email не мешает. Отвергает
+        // частичный уникальный индекс на строках без автора: вторая
+        // привилегированная учётка без актора нарушила бы признак
+        // ADR-011, по которому этой сущности не нужен журнал.
+        $exitCode = $this->runCommand('second@conwix.local', 'second-password');
+
+        self::assertSame(Command::FAILURE, $exitCode);
+        self::assertNull($administrators->findByEmail('second@conwix.local'));
+        self::assertNotNull($administrators->findByEmail('first@conwix.local'));
     }
 
     private function runCommand(string $email, string $password): int

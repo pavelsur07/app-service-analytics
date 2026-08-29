@@ -29,6 +29,23 @@ use Doctrine\Migrations\AbstractMigration;
  * Внешнего ключа нет — как и везде в этом модуле; ссылка на строку
  * той же таблицы, и цикл FK на самого себя ничего бы не добавил.
  *
+ * Два ограничения держат «у каждого администратора известен автор»,
+ * и держат его база, а не дисциплина вызывающего. Признак ADR-011,
+ * по которому append-only сущности journal не нужен, требует, чтобы
+ * каждый переход хранил, кто его выполнил; строка без автора этому
+ * не отвечает, поэтому таких строк может быть ровно одна — первая:
+ *
+ *   chk_administrator_author  — без автора допустим только super_admin;
+ *                               Admin заводится действием SuperAdmin
+ *                               и актор у него есть всегда (ADR-017);
+ *   uq_administrator_bootstrap — частичный уникальный индекс: строк
+ *                               без автора не больше одной за всю
+ *                               жизнь таблицы.
+ *
+ * Второй заменяет проверку «есть ли уже администраторы» перед вставкой,
+ * которую CLAUDE.md §4 запрещает: два параллельных запуска прошли бы
+ * её оба. Здесь гарантия в самом индексе, конфликт ловится на вставке.
+ *
  * Индекса на created_by_admin_id нет: запроса «кого завёл этот
  * администратор» не существует, а индекс следует за запросом, а не
  * за таблицей. Уникальный индекс по email нужен наоборот всегда —
@@ -59,6 +76,15 @@ final class Version20260829062716 extends AbstractMigration
             )
             SQL);
         $this->addSql('CREATE UNIQUE INDEX uq_administrator_email ON administrator (email)');
+        $this->addSql(<<<'SQL'
+            ALTER TABLE administrator ADD CONSTRAINT chk_administrator_author
+                CHECK (created_by_admin_id IS NOT NULL OR role = 'super_admin')
+            SQL);
+        $this->addSql(<<<'SQL'
+            CREATE UNIQUE INDEX uq_administrator_bootstrap
+                ON administrator ((created_by_admin_id IS NULL))
+                WHERE created_by_admin_id IS NULL
+            SQL);
     }
 
     public function down(Schema $schema): void

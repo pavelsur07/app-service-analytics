@@ -43,8 +43,18 @@ final class AdministratorTest extends TestCase
 
     public function testBootstrapAdministratorHasNoAuthor(): void
     {
-        $administrator = AdministratorBuilder::anAdministrator()->withRole(AdminRole::SuperAdmin)->build();
+        $administrator = AdministratorBuilder::aBootstrapSuperAdmin()->build();
 
+        self::assertSame(AdminRole::SuperAdmin, $administrator->role());
         self::assertNull($administrator->createdByAdminId());
+    }
+
+    public function testEveryOtherAdministratorHasAnAuthor(): void
+    {
+        // Умолчание билдера обязано быть валидным (ADR-005), а строку
+        // без автора база принимает только одну и только с верхней ролью.
+        $administrator = AdministratorBuilder::anAdministrator()->build();
+
+        self::assertNotNull($administrator->createdByAdminId());
     }
 }
