@@ -35,7 +35,7 @@ final readonly class CreateAdministratorAction
 
     public function __invoke(string $email, string $passwordHash, Administrator $actor): Administrator
     {
-        $administrator = Administrator::create($email, $passwordHash, AdminRole::Admin, $actor->id());
+        $administrator = Administrator::create($email, $passwordHash, AdminRole::Admin, $actor);
 
         // Запись ставится до сохранения: фиксирует её тот же flush,
         // что и сущность (см. AuditRecordRepository). Иначе возможен

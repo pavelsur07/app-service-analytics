@@ -95,7 +95,7 @@ final class CreateAdministratorController
         // для выбора алгоритма по конфигурации — этот экземпляр никуда
         // не сохраняется.
         $passwordHash = $this->passwordHasher->hashPassword(
-            Administrator::create($payload->email, '', AdminRole::Admin, $actor->id()),
+            Administrator::create($payload->email, '', AdminRole::Admin, $actor),
             $payload->password,
         );
 

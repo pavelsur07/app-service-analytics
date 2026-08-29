@@ -7,6 +7,7 @@ namespace App\Identity\Ui\EventListener;
 use App\Identity\Domain\Administrator;
 use App\Identity\Domain\CompanyMemberRepository;
 use App\Identity\Domain\User;
+use App\Identity\Domain\ValueObject\CompanyStatus;
 use App\Shared\Ui\RequestAttributes;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Symfony\Bundle\SecurityBundle\Security;
@@ -23,6 +24,12 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * company-scoped маршрутах в любом модуле, без правки Ingestion (или
  * кого-либо ещё) и без Deptrac-нарушения: имя параметра — соглашение,
  * не импорт чужого модуля.
+ *
+ * Заблокированный аккаунт (ADR-017) отказывает здесь же и той же
+ * проверкой: подписчик срабатывает по атрибуту маршрута companyId
+ * независимо от firewall, поэтому контур расширения (ADR-010) закрыт
+ * тем же кодом. Блокировка действует со следующего запроса, сбрасывать
+ * сессии в Redis не требуется.
  *
  * 401 (не аутентифицирован) отдаёт security.access_control раньше, чем
  * запрос доходит до kernel.controller (ApiAuthenticationEntryPoint) —
@@ -71,35 +78,47 @@ final class CompanyAccessSubscriber implements EventSubscriberInterface
         // единственным, — и отвечать на него надо отказом, а не
         // проходом дальше.
         if (!$user instanceof User) {
-            $event->setController($this->deny());
+            $event->setController($this->deny('company_access_denied', 'Company is not accessible.'));
 
             return;
         }
 
-        if ($this->companyMembers->existsForUserAndCompany($companyId, $user->id()->toRfc4122())) {
-            // Кто действует — сюда же, рядом с проверкой членства:
-            // аудит-журнал (ADR-007) требует автора у каждой записи,
-            // а контроллеры чужих модулей класс User импортировать
-            // не могут (зависимости строго вниз).
-            $event->getRequest()->attributes->set(RequestAttributes::ActorUserId, $user->id()->toRfc4122());
+        $status = $this->companyMembers->findAccessStatus($companyId, $user->id()->toRfc4122());
+
+        if (null === $status) {
+            $event->setController($this->deny('company_access_denied', 'Company is not accessible.'));
 
             return;
         }
 
-        $event->setController($this->deny());
+        if (CompanyStatus::Blocked === $status) {
+            // Отдельный код, а не общий отказ: клиенту надо отличить
+            // «эта компания не ваша» от «ваш аккаунт выключен» — второе
+            // чинится обращением в поддержку, первое нет.
+            //
+            // Утечки здесь нет: статус вернулся только потому, что
+            // членство подтверждено тем же запросом. Постороннему
+            // по-прежнему приходит company_access_denied.
+            $event->setController($this->deny('company_blocked', 'Account is blocked.'));
+
+            return;
+        }
+
+        // Кто действует — сюда же, рядом с проверкой членства:
+        // аудит-журнал (ADR-007) требует автора у каждой записи,
+        // а контроллеры чужих модулей класс User импортировать
+        // не могут (зависимости строго вниз).
+        $event->getRequest()->attributes->set(RequestAttributes::ActorUserId, $user->id()->toRfc4122());
     }
 
     /**
      * Тело без данных компании (ТЗ, критерий приёмки 3) — заменяем
      * контроллер, а не даём исходному выполниться и решать самому.
-     *
-     * Один и тот же ответ на «не участник» и «не продавец»: снаружи эти
-     * случаи различать незачем, а внутри различие уже сделано.
      */
-    private function deny(): \Closure
+    private function deny(string $code, string $message): \Closure
     {
         return static fn (): JsonResponse => new JsonResponse(
-            new ValidationErrorResponse(status: Response::HTTP_FORBIDDEN, code: 'company_access_denied', message: 'Company is not accessible.'),
+            new ValidationErrorResponse(status: Response::HTTP_FORBIDDEN, code: $code, message: $message),
             Response::HTTP_FORBIDDEN,
         );
     }
