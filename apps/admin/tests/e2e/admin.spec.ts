@@ -1,28 +1,42 @@
 import { expect, test } from '@playwright/test'
 
-test('admin start screen shows data from its own endpoint', async ({
-  page,
-}) => {
+const email = process.env.E2E_ADMIN_EMAIL
+const password = process.env.E2E_ADMIN_PASSWORD
+
+test.skip(
+  !email || !password,
+  'E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD задаёт bin/e2e-seed.sh через make test-e2e',
+)
+
+test('SuperAdmin входит и заводит Admin', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.goto('/')
 
+  // Палитра всегда светлая, независимо от системной темы — проверка
+  // переехала сюда с убранного пинг-экрана, она про оболочку, а не
+  // про конкретный экран.
   await expect(page.locator('body')).toHaveCSS('color-scheme', 'light')
-  await expect(page.locator('body')).toHaveCSS(
-    'background-color',
-    'rgb(244, 246, 250)',
-  )
-  await expect(page.locator('body')).toHaveCSS('color', 'rgb(11, 18, 32)')
 
-  await expect(
-    page.getByRole('heading', { name: 'Conwix — Admin' }),
-  ).toBeVisible()
+  // Корень уводит на вход, пока сессии нет.
+  await expect(page).toHaveURL(/\/login$/)
 
-  // Экран размечен списком определений: подпись и значение — разные
-  // узлы, поэтому проверяется пара, а не строка «app: …».
-  const value = (term: string) =>
-    page.getByRole('term').filter({ hasText: term }).locator('~ dd').first()
+  await page.getByLabel('Email').fill(email ?? '')
+  await page.getByLabel('Пароль').fill(password ?? '')
+  await page.getByRole('button', { name: 'Войти' }).click()
 
-  await expect(value('app')).toHaveText('conwix-admin-api')
-  await expect(value('version')).not.toBeEmpty()
-  await expect(value('respondedAt')).not.toBeEmpty()
+  await expect(page).toHaveURL(/\/administrators$/)
+  // Роль видна: она объясняет, почему форма доступна.
+  await expect(page.getByText('SuperAdmin')).toBeVisible()
+
+  // Email уникален по индексу, поэтому у каждого прогона свой.
+  const created = `e2e-ops-${Date.now()}@example.com`
+  await page.getByLabel('Email').fill(created)
+  await page.getByLabel('Пароль').fill('e2e-long-enough-password')
+  await page.getByRole('button', { name: 'Завести' }).click()
+
+  await expect(page.getByRole('status')).toContainText(created)
+
+  // Выход возвращает на вход и не оставляет доступ к разделу.
+  await page.getByRole('button', { name: 'Выйти' }).click()
+  await expect(page).toHaveURL(/\/login$/)
 })

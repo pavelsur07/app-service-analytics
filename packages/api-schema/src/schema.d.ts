@@ -36,6 +36,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/administrators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_admin_administrator_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/extension/me": {
         parameters: {
             query?: never;
@@ -353,6 +369,12 @@ export interface components {
             code: string;
             message: string;
         };
+        AdministratorResponse: {
+            id: string;
+            email: string;
+            role: string;
+            createdAt: string;
+        };
         MeCompanyResponse: {
             id: string;
             name: string;
@@ -601,6 +623,61 @@ export interface operations {
             };
             /** @description Сессия администратора отсутствует или истекла */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_identity_admin_administrator_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** Format: email */
+                    email: string;
+                    password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Администратор заведён */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdministratorResponse"];
+                };
+            };
+            /** @description Заводить администраторов может только SuperAdmin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Администратор с таким email уже существует */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректный email или слишком короткий пароль */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
