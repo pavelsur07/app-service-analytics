@@ -29,6 +29,7 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Entity]
 #[ORM\Table(name: 'administrator')]
 #[ORM\UniqueConstraint(name: 'uq_administrator_email', columns: ['email'])]
+#[ORM\Index(name: 'idx_administrator_created_by', columns: ['created_by_admin_id'])]
 class Administrator implements UserInterface, PasswordAuthenticatedUserInterface
 {
     #[ORM\Id]
@@ -49,9 +50,21 @@ class Administrator implements UserInterface, PasswordAuthenticatedUserInterface
      * консольная команда, и автора у него в системе нет по построению.
      * У всех остальных заполнено — это и есть след ADR-011 на самой
      * строке, дополняющий запись журнала.
+     *
+     * Ассоциация, а не scalar-поле с uuid, — единственное исключение
+     * из общего стиля этого проекта, и оно вынужденное: внешний ключ
+     * `fk_administrator_author` существует в базе (он и делает
+     * утверждение «автор существует» правдой), а Doctrine строит FK
+     * только по ассоциациям. Со scalar-полем маппинг расходился бы
+     * со схемой, и `migrations:diff` однажды предложил бы ключ удалить.
+     *
+     * Правило CLAUDE.md §6 про scalar-поля этим не нарушено: оно
+     * о ссылках на сущность ДРУГОГО модуля, а здесь ссылка на соседнюю
+     * строку той же таблицы.
      */
-    #[ORM\Column(type: 'uuid', nullable: true)]
-    private readonly ?Uuid $createdByAdminId;
+    #[ORM\ManyToOne(targetEntity: self::class)]
+    #[ORM\JoinColumn(name: 'created_by_admin_id', referencedColumnName: 'id', nullable: true)]
+    private readonly ?self $createdBy;
 
     #[ORM\Column]
     private readonly \DateTimeImmutable $createdAt;
@@ -61,14 +74,14 @@ class Administrator implements UserInterface, PasswordAuthenticatedUserInterface
         string $email,
         string $passwordHash,
         AdminRole $role,
-        ?Uuid $createdByAdminId,
+        ?self $createdBy,
         \DateTimeImmutable $createdAt,
     ) {
         $this->id = $id;
         $this->email = $email;
         $this->passwordHash = $passwordHash;
         $this->role = $role;
-        $this->createdByAdminId = $createdByAdminId;
+        $this->createdBy = $createdBy;
         $this->createdAt = $createdAt;
     }
 
@@ -76,9 +89,9 @@ class Administrator implements UserInterface, PasswordAuthenticatedUserInterface
         string $email,
         string $passwordHash,
         AdminRole $role,
-        ?Uuid $createdByAdminId,
+        ?self $createdBy,
     ): self {
-        return new self(Uuid::v7(), self::normalizeEmail($email), $passwordHash, $role, $createdByAdminId, new \DateTimeImmutable());
+        return new self(Uuid::v7(), self::normalizeEmail($email), $passwordHash, $role, $createdBy, new \DateTimeImmutable());
     }
 
     /**
@@ -113,7 +126,7 @@ class Administrator implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function createdByAdminId(): ?Uuid
     {
-        return $this->createdByAdminId;
+        return $this->createdBy?->id();
     }
 
     public function createdAt(): \DateTimeImmutable

@@ -99,7 +99,7 @@ final class AdministratorBuilder
             $this->email,
             $this->passwordHash,
             $this->role,
-            $this->createdBy?->id(),
+            $this->createdBy,
         );
     }
 
