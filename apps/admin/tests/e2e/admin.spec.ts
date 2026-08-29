@@ -30,6 +30,14 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
 
   // Вход ведёт на аккаунты — повседневную работу контура.
   await expect(page).toHaveURL(/\/accounts$/)
+  await expect(
+    page.getByRole('navigation', { name: 'Разделы администрирования' }),
+  ).toBeVisible()
+  await expect(page.getByRole('banner')).toContainText('Администрирование')
+  await expect(page.getByRole('link', { name: 'Аккаунты' })).toHaveCSS(
+    'background-color',
+    'rgb(238, 243, 254)',
+  )
   // Роль видна: она объясняет, какие пункты меню доступны.
   await expect(page.getByText('SuperAdmin')).toBeVisible()
 
