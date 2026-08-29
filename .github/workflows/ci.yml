@@ -665,8 +665,50 @@ jobs:
           # Файлы топологии — из репозитория, чтобы правка compose доезжала
           # вместе с кодом, а не переносилась руками.
           rsync -az -e "$SSH" docker-compose.prod.yml "$HOST:/opt/conwix/"
-          rsync -az -e "$SSH" traefik/dynamic.prod.yml "$HOST:/opt/conwix/traefik/"
-          rsync -az -e "$SSH" docker/nginx/prod.conf "$HOST:/opt/conwix/docker/nginx/"
+          # --inplace для двух файлов ниже обязателен, и это не оптимизация.
+          # Оба смонтированы в контейнеры как отдельные ФАЙЛЫ, а bind-mount
+          # файла привязан к inode, не к пути. rsync по умолчанию пишет
+          # временный файл и переименовывает его — inode меняется, контейнер
+          # продолжает видеть старый файл, и правка конфига не действует.
+          # Молча: снаружи выкладка выглядит успешной.
+          #
+          # Так и было с 2026-08-08 по 2026-08-29: три недели nginx работал
+          # с конфигом, которого уже не было на диске. Обнаружено, когда
+          # запрет /api/admin/ на хосте продавца (ADR-017) не подействовал
+          # на проде при зелёной выкладке.
+          rsync -az --inplace -e "$SSH" traefik/dynamic.prod.yml "$HOST:/opt/conwix/traefik/"
+          rsync -az --inplace -e "$SSH" docker/nginx/prod.conf "$HOST:/opt/conwix/docker/nginx/"
+
+      # Проверка, а не доверие: --inplace выше решает проблему, но её
+      # возврат (кто-нибудь уберёт флаг, или файл станет монтироваться
+      # иначе) должен ронять выкладку, а не проходить незамеченным.
+      # Сравнивается то, что видит контейнер, с тем, что лежит в репозитории.
+      - name: прокси видит именно этот конфиг
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -eu
+          ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes "root@$DEPLOY_HOST" sh -s <<'REMOTE'
+          set -eu
+          cd /opt/conwix
+          C=docker-compose.prod.yml
+          check() {
+            on_host=$(md5sum "$1" | cut -d' ' -f1)
+            in_container=$(docker compose -f "$C" exec -T "$2" cat "$3" | md5sum | cut -d' ' -f1)
+            if [ "$on_host" != "$in_container" ]; then
+              echo "$2 видит не тот файл: $3 расходится с $1" >&2
+              echo "правка конфига не подействовала бы, а выкладка выглядела бы успешной" >&2
+              exit 1
+            fi
+            echo "  $2 ← $1"
+          }
+          check docker/nginx/prod.conf nginx /etc/nginx/conf.d/default.conf
+          check traefik/dynamic.prod.yml traefik /etc/traefik/dynamic.yml
+          # Конфиг доехал — перечитать его. Traefik следит за файлом сам,
+          # nginx нет.
+          docker compose -f "$C" exec -T nginx nginx -t
+          docker compose -f "$C" exec -T nginx nginx -s reload
+          REMOTE
 
       # Миграции конвейер НЕ применяет — CLAUDE.md, «Миграции и изменения
       # схемы»: применение к боевым данным всегда решение человека.
