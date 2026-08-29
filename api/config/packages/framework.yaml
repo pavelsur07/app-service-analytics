@@ -9,6 +9,15 @@ framework:
     # иначе данные сессии на сервере истекут раньше самой куки.
     session:
         handler_id: Symfony\Component\HttpFoundation\Session\Storage\Handler\RedisSessionHandler
+        # Имя одно на приложение, и контур администраторов (ADR-017)
+        # его разделяет — переименовать под каждый firewall Symfony
+        # не даёт. Контуры разводит не имя, а область куки:
+        # cookie_domain НЕ ЗАДАН, поэтому кука host-only и живёт
+        # отдельно на app.conwix.com и admin.conwix.com.
+        #
+        # Задать здесь cookie_domain (например, .conwix.com) — значит
+        # слить сессии продавца и админки в одну и отменить разделение
+        # контуров ADR-007. Не задавать.
         name: conwix_seller_session
         cookie_httponly: true
         cookie_samesite: lax

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Identity\Ui\EventListener;
 
+use App\Identity\Domain\Administrator;
 use App\Identity\Domain\CompanyMemberRepository;
 use App\Identity\Domain\User;
 use App\Shared\Ui\RequestAttributes;
@@ -25,7 +26,10 @@ use Symfony\Component\HttpKernel\KernelEvents;
  *
  * 401 (не аутентифицирован) отдаёт security.access_control раньше, чем
  * запрос доходит до kernel.controller (ApiAuthenticationEntryPoint) —
- * здесь User уже есть всегда.
+ * но полагаться на это здесь нельзя: подписчик находит маршрут
+ * по имени параметра, а access_control — по префиксу пути, и совпадение
+ * этих двух множеств ничем не проверяется. Поэтому всё, что не продавец
+ * и не администратор, получает отказ, а не проход.
  */
 final class CompanyAccessSubscriber implements EventSubscriberInterface
 {
@@ -48,7 +52,29 @@ final class CompanyAccessSubscriber implements EventSubscriberInterface
         }
 
         $user = $this->security->getUser();
-        \assert($user instanceof User);
+
+        // Администратор — другой контур (ADR-007: своя таблица, свой
+        // firewall; ADR-017: роли внутри контура). Членства
+        // в company_member у него нет по построению, и проверять здесь
+        // нечего: доступ системного контура даёт роль, а не членство.
+        // Роль проверяют access_control и #[IsGranted] на самих
+        // маршрутах — этот подписчик о них не знает и знать не должен.
+        if ($user instanceof Administrator) {
+            return;
+        }
+
+        // Всё остальное, включая отсутствие аутентификации, — отказ.
+        // Раньше здесь стоял assert($user instanceof User): в dev он
+        // ловил бы такой случай, а в prod с выключенными assert
+        // выражение ниже упало бы на null. Теперь случай реальный —
+        // с появлением Administrator тип пользователя перестал быть
+        // единственным, — и отвечать на него надо отказом, а не
+        // проходом дальше.
+        if (!$user instanceof User) {
+            $event->setController($this->deny());
+
+            return;
+        }
 
         if ($this->companyMembers->existsForUserAndCompany($companyId, $user->id()->toRfc4122())) {
             // Кто действует — сюда же, рядом с проверкой членства:
@@ -60,11 +86,21 @@ final class CompanyAccessSubscriber implements EventSubscriberInterface
             return;
         }
 
-        // Тело без данных компании (ТЗ, критерий приёмки 3) — заменяем
-        // контроллер, а не даём исходному выполниться и решать самому.
-        $event->setController(static fn (): JsonResponse => new JsonResponse(
+        $event->setController($this->deny());
+    }
+
+    /**
+     * Тело без данных компании (ТЗ, критерий приёмки 3) — заменяем
+     * контроллер, а не даём исходному выполниться и решать самому.
+     *
+     * Один и тот же ответ на «не участник» и «не продавец»: снаружи эти
+     * случаи различать незачем, а внутри различие уже сделано.
+     */
+    private function deny(): \Closure
+    {
+        return static fn (): JsonResponse => new JsonResponse(
             new ValidationErrorResponse(status: Response::HTTP_FORBIDDEN, code: 'company_access_denied', message: 'Company is not accessible.'),
             Response::HTTP_FORBIDDEN,
-        ));
+        );
     }
 }
