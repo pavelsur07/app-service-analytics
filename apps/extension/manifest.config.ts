@@ -81,6 +81,24 @@ export function buildManifest(mode: string): Record<string, unknown> {
     description: 'Аналитика карточек товаров Ozon поверх кабинета продавца.',
     ...(EXTENSION_KEY ? { key: EXTENSION_KEY } : {}),
 
+    // Знак продукта — тот же, что у приложения. PNG, а не SVG: Chrome
+    // в иконках расширения SVG не отображает, в отличие от фавикона
+    // на странице. Файлы лежат в public/icons и коммитятся готовыми —
+    // растеризатор в зависимости ради четырёх статических картинок
+    // не окупается.
+    //
+    // 48 и 128 растеризованы из packages/ui/src/favicon.svg, 16 и 32 —
+    // из favicon-small.svg: у мелких размеров штрих толще и скругление
+    // меньше, иначе буква размазывается антиалиасингом. Перегенерация
+    // ручная, порядок описан в docs/patterns.md, раздел «Дизайн-система».
+    //
+    // 128 обязателен для подачи в Chrome Web Store.
+    icons: {
+      16: 'icons/icon-16.png',
+      32: 'icons/icon-32.png',
+      48: 'icons/icon-48.png',
+      128: 'icons/icon-128.png',
+    },
     action: {
       default_popup: 'src/popup/index.html',
       default_title: 'Conwix',
