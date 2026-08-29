@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 
+import { AccountsPage } from '../features/accounts/ui/AccountsPage'
 import { CreateAdministratorPage } from '../features/administrators/ui/CreateAdministratorPage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
 import { AdminLayout } from './AdminLayout'
@@ -18,7 +19,9 @@ const router = createBrowserRouter([
   // причины, что у продавца: продуктовой ценности не имеет, а занимал
   // единственный адрес, который человек набирает руками. Эндпоинт
   // /api/admin/ping остаётся, на нём висит smoke-проверка выкладки.
-  { path: '/', element: <Navigate to="/administrators" replace /> },
+  // Корень ведёт к аккаунтам: это повседневная работа контура,
+  // а заведение администраторов — редкое действие верхней роли.
+  { path: '/', element: <Navigate to="/accounts" replace /> },
   { path: '/login', element: <LoginPage /> },
   {
     element: (
@@ -27,6 +30,7 @@ const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
+      { path: '/accounts', element: <AccountsPage /> },
       { path: '/administrators', element: <CreateAdministratorPage /> },
     ],
   },

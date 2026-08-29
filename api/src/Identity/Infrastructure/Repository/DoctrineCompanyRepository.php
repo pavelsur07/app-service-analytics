@@ -6,7 +6,9 @@ namespace App\Identity\Infrastructure\Repository;
 
 use App\Identity\Domain\AuditRecord;
 use App\Identity\Domain\Company;
+use App\Identity\Domain\CompanyMember;
 use App\Identity\Domain\CompanyRepository;
+use App\Identity\Domain\User;
 use App\Identity\Domain\ValueObject\CompanyStatus;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
@@ -22,6 +24,24 @@ final readonly class DoctrineCompanyRepository implements CompanyRepository
     {
         $this->entityManager->persist($company);
         $this->entityManager->flush();
+    }
+
+    public function registerWithOwner(
+        Company $company,
+        User $owner,
+        CompanyMember $membership,
+        AuditRecord $trail,
+    ): void {
+        // Один flush на всё: вложенные persist попадают в одну
+        // транзакцию, и падение любого из них не оставляет половины
+        // аккаунта (см. интерфейс).
+        $this->entityManager->wrapInTransaction(function () use ($company, $owner, $membership, $trail): void {
+            $this->entityManager->persist($company);
+            $this->entityManager->persist($owner);
+            $this->entityManager->persist($membership);
+            $this->entityManager->persist($trail);
+            $this->entityManager->flush();
+        });
     }
 
     public function blockIfActive(string $companyId, AuditRecord $trail): bool
