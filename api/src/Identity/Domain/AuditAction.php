@@ -8,10 +8,24 @@ namespace App\Identity\Domain;
  * Что именно записано в аудит-журнал. Строкой, а не enum-колонкой:
  * список событий растёт вместе с продуктом (себестоимость, планы, вход
  * администратора), и миграция на каждое новое действие — цена без выгоды.
+ *
+ * Действия системного контура (ADR-017) названы по предмету, а не по
+ * экрану: за них отвечает администратор, но записаны они о компании
+ * и об администраторе, а не о кнопке, которой нажали.
  */
 final class AuditAction
 {
     public const string MarketplaceCredentialsReplaced = 'marketplace_account.credentials_replaced';
+
+    /** Заведён Admin. Компании у события нет (ADR-017). */
+    public const string AdministratorCreated = 'administrator.created';
+
+    /** Зарегистрирован клиентский аккаунт: компания и её владелец. */
+    public const string CompanyRegistered = 'company.registered';
+
+    public const string CompanyBlocked = 'company.blocked';
+
+    public const string CompanyActivated = 'company.activated';
 
     private function __construct()
     {
