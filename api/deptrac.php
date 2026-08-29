@@ -64,6 +64,7 @@ return static function (DeptracConfig $config): void {
                     must: [DirectoryConfig::create('src/Identity/Infrastructure/.*')],
                     mustNot: [
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonAccountsQuery$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\AllCompaniesForAdminQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ExtensionTokenByHashQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Security\\ExtensionTokenHandler$'),
                     ],
@@ -89,8 +90,31 @@ return static function (DeptracConfig $config): void {
             $identityExtensionTokenHandler = Layer::withName('IdentityExtensionTokenHandler')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Security\\ExtensionTokenHandler$'),
             ),
+            // Третий случай исключения CLAUDE.md §1, и первый, где
+            // межарендаторное чтение идёт из HTTP-контроллера. Приём
+            // тот же, что у ActiveOzonAccountsQuery, но применён
+            // на обоих концах вызова: узкий слой у запроса и узкий
+            // слой у единственного, кому он разрешён.
+            //
+            // «Админка» тут не слой: в узком слое ровно один класс,
+            // а не все admin-контроллеры. Остальным этот запрос
+            // не нужен, и §1 требует давать грант только тому, кому
+            // он действительно нужен.
+            $identityAdminAccountsQuery = Layer::withName('IdentityAdminAccountsQuery')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\AllCompaniesForAdminQuery$'),
+            ),
+            $identityAdminAccountsUi = Layer::withName('IdentityAdminAccountsUi')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\ListClientAccountsController$'),
+            ),
+            // Широкий Ui продавца — без единственного контроллера выше.
+            // Без mustNot он попал бы сюда, и грант на межарендаторный
+            // запрос пришлось бы выдавать всему IdentityUi, то есть
+            // и MeController тоже.
             $identityUi = Layer::withName('IdentityUi')->collectors(
-                DirectoryConfig::create('src/Identity/Ui/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Identity/Ui/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\ListClientAccountsController$')],
+                ),
             ),
 
             $ingestionDomain = Layer::withName('IngestionDomain')->collectors(
@@ -267,6 +291,14 @@ return static function (DeptracConfig $config): void {
             // узкий слой на узкий плюс широкий слой ради DTO.
             Ruleset::forLayer($identityExtensionTokenHandler)->accesses($identityExtensionTokenQuery, $identityDomain, $identityInfrastructure, $symfonyComponent),
             Ruleset::forLayer($identityExtensionTokenQuery)->accesses($identityInfrastructure),
+            Ruleset::forLayer($identityAdminAccountsQuery)->accesses($identityInfrastructure, $symfonyComponent),
+            // Кроме узкого запроса — то же, что у любого контроллера:
+            // широкий IdentityInfrastructure (за Row-DTO запроса, как
+            // IdentityScheduleFacade за ActiveOzonAccountRow) и
+            // IdentityUi за собственными Response-DTO. Ни то, ни другое
+            // не открывает межарендаторный запрос никому ещё: он вынесен
+            // из широкого слоя через mustNot выше.
+            Ruleset::forLayer($identityAdminAccountsUi)->accesses($identityAdminAccountsQuery, $identityInfrastructure, $identityUi, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
 

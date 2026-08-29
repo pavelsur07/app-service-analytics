@@ -84,6 +84,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/companies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_identity_admin_companies_list"];
+        put?: never;
+        post: operations["post_identity_admin_company_register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -127,6 +143,22 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["delete_identity_extension_token_revoke"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/companies/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_admin_company_status"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -389,12 +421,29 @@ export interface components {
             tokenPrefix: string;
             expiresAt: string;
         };
+        AdminCompanyResponse: {
+            id: string;
+            name: string;
+            status: string;
+            createdAt: string;
+        };
+        AdminCompanyListResponse: {
+            items: components["schemas"]["AdminCompanyResponse"][];
+            total: number;
+            pages: number;
+            page: number;
+            per_page: number;
+        };
         LoginResponse: {
             email: string;
         };
         MeResponse: {
             email: string;
             companies: components["schemas"]["MeCompanyResponse"][];
+        };
+        ClientAccountStatusResponse: {
+            status: string;
+            changed: boolean;
         };
         CompanySkuListResponse: {
             items: string[];
@@ -738,6 +787,85 @@ export interface operations {
             };
         };
     };
+    get_identity_admin_companies_list: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Страница клиентских аккаунтов */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCompanyListResponse"];
+                };
+            };
+            /** @description Некорректная страница или размер страницы сверх максимума */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_identity_admin_company_register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    name: string;
+                    /** Format: email */
+                    ownerEmail: string;
+                    ownerPassword: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Аккаунт зарегистрирован вместе с владельцем */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCompanyResponse"];
+                };
+            };
+            /** @description Пользователь с таким email уже существует; компания при этом не создана */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректное название, email или слишком короткий пароль */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     post_identity_auth_login: {
         parameters: {
             query?: never;
@@ -815,6 +943,44 @@ export interface operations {
             };
             /** @description Токена с таким id в этой компании нет */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_identity_admin_company_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    status: "active" | "blocked";
+                };
+            };
+        };
+        responses: {
+            /** @description Целевое состояние достигнуто; changed=false, если аккаунт уже был в нём */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientAccountStatusResponse"];
+                };
+            };
+            /** @description Неизвестный статус */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

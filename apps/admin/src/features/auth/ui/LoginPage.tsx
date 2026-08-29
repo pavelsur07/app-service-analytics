@@ -24,7 +24,7 @@ export function LoginPage() {
   const onSubmit = handleSubmit((values) => {
     login.mutate(values, {
       onSuccess: () => {
-        void navigate('/administrators')
+        void navigate('/accounts')
       },
     })
   })
