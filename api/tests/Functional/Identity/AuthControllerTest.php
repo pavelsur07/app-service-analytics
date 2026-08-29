@@ -129,12 +129,44 @@ final class AuthControllerTest extends WebTestCase
         self::assertStringContainsString('Too many', $payload['message']);
     }
 
-    private function login(KernelBrowser $client, string $email, string $password): void
+    public function testThrottlingCountsRealClientIpNotTheProxy(): void
     {
+        $this->redisConnection()->flushdb();
+
+        $client = static::createClient();
+        [, $users] = $this->repositories();
+        UserBuilder::aUser()->withEmail('proxied@example.com')->withPasswordHash($this->hash('correct-password'))->persistWith($users);
+
+        // Пять неудач с одного адреса — лимит по паре (email, IP) выбран.
+        for ($i = 0; $i < 5; ++$i) {
+            $this->login($client, 'proxied@example.com', 'wrong-password', clientIp: '203.0.113.10');
+            self::assertResponseStatusCodeSame(401);
+        }
+        $this->login($client, 'proxied@example.com', 'correct-password', clientIp: '203.0.113.10');
+        self::assertResponseStatusCodeSame(401, 'шестая попытка с того же адреса должна быть отбита лимитером');
+
+        // Тот же email с другого адреса лимитом не задет. Без
+        // framework.trusted_proxies приложение видело бы адрес nginx —
+        // один и тот же у всех, — и этот вход тоже был бы закрыт
+        // чужими попытками.
+        $this->login($client, 'proxied@example.com', 'correct-password', clientIp: '198.51.100.20');
+        self::assertResponseIsSuccessful('попытки с чужого адреса не должны закрывать вход');
+    }
+
+    private function login(KernelBrowser $client, string $email, string $password, ?string $clientIp = null): void
+    {
+        $server = ['CONTENT_TYPE' => 'application/json'];
+        if (null !== $clientIp) {
+            // REMOTE_ADDR остаётся приватным (умолчание BrowserKit —
+            // 127.0.0.1), то есть «прокси», которому доверяет
+            // trusted_proxies; настоящий адрес приходит заголовком.
+            $server['HTTP_X_FORWARDED_FOR'] = $clientIp;
+        }
+
         $client->request(
             'POST',
             '/api/auth/login',
-            server: ['CONTENT_TYPE' => 'application/json'],
+            server: $server,
             content: json_encode(['email' => $email, 'password' => $password], \JSON_THROW_ON_ERROR),
         );
     }

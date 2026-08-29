@@ -10,6 +10,11 @@ security:
     providers:
         identity_user_provider:
             id: App\Identity\Infrastructure\Security\UserProvider
+        # Отдельный провайдер, потому что отдельная таблица (ADR-007).
+        # Общий провайдер на два контура означал бы общую таблицу
+        # или ветвление по типу внутри него — ADR-007 отверг и то, и то.
+        identity_admin_provider:
+            id: App\Identity\Infrastructure\Security\AdminProvider
 
     firewalls:
         dev:
@@ -44,6 +49,38 @@ security:
             # login_throttling здесь нет намеренно: секрет — 256 бит
             # (ExtensionTokenSecret), перебор не имеет смысла, в отличие
             # от входа по паролю ниже.
+        # Перед `api` по той же причине, что и `extension`: первое
+        # совпадение побеждает, а ^/api/admin/ уже, чем ^/api/. Стой он
+        # ниже — админские маршруты попали бы на firewall продавца,
+        # и сессия продавца открывала бы системный контур.
+        #
+        # Своя сессия отдельного контура держится не именем куки
+        # (framework.session.name одно на приложение), а тем, что кука
+        # host-only: админка живёт на admin.conwix.com, приложение —
+        # на app.conwix.com (ADR-017, раздел про отступление).
+        admin:
+            pattern: ^/api/admin/
+            lazy: true
+            provider: identity_admin_provider
+            entry_point: App\Identity\Ui\Security\ApiAuthenticationEntryPoint
+            json_login:
+                check_path: /api/admin/auth/login
+                username_path: email
+                password_path: password
+                success_handler: App\Identity\Ui\Security\AdminLoginSuccessHandler
+                # Обработчик отказа общий с контуром продавца намеренно:
+                # он ничего не знает о типе пользователя и отвечает
+                # одинаково на «нет такого» и «неверный пароль» (ADR-007).
+                failure_handler: App\Identity\Ui\Security\LoginFailureHandler
+            logout:
+                path: /api/admin/auth/logout
+                invalidate_session: true
+            # Тот же лимит, что у продавца. Администратор видит финансы
+            # всех клиентов, и до появления второго фактора (ADR-017,
+            # отступление от ADR-007) это единственная защита пароля
+            # от перебора.
+            login_throttling:
+                max_attempts: 5
         api:
             pattern: ^/api/
             lazy: true
@@ -74,6 +111,13 @@ security:
             login_throttling:
                 max_attempts: 5
 
+    # ROLE_SUPER_ADMIN покрывает ROLE_ADMIN (ADR-017): управление
+    # аккаунтами клиентов доступно обеим ролям, управление самими
+    # администраторами — только верхней. Иерархия описана здесь одна
+    # и только здесь; Administrator::getRoles() отдаёт ровно одну роль.
+    role_hierarchy:
+        ROLE_SUPER_ADMIN: [ROLE_ADMIN]
+
     # Первое совпадение побеждает — порядок важен. login/logout публичны
     # (иначе войти невозможно). /api/companies/ требует входа — 401 без
     # сессии; проверку членства (403 для чужой компании) делает
@@ -90,6 +134,16 @@ security:
         # не пересекаются и разделять нечего.
         - { path: ^/api/extension/, roles: ROLE_USER }
         - { path: ^/api/companies/, roles: ROLE_USER }
+        # Пинг остаётся публичным: на нём висит smoke-проверка выкладки
+        # и стартовый экран админки. Правило нужно явно — в отличие
+        # от прежнего состояния, ^/api/admin/ ниже теперь закрыт.
+        - { path: ^/api/admin/ping$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admin/auth/login$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admin/auth/logout$, roles: PUBLIC_ACCESS }
+        # Всё остальное в системном контуре — минимум ROLE_ADMIN.
+        # ROLE_SUPER_ADMIN проходит сюда по role_hierarchy; более узкие
+        # права ставятся на самих маршрутах через #[IsGranted].
+        - { path: ^/api/admin/, roles: ROLE_ADMIN }
 
 when@test:
     security:

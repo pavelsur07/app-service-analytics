@@ -2,6 +2,26 @@
 framework:
     secret: '%env(APP_SECRET)%'
 
+    # За Traefik и nginx REMOTE_ADDR — адрес контейнера nginx, один и тот
+    # же для всех клиентов мира. Без этой настройки Request::getClientIp()
+    # возвращает его, и ломается не журнал, а защита входа: глобальный
+    # лимит login_throttling считает попытки по IP (5 × max_attempts),
+    # то есть 25 неудачных попыток кого угодно закрывают вход всем —
+    # и продавцам, и администраторам. Лимит по паре (email, IP) при этом
+    # продолжает работать, поэтому дефект не виден до первой атаки.
+    #
+    # private_ranges, а не список CIDR: единственный путь к php-fpm —
+    # nginx во внутренней docker-сети, адрес которой задан compose
+    # и меняется при пересоздании контейнера. Настоящий клиент приходит
+    # с публичного адреса и под private_ranges не попадает.
+    #
+    # Доверяется ровно один заголовок. X-Forwarded-Proto не нужен —
+    # схему nginx передаёт сам (fastcgi_param HTTPS/REQUEST_SCHEME
+    # в prod.conf), а X-Forwarded-Host, которому доверяют без нужды,
+    # открывает подмену имени хоста в генерируемых ссылках.
+    trusted_proxies: 'private_ranges'
+    trusted_headers: ['x-forwarded-for']
+
     # Note that the session will be started ONLY if you read or write from it.
     # Redis (ADR-007) — отзыв доступа мгновенен: сессия удаляется на
     # сервере, дамп базы не даёт доступа к чужим сессиям. Неделя активной
@@ -9,6 +29,15 @@ framework:
     # иначе данные сессии на сервере истекут раньше самой куки.
     session:
         handler_id: Symfony\Component\HttpFoundation\Session\Storage\Handler\RedisSessionHandler
+        # Имя одно на приложение, и контур администраторов (ADR-017)
+        # его разделяет — переименовать под каждый firewall Symfony
+        # не даёт. Контуры разводит не имя, а область куки:
+        # cookie_domain НЕ ЗАДАН, поэтому кука host-only и живёт
+        # отдельно на app.conwix.com и admin.conwix.com.
+        #
+        # Задать здесь cookie_domain (например, .conwix.com) — значит
+        # слить сессии продавца и админки в одну и отменить разделение
+        # контуров ADR-007. Не задавать.
         name: conwix_seller_session
         cookie_httponly: true
         cookie_samesite: lax

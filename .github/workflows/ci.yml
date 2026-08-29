@@ -718,23 +718,62 @@ jobs:
       # С повторами, а не один запрос после sleep: контейнер поднимается
       # не мгновенно, и одиночная проверка ловила пустой ответ, объявляя
       # исправную выкладку неудачной.
-      - name: развёрнут именно этот тег
+      - name: развёрнут именно этот тег (app, публично)
         run: |
           set -eu
           want='${{ needs.image.outputs.tag }}'
-          for host in app.conwix.com admin.conwix.com; do
-            case "$host" in app.*) path=/api/seller/ping;; *) path=/api/admin/ping;; esac
-            got=''
-            for _ in $(seq 1 20); do
-              got=$(curl -sf --max-time 10 "https://$host$path" 2>/dev/null \
-                    | sed -E 's/.*"version":"([^"]+)".*/\1/') || got=''
-              [ "$got" = "$want" ] && break
-              sleep 5
-            done
-            [ "$got" = "$want" ] \
-              || { echo "$host отдаёт версию '${got:-(нет ответа)}', ожидалась '$want'" >&2; exit 1; }
-            echo "  $host → $got"
+          got=''
+          for _ in $(seq 1 20); do
+            got=$(curl -sf --max-time 10 'https://app.conwix.com/api/seller/ping' 2>/dev/null \
+                  | sed -E 's/.*"version":"([^"]+)".*/\1/') || got=''
+            [ "$got" = "$want" ] && break
+            sleep 5
           done
+          [ "$got" = "$want" ] \
+            || { echo "app.conwix.com отдаёт версию '${got:-(нет ответа)}', ожидалась '$want'" >&2; exit 1; }
+          echo "  app.conwix.com → $got"
+
+      # Админка проверяется с сервера, а не с раннера: по ADR-017 системный
+      # контур ограничен списком адресов на роутере admin в Traefik,
+      # а адрес GitHub-раннера заранее неизвестен и в список не попадает.
+      # Публичный запрос отсюда получил бы 403 и объявил бы исправную
+      # выкладку неудачной.
+      #
+      # Запрос идёт в nginx напрямую, с заголовком Host: так проверяется
+      # ровно то, ради чего шаг существует, — что admin-бандл и api
+      # на сервере отдают именно этот тег, — и проверка не зависит
+      # ни от Traefik, ни от списка адресов, ни от того, с какого
+      # адреса запущен конвейер.
+      - name: развёрнут именно этот тег (admin, с сервера)
+        env:
+          WANT: ${{ needs.image.outputs.tag }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -eu
+          # Скрипт уезжает heredoc'ом, а не строкой в аргументе ssh:
+          # вложенные кавычки в одной строке ломаются молча, и отладить
+          # это можно только новой выкладкой.
+          # Значение уезжает в командной строке удалённого sh, а не через
+          # SendEnv: тот требует AcceptEnv на стороне сервера.
+          ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes \
+            "root@$DEPLOY_HOST" "WANT='$WANT' sh -s" <<'REMOTE'
+          set -eu
+          cd /opt/conwix
+          got=''
+          for _ in $(seq 1 20); do
+            got=$(docker compose -f docker-compose.prod.yml exec -T nginx \
+                    wget -qO- --header='Host: admin.conwix.com' \
+                    http://127.0.0.1/api/admin/ping 2>/dev/null \
+                  | sed -E 's/.*"version":"([^"]+)".*/\1/') || got=''
+            [ "$got" = "$WANT" ] && break
+            sleep 5
+          done
+          [ "$got" = "$WANT" ] || {
+            echo "admin отдаёт версию '${got:-(нет ответа)}', ожидалась '$WANT'" >&2
+            exit 1
+          }
+          echo "  admin.conwix.com → $got"
+          REMOTE
 
       - name: все сервисы здоровы
         run: |
