@@ -15,22 +15,21 @@ use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
 
 /**
  * Единственный путь к роли super_admin (ADR-017). Проверяется не «команда
- * отработала», а свойства этого пути: роль задаётся явно и разбирается
- * строго, пароль ложится хэшем, повторный запуск не создаёт дубль
- * и не переписывает роль.
+ * отработала», а свойства этого пути: роль не выбирается, пароль
+ * не приходит аргументом, повторный запуск не создаёт дубль.
  *
  * Последнее — не мелочь: команда доступна тому, у кого есть доступ
- * к боевому серверу, и «повторный запуск повышает роль» превратило бы
- * опечатку в тихое повышение прав.
+ * к боевому серверу, и «повторный запуск переписывает пароль»
+ * превратило бы опечатку в тихую смену учётных данных.
  */
-final class CreateAdminCommandTest extends KernelTestCase
+final class CreateSuperAdminCommandTest extends KernelTestCase
 {
     public function testCreatesSuperAdminWithHashedPassword(): void
     {
         self::bootKernel();
         $administrators = $this->administrators();
 
-        $exitCode = $this->runCommand(['email' => 'boss@conwix.local', 'password' => 'boss-password', '--role' => 'super_admin']);
+        $exitCode = $this->runCommand('boss@conwix.local', 'boss-password');
 
         self::assertSame(Command::SUCCESS, $exitCode);
 
@@ -45,61 +44,71 @@ final class CreateAdminCommandTest extends KernelTestCase
         self::assertTrue($hasher->getPasswordHasher($administrator)->verify($administrator->passwordHash(), 'boss-password'));
     }
 
-    public function testDefaultsToLowerRole(): void
+    public function testPasswordIsNotAnArgument(): void
     {
         self::bootKernel();
-        $administrators = $this->administrators();
 
-        $this->runCommand(['email' => 'ops@conwix.local', 'password' => 'ops-password']);
+        // Аргумент осел бы в истории оболочки и в списке процессов.
+        // Проверяется определение команды, а не поведение: именно оно
+        // и есть предмет — вернуть аргумент обратно легко и незаметно.
+        $definition = $this->command()->getDefinition();
 
-        $administrator = $administrators->findByEmail('ops@conwix.local');
-        self::assertNotNull($administrator);
-        // Умолчание — нижняя роль: забытый --role не должен раздавать
-        // права заведения администраторов.
-        self::assertSame(AdminRole::Admin, $administrator->role());
+        self::assertFalse($definition->hasArgument('password'));
+        self::assertSame(['email'], array_keys($definition->getArguments()));
     }
 
-    public function testUnknownRoleIsRejectedAndNothingIsCreated(): void
+    public function testRoleCannotBeChosen(): void
+    {
+        self::bootKernel();
+
+        // Опция --role была бы вторым путём создания Admin — мимо формы,
+        // мимо актора и мимо аудит-журнала (ADR-017).
+        self::assertFalse($this->command()->getDefinition()->hasOption('role'));
+    }
+
+    public function testEmptyPasswordIsRejectedAndNothingIsCreated(): void
     {
         self::bootKernel();
         $administrators = $this->administrators();
 
-        $exitCode = $this->runCommand(['email' => 'typo@conwix.local', 'password' => 'x', '--role' => 'superadmin']);
+        $exitCode = $this->runCommand('empty@conwix.local', '   ');
 
         self::assertSame(Command::FAILURE, $exitCode);
-        self::assertNull($administrators->findByEmail('typo@conwix.local'));
+        self::assertNull($administrators->findByEmail('empty@conwix.local'));
     }
 
-    public function testRepeatedRunDoesNotDuplicateOrEscalateRole(): void
+    public function testRepeatedRunDoesNotDuplicateOrChangeCredentials(): void
     {
         self::bootKernel();
         $administrators = $this->administrators();
 
-        $this->runCommand(['email' => 'twice@conwix.local', 'password' => 'first-password']);
+        $this->runCommand('twice@conwix.local', 'first-password');
         $first = $administrators->findByEmail('twice@conwix.local');
         self::assertNotNull($first);
 
-        // Тот же email, но верхняя роль: конфликт перехватывается
-        // на вставке (CLAUDE.md §4), повышения не происходит.
-        $exitCode = $this->runCommand(['email' => 'twice@conwix.local', 'password' => 'second-password', '--role' => 'super_admin']);
+        $exitCode = $this->runCommand('twice@conwix.local', 'second-password');
 
         self::assertSame(Command::SUCCESS, $exitCode);
         $again = $administrators->findByEmail('twice@conwix.local');
         self::assertNotNull($again);
         self::assertSame((string) $first->id(), (string) $again->id());
-        self::assertSame(AdminRole::Admin, $again->role(), 'повторный запуск не должен повышать роль');
+        self::assertSame($first->passwordHash(), $again->passwordHash(), 'повторный запуск не должен менять пароль');
     }
 
-    /**
-     * @param array<string, string|bool> $input
-     */
-    private function runCommand(array $input): int
+    private function runCommand(string $email, string $password): int
+    {
+        $tester = new CommandTester($this->command());
+        $tester->setInputs([$password]);
+
+        return $tester->execute(['email' => $email]);
+    }
+
+    private function command(): Command
     {
         /** @var \Symfony\Component\HttpKernel\KernelInterface $kernel */
         $kernel = self::$kernel;
-        $tester = new CommandTester((new Application($kernel))->find('app:identity:create-admin'));
 
-        return $tester->execute($input);
+        return (new Application($kernel))->find('app:identity:create-super-admin');
     }
 
     private function administrators(): DoctrineAdministratorRepository
