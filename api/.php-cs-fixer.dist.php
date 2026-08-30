@@ -16,7 +16,10 @@ return (new Config())
     ->setCacheFile(__DIR__ . '/var/php-cs-fixer.cache')
     ->setRiskyAllowed(true)
     ->setRules([
-        '@PSR12' => true,
+        // PER-CS сменил PSR-12 как действующий стиль PHP-FIG.
+        // Ревизия закреплена: плавающий алиас @PER-CS означал бы смену
+        // правил форматирования на минорном обновлении php-cs-fixer.
+        '@PER-CS3.0' => true,
         '@Symfony' => true,
         '@Symfony:risky' => true,
         'declare_strict_types' => true,
