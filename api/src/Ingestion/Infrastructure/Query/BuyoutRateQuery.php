@@ -30,12 +30,19 @@ final readonly class BuyoutRateQuery
     ): QueryBuilder {
         $maturitySample = BuyoutMaturityQuery::MIN_SAMPLE_SIZE;
         $source = <<<SQL
-            WITH posting_intervals AS (
-                SELECT DISTINCT company_id, marketplace_account_id, posting_number,
-                       EXTRACT(EPOCH FROM (resolved_at - handed_over_at))::bigint AS duration_seconds
+            WITH tenant_outcome AS MATERIALIZED (
+                SELECT company_id, marketplace_account_id, source_row_id,
+                       posting_number, order_number, marketplace_sku,
+                       quantity, business_date, outcome,
+                       handed_over_at, resolved_at, is_forecast_eligible
                 FROM buyout_outcome
                 WHERE company_id = :companyId
-                  AND outcome IS NOT NULL
+            ),
+            posting_intervals AS (
+                SELECT DISTINCT company_id, marketplace_account_id, posting_number,
+                       EXTRACT(EPOCH FROM (resolved_at - handed_over_at))::bigint AS duration_seconds
+                FROM tenant_outcome
+                WHERE outcome IS NOT NULL
                   AND posting_number IS NOT NULL
                   AND handed_over_at IS NOT NULL
                   AND resolved_at IS NOT NULL
@@ -62,10 +69,9 @@ final readonly class BuyoutRateQuery
                        COALESCE(SUM(o.quantity) FILTER (WHERE o.outcome IS NULL), 0)::bigint AS unresolved_quantity,
                        CASE WHEN BOOL_AND(m.p95_seconds IS NOT NULL AND :cohortAgeSeconds > m.p95_seconds)
                             THEN 'mature' ELSE 'preliminary' END AS maturity_status
-                FROM buyout_outcome o
+                FROM tenant_outcome o
                 LEFT JOIN maturity m ON m.marketplace_account_id = o.marketplace_account_id
-                WHERE o.company_id = :companyId
-                  AND o.business_date >= :from
+                WHERE o.business_date >= :from
                   AND o.business_date <= :to
                 GROUP BY o.marketplace_sku
             )

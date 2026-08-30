@@ -13,7 +13,8 @@
 
 **Фактическая спецификация источников:**
 `docs/task/ozon-buyout-rate-research.md`; при расхождении предположений о JSON
-с живым исследованием приоритет имеет research и следующий ADR-019.
+с живым исследованием приоритет имеют research и ADR-020, который заменяет
+ADR-019 и повторно принимает его семантические решения.
 
 **Архитектура:** новые данные остаются в модуле `Ingestion`. Ответы Ozon
 сначала сохраняются в `marketplace_raw_document`, затем пакетными DBAL-запросами
@@ -29,7 +30,7 @@ PHPUnit, React 19, TypeScript, TanStack Query, Recharts, Vitest, Playwright.
 
 ## Обязательные инварианты
 
-- Порядок строго последовательный: 0 → ADR-019 → 1 → 2 → 3 → 4 → 5 → 6
+- Порядок строго последовательный: 0 → ADR-020 → 1 → 2 → 3 → 4 → 5 → 6
   → 7A → 7B. Пакет 4 стартует только после завершения пакетов 2 и 3.
 - Любое чтение и любой индекс tenant-данных начинается с `company_id`;
   контроллер не принимает company ID из тела запроса.
@@ -193,7 +194,7 @@ git commit -m "test: add safe Ozon research capture"
   конкретной SKU. Идентификатор не переносить в документ или чат.
 
 **Выпускной гейт:** по указанию владельца 2026-08-30 второй status-срез и одна
-UI-сверка P не блокируют реализацию. ADR-019 принимает консервативную границу
+UI-сверка P не блокируют реализацию. ADR-020 принимает консервативную границу
 `status = delivering`, а неоднозначные случаи оставляет `NULL`. До выпуска
 повторный снимок и ручная проверка обязательны; дополнительный endpoint не
 требуется.
@@ -207,7 +208,7 @@ git commit -m "docs: record Ozon buyout source research"
 
 ---
 
-## ADR-019 — источник, ключи и семантика процента выкупа
+## ADR-019/ADR-020 — источник, семантика и безопасный SQL-план
 
 ### Задача ADR. Зафиксировать необратимые решения
 
@@ -640,7 +641,7 @@ git commit -m "feat: ingest Ozon return facts"
 `ozon_return_reason_classification(return_type, return_reason_name,
 event_stage, verified_at)` с составным PK и CHECK для стадий
 `HANDOVER_REFUSAL/PICKUP_EXPIRED/DELIVERY_FAILED/CANCELLED`. Он заполняется
-**только доказанными research/ADR-019** строками. `cancel_reason_id` не является
+**только доказанными research/ADR-020** строками. `cancel_reason_id` не является
 ключом: seller endpoint не покрыл ни одного buyer ID, а ID 506 оказался
 неоднозначным. Та же миграция создаёт view `buyout_outcome`.
 
@@ -686,9 +687,20 @@ outcome nullable, handed_over_at nullable, resolved_at nullable
    несколько аллокаций (например, `P:1` и `T2:1`). Частичный возврат или
    отмена классифицирует только подтверждённое количество, остаток сохраняет
    D либо `NULL`; вся sales-строка не перекрашивается по одному return event.
-   Позиция считается коррелированным prefix scan по индексированному ключу
-   order/SKU, а не `WindowAgg` по всей tenant history: фильтр периода должен
-   проталкиваться к исходному `sales_fact.business_date`.
+   Позиция считается оконными prefix-агрегатами по tenant-scoped partition
+   `(company, account, order, sku)`. Коррелированный scan здесь запрещён:
+   на production он повторно раскрывал status evidence для каждой продажи и
+   превратил один HTTP-запрос в SQL N+1. Фильтр `company_id` обязан
+   проталкиваться ниже `WindowAgg`; фильтр периода остаётся выше него, потому
+   что более ранние строки того же order/SKU нужны для правильной аллокации.
+   Пока PostgreSQL не выполнил auto-analyze сразу после batch import, оценка
+   нового tenant может быть равна одной строке. Поэтому action отчёта локально
+   устанавливает `enable_nestloop = off`: базовые fact/history relation
+   читаются один раз даже при устаревшей статистике. Настройка действует
+   только внутри read-only транзакции расчёта. При вызове внутри внешней
+   транзакции action создаёт savepoint и в `finally` откатывается к нему:
+   planner settings не утекают наружу, а timeout не оставляет transaction
+   в aborted state.
 4. Terminal cancellation получает T1, только если история содержит хотя бы
    одно pre-handover наблюдение и до terminal не содержит handover. Наличие
    handover, `PICKUP_EXPIRED` или `DELIVERY_FAILED` даёт T2. Одна terminal
@@ -1086,6 +1098,8 @@ git commit -m "feat: add Ozon buyout rate screen"
    - выполнить `EXPLAIN (ANALYZE, BUFFERS)` list/daily для 90 дней;
    - убедиться, что plans начинают tenant indexes с `company_id`, не делают
      sequential scan всей fact-таблицы и не содержат N+1;
+   - повторить list сразу после batch import, до auto-analyze: relation scans
+     имеют `Actual Loops = 1`, а запрос укладывается в `statement_timeout`;
    - проверить unclassified diagnostics — перед релизом список пуст либо каждый
      оставшийся ID описан как известное ограничение.
 
@@ -1101,7 +1115,7 @@ git commit -m "feat: add Ozon buyout rate screen"
 | Этап | Ревью |
 |---|---|
 | Package 0 | не требуется; live evidence остаётся untracked, synthetic fixtures проходят privacy check |
-| ADR-019 | обе роли |
+| ADR-019/ADR-020 | обе роли |
 | Packages 1–3 | обе роли |
 | Package 4 | обе роли |
 | Package 5 | одна; обе при появлении денег/expenses |

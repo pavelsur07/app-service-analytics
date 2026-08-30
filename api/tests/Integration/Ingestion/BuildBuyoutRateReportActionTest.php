@@ -9,14 +9,19 @@ use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use App\Ingestion\Domain\SalesFact;
 use App\Ingestion\Domain\SalesFactRepository;
+use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplacePostingStatusWriter;
+use App\Ingestion\Infrastructure\Persistence\DoctrineSalesFactWriter;
 use App\Ingestion\Infrastructure\Query\BuyoutForecastQuery;
 use App\Ingestion\Infrastructure\Query\BuyoutForecastSummaryQuery;
 use App\Ingestion\Infrastructure\Query\BuyoutRateQuery;
 use App\Tests\Support\Builder\MarketplacePostingStatusBuilder;
 use App\Tests\Support\Builder\MarketplaceReturnFactBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
+use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
+use Symfony\Bridge\Doctrine\Middleware\Debug\DebugDataHolder;
+use Symfony\Bridge\Doctrine\Middleware\Debug\Middleware as DebugMiddleware;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -36,11 +41,18 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
 
     public function testReportIsQuantityWeightedTenantScopedAndUsesNullableDenominators(): void
     {
-        $report = $this->report(new \DateTimeImmutable('2026-08-02T22:00:01Z'));
-
         /** @var Connection $connection */
         $connection = self::getContainer()->get(Connection::class);
-        self::assertSame('off', $connection->fetchOne('SHOW jit'));
+        $plannerSettings = [
+            'jit' => $connection->fetchOne('SHOW jit'),
+            'enable_nestloop' => $connection->fetchOne('SHOW enable_nestloop'),
+            'statement_timeout' => $connection->fetchOne('SHOW statement_timeout'),
+        ];
+        $report = $this->report(new \DateTimeImmutable('2026-08-02T22:00:01Z'));
+
+        self::assertSame($plannerSettings['jit'], $connection->fetchOne('SHOW jit'));
+        self::assertSame($plannerSettings['enable_nestloop'], $connection->fetchOne('SHOW enable_nestloop'));
+        self::assertSame($plannerSettings['statement_timeout'], $connection->fetchOne('SHOW statement_timeout'));
 
         self::assertNull($report->nextCursor);
         self::assertCount(2, $report->items);
@@ -128,6 +140,85 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
             self::assertSame([], $report->items);
             self::assertSame(0, $report->summary->orderedQuantity);
             self::assertFalse($connection->isTransactionActive());
+        } finally {
+            $connection->close();
+        }
+    }
+
+    public function testNonEmptyReportUsesTwoDataQueriesRegardlessOfPageSize(): void
+    {
+        [$connection, $debugData] = $this->standaloneConnection();
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $posting = 'QUERY-COUNT-POSTING';
+        $order = 'QUERY-COUNT-ORDER';
+        $sku = 'QUERY-COUNT-SKU';
+        $fact = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId($posting.'|'.$sku)
+            ->withPostingNumber($posting)
+            ->withOrderNumber($order)
+            ->withMarketplaceSku($sku)
+            ->withStatus('delivered')
+            ->withBusinessDate(new \DateTimeImmutable('2026-08-01'))
+            ->build();
+        $statuses = [
+            MarketplacePostingStatusBuilder::aMarketplacePostingStatus()
+                ->withCompanyId($companyId)
+                ->withMarketplaceAccountId($accountId)
+                ->withPostingNumber($posting)
+                ->withOrderNumber($order)
+                ->withStatus('delivering')
+                ->withObservedAt(new \DateTimeImmutable('2026-08-01 10:00:00'))
+                ->build(),
+            MarketplacePostingStatusBuilder::aMarketplacePostingStatus()
+                ->withCompanyId($companyId)
+                ->withMarketplaceAccountId($accountId)
+                ->withPostingNumber($posting)
+                ->withOrderNumber($order)
+                ->withStatus('delivered')
+                ->withObservedAt(new \DateTimeImmutable('2026-08-01 11:00:00'))
+                ->build(),
+        ];
+        (new DoctrineSalesFactWriter($connection))->upsertAll([$fact]);
+        (new DoctrineMarketplacePostingStatusWriter($connection))->recordChanged($companyId->toRfc4122(), $statuses);
+
+        try {
+            foreach ([1, 200] as $limit) {
+                $debugData->reset();
+                ($this->actionFor($connection))(
+                    companyId: $companyId->toRfc4122(),
+                    from: new \DateTimeImmutable('2026-08-01'),
+                    to: new \DateTimeImmutable('2026-08-02'),
+                    asOf: new \DateTimeImmutable('2026-08-02T22:00:01Z'),
+                    limit: $limit,
+                    cursor: null,
+                );
+                self::assertCount(2, self::buyoutDataQueries($debugData));
+            }
+        } finally {
+            $connection->executeStatement('DELETE FROM marketplace_posting_status WHERE company_id = ?', [$companyId->toRfc4122()]);
+            $connection->executeStatement('DELETE FROM sales_fact WHERE company_id = ?', [$companyId->toRfc4122()]);
+            $connection->close();
+        }
+    }
+
+    public function testEmptyReportUsesOneBoundedSummaryFallbackQuery(): void
+    {
+        [$connection, $debugData] = $this->standaloneConnection();
+        try {
+            $debugData->reset();
+            ($this->actionFor($connection))(
+                companyId: Uuid::v7()->toRfc4122(),
+                from: new \DateTimeImmutable('2026-09-01'),
+                to: new \DateTimeImmutable('2026-09-30'),
+                asOf: new \DateTimeImmutable('2026-10-01T00:00:00Z'),
+                limit: 50,
+                cursor: null,
+            );
+
+            self::assertCount(3, self::buyoutDataQueries($debugData));
         } finally {
             $connection->close();
         }
@@ -285,6 +376,12 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
     {
         /** @var Connection $connection */
         $connection = self::getContainer()->get(Connection::class);
+
+        return $this->actionFor($connection);
+    }
+
+    private function actionFor(Connection $connection): BuildBuyoutRateReportAction
+    {
         $forecast = new BuyoutForecastQuery($connection);
 
         return new BuildBuyoutRateReportAction(
@@ -293,6 +390,34 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
             $forecast,
             new BuyoutForecastSummaryQuery($connection, $forecast),
         );
+    }
+
+    /** @return array{Connection, DebugDataHolder} */
+    private function standaloneConnection(): array
+    {
+        /** @var Connection $testConnection */
+        $testConnection = self::getContainer()->get(Connection::class);
+        $debugData = new DebugDataHolder();
+        $configuration = (new Configuration())->setMiddlewares([
+            new DebugMiddleware($debugData, null, 'query_count'),
+        ]);
+
+        return [DriverManager::getConnection($testConnection->getParams(), $configuration), $debugData];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function buyoutDataQueries(DebugDataHolder $debugData): array
+    {
+        $queries = [];
+        foreach ($debugData->getData() as $connectionQueries) {
+            foreach ($connectionQueries as $query) {
+                if (str_contains((string) ($query['sql'] ?? ''), 'buyout_outcome')) {
+                    $queries[] = $query;
+                }
+            }
+        }
+
+        return $queries;
     }
 
     private function sales(): SalesFactRepository

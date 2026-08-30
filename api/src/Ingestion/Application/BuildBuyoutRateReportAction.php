@@ -88,26 +88,42 @@ final readonly class BuildBuyoutRateReportAction
             || ($nativeConnection instanceof \PDO && $nativeConnection->inTransaction())
         ) {
             // Expanded outcome/maturity CTEs can cross PostgreSQL's JIT cost
-            // threshold even for a small tenant window. Compilation then
-            // dominates the request by tens of seconds, while these bounded
-            // aggregates execute faster without JIT.
-            $this->connection->executeStatement('SET LOCAL jit = off');
-            $isolation = $this->connection->fetchOne('SHOW transaction_isolation');
-            if (!\is_string($isolation) || !\in_array(strtolower($isolation), ['repeatable read', 'serializable'], true)) {
-                return $this->readSingleStatement($companyId, $from, $to, $asOf, $limit, $cursor);
-            }
+            // threshold even for a small tenant window. Freshly imported
+            // tenants can also be estimated as one row until auto-analyze;
+            // nested loops then repeat status history thousands of times.
+            // Both planner settings are scoped to this bounded report only.
+            $this->connection->createSavepoint('buyout_rate_report_guard');
+            try {
+                self::configurePlanner($this->connection);
+                $isolation = $this->connection->fetchOne('SHOW transaction_isolation');
+                if (!\is_string($isolation) || !\in_array(strtolower($isolation), ['repeatable read', 'serializable'], true)) {
+                    return $this->readSingleStatement($companyId, $from, $to, $asOf, $limit, $cursor);
+                }
 
-            return $readSnapshot($this->connection);
+                return $readSnapshot($this->connection);
+            } finally {
+                // ROLLBACK TO also recovers an outer transaction after a
+                // statement_timeout and restores every SET LOCAL above.
+                $this->connection->rollbackSavepoint('buyout_rate_report_guard');
+                $this->connection->releaseSavepoint('buyout_rate_report_guard');
+            }
         }
 
         return $this->connection->transactional(
             static function (Connection $connection) use ($readSnapshot): BuyoutRateReport {
                 $connection->executeStatement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
-                $connection->executeStatement('SET LOCAL jit = off');
+                self::configurePlanner($connection);
 
                 return $readSnapshot($connection);
             },
         );
+    }
+
+    private static function configurePlanner(Connection $connection): void
+    {
+        $connection->executeStatement('SET LOCAL jit = off');
+        $connection->executeStatement('SET LOCAL enable_nestloop = off');
+        $connection->executeStatement("SET LOCAL statement_timeout = '5s'");
     }
 
     /**
