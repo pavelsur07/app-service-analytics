@@ -41,6 +41,7 @@ app-service-analytics/
 ├── docs/
 │   ├── adr/
 │   ├── design/           эталонные макеты дизайн-системы
+│   ├── my/               инструкции продолжения production-задач
 │   ├── structure.md
 │   ├── patterns.md
 │   └── operations-checklist.md

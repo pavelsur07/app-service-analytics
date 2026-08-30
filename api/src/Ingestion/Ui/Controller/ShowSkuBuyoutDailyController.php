@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Controller;
 
-use App\Ingestion\Infrastructure\Query\BuyoutDailyQuery;
+use App\Ingestion\Application\BuildBuyoutDailySeriesAction;
 use App\Ingestion\Infrastructure\Query\BuyoutDailyRow;
 use App\Ingestion\Ui\Response\BuyoutDailyPointResponse;
 use App\Ingestion\Ui\Response\BuyoutDailyResponse;
@@ -30,7 +30,7 @@ final class ShowSkuBuyoutDailyController
     private const array ALLOWED_DAYS = [7, 30, 90];
     private const string TIMEZONE = 'Europe/Moscow';
 
-    public function __construct(private readonly BuyoutDailyQuery $query)
+    public function __construct(private readonly BuildBuyoutDailySeriesAction $buildSeries)
     {
     }
 
@@ -51,10 +51,7 @@ final class ShowSkuBuyoutDailyController
         $now = new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE));
         $to = $now->setTime(0, 0);
         $from = $to->modify('-'.($days - 1).' days');
-        $rawRows = $this->query->build($companyId, $sku, $from, $to, $now)
-            ->executeQuery()
-            ->fetchAllAssociative();
-        $rows = array_map(BuyoutDailyQuery::mapRow(...), $rawRows);
+        $rows = ($this->buildSeries)($companyId, $sku, $from, $to, $now);
 
         return new JsonResponse(new BuyoutDailyResponse(
             marketplaceSku: $sku,
