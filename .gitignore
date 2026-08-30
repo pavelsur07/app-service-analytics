@@ -10,3 +10,9 @@
 # outputDir) и покрыты записью /var/ выше — отдельной строки не нужно.
 # Локальные разрешения Claude Code — привязаны к машине и её ключам.
 /.claude/settings.local.json
+# Локальная конфигурация Codex привязана к машине.
+/.codex/
+# Живые research-ответы Ozon содержат коммерческие и операционные данные.
+# В git попадают только отдельные synthetic fixtures без даты в имени.
+/api/tests/Fixtures/Marketplace/ozon/*-buyout-????-??-??*.json
+/api/tests/Fixtures/Marketplace/ozon/live-second-*/
