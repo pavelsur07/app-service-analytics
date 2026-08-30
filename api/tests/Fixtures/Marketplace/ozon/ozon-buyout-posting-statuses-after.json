@@ -1,0 +1,214 @@
+{
+  "result": [
+    {
+      "order_id": 10001,
+      "order_number": "TEST-MIX-1",
+      "posting_number": "TEST-MIX-1-1",
+      "status": "cancelled",
+      "substatus": "posting_canceled",
+      "cancel_reason_id": 506,
+      "created_at": "2026-08-01T08:00:00Z",
+      "in_process_at": "2026-08-01T08:05:00Z",
+      "products": [
+        {
+          "sku": 100001,
+          "name": "Synthetic product 100001",
+          "quantity": 1,
+          "offer_id": "TEST-OFFER-100001",
+          "price": "1000.00",
+          "currency_code": "RUB"
+        }
+      ],
+      "financial_data": {
+        "products": [
+          {
+            "product_id": 100001,
+            "price": 1000,
+            "commission_amount": 0,
+            "currency_code": "RUB"
+          }
+        ]
+      }
+    },
+    {
+      "order_id": 10001,
+      "order_number": "TEST-MIX-1",
+      "posting_number": "TEST-MIX-1-2",
+      "status": "delivered",
+      "substatus": "posting_received",
+      "cancel_reason_id": 0,
+      "created_at": "2026-08-01T08:00:00Z",
+      "in_process_at": "2026-08-01T08:05:00Z",
+      "products": [
+        {
+          "sku": 100002,
+          "name": "Synthetic product 100002",
+          "quantity": 2,
+          "offer_id": "TEST-OFFER-100002",
+          "price": "1200.00",
+          "currency_code": "RUB"
+        }
+      ],
+      "financial_data": {
+        "products": [
+          {
+            "product_id": 100002,
+            "price": 1200,
+            "commission_amount": -120,
+            "currency_code": "RUB"
+          }
+        ]
+      }
+    },
+    {
+      "order_id": 10002,
+      "order_number": "TEST-T2-1",
+      "posting_number": "TEST-T2-1-1",
+      "status": "cancelled",
+      "substatus": "posting_canceled",
+      "cancel_reason_id": 79,
+      "created_at": "2026-08-02T08:00:00Z",
+      "in_process_at": "2026-08-02T08:05:00Z",
+      "products": [
+        {
+          "sku": 100003,
+          "name": "Synthetic product 100003",
+          "quantity": 1,
+          "offer_id": "TEST-OFFER-100003",
+          "price": "1300.00",
+          "currency_code": "RUB"
+        }
+      ],
+      "financial_data": {
+        "products": [
+          {
+            "product_id": 100003,
+            "price": 1300,
+            "commission_amount": 0,
+            "currency_code": "RUB"
+          }
+        ]
+      }
+    },
+    {
+      "order_id": 10003,
+      "order_number": "TEST-T1-1",
+      "posting_number": "TEST-T1-1-1",
+      "status": "cancelled",
+      "substatus": "posting_canceled",
+      "cancel_reason_id": 506,
+      "created_at": "2026-08-03T08:00:00Z",
+      "in_process_at": "2026-08-03T08:05:00Z",
+      "products": [
+        {
+          "sku": 100004,
+          "name": "Synthetic product 100004",
+          "quantity": 1,
+          "offer_id": "TEST-OFFER-100004",
+          "price": "1400.00",
+          "currency_code": "RUB"
+        }
+      ],
+      "financial_data": {
+        "products": [
+          {
+            "product_id": 100004,
+            "price": 1400,
+            "commission_amount": 0,
+            "currency_code": "RUB"
+          }
+        ]
+      }
+    },
+    {
+      "order_id": 10004,
+      "order_number": "TEST-R-1",
+      "posting_number": "TEST-R-1-1",
+      "status": "delivered",
+      "substatus": "posting_received",
+      "cancel_reason_id": 0,
+      "created_at": "2026-08-04T08:00:00Z",
+      "in_process_at": "2026-08-04T08:05:00Z",
+      "products": [
+        {
+          "sku": 100005,
+          "name": "Synthetic product 100005",
+          "quantity": 1,
+          "offer_id": "TEST-OFFER-100005",
+          "price": "1500.00",
+          "currency_code": "RUB"
+        }
+      ],
+      "financial_data": {
+        "products": [
+          {
+            "product_id": 100005,
+            "price": 1500,
+            "commission_amount": -150,
+            "currency_code": "RUB"
+          }
+        ]
+      }
+    },
+    {
+      "order_id": 10005,
+      "order_number": "TEST-UNKNOWN-1",
+      "posting_number": "TEST-UNKNOWN-1-1",
+      "status": "cancelled",
+      "substatus": "posting_canceled",
+      "cancel_reason_id": 999,
+      "created_at": "2026-08-05T08:00:00Z",
+      "in_process_at": "2026-08-05T08:05:00Z",
+      "products": [
+        {
+          "sku": 100006,
+          "name": "Synthetic product 100006",
+          "quantity": 1,
+          "offer_id": "TEST-OFFER-100006",
+          "price": "1600.00",
+          "currency_code": "RUB"
+        }
+      ],
+      "financial_data": {
+        "products": [
+          {
+            "product_id": 100006,
+            "price": 1600,
+            "commission_amount": 0,
+            "currency_code": "RUB"
+          }
+        ]
+      }
+    },
+    {
+      "order_id": 10006,
+      "order_number": "TEST-PENDING-1",
+      "posting_number": "TEST-PENDING-1-1",
+      "status": "awaiting_deliver",
+      "substatus": "posting_transferring_to_delivery",
+      "cancel_reason_id": 0,
+      "created_at": "2026-08-06T08:00:00Z",
+      "in_process_at": "2026-08-06T08:05:00Z",
+      "products": [
+        {
+          "sku": 100007,
+          "name": "Synthetic product 100007",
+          "quantity": 1,
+          "offer_id": "TEST-OFFER-100007",
+          "price": "1700.00",
+          "currency_code": "RUB"
+        }
+      ],
+      "financial_data": {
+        "products": [
+          {
+            "product_id": 100007,
+            "price": 1700,
+            "commission_amount": 0,
+            "currency_code": "RUB"
+          }
+        ]
+      }
+    }
+  ]
+}

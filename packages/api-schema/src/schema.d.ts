@@ -180,6 +180,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/buyout-rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_buyout_rate_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/extension/companies/{companyId}/skus": {
         parameters: {
             query?: never;
@@ -253,6 +269,22 @@ export interface paths {
         };
         get?: never;
         put: operations["put_ingestion_connection_credentials_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/buyout-rate/{sku}/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_buyout_rate_daily"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -445,6 +477,33 @@ export interface components {
             status: string;
             changed: boolean;
         };
+        BuyoutRateSummaryResponse: {
+            orderedQuantity: number;
+            resolvedQuantity: number;
+            projectedBuyoutQuantity: number | null;
+            projectedBuyoutRateBps: number | null;
+            resolutionRateBps: number | null;
+        };
+        BuyoutRateItemResponse: {
+            marketplaceSku: string;
+            offerId: string | null;
+            name: string | null;
+            orderedQuantity: number;
+            resolvedQuantity: number;
+            projectedBuyoutQuantity: number | null;
+            projectedBuyoutRateBps: number | null;
+            t1RateBps: number | null;
+            t2RateBps: number | null;
+            partialReturnRateBps: number | null;
+            /** @enum {string} */
+            maturityStatus: "mature" | "preliminary";
+            resolutionRateBps: number | null;
+        };
+        BuyoutRateListResponse: {
+            summary: components["schemas"]["BuyoutRateSummaryResponse"];
+            items: components["schemas"]["BuyoutRateItemResponse"][];
+            nextCursor: string | null;
+        };
         CompanySkuListResponse: {
             items: string[];
             nextCursor?: string | null;
@@ -515,6 +574,19 @@ export interface components {
         ReplacedCredentialsResponse: {
             id: string;
             state: string;
+        };
+        BuyoutDailyPointResponse: {
+            date: string;
+            actualBuyoutRateBps: number | null;
+            projectedBuyoutRateBps: number | null;
+            resolutionRateBps: number | null;
+            orderedQuantity: number;
+            resolvedQuantity: number;
+            projectedBuyoutQuantity: number | null;
+        };
+        BuyoutDailyResponse: {
+            marketplaceSku: string;
+            series: components["schemas"]["BuyoutDailyPointResponse"][];
         };
         SkuSalesTotalResponse: {
             currency: string;
@@ -1058,6 +1130,50 @@ export interface operations {
             };
         };
     };
+    get_ingestion_buyout_rate_list: {
+        parameters: {
+            query?: {
+                days?: 7 | 30 | 90;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Процент выкупа и прогноз по SKU */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyoutRateListResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректные days, limit или cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     get_ingestion_extension_company_skus: {
         parameters: {
             query?: {
@@ -1336,6 +1452,49 @@ export interface operations {
                 };
             };
             /** @description Площадка не приняла ключ либо тело запроса неполное */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_buyout_rate_daily: {
+        parameters: {
+            query?: {
+                days?: 7 | 30 | 90;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+                sku: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Дневной ряд actual/projected одной SKU */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuyoutDailyResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректные days или SKU */
             422: {
                 headers: {
                     [name: string]: unknown;

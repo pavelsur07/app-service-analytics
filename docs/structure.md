@@ -20,6 +20,9 @@ app-service-analytics/
 ├── package.json          только @playwright/test под этот конфиг
 ├── bin/
 │   ├── review-prepare.sh сборка пакета для внешнего ревью (make review-prepare)
+│   ├── capture-ozon-buyout-fixtures.sh  интерактивно снимает raw-ответы
+│   │                         Ozon без передачи API-ключа в argv
+│   ├── tests/             автономные shell-контрактные тесты утилит
 │   └── e2e-seed.sh       сеет компанию/подключение и разбирает фикстуру
 │                         Ozon в sales_fact перед Playwright (make test-e2e);
 │                         реальных ключей площадки в песочнице нет
@@ -234,6 +237,12 @@ Ingestion/Infrastructure/Connector/
 Общая абстракция коннектора появляется после второго коннектора,
 не до первого.
 
+Витрина процента выкупа Ozon также остаётся внутри `Ingestion`: raw-ответы,
+история posting status и return facts лежат в `Domain`/`Infrastructure`,
+DBAL-запросы классифицируют T1/D/T2/P/R, а `Ui` публикует list/daily API.
+Решения и порядок реализации записаны в ADR-019 и
+`docs/plan/ozon-buyout-rate-implementation.md`.
+
 ### Почему так
 
 Направление зависимостей из ADR совпадает с путями к файлам, поэтому
@@ -306,6 +315,10 @@ apps/seller/
 ├── index.html
 └── vite.config.ts
 ```
+
+Экран процента выкупа расположен в
+`apps/seller/src/features/buyout-rate/`: `model` содержит API hooks, `lib` —
+форматирование и параметры периода, `ui` — таблицу и раскрываемую daily-серию.
 
 Внутри фичи — `ui/`, `model/` (хуки и запросы), `lib/` (чистые функции).
 Три папки, не больше.

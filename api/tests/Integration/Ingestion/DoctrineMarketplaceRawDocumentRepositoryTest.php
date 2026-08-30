@@ -16,6 +16,27 @@ use Symfony\Component\Uid\Uuid;
  */
 final class DoctrineMarketplaceRawDocumentRepositoryTest extends KernelTestCase
 {
+    public function testReadsExactStoredBodyById(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $repository = new DoctrineMarketplaceRawDocumentRepository($connection);
+        $body = '{"raw":"exact\\nbytes"}';
+        $document = MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
+            ->withRawBody($body)
+            ->persistWith($repository);
+
+        self::assertSame($body, $repository->body(
+            $document->companyId()->toRfc4122(),
+            $document->marketplaceAccountId(),
+            $document->id(),
+        ));
+
+        $this->expectException(\RuntimeException::class);
+        $repository->body(Uuid::v7()->toRfc4122(), $document->marketplaceAccountId(), $document->id());
+    }
+
     public function testIdenticalContentForSamePeriodIsNotDuplicated(): void
     {
         self::bootKernel();

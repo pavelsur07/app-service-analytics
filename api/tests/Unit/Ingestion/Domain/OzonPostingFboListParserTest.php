@@ -6,12 +6,14 @@ namespace App\Tests\Unit\Ingestion\Domain;
 
 use App\Ingestion\Domain\OzonPostingFboListParser;
 use App\Shared\Domain\ValueObject\Money;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
 
 final class OzonPostingFboListParserTest extends TestCase
 {
     private const string FIXTURE = __DIR__.'/../../../Fixtures/Marketplace/ozon/posting-fbo-list-2026-07-01.json';
+    private const string BUYOUT_FIXTURE = __DIR__.'/../../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-after.json';
 
     public function testParsesEveryProductLineInTheFixture(): void
     {
@@ -104,5 +106,70 @@ final class OzonPostingFboListParserTest extends TestCase
         $this->expectException(\UnexpectedValueException::class);
 
         $parser->parse($body, Uuid::v7(), Uuid::v7(), Uuid::v7());
+    }
+
+    public function testCopiesPostingAndOrderNumbersToEveryProductFact(): void
+    {
+        $body = file_get_contents(self::BUYOUT_FIXTURE);
+        self::assertIsString($body);
+
+        $facts = (new OzonPostingFboListParser())->parse($body, Uuid::v7(), Uuid::v7(), Uuid::v7());
+
+        self::assertCount(7, $facts);
+        self::assertSame('TEST-MIX-1-1', $facts[0]->postingNumber());
+        self::assertSame('TEST-MIX-1', $facts[0]->orderNumber());
+        self::assertSame('TEST-MIX-1-2', $facts[1]->postingNumber());
+        self::assertSame('TEST-MIX-1', $facts[1]->orderNumber());
+        self::assertSame(2, $facts[1]->quantity());
+    }
+
+    public function testMissingOrderNumberFailsLoudly(): void
+    {
+        $body = json_encode([
+            'result' => [[
+                'posting_number' => 'P-ORDER-MISSING',
+                'status' => 'delivered',
+                'in_process_at' => '2026-08-30T00:00:00Z',
+                'products' => [],
+                'financial_data' => ['products' => []],
+            ]],
+        ], \JSON_THROW_ON_ERROR);
+
+        $this->expectException(\UnexpectedValueException::class);
+
+        (new OzonPostingFboListParser())->parse($body, Uuid::v7(), Uuid::v7(), Uuid::v7());
+    }
+
+    #[DataProvider('nonPositiveQuantities')]
+    public function testRejectsNonPositiveProductQuantity(int $quantity): void
+    {
+        $body = json_encode([
+            'result' => [[
+                'posting_number' => 'P-INVALID-QUANTITY',
+                'order_number' => 'ORDER-INVALID-QUANTITY',
+                'status' => 'delivered',
+                'in_process_at' => '2026-08-30T00:00:00Z',
+                'products' => [['sku' => 111, 'quantity' => $quantity]],
+                'financial_data' => ['products' => [[
+                    'product_id' => 111,
+                    'price' => 100,
+                    'commission_amount' => 0,
+                ]]],
+            ]],
+        ], \JSON_THROW_ON_ERROR);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Sales fact quantity must be positive.');
+
+        (new OzonPostingFboListParser())->parse($body, Uuid::v7(), Uuid::v7(), Uuid::v7());
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function nonPositiveQuantities(): iterable
+    {
+        yield 'zero' => [0];
+        yield 'negative' => [-1];
     }
 }

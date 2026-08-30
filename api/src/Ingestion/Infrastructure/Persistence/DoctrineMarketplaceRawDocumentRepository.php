@@ -51,4 +51,21 @@ final readonly class DoctrineMarketplaceRawDocumentRepository implements Marketp
 
         return Uuid::fromString($id);
     }
+
+    public function body(string $companyId, Uuid $marketplaceAccountId, Uuid $id): string
+    {
+        $body = $this->connection->fetchOne(
+            'SELECT body FROM marketplace_raw_document WHERE company_id = :companyId AND marketplace_account_id = :marketplaceAccountId AND id = :id',
+            [
+                'companyId' => $companyId,
+                'marketplaceAccountId' => $marketplaceAccountId->toRfc4122(),
+                'id' => $id->toRfc4122(),
+            ],
+        );
+        if (!\is_string($body)) {
+            throw new \RuntimeException("Raw marketplace document {$id->toRfc4122()} not found.");
+        }
+
+        return $body;
+    }
 }

@@ -22,4 +22,7 @@ interface MarketplaceRawDocumentRepository
      * которого в raw-слое не существует.
      */
     public function add(MarketplaceRawDocument $document): Uuid;
+
+    /** Возвращает точные сохранённые байты документа для повторного разбора. */
+    public function body(string $companyId, Uuid $marketplaceAccountId, Uuid $id): string;
 }

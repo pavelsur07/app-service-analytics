@@ -38,6 +38,8 @@ use Symfony\Component\Uid\Uuid;
 // в запросе, и всё, что встанет перед ним, придётся сканировать целиком.
 // Отслеживаемых типов сегодня два из трёх, отсечение по ним экономит мало.
 #[ORM\Index(name: 'idx_marketplace_raw_document_received_at', columns: ['received_at', 'company_id', 'marketplace_account_id', 'report_type'])]
+// Исторический Ozon backfill: один tenant/report в хронологическом порядке.
+#[ORM\Index(name: 'idx_marketplace_raw_document_ozon_history', columns: ['company_id', 'marketplace_account_id', 'report_type', 'received_at', 'id'])]
 class MarketplaceRawDocument
 {
     #[ORM\Id]

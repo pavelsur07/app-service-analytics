@@ -20,6 +20,8 @@ final class SalesFactBuilder
     private \DateTimeImmutable $businessDate;
     private string $status = 'delivered';
     private string $marketplaceSku = '4404411581';
+    private ?string $postingNumber = '40705738-0407-1';
+    private ?string $orderNumber = '40705738-0407';
     private int $quantity = 1;
     private Money $amount;
     private Money $commissionAmount;
@@ -80,6 +82,22 @@ final class SalesFactBuilder
         return $clone;
     }
 
+    public function withPostingNumber(?string $postingNumber): self
+    {
+        $clone = clone $this;
+        $clone->postingNumber = $postingNumber;
+
+        return $clone;
+    }
+
+    public function withOrderNumber(?string $orderNumber): self
+    {
+        $clone = clone $this;
+        $clone->orderNumber = $orderNumber;
+
+        return $clone;
+    }
+
     /**
      * Дата в часовом поясе площадки (ADR-009). Задаётся снаружи, потому что
      * попадание в окно расчёта — то, что проверяет тест, и билдер не должен
@@ -117,6 +135,14 @@ final class SalesFactBuilder
         return $clone;
     }
 
+    public function withRawDocumentId(Uuid $rawDocumentId): self
+    {
+        $clone = clone $this;
+        $clone->rawDocumentId = $rawDocumentId;
+
+        return $clone;
+    }
+
     public function build(): SalesFact
     {
         return SalesFact::normalize(
@@ -130,6 +156,8 @@ final class SalesFactBuilder
             amount: $this->amount,
             commissionAmount: $this->commissionAmount,
             rawDocumentId: $this->rawDocumentId,
+            postingNumber: $this->postingNumber,
+            orderNumber: $this->orderNumber,
         );
     }
 

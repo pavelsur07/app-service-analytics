@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 
 import { CompanyListPage } from '../features/auth/ui/CompanyListPage'
+import { BuyoutRatePage } from '../features/buyout-rate/ui/BuyoutRatePage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
 import { ConnectionsPage } from '../features/connections/ui/ConnectionsPage'
 import { ListingCostsPage } from '../features/costs/ui/ListingCostsPage'
@@ -44,6 +45,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="sales" replace /> },
       { path: 'sales', element: <SalesFactsPage /> },
+      { path: 'redemption', element: <BuyoutRatePage /> },
       { path: 'extension', element: <ExtensionConnectPage /> },
       { path: 'connections', element: <ConnectionsPage /> },
       { path: 'unit-economics', element: <UnitEconomicsPage /> },

@@ -27,6 +27,8 @@ final class MarketplaceReportType
 
     public const string OzonAccrualByDay = 'ozon_accrual_by_day';
 
+    public const string OzonReturnsList = 'ozon_returns_list';
+
     private function __construct()
     {
     }

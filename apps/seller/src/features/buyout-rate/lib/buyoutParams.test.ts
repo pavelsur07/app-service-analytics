@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  buyoutSearchWithCursor,
+  buyoutSearchWithDays,
+  parseBuyoutDays,
+} from './buyoutParams'
+
+describe('параметры адреса экрана выкупа', () => {
+  it('принимает только окна 7, 30 и 90 дней', () => {
+    expect(parseBuyoutDays('7')).toBe(7)
+    expect(parseBuyoutDays('30')).toBe(30)
+    expect(parseBuyoutDays('90')).toBe(90)
+  })
+
+  it('заменяет отсутствующее или неизвестное окно на 30 дней', () => {
+    expect(parseBuyoutDays(null)).toBe(30)
+    expect(parseBuyoutDays('')).toBe(30)
+    expect(parseBuyoutDays('14')).toBe(30)
+    expect(parseBuyoutDays('abc')).toBe(30)
+  })
+
+  it('смена окна сохраняет посторонние параметры и удаляет cursor', () => {
+    const next = buyoutSearchWithDays(
+      new URLSearchParams('days=30&cursor=next-page&source=bookmark'),
+      7,
+    )
+
+    expect(next.toString()).toBe('days=7&source=bookmark')
+  })
+
+  it('записывает и очищает курсор текущей страницы', () => {
+    const search = new URLSearchParams('days=30')
+
+    expect(buyoutSearchWithCursor(search, 'SKU+/= cursor').toString()).toBe(
+      'days=30&cursor=SKU%2B%2F%3D+cursor',
+    )
+    expect(
+      buyoutSearchWithCursor(
+        new URLSearchParams('days=30&cursor=next-page'),
+        null,
+      ).toString(),
+    ).toBe('days=30')
+  })
+})

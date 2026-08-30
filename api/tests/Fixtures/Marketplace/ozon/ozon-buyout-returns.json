@@ -1,0 +1,143 @@
+{
+  "returns": [
+    {
+      "id": 900001,
+      "return_reason_name": "Покупатель отказался при вручении: товар не подошел",
+      "type": "Cancellation",
+      "schema": "Fbo",
+      "order_number": "TEST-MIX-1",
+      "product": {
+        "sku": 100001,
+        "offer_id": "TEST-OFFER-100001",
+        "name": "Synthetic product 100001",
+        "quantity": 1
+      },
+      "visual": {
+        "status": {
+          "id": 1,
+          "display_name": "Synthetic completed",
+          "sys_name": "Completed"
+        },
+        "change_moment": "2026-08-11T10:00:00Z"
+      },
+      "posting_number": "TEST-MIX-1-RETURN-1",
+      "source_id": 800001
+    },
+    {
+      "id": 900002,
+      "return_reason_name": "Покупатель не забрал заказ",
+      "type": "Cancellation",
+      "schema": "Fbo",
+      "order_number": "TEST-T2-1",
+      "product": {
+        "sku": 100003,
+        "offer_id": "TEST-OFFER-100003",
+        "name": "Synthetic product 100003",
+        "quantity": 1
+      },
+      "visual": {
+        "status": {
+          "id": 1,
+          "display_name": "Synthetic completed",
+          "sys_name": "Completed"
+        },
+        "change_moment": "2026-08-12T10:00:00Z"
+      },
+      "posting_number": "TEST-T2-1-1",
+      "source_id": 800002
+    },
+    {
+      "id": 900003,
+      "return_reason_name": "Покупатель отменил заказ",
+      "type": "Cancellation",
+      "schema": "Fbo",
+      "order_number": "TEST-T1-1",
+      "product": {
+        "sku": 100004,
+        "offer_id": "TEST-OFFER-100004",
+        "name": "Synthetic product 100004",
+        "quantity": 1
+      },
+      "visual": {
+        "status": {
+          "id": 1,
+          "display_name": "Synthetic completed",
+          "sys_name": "Completed"
+        },
+        "change_moment": "2026-08-13T10:00:00Z"
+      },
+      "posting_number": "TEST-T1-1-1",
+      "source_id": 800003
+    },
+    {
+      "id": 900004,
+      "return_reason_name": "Synthetic client return",
+      "type": "ClientReturn",
+      "schema": "Fbo",
+      "order_number": "TEST-R-1",
+      "product": {
+        "sku": 100005,
+        "offer_id": "TEST-OFFER-100005",
+        "name": "Synthetic product 100005",
+        "quantity": 1
+      },
+      "visual": {
+        "status": {
+          "id": 1,
+          "display_name": "Synthetic completed",
+          "sys_name": "Completed"
+        },
+        "change_moment": "2026-08-14T10:00:00Z"
+      },
+      "posting_number": "TEST-R-1-1",
+      "source_id": 800004
+    },
+    {
+      "id": 900005,
+      "return_reason_name": "Synthetic unknown cancellation reason",
+      "type": "Cancellation",
+      "schema": "Fbo",
+      "order_number": "TEST-UNKNOWN-1",
+      "product": {
+        "sku": 100006,
+        "offer_id": "TEST-OFFER-100006",
+        "name": "Synthetic product 100006",
+        "quantity": 1
+      },
+      "visual": {
+        "status": {
+          "id": 1,
+          "display_name": "Synthetic completed",
+          "sys_name": "Completed"
+        },
+        "change_moment": "2026-08-15T10:00:00Z"
+      },
+      "posting_number": "TEST-UNKNOWN-1-1",
+      "source_id": 800005
+    },
+    {
+      "id": 900006,
+      "return_reason_name": "Покупатель отказался при вручении: товар не подошел",
+      "type": "Cancellation",
+      "schema": "Fbo",
+      "order_number": "TEST-MIX-1",
+      "product": {
+        "sku": 100001,
+        "offer_id": "TEST-OFFER-100001",
+        "name": "Synthetic product 100001",
+        "quantity": 1
+      },
+      "visual": {
+        "status": {
+          "id": 2,
+          "display_name": "Synthetic received",
+          "sys_name": "Received"
+        },
+        "change_moment": "2026-08-16T10:00:00Z"
+      },
+      "posting_number": "TEST-MIX-1-1",
+      "source_id": 800006
+    }
+  ],
+  "has_next": false
+}

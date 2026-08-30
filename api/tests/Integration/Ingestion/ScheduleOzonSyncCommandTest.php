@@ -10,6 +10,7 @@ use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
+use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -50,6 +51,7 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
         $postingDates = [];
         $catalogTargets = [];
         $expenseDates = [];
+        $returnRanges = [];
         foreach ($sent as $envelope) {
             $message = $envelope->getMessage();
             if ($message instanceof FetchOzonPostingsMessage) {
@@ -58,6 +60,8 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
                 $catalogTargets[$message->marketplaceAccountId][] = $message->marketplaceAccountId;
             } elseif ($message instanceof FetchOzonExpensesMessage) {
                 $expenseDates[$message->marketplaceAccountId][] = $message->accrualDate;
+            } elseif ($message instanceof FetchOzonReturnsMessage) {
+                $returnRanges[$message->marketplaceAccountId][] = [$message->from, $message->to];
             } else {
                 self::fail('Планировщик поставил задачу неизвестного типа.');
             }
@@ -74,6 +78,11 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
             $id = $account->id()->toRfc4122();
             self::assertSame([$id], array_values(array_unique($catalogTargets[$id] ?? [])));
             self::assertSame($window, $expenseDates[$id] ?? []);
+            $returnDays = 3 === (int) $today->format('G') ? 90 : 3;
+            self::assertSame([[
+                $today->modify('-'.($returnDays - 1).' day')->format('Y-m-d'),
+                $today->format('Y-m-d'),
+            ]], $returnRanges[$id] ?? []);
 
             // Окно продаж — не «сегодня»: заказ меняет статус после
             // загрузки, и день, спрошенный один раз, застывает

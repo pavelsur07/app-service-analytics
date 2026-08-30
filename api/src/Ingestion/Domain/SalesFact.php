@@ -25,6 +25,8 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Table(name: 'sales_fact')]
 #[ORM\Index(name: 'idx_sales_fact_company_business_date', columns: ['company_id', 'business_date'])]
 #[ORM\Index(name: 'idx_sales_fact_raw_document_id', columns: ['raw_document_id'])]
+#[ORM\Index(name: 'idx_sales_fact_posting', columns: ['company_id', 'marketplace_account_id', 'posting_number'])]
+#[ORM\Index(name: 'idx_sales_fact_order_sku', columns: ['company_id', 'marketplace_account_id', 'order_number', 'marketplace_sku'])]
 class SalesFact
 {
     #[ORM\Id]
@@ -47,6 +49,12 @@ class SalesFact
 
     #[ORM\Column(length: 64)]
     private readonly string $marketplaceSku;
+
+    #[ORM\Column(length: 64, nullable: true)]
+    private ?string $postingNumber;
+
+    #[ORM\Column(length: 64, nullable: true)]
+    private ?string $orderNumber;
 
     #[ORM\Column]
     private int $quantity;
@@ -81,6 +89,8 @@ class SalesFact
         \DateTimeImmutable $businessDate,
         string $status,
         string $marketplaceSku,
+        ?string $postingNumber,
+        ?string $orderNumber,
         int $quantity,
         Money $amount,
         Money $commissionAmount,
@@ -95,6 +105,8 @@ class SalesFact
         $this->businessDate = $businessDate;
         $this->status = $status;
         $this->marketplaceSku = $marketplaceSku;
+        $this->postingNumber = $postingNumber;
+        $this->orderNumber = $orderNumber;
         $this->quantity = $quantity;
         $this->amountMinor = $amount->minorAmount();
         $this->commissionAmountMinor = $commissionAmount->minorAmount();
@@ -122,11 +134,15 @@ class SalesFact
         Money $amount,
         Money $commissionAmount,
         Uuid $rawDocumentId,
+        ?string $postingNumber = null,
+        ?string $orderNumber = null,
     ): self {
+        if ($quantity <= 0) {
+            throw new \InvalidArgumentException('Sales fact quantity must be positive.');
+        }
         if ($amount->currency() !== $commissionAmount->currency()) {
             throw new \InvalidArgumentException('Amount and commission amount must share the same currency.');
         }
-
         $now = new \DateTimeImmutable();
 
         return new self(
@@ -136,11 +152,13 @@ class SalesFact
             $businessDate,
             $status,
             $marketplaceSku,
+            $postingNumber,
+            $orderNumber,
             $quantity,
             $amount,
             $commissionAmount,
             $rawDocumentId,
-            self::computeRowHash($status, $quantity, $amount, $commissionAmount),
+            self::computeRowHash($status, $quantity, $amount, $commissionAmount, $postingNumber, $orderNumber),
             $now,
             $now,
         );
@@ -152,13 +170,21 @@ class SalesFact
      * поля исключены намеренно (ADR-006: суррогат/ключ строится из полей,
      * не меняющихся при корректировке).
      */
-    private static function computeRowHash(string $status, int $quantity, Money $amount, Money $commissionAmount): string
-    {
+    private static function computeRowHash(
+        string $status,
+        int $quantity,
+        Money $amount,
+        Money $commissionAmount,
+        ?string $postingNumber,
+        ?string $orderNumber,
+    ): string {
         return hash('sha256', implode('|', [
             $status,
             $quantity,
             $amount->minorAmount(),
             $commissionAmount->minorAmount(),
+            $postingNumber ?? '<null>',
+            $orderNumber ?? '<null>',
         ]));
     }
 
@@ -195,6 +221,16 @@ class SalesFact
     public function quantity(): int
     {
         return $this->quantity;
+    }
+
+    public function postingNumber(): ?string
+    {
+        return $this->postingNumber;
+    }
+
+    public function orderNumber(): ?string
+    {
+        return $this->orderNumber;
     }
 
     public function amount(): Money
