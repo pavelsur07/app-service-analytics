@@ -579,7 +579,7 @@ export interface components {
             date: string;
             actualBuyoutRateBps: number | null;
             projectedBuyoutRateBps: number | null;
-            resolutionRateBps: number;
+            resolutionRateBps: number | null;
             orderedQuantity: number;
             resolvedQuantity: number;
             projectedBuyoutQuantity: number | null;

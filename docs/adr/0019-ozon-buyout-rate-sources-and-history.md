@@ -70,7 +70,10 @@ business dates одного кабинета, и такая блокировка
 `sales_fact.status` остаётся текущим снимком для совместимости. Для joins
 добавляются nullable `posting_number` и `order_number`; вычислять их через
 `split_part(source_row_id)` в аналитическом запросе запрещено. Nullable нужен
-для совместимого rolling deploy и заполняется backfill.
+для совместимого rolling deploy и заполняется backfill. Новые факты принимают
+только `quantity > 0`; одноимённый DB constraint сначала создаётся `NOT VALID`,
+чтобы не сканировать legacy-таблицу во время rolling migration, и валидируется
+после отдельного аудита старых строк.
 
 #### Факты возвратов
 
@@ -91,7 +94,8 @@ Observed `posting_number` и `source_id` сохраняются для trace, н
 дочерней отгрузкой и не участвуют в основном join. Факт также хранит type,
 точный `return_reason_name`, quantity, visual status/change moment, raw link,
 row hash и времена первой/последней загрузки. Upsert обновляет mutable поля
-только при изменении row hash.
+только при изменении row hash и более свежем evidence; повтор того же raw ID
+может исправить результат после обновления parser.
 
 Returns cursor считается opaque: проверяется только, что при `has_next=true`
 он непуст и отличается от предыдущего. Численное сравнение и сортировка cursor
@@ -135,6 +139,26 @@ Handover доказан первым наблюдением `status = delivering
 только строки, подтверждённые исследованием: `HANDOVER_REFUSAL`,
 `PICKUP_EXPIRED`, `DELIVERY_FAILED`, `CANCELLED`. `cancel_reason_id` остаётся
 диагностикой и не переопределяет history или return reason.
+
+Return quantity агрегируется по `(company, account, order, sku)`, после чего
+единожды распределяется по упорядоченным sales-строкам этой группы. Поэтому
+один return не умножается на число posting-строк, а разные причины для
+quantity > 1 могут породить несколько outcome-аллокаций одной sales-строки.
+Сумма аллокаций всегда равна исходному `sales_fact.quantity`. Prefix quantity
+вычисляется коррелированным чтением малой order/SKU-группы по tenant index;
+оконная функция по всей истории кабинета запрещена, чтобы фильтр периода
+оставался pushdown-safe.
+
+Общая причина `CANCELLED` не связывается с конкретным posting. Если duplicate
+sales-строки одной `(order, sku)` имеют разный lifecycle (часть имеет реальное
+pre-handover наблюдение, часть — handover), общий event и не покрытый точным
+event stage остаток классифицируются `NULL`. Это консервативно и не позволяет
+порядку posting менять знаменатель actual buyout. Unmapped причины и overflow
+return quantity диагностируются независимо от того, остался ли в outcome
+`NULL` после количественного cap. Любой return evidence у строки, чей latest
+posting status ещё active/pending, выключает forecast eligibility и остаётся
+видимым диагностике: это допустимый ingestion race, но не основание строить
+правдоподобный прогноз на противоречивом snapshot.
 
 #### Метрики и матурация
 

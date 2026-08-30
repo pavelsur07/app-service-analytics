@@ -2402,7 +2402,8 @@
                         "nullable": true
                     },
                     "resolutionRateBps": {
-                        "type": "integer"
+                        "type": "integer",
+                        "nullable": true
                     },
                     "orderedQuantity": {
                         "type": "integer"

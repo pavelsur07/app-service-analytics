@@ -257,6 +257,91 @@ final class BuyoutOutcomeQueryTest extends KernelTestCase
         self::assertSame('2026-08-03', $rows[0]->lastBusinessDate);
     }
 
+    public function testDiagnosticsReportsUnmappedAndOverflowEvidenceEvenWhenOutcomeIsFilled(): void
+    {
+        $this->sales()->upsertAll([
+            $this->sale('DIAG-OVERFLOW', 'DIAG-OVERFLOW-1', 'DIAG-OVERFLOW', 'cancelled'),
+        ]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('DIAG-OVERFLOW-1', 'DIAG-OVERFLOW', 'cancelled', '2026-08-03 10:00:00'),
+        ]);
+        $this->returns()->upsertAll([
+            $this->returnFact(
+                'RET-DIAG-OVERFLOW-KNOWN',
+                'DIAG-OVERFLOW',
+                'DIAG-OVERFLOW-1',
+                'DIAG-OVERFLOW',
+                'Cancellation',
+                'Покупатель не забрал заказ',
+            ),
+            $this->returnFact(
+                'RET-DIAG-OVERFLOW-UNKNOWN',
+                'DIAG-OVERFLOW',
+                'DIAG-OVERFLOW-1',
+                'DIAG-OVERFLOW',
+                'Cancellation',
+                'Новая причина сверх количества продажи',
+            ),
+        ]);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $rawRows = (new UnclassifiedOzonBuyoutReasonsQuery($connection))
+            ->build($this->companyId->toRfc4122(), $this->accountId->toRfc4122(), 50)
+            ->executeQuery()
+            ->fetchAllAssociative();
+        $reasons = array_map(
+            static fn (array $row): ?string => UnclassifiedOzonBuyoutReasonsQuery::mapRow($row)->returnReasonName,
+            $rawRows,
+        );
+        sort($reasons);
+
+        self::assertSame([
+            'Новая причина сверх количества продажи',
+            'Покупатель не забрал заказ',
+        ], $reasons);
+    }
+
+    public function testPendingWithReturnEvidenceIsNotForecastAndRemainsDiagnostic(): void
+    {
+        $this->sales()->upsertAll([
+            $this->sale('PENDING-WITH-RETURN', 'PENDING-WITH-RETURN-1', 'PENDING-WITH-RETURN', 'awaiting_packaging'),
+        ]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('PENDING-WITH-RETURN-1', 'PENDING-WITH-RETURN', 'awaiting_packaging', '2026-08-03 10:00:00'),
+        ]);
+        $this->returns()->upsertAll([
+            $this->returnFact(
+                'RET-PENDING-WITH-RETURN',
+                'PENDING-WITH-RETURN',
+                'PENDING-WITH-RETURN-1',
+                'PENDING-WITH-RETURN',
+                'Cancellation',
+                'Новая причина при отстающем статусе',
+            ),
+        ]);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        self::assertSame([
+            'outcome' => null,
+            'is_forecast_eligible' => false,
+        ], $connection->fetchAssociative(
+            'SELECT outcome, is_forecast_eligible FROM buyout_outcome WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$this->companyId->toRfc4122(), $this->accountId->toRfc4122(), 'PENDING-WITH-RETURN-1|PENDING-WITH-RETURN'],
+        ));
+
+        $rawRows = (new UnclassifiedOzonBuyoutReasonsQuery($connection))
+            ->build($this->companyId->toRfc4122(), $this->accountId->toRfc4122(), 50)
+            ->executeQuery()
+            ->fetchAllAssociative();
+        self::assertCount(1, $rawRows);
+        self::assertSame(
+            'Новая причина при отстающем статусе',
+            UnclassifiedOzonBuyoutReasonsQuery::mapRow($rawRows[0])->returnReasonName,
+        );
+    }
+
     public function testSplitsPartialReturnQuantitiesInsteadOfColoringTheWholeSaleLine(): void
     {
         $sales = [
@@ -293,6 +378,123 @@ final class BuyoutOutcomeQueryTest extends KernelTestCase
         ], $connection->fetchAllAssociative(
             'SELECT outcome, quantity FROM buyout_outcome WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ? ORDER BY outcome NULLS LAST',
             [$this->companyId->toRfc4122(), $this->accountId->toRfc4122(), 'PARTIAL-P-1|PARTIAL-P'],
+        ));
+    }
+
+    public function testAllocatesOneReturnAcrossDuplicateOrderSkuSalesOnlyOnce(): void
+    {
+        $this->sales()->upsertAll([
+            $this->sale('DUPLICATE-SKU', 'DUPLICATE-SKU-1', 'DUPLICATE-ORDER', 'delivered'),
+            $this->sale('DUPLICATE-SKU', 'DUPLICATE-SKU-2', 'DUPLICATE-ORDER', 'delivered'),
+        ]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('DUPLICATE-SKU-1', 'DUPLICATE-ORDER', 'delivered', '2026-08-03 10:00:00'),
+            $this->postingStatus('DUPLICATE-SKU-2', 'DUPLICATE-ORDER', 'delivered', '2026-08-03 11:00:00'),
+        ]);
+        $this->returns()->upsertAll([
+            $this->returnFact(
+                'RET-DUPLICATE-SKU',
+                'DUPLICATE-SKU',
+                'RETURN-TRACE-DIFFERS',
+                'DUPLICATE-ORDER',
+                'ClientReturn',
+                'Возвращена только одна единица',
+            ),
+        ]);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        self::assertSame([
+            ['outcome' => 'D', 'quantity' => 1],
+            ['outcome' => 'R', 'quantity' => 1],
+        ], $connection->fetchAllAssociative(
+            'SELECT outcome, SUM(quantity)::int AS quantity FROM buyout_outcome WHERE company_id = ? AND marketplace_account_id = ? AND order_number = ? AND marketplace_sku = ? GROUP BY outcome ORDER BY outcome',
+            [$this->companyId->toRfc4122(), $this->accountId->toRfc4122(), 'DUPLICATE-ORDER', 'DUPLICATE-SKU'],
+        ));
+    }
+
+    public function testSplitsDifferentCancellationReasonsWithinOneSaleLine(): void
+    {
+        $this->sales()->upsertAll([
+            $this->sale('MIXED-REASONS', 'MIXED-REASONS-1', 'MIXED-REASONS-ORDER', 'cancelled', 2),
+            $this->sale('MIXED-SIBLING', 'MIXED-REASONS-2', 'MIXED-REASONS-ORDER', 'delivered'),
+        ]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('MIXED-REASONS-1', 'MIXED-REASONS-ORDER', 'cancelled', '2026-08-03 10:00:00'),
+            $this->postingStatus('MIXED-REASONS-2', 'MIXED-REASONS-ORDER', 'delivered', '2026-08-03 11:00:00'),
+        ]);
+        $this->returns()->upsertAll([
+            $this->returnFact(
+                'RET-MIXED-HANDOVER',
+                'MIXED-REASONS',
+                'MIXED-REASONS-1',
+                'MIXED-REASONS-ORDER',
+                'Cancellation',
+                'Покупатель отказался при вручении: товар не подошел',
+            ),
+            $this->returnFact(
+                'RET-MIXED-PICKUP',
+                'MIXED-REASONS',
+                'MIXED-REASONS-1',
+                'MIXED-REASONS-ORDER',
+                'Cancellation',
+                'Покупатель не забрал заказ',
+            ),
+        ]);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        self::assertSame([
+            ['outcome' => 'P', 'quantity' => 1],
+            ['outcome' => 'T2', 'quantity' => 1],
+        ], $connection->fetchAllAssociative(
+            'SELECT outcome, quantity FROM buyout_outcome WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ? ORDER BY outcome',
+            [$this->companyId->toRfc4122(), $this->accountId->toRfc4122(), 'MIXED-REASONS-1|MIXED-REASONS'],
+        ));
+    }
+
+    public function testGenericCancellationIsConservativeForDuplicateRowsWithDifferentLifecycle(): void
+    {
+        $sales = [];
+        $statuses = [];
+        $returns = [];
+        foreach ([
+            ['ORDER-PRE-FIRST', 'A-PRE', 'Z-HANDOVER'],
+            ['ORDER-HANDOVER-FIRST', 'Z-PRE', 'A-HANDOVER'],
+        ] as [$order, $prePosting, $handoverPosting]) {
+            $sku = 'HETEROGENEOUS-'.$order;
+            $sales[] = $this->sale($sku, $prePosting, $order, 'cancelled');
+            $sales[] = $this->sale($sku, $handoverPosting, $order, 'cancelled');
+            $statuses[] = $this->postingStatus($prePosting, $order, 'awaiting_packaging', '2026-08-01 09:00:00');
+            $statuses[] = $this->postingStatus($prePosting, $order, 'cancelled', '2026-08-03 10:00:00');
+            $statuses[] = $this->postingStatus($handoverPosting, $order, 'delivering', '2026-08-02 09:00:00');
+            $statuses[] = $this->postingStatus($handoverPosting, $order, 'cancelled', '2026-08-03 11:00:00');
+            $returns[] = $this->returnFact(
+                'RET-'.$order,
+                $sku,
+                'RETURN-TRACE-DIFFERS-'.$order,
+                $order,
+                'Cancellation',
+                'Покупатель отменил заказ',
+            );
+        }
+        $this->sales()->upsertAll($sales);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), $statuses);
+        $this->returns()->upsertAll($returns);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        self::assertSame([
+            ['order_number' => 'ORDER-HANDOVER-FIRST', 'outcome' => null, 'quantity' => 2],
+            ['order_number' => 'ORDER-PRE-FIRST', 'outcome' => null, 'quantity' => 2],
+        ], $connection->fetchAllAssociative(
+            'SELECT order_number, outcome, SUM(quantity)::int AS quantity FROM buyout_outcome WHERE company_id = ? AND marketplace_account_id = ? AND order_number IN (?, ?) GROUP BY order_number, outcome ORDER BY order_number, outcome NULLS LAST',
+            [
+                $this->companyId->toRfc4122(),
+                $this->accountId->toRfc4122(),
+                'ORDER-HANDOVER-FIRST',
+                'ORDER-PRE-FIRST',
+            ],
         ));
     }
 

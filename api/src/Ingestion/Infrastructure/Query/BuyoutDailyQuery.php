@@ -187,7 +187,7 @@ final readonly class BuyoutDailyQuery
             date: self::string($row['business_date'] ?? null),
             actualBuyoutRateBps: self::nullableInteger($row['actual_buyout_rate_bps'] ?? null),
             projectedBuyoutRateBps: self::nullableInteger($row['projected_buyout_rate_bps'] ?? null),
-            resolutionRateBps: self::integer($row['resolution_rate_bps'] ?? null),
+            resolutionRateBps: self::nullableInteger($row['resolution_rate_bps'] ?? null),
             orderedQuantity: self::integer($row['ordered_quantity'] ?? null),
             resolvedQuantity: self::integer($row['resolved_quantity'] ?? null),
             projectedBuyoutQuantity: self::nullableInteger($row['projected_buyout_quantity'] ?? null),

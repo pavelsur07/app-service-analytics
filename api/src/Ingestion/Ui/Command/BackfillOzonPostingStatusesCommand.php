@@ -105,7 +105,8 @@ final class BackfillOzonPostingStatusesCommand extends Command
             )->executeQuery()->fetchAllAssociative();
 
             foreach ($rawRows as $rawRow) {
-                $row = OzonPostingRawHistoryQuery::mapRow($rawRow);
+                [$rowId, $rowReceivedAt] = OzonPostingRawHistoryQuery::mapPageRow($rawRow);
+                $row = $this->rawHistory->fetchDocument($companyIdValue, $accountIdValue, $rowId);
                 [$statusCount, $insertedCount, $factCount] = $this->processRow(
                     $row,
                     $companyId,
@@ -117,8 +118,8 @@ final class BackfillOzonPostingStatusesCommand extends Command
                 $parsedStatuses += $statusCount;
                 $newStatuses += $insertedCount;
                 $parsedFacts += $factCount;
-                $cursorReceivedAt = $row->receivedAt;
-                $cursorId = $row->id;
+                $cursorReceivedAt = $rowReceivedAt;
+                $cursorId = $rowId;
             }
         } while (self::PAGE_SIZE === \count($rawRows));
 

@@ -6,6 +6,7 @@ namespace App\Tests\Integration\Ingestion;
 
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Infrastructure\Query\OzonPostingRawHistoryQuery;
 use App\Ingestion\Ui\Command\BackfillOzonPostingStatusesCommand;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use Doctrine\DBAL\Connection;
@@ -25,6 +26,18 @@ final class BackfillOzonPostingStatusesCommandTest extends KernelTestCase
         $accountId = Uuid::v7();
         $foreignCompanyId = Uuid::v7();
         $repository = $this->rawDocuments();
+
+        /** @var OzonPostingRawHistoryQuery $history */
+        $history = self::getContainer()->get(OzonPostingRawHistoryQuery::class);
+        self::assertStringNotContainsString('body', $history->build(
+            $companyId->toRfc4122(),
+            $accountId->toRfc4122(),
+            new \DateTimeImmutable('2026-08-29 21:00:00'),
+            new \DateTimeImmutable('2026-08-30 21:00:00'),
+            null,
+            null,
+            100,
+        )->getSQL());
 
         // Вставка намеренно в обратном порядке: порядок backfill обязан
         // определяться received_at, не порядком чтения/UUID.

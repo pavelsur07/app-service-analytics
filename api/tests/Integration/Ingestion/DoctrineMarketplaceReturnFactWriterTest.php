@@ -114,6 +114,37 @@ final class DoctrineMarketplaceReturnFactWriterTest extends KernelTestCase
         self::assertSame($newRawId->toRfc4122(), $row['raw_document_id']);
     }
 
+    public function testReplayingTheSameRawCanRepairAChangedParserResult(): void
+    {
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $rawId = Uuid::v7();
+        $base = MarketplaceReturnFactBuilder::aMarketplaceReturnFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withRawDocumentId($rawId);
+
+        $this->writer->upsertAll([
+            $base->withReturnReasonName('Старый результат parser')->build(),
+        ]);
+        $this->writer->upsertAll([
+            $base
+                ->withReturnReasonName('Исправленный результат parser')
+                ->withVisualStatus(1, 'Completed', new \DateTimeImmutable('2026-08-10T10:00:00Z'))
+                ->build(),
+        ]);
+
+        $row = $this->connection->fetchAssociative(
+            'SELECT return_reason_name, visual_status_changed_at, raw_document_id FROM marketplace_return_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$companyId->toRfc4122(), $accountId->toRfc4122(), '900001'],
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame('Исправленный результат parser', $row['return_reason_name']);
+        self::assertSame('2026-08-10 10:00:00', $row['visual_status_changed_at']);
+        self::assertSame($rawId->toRfc4122(), $row['raw_document_id']);
+    }
+
     public function testDifferentReturnIdsForSameOrderAndSkuRemainSeparateFacts(): void
     {
         $companyId = Uuid::v7();

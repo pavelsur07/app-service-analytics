@@ -13,7 +13,7 @@ final readonly class BuyoutDailyPointResponse
         public string $date,
         public ?int $actualBuyoutRateBps,
         public ?int $projectedBuyoutRateBps,
-        public int $resolutionRateBps,
+        public ?int $resolutionRateBps,
         public int $orderedQuantity,
         public int $resolvedQuantity,
         public ?int $projectedBuyoutQuantity,

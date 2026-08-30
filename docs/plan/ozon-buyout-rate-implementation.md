@@ -244,7 +244,11 @@ ADR должен принять следующие решения:
 8. Для прогноза используется та же семантика P: pre-handover ставка
    `D / (T1 + D + T2 + P)`, post-handover — `D / (D + T2 + P)`. Вариант из
    постановки без P отвергается: он систематически завысил бы прогноз.
-9. Наблюдения агрегируются по quantity. Все API rates — nullable integer bps.
+9. Наблюдения агрегируются по quantity. Новые `sales_fact` обязаны иметь
+   `quantity > 0`; приложение отвергает иной input, БД применяет
+   `CHECK ... NOT VALID`, чтобы rolling migration не сканировала и не
+   блокировалась на возможных legacy-строках. Все API rates — nullable integer
+   bps.
 10. `ClientReturn` после D классифицируется R. У `Cancellation` первичен
     доказанный handover из status history; явно стадийные `return_reason_name`
     дополняют историю. `HANDOVER_REFUSAL` становится P только при delivered
@@ -353,9 +357,18 @@ marketplace_posting_status
 - `(company_id, marketplace_account_id, posting_number)`;
 - `(company_id, marketplace_account_id, order_number, marketplace_sku)`.
 
+Также добавляется `chk_sales_fact_quantity_positive CHECK (quantity > 0)
+NOT VALID`: он сразу защищает новые/изменяемые строки, но не требует полного
+сканирования legacy-таблицы в этой миграции. После отдельного аудита старых
+строк constraint валидируется операционной командой.
+
 Колонки nullable намеренно: старая версия приложения продолжит вставлять строки
 во время rolling deploy, а исторические значения заполнит backfill пакета 2.
-Миграция не разбирает JSON и не держит table lock ради backfill.
+Миграция не разбирает JSON и не держит table lock ради backfill. Поскольку она
+non-transactional из-за `CREATE INDEX CONCURRENTLY`, каждый шаг повторяем:
+DDL использует `IF [NOT] EXISTS`, seed — `ON CONFLICT DO UPDATE`, view —
+`CREATE OR REPLACE`, а concurrent index перед созданием удаляется, включая
+оставшийся после сбоя invalid index.
 
 Проверить:
 
@@ -528,7 +541,9 @@ marketplace_sku)` и `(company_id, visual_status_changed_at)`. `source_row_id` �
 `sales_fact.business_date`. `posting_number` не называется child posting — API
 не даёт такой семантики и в трёх живых строках он расходится с исходным.
 
-Writer — bulk upsert с `WHERE row_hash IS DISTINCT FROM`; row hash включает
+Writer — bulk upsert с `WHERE row_hash IS DISTINCT FROM`; повтор того же raw ID
+может исправить результат изменившегося parser, а raw с более старым
+`visual_status_changed_at` не перезаписывает свежий snapshot. Row hash включает
 type, reason, link fields, quantity и visual status/timestamp. Тесты покрывают
 повтор, изменение visual status, повторную `(order, sku)` с другим return ID,
 mixed tenant и trace на raw.
@@ -664,13 +679,23 @@ outcome nullable, handed_over_at nullable, resolved_at nullable
    `(observed_at DESC, raw_document_id DESC)`.
 2. Отдельные агрегаты находят первый handover и первый terminal timestamp.
 3. `delivered` без return → D; `ClientReturn` связанной delivered SKU → R.
-   Return evidence сначала агрегируется по quantity. Частичный возврат или
+   Return evidence сначала агрегируется по quantity. Затем оно один раз
+   распределяется по упорядоченным sales-строкам одной
+   `(company, account, order, sku)`, поэтому один return не дублируется при
+   нескольких posting. Разные event stage внутри одной sales-строки дают
+   несколько аллокаций (например, `P:1` и `T2:1`). Частичный возврат или
    отмена классифицирует только подтверждённое количество, остаток сохраняет
    D либо `NULL`; вся sales-строка не перекрашивается по одному return event.
+   Позиция считается коррелированным prefix scan по индексированному ключу
+   order/SKU, а не `WindowAgg` по всей tenant history: фильтр периода должен
+   проталкиваться к исходному `sales_fact.business_date`.
 4. Terminal cancellation получает T1, только если история содержит хотя бы
    одно pre-handover наблюдение и до terminal не содержит handover. Наличие
    handover, `PICKUP_EXPIRED` или `DELIVERY_FAILED` даёт T2. Одна terminal
    строка с общей причиной `CANCELLED` не доказывает T1 и остаётся unknown.
+   Если duplicate `(order, sku)` имеют разный lifecycle, общий `CANCELLED`
+   и остаток группы остаются `NULL`: без надёжной связи return с posting
+   лексикографический порядок не должен менять denominator метрики.
 5. `Cancellation + HANDOVER_REFUSAL` по точному `(company, account,
    order_number, sku)` получает P, если sibling SKU того же order уже имеет
    D или R. Если все siblings разрешились и D/R нет — это T2; пока sibling
@@ -684,12 +709,18 @@ Synthetic integration fixtures обязаны покрыть: multi-SKU order с
 `HANDOVER_REFUSAL` одной позиции и delivered sibling; такой же отказ без
 delivered sibling; sibling, который пока unresolved; `ClientReturn` после D;
 T1 до handover; T2 после handover; delivery; pending; ambiguous reason без
-history; одинаковый order number в чужой компании. Тест также сверяет quantity
-и timestamps.
+history; одинаковый order number в чужой компании; один return для двух
+sales-строк той же `(order, sku)`; разные причины для quantity=2 одной строки.
+Тест также сверяет quantity и timestamps.
 
 `UnclassifiedOzonBuyoutReasonsQuery` возвращает distinct
 type/reason/status/substatus/cancel reason ID, число затронутых строк и
-первую/последнюю дату для операционного контроля.
+первую/последнюю дату для операционного контроля. Unmapped Cancellation и
+`SUM(return quantity) > SUM(sales quantity)` диагностируются напрямую, даже
+если известная часть evidence уже заполнила outcome всей sales quantity.
+Pending-статус скрывается как нормальный хвост только при отсутствии return
+evidence; если returns ingestion опередил posting ingestion, evidence остаётся
+в диагностике, а строка до согласования источников не участвует в прогнозе.
 
 Проверка:
 
@@ -1046,6 +1077,10 @@ git commit -m "feat: add Ozon buyout rate screen"
 2. На production-like копии:
 
    - применить единую миграцию `Version20260901090000`;
+   - повторно выполнить её `up` после имитации partial retry и убедиться, что
+     схема/seed/view не дублируются;
+   - проверить legacy `sales_fact.quantity <= 0`, исправить найденные строки и
+     выполнить `VALIDATE CONSTRAINT chk_sales_fact_quantity_positive`;
    - выполнить posting и returns backfill;
    - повторить backfill и получить 0 новых history rows;
    - выполнить `EXPLAIN (ANALYZE, BUFFERS)` list/daily для 90 дней;

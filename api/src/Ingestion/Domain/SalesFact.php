@@ -137,6 +137,9 @@ class SalesFact
         ?string $postingNumber = null,
         ?string $orderNumber = null,
     ): self {
+        if ($quantity <= 0) {
+            throw new \InvalidArgumentException('Sales fact quantity must be positive.');
+        }
         if ($amount->currency() !== $commissionAmount->currency()) {
             throw new \InvalidArgumentException('Amount and commission amount must share the same currency.');
         }

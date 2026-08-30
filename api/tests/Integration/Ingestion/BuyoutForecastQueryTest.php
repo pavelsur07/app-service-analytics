@@ -153,6 +153,47 @@ final class BuyoutForecastQueryTest extends KernelTestCase
         self::assertNotNull($rows['WAIT-SIBLING']->projectedBuyoutQuantity);
     }
 
+    public function testPendingWithReturnEvidenceDoesNotReceiveForecast(): void
+    {
+        $this->sales()->upsertAll([
+            $this->sale(
+                $this->accountId,
+                'PENDING-WITH-RETURN',
+                'PENDING-WITH-RETURN',
+                'PENDING-WITH-RETURN',
+                'awaiting_packaging',
+                4,
+                '2026-08-30',
+            ),
+        ]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus(
+                $this->accountId,
+                'PENDING-WITH-RETURN',
+                'PENDING-WITH-RETURN',
+                'awaiting_packaging',
+                '2026-08-30 09:00:00',
+            ),
+        ]);
+        $this->returns()->upsertAll([
+            MarketplaceReturnFactBuilder::aMarketplaceReturnFact()
+                ->withCompanyId($this->companyId)
+                ->withMarketplaceAccountId($this->accountId)
+                ->withSourceRowId('RET-PENDING-WITH-RETURN')
+                ->withPostingNumber('PENDING-WITH-RETURN')
+                ->withOrderNumber('PENDING-WITH-RETURN')
+                ->withMarketplaceSku('PENDING-WITH-RETURN')
+                ->withReturnReasonName('Новая причина при отстающем статусе')
+                ->build(),
+        ]);
+
+        $row = $this->rows()['PENDING-WITH-RETURN'];
+        self::assertSame(4, $row->orderedQuantity);
+        self::assertSame(0, $row->resolvedQuantity);
+        self::assertNull($row->projectedBuyoutQuantity);
+        self::assertNull($row->projectedBuyoutRateBps);
+    }
+
     private function seedTrainingAndCurrentCohort(): void
     {
         $facts = [];

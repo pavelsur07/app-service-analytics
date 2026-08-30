@@ -28,6 +28,23 @@ final readonly class UnclassifiedOzonBuyoutReasonsQuery
                 FROM marketplace_posting_status
                 ORDER BY company_id, marketplace_account_id, posting_number,
                          observed_at DESC, raw_document_id DESC
+            ),
+            return_totals AS (
+                SELECT company_id, marketplace_account_id, order_number, marketplace_sku,
+                       SUM(quantity)::bigint AS return_quantity
+                FROM marketplace_return_fact
+                WHERE company_id = :companyId
+                  AND marketplace_account_id = :accountId
+                GROUP BY company_id, marketplace_account_id, order_number, marketplace_sku
+            ),
+            sales_totals AS (
+                SELECT company_id, marketplace_account_id, order_number, marketplace_sku,
+                       SUM(quantity)::bigint AS sales_quantity
+                FROM sales_fact
+                WHERE company_id = :companyId
+                  AND marketplace_account_id = :accountId
+                  AND order_number IS NOT NULL
+                GROUP BY company_id, marketplace_account_id, order_number, marketplace_sku
             )
             SELECT r.return_type,
                    r.return_reason_name,
@@ -51,14 +68,45 @@ final readonly class UnclassifiedOzonBuyoutReasonsQuery
              AND r.marketplace_account_id = s.marketplace_account_id
              AND r.order_number = s.order_number
              AND r.marketplace_sku = s.marketplace_sku
+            LEFT JOIN ozon_return_reason_classification c
+              ON c.return_type = r.return_type
+             AND c.return_reason_name = r.return_reason_name
+            LEFT JOIN return_totals rt
+              ON rt.company_id = s.company_id
+             AND rt.marketplace_account_id = s.marketplace_account_id
+             AND rt.order_number = s.order_number
+             AND rt.marketplace_sku = s.marketplace_sku
+            LEFT JOIN sales_totals st
+              ON st.company_id = s.company_id
+             AND st.marketplace_account_id = s.marketplace_account_id
+             AND st.order_number = s.order_number
+             AND st.marketplace_sku = s.marketplace_sku
             WHERE o.company_id = :companyId
               AND o.marketplace_account_id = :accountId
-              AND o.outcome IS NULL
-              AND NOT COALESCE(
-                  (l.status = 'awaiting_packaging' AND l.substatus = 'posting_created')
-                  OR (l.status = 'awaiting_deliver' AND l.substatus = 'posting_transferring_to_delivery')
-                  OR (l.status = 'delivering' AND l.substatus IN ('posting_in_pickup_point', 'posting_on_way_to_city')),
-                  FALSE
+              AND (
+                  (
+                      o.outcome IS NULL
+                      AND NOT COALESCE(
+                          (l.status = 'awaiting_packaging' AND l.substatus = 'posting_created')
+                          OR (l.status = 'awaiting_deliver' AND l.substatus = 'posting_transferring_to_delivery')
+                          OR (l.status = 'delivering' AND l.substatus IN ('posting_in_pickup_point', 'posting_on_way_to_city')),
+                          FALSE
+                      )
+                  )
+                  OR (
+                      r.return_type = 'Cancellation'
+                      AND c.return_type IS NULL
+                  )
+                  OR COALESCE(rt.return_quantity, 0) > COALESCE(st.sales_quantity, 0)
+                  OR (
+                      COALESCE(rt.return_quantity, 0) > 0
+                      AND COALESCE(
+                          (l.status = 'awaiting_packaging' AND l.substatus = 'posting_created')
+                          OR (l.status = 'awaiting_deliver' AND l.substatus = 'posting_transferring_to_delivery')
+                          OR (l.status = 'delivering' AND l.substatus IN ('posting_in_pickup_point', 'posting_on_way_to_city')),
+                          FALSE
+                      )
+                  )
               )
             GROUP BY r.return_type, r.return_reason_name,
                      l.status, l.substatus, l.cancel_reason_id

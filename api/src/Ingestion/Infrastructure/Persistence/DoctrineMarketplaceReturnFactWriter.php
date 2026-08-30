@@ -86,8 +86,11 @@ final readonly class DoctrineMarketplaceReturnFactWriter implements MarketplaceR
                 row_hash = EXCLUDED.row_hash,
                 last_updated_at = EXCLUDED.last_updated_at
             WHERE marketplace_return_fact.row_hash IS DISTINCT FROM EXCLUDED.row_hash
-              AND (marketplace_return_fact.visual_status_changed_at, marketplace_return_fact.raw_document_id)
-                  < (EXCLUDED.visual_status_changed_at, EXCLUDED.raw_document_id)
+              AND (
+                  marketplace_return_fact.raw_document_id = EXCLUDED.raw_document_id
+                  OR (marketplace_return_fact.visual_status_changed_at, marketplace_return_fact.raw_document_id)
+                     < (EXCLUDED.visual_status_changed_at, EXCLUDED.raw_document_id)
+              )
             SQL;
 
         $this->connection->executeStatement($sql, $parameters);

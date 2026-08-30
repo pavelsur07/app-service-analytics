@@ -29,7 +29,10 @@ final readonly class OzonPostingRawHistoryQuery
         int $limit,
     ): QueryBuilder {
         $query = $this->connection->createQueryBuilder()
-            ->select('id', 'body', 'received_at')
+            // Страница держит в памяти только keyset-метаданные. JSON body
+            // загружается отдельно для одной строки непосредственно перед
+            // разбором, поэтому размер страницы не умножает объём raw JSON.
+            ->select('id', 'received_at')
             ->from('marketplace_raw_document')
             ->where('company_id = :companyId')
             ->andWhere('marketplace_account_id = :marketplaceAccountId')
@@ -52,6 +55,47 @@ final readonly class OzonPostingRawHistoryQuery
         }
 
         return $query;
+    }
+
+    public function fetchDocument(string $companyId, string $marketplaceAccountId, Uuid $id): OzonPostingRawHistoryRow
+    {
+        $row = $this->connection->createQueryBuilder()
+            ->select('id', 'body', 'received_at')
+            ->from('marketplace_raw_document')
+            ->where('company_id = :companyId')
+            ->andWhere('marketplace_account_id = :marketplaceAccountId')
+            ->andWhere('report_type = :reportType')
+            ->andWhere('id = :id')
+            ->setParameter('companyId', $companyId)
+            ->setParameter('marketplaceAccountId', $marketplaceAccountId)
+            ->setParameter('reportType', MarketplaceReportType::OzonPostingFboList)
+            ->setParameter('id', $id->toRfc4122())
+            ->executeQuery()
+            ->fetchAssociative();
+        if (false === $row) {
+            throw new \UnexpectedValueException('Ozon posting raw document disappeared during backfill.');
+        }
+
+        return self::mapRow($row);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     *
+     * @return array{Uuid, \DateTimeImmutable}
+     */
+    public static function mapPageRow(array $row): array
+    {
+        $id = $row['id'] ?? null;
+        $receivedAt = $row['received_at'] ?? null;
+        if ((!\is_string($id) && !$id instanceof Uuid) || !\is_string($receivedAt)) {
+            throw new \UnexpectedValueException('Malformed Ozon posting raw history page row.');
+        }
+
+        return [
+            $id instanceof Uuid ? $id : Uuid::fromString($id),
+            new \DateTimeImmutable($receivedAt),
+        ];
     }
 
     /**

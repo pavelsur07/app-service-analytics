@@ -10,7 +10,7 @@ final readonly class BuyoutDailyRow
         public string $date,
         public ?int $actualBuyoutRateBps,
         public ?int $projectedBuyoutRateBps,
-        public int $resolutionRateBps,
+        public ?int $resolutionRateBps,
         public int $orderedQuantity,
         public int $resolvedQuantity,
         public ?int $projectedBuyoutQuantity,
