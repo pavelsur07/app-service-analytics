@@ -708,9 +708,9 @@ app/        ← импортирует что угодно; из него не �
 | OpenAPI | `nelmio/api-doc-bundle` | схема генерируется из кода |
 | Миграции | `doctrine/doctrine-migrations-bundle` | стандартный выбор для Doctrine; `migrations/` — одна папка на проект |
 | Тесты | `phpunit/phpunit`, `dama/doctrine-test-bundle` | второй даёт откат транзакции между тестами |
-| Анализ | `phpstan/phpstan` + `phpstan-doctrine` + `phpstan-strict-rules` | level 9 |
+| Анализ | `phpstan/phpstan` + `phpstan-doctrine` + `phpstan-strict-rules` | level 9 при `treatPhpDocTypesAsCertain: false`. Умолчание `true` заставляет анализатор верить PHPDoc больше, чем рантайму, и снимать проверку типа как избыточную — а данные приходят из БД и от площадок, где аннотация расходится с фактом молча. Baseline пустой |
 | Границы | `deptrac/deptrac` | проверяет зависимости модулей; пакет переименован с `qossmic/deptrac` — старое имя объявлено abandoned на момент установки (Stage 2) |
-| Стиль | `friendsofphp/php-cs-fixer` | |
+| Стиль | `friendsofphp/php-cs-fixer` | `@PER-CS3.0` + `@Symfony`. PER-CS сменил PSR-12 как действующий стиль PHP-FIG; ревизия закреплена, плавающий алиас `@PER-CS` менял бы форматирование на минорном обновлении фиксера |
 
 **Чего не берём**
 
