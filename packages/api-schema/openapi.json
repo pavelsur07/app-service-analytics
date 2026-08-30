@@ -585,6 +585,87 @@
                 }
             }
         },
+        "/api/companies/{companyId}/buyout-rate": {
+            "get": {
+                "operationId": "get_ingestion_buyout_rate_list",
+                "parameters": [
+                    {
+                        "name": "days",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 30,
+                            "enum": [
+                                7,
+                                30,
+                                90
+                            ]
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 200,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u041f\u0440\u043e\u0446\u0435\u043d\u0442 \u0432\u044b\u043a\u0443\u043f\u0430 \u0438 \u043f\u0440\u043e\u0433\u043d\u043e\u0437 \u043f\u043e SKU",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BuyoutRateListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0435 days, limit \u0438\u043b\u0438 cursor",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/extension/companies/{companyId}/skus": {
             "get": {
                 "operationId": "get_ingestion_extension_company_skus",
@@ -1012,6 +1093,77 @@
                     },
                     "403": {
                         "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/buyout-rate/{sku}/daily": {
+            "get": {
+                "operationId": "get_ingestion_buyout_rate_daily",
+                "parameters": [
+                    {
+                        "name": "days",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 30,
+                            "enum": [
+                                7,
+                                30,
+                                90
+                            ]
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "sku",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[^/]+"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u0414\u043d\u0435\u0432\u043d\u043e\u0439 \u0440\u044f\u0434 actual/projected \u043e\u0434\u043d\u043e\u0439 SKU",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BuyoutDailyResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0435 days \u0438\u043b\u0438 SKU",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -1863,6 +2015,126 @@
                 },
                 "type": "object"
             },
+            "BuyoutRateSummaryResponse": {
+                "required": [
+                    "orderedQuantity",
+                    "resolvedQuantity",
+                    "projectedBuyoutQuantity",
+                    "projectedBuyoutRateBps",
+                    "resolutionRateBps"
+                ],
+                "properties": {
+                    "orderedQuantity": {
+                        "type": "integer"
+                    },
+                    "resolvedQuantity": {
+                        "type": "integer"
+                    },
+                    "projectedBuyoutQuantity": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "projectedBuyoutRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "resolutionRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "BuyoutRateItemResponse": {
+                "required": [
+                    "marketplaceSku",
+                    "offerId",
+                    "name",
+                    "orderedQuantity",
+                    "resolvedQuantity",
+                    "projectedBuyoutQuantity",
+                    "projectedBuyoutRateBps",
+                    "t1RateBps",
+                    "t2RateBps",
+                    "partialReturnRateBps",
+                    "maturityStatus",
+                    "resolutionRateBps"
+                ],
+                "properties": {
+                    "marketplaceSku": {
+                        "type": "string"
+                    },
+                    "offerId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "orderedQuantity": {
+                        "type": "integer"
+                    },
+                    "resolvedQuantity": {
+                        "type": "integer"
+                    },
+                    "projectedBuyoutQuantity": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "projectedBuyoutRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "t1RateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "t2RateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "partialReturnRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "maturityStatus": {
+                        "type": "string",
+                        "enum": [
+                            "mature",
+                            "preliminary"
+                        ]
+                    },
+                    "resolutionRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "BuyoutRateListResponse": {
+                "required": [
+                    "summary",
+                    "items",
+                    "nextCursor"
+                ],
+                "properties": {
+                    "summary": {
+                        "$ref": "#/components/schemas/BuyoutRateSummaryResponse"
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/BuyoutRateItemResponse"
+                        }
+                    },
+                    "nextCursor": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
             "CompanySkuListResponse": {
                 "required": [
                     "items"
@@ -2103,6 +2375,62 @@
                     },
                     "state": {
                         "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "BuyoutDailyPointResponse": {
+                "required": [
+                    "date",
+                    "actualBuyoutRateBps",
+                    "projectedBuyoutRateBps",
+                    "resolutionRateBps",
+                    "orderedQuantity",
+                    "resolvedQuantity",
+                    "projectedBuyoutQuantity"
+                ],
+                "properties": {
+                    "date": {
+                        "type": "string"
+                    },
+                    "actualBuyoutRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "projectedBuyoutRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "resolutionRateBps": {
+                        "type": "integer"
+                    },
+                    "orderedQuantity": {
+                        "type": "integer"
+                    },
+                    "resolvedQuantity": {
+                        "type": "integer"
+                    },
+                    "projectedBuyoutQuantity": {
+                        "type": "integer",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "BuyoutDailyResponse": {
+                "required": [
+                    "marketplaceSku",
+                    "series"
+                ],
+                "properties": {
+                    "marketplaceSku": {
+                        "type": "string"
+                    },
+                    "series": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/BuyoutDailyPointResponse"
+                        }
                     }
                 },
                 "type": "object"
