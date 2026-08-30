@@ -15,4 +15,12 @@ interface SalesFactRepository
      * @param list<SalesFact> $facts
      */
     public function upsertAll(array $facts): void;
+
+    /**
+     * Восстанавливает отсутствующие posting/order links из исторического raw,
+     * не откатывая mutable snapshot уже существующей sales_fact.
+     *
+     * @param list<SalesFact> $facts
+     */
+    public function backfillLinks(string $companyId, array $facts): void;
 }

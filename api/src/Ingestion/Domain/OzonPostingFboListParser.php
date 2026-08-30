@@ -58,6 +58,7 @@ final class OzonPostingFboListParser
         \DateTimeZone $timezone,
     ): array {
         $postingNumber = self::requireString($posting, 'posting_number');
+        $orderNumber = self::requireString($posting, 'order_number');
         $status = self::requireString($posting, 'status');
         $inProcessAt = self::requireString($posting, 'in_process_at');
 
@@ -118,6 +119,8 @@ final class OzonPostingFboListParser
                 amount: self::money(self::requireNumber($financial, 'price')),
                 commissionAmount: self::money(self::requireNumber($financial, 'commission_amount')),
                 rawDocumentId: $rawDocumentId,
+                postingNumber: $postingNumber,
+                orderNumber: $orderNumber,
             );
         }
 

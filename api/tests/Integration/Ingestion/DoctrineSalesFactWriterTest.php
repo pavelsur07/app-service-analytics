@@ -144,4 +144,87 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
         self::assertEquals(1_000, $amountA);
         self::assertEquals(2_000, $amountB);
     }
+
+    public function testUpsertPersistsAndUpdatesPostingAndOrderLinks(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $writer = new DoctrineSalesFactWriter($connection);
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $base = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId('P-LINK|SKU-1');
+
+        $writer->upsertAll([
+            $base
+                ->withPostingNumber('P-LINK-OLD')
+                ->withOrderNumber('ORDER-LINK-OLD')
+                ->build(),
+        ]);
+        $writer->upsertAll([
+            $base
+                ->withPostingNumber('P-LINK-NEW')
+                ->withOrderNumber('ORDER-LINK-NEW')
+                ->build(),
+        ]);
+
+        $row = $connection->fetchAssociative(
+            'SELECT posting_number, order_number FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$companyId->toRfc4122(), $accountId->toRfc4122(), 'P-LINK|SKU-1'],
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame('P-LINK-NEW', $row['posting_number']);
+        self::assertSame('ORDER-LINK-NEW', $row['order_number']);
+    }
+
+    public function testBackfillLinksDoesNotRollBackTheCurrentSalesSnapshot(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $writer = new DoctrineSalesFactWriter($connection);
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $currentRawId = Uuid::v7();
+        $base = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId('BACKFILL-1|100001')
+            ->withMarketplaceSku('100001');
+
+        $writer->upsertAll([
+            $base
+                ->withStatus('delivered')
+                ->withPostingNumber(null)
+                ->withOrderNumber(null)
+                ->withRawDocumentId($currentRawId)
+                ->build(),
+        ]);
+
+        $writer->backfillLinks($companyId->toRfc4122(), [
+            $base
+                ->withStatus('awaiting_packaging')
+                ->withPostingNumber('BACKFILL-1')
+                ->withOrderNumber('BACKFILL')
+                ->withRawDocumentId(Uuid::v7())
+                ->build(),
+        ]);
+
+        $row = $connection->fetchAssociative(
+            'SELECT status, raw_document_id, posting_number, order_number FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$companyId->toRfc4122(), $accountId->toRfc4122(), 'BACKFILL-1|100001'],
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame('delivered', $row['status']);
+        self::assertSame($currentRawId->toRfc4122(), $row['raw_document_id']);
+        self::assertSame('BACKFILL-1', $row['posting_number']);
+        self::assertSame('BACKFILL', $row['order_number']);
+    }
 }

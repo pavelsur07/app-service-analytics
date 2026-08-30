@@ -10,6 +10,7 @@ use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Ingestion\Application\DispatchActiveOzonSyncsAction;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
+use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -90,6 +91,20 @@ final class PostingsWindowTest extends KernelTestCase
         self::assertSame($this->days(3), $expenseDates);
     }
 
+    public function testOrdinaryTickDispatchesOneThreeDayReturnsWindow(): void
+    {
+        $ranges = $this->returnRanges($this->actionWithRescanAt($this->hourThatIsNotNow()));
+
+        self::assertSame([[$this->days(3)[2], $this->days(3)[0]]], $ranges);
+    }
+
+    public function testRescanTickDispatchesOneNinetyDayReturnsWindow(): void
+    {
+        $ranges = $this->returnRanges($this->actionWithRescanAt($this->hourNow()));
+
+        self::assertSame([[$this->days(90)[89], $this->days(90)[0]]], $ranges);
+    }
+
     /**
      * @return list<string>
      */
@@ -106,6 +121,24 @@ final class PostingsWindowTest extends KernelTestCase
         }
 
         return $dates;
+    }
+
+    /**
+     * @return list<array{string, string}>
+     */
+    private function returnRanges(DispatchActiveOzonSyncsAction $action): array
+    {
+        ($action)();
+
+        $ranges = [];
+        foreach ($this->transport()->getSent() as $envelope) {
+            $message = $envelope->getMessage();
+            if ($message instanceof FetchOzonReturnsMessage) {
+                $ranges[] = [$message->from, $message->to];
+            }
+        }
+
+        return $ranges;
     }
 
     /**

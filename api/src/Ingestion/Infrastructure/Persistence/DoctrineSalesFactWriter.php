@@ -34,6 +34,69 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
         }
     }
 
+    public function backfillLinks(string $companyId, array $facts): void
+    {
+        foreach (array_chunk($facts, self::CHUNK_SIZE) as $chunk) {
+            $this->backfillLinksChunk($companyId, $chunk);
+        }
+    }
+
+    /**
+     * @param list<SalesFact> $facts
+     */
+    private function backfillLinksChunk(string $companyId, array $facts): void
+    {
+        if ([] === $facts) {
+            return;
+        }
+
+        $valuesSql = [];
+        $params = [];
+        foreach ($facts as $i => $fact) {
+            if ($fact->companyId()->toRfc4122() !== $companyId) {
+                throw new \InvalidArgumentException('Sales fact belongs to another company.');
+            }
+
+            $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :sourceRowId{$i}, :businessDate{$i}, "
+                .":status{$i}, :marketplaceSku{$i}, :quantity{$i}, :amountMinor{$i}, :commissionAmountMinor{$i}, "
+                .":currency{$i}, :rawDocumentId{$i}, :rowHash{$i}, :firstLoadedAt{$i}, :lastUpdatedAt{$i}, "
+                .":postingNumber{$i}, :orderNumber{$i})";
+
+            $params["companyId{$i}"] = $companyId;
+            $params["marketplaceAccountId{$i}"] = $fact->marketplaceAccountId()->toRfc4122();
+            $params["sourceRowId{$i}"] = $fact->sourceRowId();
+            $params["businessDate{$i}"] = $fact->businessDate()->format('Y-m-d');
+            $params["status{$i}"] = $fact->status();
+            $params["marketplaceSku{$i}"] = $fact->marketplaceSku();
+            $params["quantity{$i}"] = $fact->quantity();
+            $params["amountMinor{$i}"] = $fact->amount()->minorAmount();
+            $params["commissionAmountMinor{$i}"] = $fact->commissionAmount()->minorAmount();
+            $params["currency{$i}"] = $fact->amount()->currency();
+            $params["rawDocumentId{$i}"] = $fact->rawDocumentId()->toRfc4122();
+            $params["rowHash{$i}"] = $fact->rowHash();
+            $params["firstLoadedAt{$i}"] = $fact->firstLoadedAt()->format('Y-m-d H:i:sP');
+            $params["lastUpdatedAt{$i}"] = $fact->lastUpdatedAt()->format('Y-m-d H:i:sP');
+            $params["postingNumber{$i}"] = $fact->postingNumber();
+            $params["orderNumber{$i}"] = $fact->orderNumber();
+        }
+
+        $sql = <<<SQL
+            INSERT INTO sales_fact
+                (company_id, marketplace_account_id, source_row_id, business_date, status, marketplace_sku,
+                 quantity, amount_minor, commission_amount_minor, currency, raw_document_id, row_hash,
+                 first_loaded_at, last_updated_at, posting_number, order_number)
+            VALUES {$this->joinValues($valuesSql)}
+            ON CONFLICT (company_id, marketplace_account_id, source_row_id)
+            DO UPDATE SET
+                posting_number = COALESCE(sales_fact.posting_number, EXCLUDED.posting_number),
+                order_number = COALESCE(sales_fact.order_number, EXCLUDED.order_number)
+            WHERE (sales_fact.posting_number IS NULL AND EXCLUDED.posting_number IS NOT NULL)
+               OR (sales_fact.order_number IS NULL AND EXCLUDED.order_number IS NOT NULL)
+            SQL;
+
+        $this->connection->executeStatement($sql, $params);
+    }
+
     /**
      * @param list<SalesFact> $facts
      */
@@ -48,7 +111,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
         foreach ($facts as $i => $fact) {
             $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :sourceRowId{$i}, :businessDate{$i}, "
                 .":status{$i}, :marketplaceSku{$i}, :quantity{$i}, :amountMinor{$i}, :commissionAmountMinor{$i}, "
-                .":currency{$i}, :rawDocumentId{$i}, :rowHash{$i}, :firstLoadedAt{$i}, :lastUpdatedAt{$i})";
+                .":currency{$i}, :rawDocumentId{$i}, :rowHash{$i}, :firstLoadedAt{$i}, :lastUpdatedAt{$i}, "
+                .":postingNumber{$i}, :orderNumber{$i})";
 
             $params["companyId{$i}"] = $fact->companyId()->toRfc4122();
             $params["marketplaceAccountId{$i}"] = $fact->marketplaceAccountId()->toRfc4122();
@@ -64,13 +128,15 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             $params["rowHash{$i}"] = $fact->rowHash();
             $params["firstLoadedAt{$i}"] = $fact->firstLoadedAt()->format('Y-m-d H:i:sP');
             $params["lastUpdatedAt{$i}"] = $fact->lastUpdatedAt()->format('Y-m-d H:i:sP');
+            $params["postingNumber{$i}"] = $fact->postingNumber();
+            $params["orderNumber{$i}"] = $fact->orderNumber();
         }
 
         $sql = <<<SQL
             INSERT INTO sales_fact
                 (company_id, marketplace_account_id, source_row_id, business_date, status, marketplace_sku,
                  quantity, amount_minor, commission_amount_minor, currency, raw_document_id, row_hash,
-                 first_loaded_at, last_updated_at)
+                 first_loaded_at, last_updated_at, posting_number, order_number)
             VALUES {$this->joinValues($valuesSql)}
             ON CONFLICT (company_id, marketplace_account_id, source_row_id)
             DO UPDATE SET
@@ -82,6 +148,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
                 raw_document_id = EXCLUDED.raw_document_id,
                 row_hash = EXCLUDED.row_hash,
                 last_updated_at = EXCLUDED.last_updated_at
+                , posting_number = EXCLUDED.posting_number
+                , order_number = EXCLUDED.order_number
             WHERE sales_fact.row_hash IS DISTINCT FROM EXCLUDED.row_hash
             SQL;
 

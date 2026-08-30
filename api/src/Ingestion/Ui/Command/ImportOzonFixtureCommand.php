@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Command;
 
+use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\OzonPostingFboListParser;
+use App\Ingestion\Domain\OzonPostingStatusParser;
 use App\Ingestion\Domain\SalesFactRepository;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -37,6 +39,8 @@ final class ImportOzonFixtureCommand extends Command
         private readonly MarketplaceRawDocumentRepository $rawDocuments,
         private readonly SalesFactRepository $salesFacts,
         private readonly OzonPostingFboListParser $parser,
+        private readonly OzonPostingStatusParser $statusParser,
+        private readonly MarketplacePostingStatusRepository $postingStatuses,
     ) {
         parent::__construct();
     }
@@ -74,19 +78,34 @@ final class ImportOzonFixtureCommand extends Command
         $marketplaceAccountId = Uuid::fromString($marketplaceAccountIdArgument);
         $period = new \DateTimeImmutable($businessDate);
 
+        $observedAt = new \DateTimeImmutable();
         $rawDocument = MarketplaceRawDocument::capture(
             companyId: $companyId,
             marketplaceAccountId: $marketplaceAccountId,
             reportType: self::REPORT_TYPE,
             period: $period,
             rawBody: $rawBody,
+            receivedAt: $observedAt,
         );
         $rawDocumentId = $this->rawDocuments->add($rawDocument);
 
+        $statuses = $this->statusParser->parse(
+            $rawBody,
+            $companyId,
+            $marketplaceAccountId,
+            $rawDocumentId,
+            $observedAt,
+        );
         $facts = $this->parser->parse($rawBody, $companyId, $marketplaceAccountId, $rawDocumentId);
+        $this->postingStatuses->recordChanged($companyIdArgument, $statuses);
         $this->salesFacts->upsertAll($facts);
 
-        $io->success(\sprintf('Импортировано %d строк факта из %s.', \count($facts), $fixturePath));
+        $io->success(\sprintf(
+            'Импортировано %d наблюдений статуса и %d строк факта из %s.',
+            \count($statuses),
+            \count($facts),
+            $fixturePath,
+        ));
 
         return Command::SUCCESS;
     }

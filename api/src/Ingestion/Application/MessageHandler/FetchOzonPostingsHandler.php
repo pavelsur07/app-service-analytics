@@ -6,13 +6,16 @@ namespace App\Ingestion\Application\MessageHandler;
 
 use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
+use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonPostingFboListParser;
 use App\Ingestion\Domain\OzonPostingsFetcher;
+use App\Ingestion\Domain\OzonPostingStatusParser;
 use App\Ingestion\Domain\SalesFactRepository;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Uid\Uuid;
 
@@ -25,6 +28,8 @@ use Symfony\Component\Uid\Uuid;
 #[AsMessageHandler]
 final readonly class FetchOzonPostingsHandler
 {
+    private const int LOCK_TTL_SECONDS = 900;
+
     private const string REPORT_TYPE = MarketplaceReportType::OzonPostingFboList;
 
     // Europe/Moscow — константа коннектора Ozon, не настройка подключения
@@ -32,10 +37,13 @@ final readonly class FetchOzonPostingsHandler
     private const string TIMEZONE = 'Europe/Moscow';
 
     public function __construct(
+        private LockFactory $lockFactory,
         private IdentityFacade $identityFacade,
         private OzonPostingsFetcher $client,
         private OzonPostingFboListParser $parser,
+        private OzonPostingStatusParser $statusParser,
         private MarketplaceRawDocumentRepository $rawDocuments,
+        private MarketplacePostingStatusRepository $postingStatuses,
         private SalesFactRepository $salesFacts,
     ) {
     }
@@ -53,6 +61,23 @@ final readonly class FetchOzonPostingsHandler
      * повтором, а не переподключением кабинета.
      */
     public function __invoke(FetchOzonPostingsMessage $message): void
+    {
+        $lock = $this->lockFactory->createLock(
+            'ozon-postings-'.$message->marketplaceAccountId.'-'.$message->businessDate,
+            self::LOCK_TTL_SECONDS,
+        );
+        if (!$lock->acquire()) {
+            return;
+        }
+
+        try {
+            $this->sync($message);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function sync(FetchOzonPostingsMessage $message): void
     {
         $target = $this->identityFacade->findOzonSyncTarget($message->companyId, $message->marketplaceAccountId);
         if (null === $target) {
@@ -100,7 +125,16 @@ final readonly class FetchOzonPostingsHandler
 
         $this->refuseSilentTruncation($rawBody, $message->businessDate);
 
+        $observedAt = new \DateTimeImmutable();
+        $statuses = $this->statusParser->parse(
+            $rawBody,
+            $companyId,
+            $marketplaceAccountId,
+            $rawDocumentId,
+            $observedAt,
+        );
         $facts = $this->parser->parse($rawBody, $companyId, $marketplaceAccountId, $rawDocumentId);
+        $this->postingStatuses->recordChanged($target->companyId, $statuses);
         $this->salesFacts->upsertAll($facts);
     }
 

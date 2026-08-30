@@ -8,6 +8,7 @@ use App\Identity\Application\Facade\IdentityScheduleFacade;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
+use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -90,6 +91,8 @@ final readonly class DispatchActiveOzonSyncsAction
         private int $expenseWindowDays = 3,
         private int $postingWindowDays = 3,
         private int $postingRescanDays = 30,
+        private int $returnWindowDays = 3,
+        private int $returnRescanDays = 90,
         private int $rescanHour = 3,
     ) {
     }
@@ -100,6 +103,7 @@ final readonly class DispatchActiveOzonSyncsAction
         $targets = $this->identitySchedule->findActiveOzonSyncTargets();
 
         $postingDays = $this->isRescanTick($today) ? $this->postingRescanDays : $this->postingWindowDays;
+        $returnDays = $this->isRescanTick($today) ? $this->returnRescanDays : $this->returnWindowDays;
 
         foreach ($targets as $target) {
             // Окно, а не только сегодня: заказ, загруженный в день
@@ -125,6 +129,13 @@ final readonly class DispatchActiveOzonSyncsAction
                     accrualDate: $today->modify("-{$daysAgo} day")->format('Y-m-d'),
                 ));
             }
+
+            $this->bus->dispatch(new FetchOzonReturnsMessage(
+                companyId: $target->companyId,
+                marketplaceAccountId: $target->marketplaceAccountId,
+                from: $today->modify('-'.($returnDays - 1).' day')->format('Y-m-d'),
+                to: $today->format('Y-m-d'),
+            ));
         }
 
         // Число подключений, а не сообщений: тик планировщика меряется
