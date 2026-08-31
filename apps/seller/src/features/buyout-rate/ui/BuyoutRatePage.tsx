@@ -8,7 +8,11 @@ import {
   BUYOUT_WINDOWS,
   buyoutSearchWithCursor,
   buyoutSearchWithDays,
+  buyoutSearchWithSort,
+  nextBuyoutSort,
   parseBuyoutDays,
+  parseBuyoutSort,
+  parseBuyoutSortDirection,
 } from '../lib/buyoutParams'
 import { formatRateBps } from '../lib/buyoutStatusPresentation'
 import { useBuyoutRates } from '../model/useBuyoutRates'
@@ -35,9 +39,11 @@ export function BuyoutRatePage() {
   const { companyId } = useParams<{ companyId: string }>()
   const [search, setSearch] = useSearchParams()
   const days = parseBuyoutDays(search.get('days'))
+  const sort = parseBuyoutSort(search.get('sort'))
+  const direction = parseBuyoutSortDirection(search.get('direction'))
   const rawCursor = search.get('cursor')
   const cursor = rawCursor === '' ? null : rawCursor
-  const viewKey = `${companyId ?? ''}:${days}`
+  const viewKey = `${companyId ?? ''}:${days}:${sort}:${direction}`
   const pageScope = `${viewKey}:${cursor ?? ''}`
   const [stack, setStack] = useState<CursorStack>({
     key: viewKey,
@@ -57,7 +63,7 @@ export function BuyoutRatePage() {
 
   const query = useBuyoutRates(
     companyId ?? '',
-    { days, limit: PAGE_SIZE, cursor },
+    { days, limit: PAGE_SIZE, sort, direction, cursor },
     { enabled: companyId !== undefined },
   )
 
@@ -94,9 +100,10 @@ export function BuyoutRatePage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold">Выкуп</h1>
           <p className="max-w-3xl text-sm text-text-muted">
-            Прогноз учитывает уже выкупленные товары, отмены до и после передачи
-            в доставку и частичные возвраты. Свежие заказы меняют прогноз по
-            мере движения статуса.
+            Фактический выкуп = доставлено / (доставлено + невыкуп после
+            передачи + частичный выкуп). Отмены до передачи, незавершённые
+            заказы и возвраты после покупки в факт не входят. Прогноз для свежих
+            заказов показан отдельно.
           </p>
         </div>
         <div className="flex items-center gap-1" aria-label="Период отчёта">
@@ -167,22 +174,26 @@ export function BuyoutRatePage() {
                   Прогноз по всему периоду
                 </span>
                 <p className="text-lg font-semibold">
-                  {formatRateBps(query.data.summary.projectedBuyoutRateBps)}{' '}
-                  выкуп
+                  {query.data.summary.projectedBuyoutRateBps === null ||
+                  query.data.summary.projectedBuyoutRateBps === undefined
+                    ? 'Недостаточно данных для прогноза выкупа'
+                    : `${formatRateBps(query.data.summary.projectedBuyoutRateBps)} прогноз выкупа`}
                   {' · '}
                   {formatRateBps(query.data.summary.resolutionRateBps)} заказов
                   разрешилось
                   {' · '}
+                  ожидается{' '}
                   {query.data.summary.projectedBuyoutQuantity === null ||
                   query.data.summary.projectedBuyoutQuantity === undefined
                     ? '—'
                     : QUANTITY.format(
                         query.data.summary.projectedBuyoutQuantity,
                       )}{' '}
-                  из {QUANTITY.format(query.data.summary.orderedQuantity)} шт
+                  выкупленных шт
                 </p>
                 <p className="text-xs text-text-muted">
-                  Разрешилось{' '}
+                  Заказано {QUANTITY.format(query.data.summary.orderedQuantity)}{' '}
+                  шт; разрешилось{' '}
                   {QUANTITY.format(query.data.summary.resolvedQuantity)} шт;
                   итоговый процент дозревает вместе со свежими заказами.
                 </p>
@@ -214,8 +225,19 @@ export function BuyoutRatePage() {
                   days={days}
                   expandedSku={expandedSku}
                   items={query.data.items}
+                  sort={sort}
+                  direction={direction}
                   onExpandedSkuChange={(marketplaceSku) => {
                     setExpanded({ scope: pageScope, marketplaceSku })
+                  }}
+                  onSort={(clicked) => {
+                    const next = nextBuyoutSort(clicked, sort, direction)
+                    setSearch(
+                      buyoutSearchWithSort(search, next.sort, next.direction),
+                      { replace: true },
+                    )
+                    setStack({ key: '', cursors: [null] })
+                    setExpanded({ scope: '', marketplaceSku: null })
                   }}
                 />
               </div>

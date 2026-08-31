@@ -9,7 +9,9 @@ use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Ingestion\Infrastructure\Query\BuyoutDailyQuery;
 use App\Ingestion\Infrastructure\Query\BuyoutForecastQuery;
+use App\Ingestion\Infrastructure\Query\BuyoutRateDirection;
 use App\Ingestion\Infrastructure\Query\BuyoutRateQuery;
+use App\Ingestion\Infrastructure\Query\BuyoutRateSort;
 use App\Tests\Support\Builder\MarketplacePostingStatusBuilder;
 use App\Tests\Support\Builder\MarketplaceReturnFactBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
@@ -60,6 +62,7 @@ final class BuyoutQueryPlanTest extends KernelTestCase
     public static function reportQueries(): iterable
     {
         yield 'rate list' => ['rate'];
+        yield 'rate list sorted by actual buyout' => ['rate_actual'];
         yield 'forecast list' => ['forecast'];
         yield 'daily series' => ['daily'];
     }
@@ -184,6 +187,16 @@ final class BuyoutQueryPlanTest extends KernelTestCase
                 $asOf,
                 50,
                 null,
+            ),
+            'rate_actual' => (new BuyoutRateQuery($connection))->build(
+                $this->companyId->toRfc4122(),
+                $from,
+                $to,
+                $asOf,
+                50,
+                null,
+                BuyoutRateSort::ActualBuyout,
+                BuyoutRateDirection::Desc,
             ),
             'forecast' => (new BuyoutForecastQuery($connection))->build(
                 $this->companyId->toRfc4122(),

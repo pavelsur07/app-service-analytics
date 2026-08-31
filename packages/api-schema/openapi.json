@@ -615,6 +615,32 @@
                         }
                     },
                     {
+                        "name": "sort",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "ordered",
+                            "enum": [
+                                "ordered",
+                                "actual_buyout"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "direction",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "desc",
+                            "enum": [
+                                "asc",
+                                "desc"
+                            ]
+                        }
+                    },
+                    {
                         "name": "cursor",
                         "in": "query",
                         "required": false,
@@ -654,7 +680,7 @@
                         }
                     },
                     "422": {
-                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0435 days, limit \u0438\u043b\u0438 cursor",
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0441\u043f\u0438\u0441\u043a\u0430",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -2052,6 +2078,9 @@
                     "name",
                     "orderedQuantity",
                     "resolvedQuantity",
+                    "deliveredQuantity",
+                    "actualBuyoutBaseQuantity",
+                    "actualBuyoutRateBps",
                     "projectedBuyoutQuantity",
                     "projectedBuyoutRateBps",
                     "t1RateBps",
@@ -2077,6 +2106,16 @@
                     },
                     "resolvedQuantity": {
                         "type": "integer"
+                    },
+                    "deliveredQuantity": {
+                        "type": "integer"
+                    },
+                    "actualBuyoutBaseQuantity": {
+                        "type": "integer"
+                    },
+                    "actualBuyoutRateBps": {
+                        "type": "integer",
+                        "nullable": true
                     },
                     "projectedBuyoutQuantity": {
                         "type": "integer",
