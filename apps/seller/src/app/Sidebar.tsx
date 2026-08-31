@@ -36,7 +36,11 @@ const ITEM_IDLE = 'text-text-secondary hover:bg-surface-hover'
  */
 const ITEMS = [
   { to: 'sales', label: 'Продажи', icon: TrendingUp },
-  { to: 'redemption?days=30', label: 'Выкуп', icon: PackageCheck },
+  {
+    to: 'redemption?days=30&sort=ordered&direction=desc',
+    label: 'Выкуп',
+    icon: PackageCheck,
+  },
   { to: 'unit-economics', label: 'Экономика', icon: Calculator },
   { to: 'costs', label: 'Себестоимость', icon: Tag },
   { to: 'prices', label: 'Цены и соинвест', icon: TrendingDown },

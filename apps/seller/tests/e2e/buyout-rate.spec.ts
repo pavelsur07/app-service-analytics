@@ -33,14 +33,16 @@ test.describe('buyout rate', () => {
     expect(firstLinks.slice(0, 2)).toEqual(['Продажи', 'Выкуп'])
 
     await nav.getByRole('link', { name: 'Выкуп' }).click()
-    await expect(page).toHaveURL(`/companies/${companyId}/redemption?days=30`)
+    await expect(page).toHaveURL(
+      `/companies/${companyId}/redemption?days=30&sort=ordered&direction=desc`,
+    )
     await expect(page.getByRole('heading', { name: 'Выкуп' })).toBeVisible()
 
     // Account/SKU baseline меньше 30 resolved quantity: отсутствие
     // прогноза остаётся честным текстом, а не превращается в 0%.
     await expect(
       page.getByText(
-        /Недостаточно данных выкуп · 77,78% заказов разрешилось · — из 9 шт/,
+        /Недостаточно данных для прогноза выкупа · 77,78% заказов разрешилось · ожидается — выкупленных шт/,
       ),
     ).toBeVisible()
     await expect(page.getByText(/Предварительно/).first()).toBeVisible()
@@ -105,7 +107,9 @@ test.describe('buyout rate', () => {
     ).toContainText('100%')
 
     await page.getByRole('button', { name: '7 дней' }).click()
-    await expect(page).toHaveURL(`/companies/${companyId}/redemption?days=7`)
+    await expect(page).toHaveURL(
+      `/companies/${companyId}/redemption?days=7&sort=ordered&direction=desc`,
+    )
     await expect(page.getByText('Пока считать нечего')).toBeVisible()
 
     const restoredThirtyDayResponse = page.waitForResponse((response) => {
@@ -118,17 +122,70 @@ test.describe('buyout rate', () => {
     })
     await page.getByRole('button', { name: '30 дней' }).click()
     await restoredThirtyDayResponse
-    await expect(page).toHaveURL(`/companies/${companyId}/redemption?days=30`)
+    await expect(page).toHaveURL(
+      `/companies/${companyId}/redemption?days=30&sort=ordered&direction=desc`,
+    )
     await expect(
       page.getByRole('img', {
         name: 'Динамика фактического и прогнозного процента выкупа',
       }),
     ).toHaveCount(0)
 
+    const orderedHeader = page.getByRole('columnheader', {
+      name: 'Заказано, шт.',
+    })
+    const actualHeader = page.getByRole('columnheader', {
+      name: 'Фактический выкуп, %',
+    })
+    await expect(orderedHeader).toHaveAttribute('aria-sort', 'descending')
+
+    const orderedAscResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return (
+        url.pathname.endsWith('/buyout-rate') &&
+        url.searchParams.get('sort') === 'ordered' &&
+        url.searchParams.get('direction') === 'asc' &&
+        response.status() === 200
+      )
+    })
+    await orderedHeader.getByRole('button').click()
+    await orderedAscResponse
+    await expect(orderedHeader).toHaveAttribute('aria-sort', 'ascending')
+    await expect(page).toHaveURL(/sort=ordered&direction=asc/)
+
+    const actualDescResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return (
+        url.pathname.endsWith('/buyout-rate') &&
+        url.searchParams.get('sort') === 'actual_buyout' &&
+        url.searchParams.get('direction') === 'desc' &&
+        response.status() === 200
+      )
+    })
+    await actualHeader.getByRole('button').click()
+    await actualDescResponse
+    await expect(actualHeader).toHaveAttribute('aria-sort', 'descending')
+    await expect(page.locator('tbody > tr').first()).toContainText('SKU 100002')
+    await expect(page).toHaveURL(/sort=actual_buyout&direction=desc/)
+
+    const orderedDescResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return (
+        url.pathname.endsWith('/buyout-rate') &&
+        url.searchParams.get('sort') === 'ordered' &&
+        url.searchParams.get('direction') === 'desc' &&
+        response.status() === 200
+      )
+    })
+    await orderedHeader.getByRole('button').click()
+    await orderedDescResponse
+
     // 90 дней включают большую зафиксированную posting fixture; UI limit=10
     // делает keyset-пагинацию наблюдаемой в пользовательском сценарии.
     await page.getByRole('button', { name: '90 дней' }).click()
-    await expect(page).toHaveURL(`/companies/${companyId}/redemption?days=90`)
+    await expect(page).toHaveURL(
+      `/companies/${companyId}/redemption?days=90&sort=ordered&direction=desc`,
+    )
 
     const rows = page.locator('tbody > tr')
     await expect(rows).toHaveCount(10, { timeout: 30_000 })
@@ -145,7 +202,9 @@ test.describe('buyout rate', () => {
     })
     await page.getByRole('button', { name: 'Дальше' }).click()
     await secondPageResponse
-    await expect(page).toHaveURL(/redemption\?days=90&cursor=/)
+    await expect(page).toHaveURL(
+      /redemption\?days=90&sort=ordered&direction=desc&cursor=/,
+    )
     await expect.poll(() => rows.allTextContents()).not.toEqual(firstPage)
     const secondPage = await rows.allTextContents()
     expect(secondPage.filter((row) => firstPage.includes(row))).toEqual([])
@@ -168,7 +227,9 @@ test.describe('buyout rate', () => {
     })
     await page.getByRole('button', { name: '90 дней' }).click()
     await firstPageResponse
-    await expect(page).toHaveURL(`/companies/${companyId}/redemption?days=90`)
+    await expect(page).toHaveURL(
+      `/companies/${companyId}/redemption?days=90&sort=ordered&direction=desc`,
+    )
     await expect(rows).toHaveCount(10)
     expect(await rows.allTextContents()).toEqual(firstPage)
 
@@ -183,7 +244,9 @@ test.describe('buyout rate', () => {
     })
     await page.getByRole('button', { name: 'Дальше' }).click()
     await secondPageAgainResponse
-    await expect(page).toHaveURL(/redemption\?days=90&cursor=/)
+    await expect(page).toHaveURL(
+      /redemption\?days=90&sort=ordered&direction=desc&cursor=/,
+    )
 
     const pagedUrl = page.url()
     await page
@@ -214,7 +277,9 @@ test.describe('buyout rate', () => {
     })
     await page.getByRole('button', { name: 'Назад' }).click()
     await backResponse
-    await expect(page).toHaveURL(`/companies/${companyId}/redemption?days=90`)
+    await expect(page).toHaveURL(
+      `/companies/${companyId}/redemption?days=90&sort=ordered&direction=desc`,
+    )
     await expect(rows).toHaveCount(10)
     expect(await rows.allTextContents()).toEqual(firstPage)
   })

@@ -6,10 +6,16 @@ import { buyoutRatesPath, buyoutRatesQueryKey } from './useBuyoutRates'
 const ONE = '019ffe00-0000-7000-8000-000000000001'
 const TWO = '019ffe00-0000-7000-8000-000000000002'
 
-const BASE: BuyoutRatesParams = { days: 30, limit: 50, cursor: null }
+const BASE: BuyoutRatesParams = {
+  days: 30,
+  limit: 50,
+  sort: 'ordered',
+  direction: 'desc',
+  cursor: null,
+}
 
 describe('ключ кэша процента выкупа', () => {
-  it('содержит компанию, окно и курсор', () => {
+  it('содержит компанию, окно, порядок и курсор', () => {
     expect(buyoutRatesQueryKey(ONE, BASE)).toContain(ONE)
     expect(buyoutRatesQueryKey(ONE, BASE)).not.toEqual(
       buyoutRatesQueryKey(TWO, BASE),
@@ -20,17 +26,25 @@ describe('ключ кэша процента выкупа', () => {
     expect(buyoutRatesQueryKey(ONE, BASE)).not.toEqual(
       buyoutRatesQueryKey(ONE, { ...BASE, cursor: 'next' }),
     )
+    expect(buyoutRatesQueryKey(ONE, BASE)).not.toEqual(
+      buyoutRatesQueryKey(ONE, { ...BASE, sort: 'actual_buyout' }),
+    )
+    expect(buyoutRatesQueryKey(ONE, BASE)).not.toEqual(
+      buyoutRatesQueryKey(ONE, { ...BASE, direction: 'asc' }),
+    )
   })
 })
 
 describe('строка запроса процента выкупа', () => {
   it('передаёт окно и лимит, но не пустой cursor', () => {
-    expect(buyoutRatesPath(BASE)).toBe('/buyout-rate?days=30&limit=50')
+    expect(buyoutRatesPath(BASE)).toBe(
+      '/buyout-rate?days=30&limit=50&sort=ordered&direction=desc',
+    )
   })
 
   it('кодирует cursor как query parameter', () => {
     expect(buyoutRatesPath({ ...BASE, cursor: 'SKU+/= cursor' })).toBe(
-      '/buyout-rate?days=30&limit=50&cursor=SKU%2B%2F%3D+cursor',
+      '/buyout-rate?days=30&limit=50&sort=ordered&direction=desc&cursor=SKU%2B%2F%3D+cursor',
     )
   })
 })

@@ -54,7 +54,7 @@ final class ListBuyoutRatesControllerTest extends WebTestCase
         $client->request('GET', '/api/companies/'.$companyId->toRfc4122().'/buyout-rate?days=30&limit=2');
         self::assertResponseIsSuccessful();
         $first = $this->payload($client);
-        self::assertSame(['SKU-A', 'SKU-B'], array_column($this->items($first), 'marketplaceSku'));
+        self::assertSame(['SKU-C', 'SKU-B'], array_column($this->items($first), 'marketplaceSku'));
         self::assertSame([
             'orderedQuantity' => 6,
             'resolvedQuantity' => 0,
@@ -67,13 +67,16 @@ final class ListBuyoutRatesControllerTest extends WebTestCase
         $client->request('GET', '/api/companies/'.$companyId->toRfc4122().'/buyout-rate?days=30&limit=2&cursor='.urlencode($first['nextCursor']));
         self::assertResponseIsSuccessful();
         $second = $this->payload($client);
-        self::assertSame(['SKU-C'], array_column($this->items($second), 'marketplaceSku'));
+        self::assertSame(['SKU-A'], array_column($this->items($second), 'marketplaceSku'));
         self::assertSame($first['summary'], $second['summary']);
         self::assertNull($second['nextCursor']);
 
         $item = $this->items($first)[0];
-        self::assertSame(1, $item['orderedQuantity']);
+        self::assertSame(3, $item['orderedQuantity']);
         self::assertSame(0, $item['resolvedQuantity']);
+        self::assertSame(0, $item['deliveredQuantity']);
+        self::assertSame(0, $item['actualBuyoutBaseQuantity']);
+        self::assertNull($item['actualBuyoutRateBps']);
         self::assertNull($item['projectedBuyoutRateBps']);
         self::assertSame(0, $item['resolutionRateBps']);
         self::assertSame('preliminary', $item['maturityStatus']);
@@ -102,6 +105,8 @@ final class ListBuyoutRatesControllerTest extends WebTestCase
         yield 'non-integer days' => ['days=month', 'invalid_days'];
         yield 'zero limit' => ['limit=0', 'invalid_limit'];
         yield 'limit above maximum' => ['limit=201', 'invalid_limit'];
+        yield 'unsupported sort' => ['sort=orders', 'invalid_sort'];
+        yield 'unsupported direction' => ['direction=sideways', 'invalid_direction'];
         yield 'malformed cursor' => ['cursor=not-base64-%25%25%25', 'invalid_cursor'];
         yield 'NUL cursor' => ['cursor='.urlencode(base64_encode("\0")), 'invalid_cursor'];
     }
@@ -110,11 +115,31 @@ final class ListBuyoutRatesControllerTest extends WebTestCase
     {
         $client = self::createClient();
         $companyId = $this->loginAsCompanyMember($client);
-        $cursor = str_repeat('Я', 64);
+        $cursor = 'ordered:desc:30:1:'.str_repeat('Я', 64);
 
         $client->request('GET', '/api/companies/'.$companyId->toRfc4122().'/buyout-rate?days=30&cursor='.urlencode(base64_encode($cursor)));
 
         self::assertResponseIsSuccessful();
+    }
+
+    #[DataProvider('mismatchedCursors')]
+    public function testCursorFromAnotherViewIsRejected(string $query): void
+    {
+        $client = self::createClient();
+        $companyId = $this->loginAsCompanyMember($client);
+
+        $client->request('GET', '/api/companies/'.$companyId->toRfc4122().'/buyout-rate?'.$query);
+
+        self::assertResponseStatusCodeSame(422);
+        self::assertSame('invalid_cursor', $this->payload($client)['code']);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function mismatchedCursors(): iterable
+    {
+        yield 'days' => ['days=30&cursor='.urlencode(base64_encode('ordered:desc:90:1:SKU-A'))];
+        yield 'sort' => ['days=30&sort=actual_buyout&cursor='.urlencode(base64_encode('ordered:desc:30:1:SKU-A'))];
+        yield 'direction' => ['days=30&direction=asc&cursor='.urlencode(base64_encode('ordered:desc:30:1:SKU-A'))];
     }
 
     public function testCompanyMemberCannotReadAnotherCompany(): void

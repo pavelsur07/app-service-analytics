@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Query;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
@@ -19,6 +20,7 @@ final readonly class BuyoutForecastQuery
     {
     }
 
+    /** @param list<string>|null $marketplaceSkus */
     public function build(
         string $companyId,
         \DateTimeImmutable $from,
@@ -26,6 +28,7 @@ final readonly class BuyoutForecastQuery
         \DateTimeImmutable $asOf,
         int $limit,
         ?string $cursor,
+        ?array $marketplaceSkus = null,
     ): QueryBuilder {
         $maturitySample = BuyoutMaturityQuery::MIN_SAMPLE_SIZE;
         $trainingSample = self::MIN_TRAINING_QUANTITY;
@@ -194,6 +197,15 @@ final readonly class BuyoutForecastQuery
 
         if (null !== $cursor) {
             $query->andWhere('marketplace_sku > :cursor')->setParameter('cursor', $cursor);
+        }
+
+        if (null !== $marketplaceSkus) {
+            if ([] === $marketplaceSkus) {
+                $query->andWhere('1 = 0');
+            } else {
+                $query->andWhere('marketplace_sku IN (:pageSkus)')
+                    ->setParameter('pageSkus', $marketplaceSkus, ArrayParameterType::STRING);
+            }
         }
 
         return $query;

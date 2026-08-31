@@ -3,7 +3,11 @@ import { useQuery } from '@tanstack/react-query'
 import { createCompanyApiClient } from '../../../api/companyClient'
 import type { components } from '../../../api/schema'
 import { companyQueryKey } from '../../../shared/lib/companyQueryKey'
-import type { BuyoutDays } from '../lib/buyoutParams'
+import type {
+  BuyoutDays,
+  BuyoutSort,
+  BuyoutSortDirection,
+} from '../lib/buyoutParams'
 
 export type BuyoutRatesResponse =
   components['schemas']['BuyoutRateListResponse']
@@ -11,6 +15,8 @@ export type BuyoutRatesResponse =
 export interface BuyoutRatesParams {
   days: BuyoutDays
   limit: number
+  sort: BuyoutSort
+  direction: BuyoutSortDirection
   cursor: string | null
 }
 
@@ -25,6 +31,8 @@ export function buyoutRatesPath(params: BuyoutRatesParams): string {
   const query = new URLSearchParams({
     days: String(params.days),
     limit: String(params.limit),
+    sort: params.sort,
+    direction: params.direction,
   })
 
   if (params.cursor !== null) {

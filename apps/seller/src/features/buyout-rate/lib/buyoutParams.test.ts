@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest'
 import {
   buyoutSearchWithCursor,
   buyoutSearchWithDays,
+  buyoutSearchWithSort,
+  nextBuyoutSort,
+  parseBuyoutSort,
+  parseBuyoutSortDirection,
   parseBuyoutDays,
 } from './buyoutParams'
 
@@ -26,20 +30,54 @@ describe('параметры адреса экрана выкупа', () => {
       7,
     )
 
-    expect(next.toString()).toBe('days=7&source=bookmark')
+    expect(next.toString()).toBe(
+      'days=7&source=bookmark&sort=ordered&direction=desc',
+    )
   })
 
   it('записывает и очищает курсор текущей страницы', () => {
     const search = new URLSearchParams('days=30')
 
     expect(buyoutSearchWithCursor(search, 'SKU+/= cursor').toString()).toBe(
-      'days=30&cursor=SKU%2B%2F%3D+cursor',
+      'days=30&sort=ordered&direction=desc&cursor=SKU%2B%2F%3D+cursor',
     )
     expect(
       buyoutSearchWithCursor(
         new URLSearchParams('days=30&cursor=next-page'),
         null,
       ).toString(),
-    ).toBe('days=30')
+    ).toBe('days=30&sort=ordered&direction=desc')
+  })
+
+  it('разбирает порядок и заменяет мусор безопасными значениями', () => {
+    expect(parseBuyoutSort('actual_buyout')).toBe('actual_buyout')
+    expect(parseBuyoutSort('unknown')).toBe('ordered')
+    expect(parseBuyoutSortDirection('asc')).toBe('asc')
+    expect(parseBuyoutSortDirection('sideways')).toBe('desc')
+  })
+
+  it('активная колонка меняет направление, новая начинает с убывания', () => {
+    expect(nextBuyoutSort('ordered', 'ordered', 'desc')).toEqual({
+      sort: 'ordered',
+      direction: 'asc',
+    })
+    expect(nextBuyoutSort('actual_buyout', 'ordered', 'asc')).toEqual({
+      sort: 'actual_buyout',
+      direction: 'desc',
+    })
+  })
+
+  it('смена сортировки сохраняет окно и сбрасывает курсор', () => {
+    const next = buyoutSearchWithSort(
+      new URLSearchParams(
+        'days=90&sort=ordered&direction=desc&cursor=next&source=bookmark',
+      ),
+      'actual_buyout',
+      'desc',
+    )
+
+    expect(next.toString()).toBe(
+      'days=90&sort=actual_buyout&direction=desc&source=bookmark',
+    )
   })
 })

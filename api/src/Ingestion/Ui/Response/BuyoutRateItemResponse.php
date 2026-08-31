@@ -6,7 +6,7 @@ namespace App\Ingestion\Ui\Response;
 
 use OpenApi\Attributes as OA;
 
-#[OA\Schema(required: ['marketplaceSku', 'offerId', 'name', 'orderedQuantity', 'resolvedQuantity', 'projectedBuyoutQuantity', 'projectedBuyoutRateBps', 't1RateBps', 't2RateBps', 'partialReturnRateBps', 'maturityStatus', 'resolutionRateBps'])]
+#[OA\Schema(required: ['marketplaceSku', 'offerId', 'name', 'orderedQuantity', 'resolvedQuantity', 'deliveredQuantity', 'actualBuyoutBaseQuantity', 'actualBuyoutRateBps', 'projectedBuyoutQuantity', 'projectedBuyoutRateBps', 't1RateBps', 't2RateBps', 'partialReturnRateBps', 'maturityStatus', 'resolutionRateBps'])]
 final readonly class BuyoutRateItemResponse
 {
     public function __construct(
@@ -15,6 +15,9 @@ final readonly class BuyoutRateItemResponse
         public ?string $name,
         public int $orderedQuantity,
         public int $resolvedQuantity,
+        public int $deliveredQuantity,
+        public int $actualBuyoutBaseQuantity,
+        public ?int $actualBuyoutRateBps,
         public ?int $projectedBuyoutQuantity,
         public ?int $projectedBuyoutRateBps,
         public ?int $t1RateBps,

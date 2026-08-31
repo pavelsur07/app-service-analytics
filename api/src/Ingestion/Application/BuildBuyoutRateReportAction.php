@@ -7,8 +7,11 @@ namespace App\Ingestion\Application;
 use App\Ingestion\Infrastructure\Query\BuyoutForecastQuery;
 use App\Ingestion\Infrastructure\Query\BuyoutForecastRow;
 use App\Ingestion\Infrastructure\Query\BuyoutForecastSummaryQuery;
+use App\Ingestion\Infrastructure\Query\BuyoutRateCursor;
+use App\Ingestion\Infrastructure\Query\BuyoutRateDirection;
 use App\Ingestion\Infrastructure\Query\BuyoutRateQuery;
 use App\Ingestion\Infrastructure\Query\BuyoutRateRow;
+use App\Ingestion\Infrastructure\Query\BuyoutRateSort;
 use Doctrine\DBAL\Connection;
 
 /** Выполняет bounded aggregate и собирает keyset-страницу отчёта. */
@@ -28,22 +31,33 @@ final readonly class BuildBuyoutRateReportAction
         \DateTimeImmutable $to,
         \DateTimeImmutable $asOf,
         int $limit,
-        ?string $cursor,
+        BuyoutRateSort $sort = BuyoutRateSort::Ordered,
+        BuyoutRateDirection $direction = BuyoutRateDirection::Desc,
+        int $days = 30,
+        ?BuyoutRateCursor $cursor = null,
     ): BuyoutRateReport {
         // PostgreSQL badly expands three copies of the live outcome view when
         // they are nested into one giant JSON statement. A repeatable-read,
         // read-only transaction keeps the same report snapshot without that
         // quadratic planner/executor cost.
-        $readSnapshot = function (Connection $connection) use ($companyId, $from, $to, $asOf, $limit, $cursor): BuyoutRateReport {
-            $rates = $this->query->build($companyId, $from, $to, $asOf, $limit, $cursor);
+        $readSnapshot = function (Connection $connection) use ($companyId, $from, $to, $asOf, $limit, $sort, $direction, $days, $cursor): BuyoutRateReport {
+            $rates = $this->query->build($companyId, $from, $to, $asOf, $limit, $cursor, $sort, $direction);
             $rateRows = $connection->fetchAllAssociative(
                 $rates->getSQL(),
                 $rates->getParameters(),
                 $rates->getParameterTypes(),
             );
             $mapped = array_map(BuyoutRateQuery::mapRow(...), $rateRows);
+            $hasNext = \count($mapped) > $limit;
+            if ($hasNext) {
+                array_pop($mapped);
+            }
+            $pageSkus = array_map(static fn (BuyoutRateRow $row): string => $row->marketplaceSku, $mapped);
 
-            $forecast = $this->forecast->build($companyId, $from, $to, $asOf, $limit, $cursor);
+            // The rate query owns page order. Forecast is filtered only after
+            // its full-cohort window summary, so every selected SKU receives
+            // its forecast without changing the report-wide summary.
+            $forecast = $this->forecast->build($companyId, $from, $to, $asOf, 0, null, $pageSkus);
             $forecastRows = $connection->fetchAllAssociative(
                 $forecast->getSQL(),
                 $forecast->getParameters(),
@@ -57,10 +71,6 @@ final readonly class BuildBuyoutRateReportAction
             $summary = [] === $forecastRows
                 ? $this->emptyOrCursorSummary($connection, $companyId, $from, $to, $asOf)
                 : BuyoutForecastSummaryQuery::mapWindowRow($forecastRows[0]);
-            $hasNext = \count($mapped) > $limit;
-            if ($hasNext) {
-                array_pop($mapped);
-            }
 
             return new BuyoutRateReport(
                 summary: new BuyoutRateSummary(
@@ -74,7 +84,9 @@ final readonly class BuildBuyoutRateReportAction
                     static fn (BuyoutRateRow $row): BuyoutRateSku => self::toSku($row, $forecastBySku[$row->marketplaceSku] ?? null),
                     $mapped,
                 ),
-                nextCursor: $hasNext && [] !== $mapped ? $mapped[array_key_last($mapped)]->marketplaceSku : null,
+                nextCursor: $hasNext && [] !== $mapped
+                    ? self::cursorFor($mapped[array_key_last($mapped)], $sort, $direction, $days)->toString()
+                    : null,
             );
         };
 
@@ -97,7 +109,7 @@ final readonly class BuildBuyoutRateReportAction
                 self::configurePlanner($this->connection);
                 $isolation = $this->connection->fetchOne('SHOW transaction_isolation');
                 if (!\is_string($isolation) || !\in_array(strtolower($isolation), ['repeatable read', 'serializable'], true)) {
-                    return $this->readSingleStatement($companyId, $from, $to, $asOf, $limit, $cursor);
+                    return $this->readSingleStatement($companyId, $from, $to, $asOf, $limit, $sort, $direction, $days, $cursor);
                 }
 
                 return $readSnapshot($this->connection);
@@ -137,20 +149,28 @@ final readonly class BuildBuyoutRateReportAction
         \DateTimeImmutable $to,
         \DateTimeImmutable $asOf,
         int $limit,
-        ?string $cursor,
+        BuyoutRateSort $sort,
+        BuyoutRateDirection $direction,
+        int $days,
+        ?BuyoutRateCursor $cursor,
     ): BuyoutRateReport {
-        $rates = $this->query->build($companyId, $from, $to, $asOf, $limit, $cursor);
-        $forecast = $this->forecast->build($companyId, $from, $to, $asOf, $limit, $cursor);
+        $rates = $this->query->build($companyId, $from, $to, $asOf, $limit, $cursor, $sort, $direction);
+        $forecast = $this->forecast->build($companyId, $from, $to, $asOf, 0, null);
         $summary = $this->summary->build($companyId, $from, $to, $asOf);
+        $sortColumn = $sort->column();
+        $sortDirection = $direction->sql();
         $sql = <<<SQL
+            WITH rate_page AS MATERIALIZED ({$rates->getSQL()}),
+                 forecast_rows AS MATERIALIZED ({$forecast->getSQL()})
             SELECT
                 COALESCE((
-                    SELECT jsonb_agg(to_jsonb(rate_row) ORDER BY rate_row.marketplace_sku)
-                    FROM ({$rates->getSQL()}) rate_row
+                    SELECT jsonb_agg(to_jsonb(rate_row) ORDER BY rate_row.{$sortColumn} {$sortDirection} NULLS LAST, rate_row.marketplace_sku)
+                    FROM rate_page rate_row
                 ), '[]'::jsonb)::text AS rates,
                 COALESCE((
                     SELECT jsonb_agg(to_jsonb(forecast_row) ORDER BY forecast_row.marketplace_sku)
-                    FROM ({$forecast->getSQL()}) forecast_row
+                    FROM forecast_rows forecast_row
+                    JOIN rate_page rate_row USING (marketplace_sku)
                 ), '[]'::jsonb)::text AS forecast,
                 (SELECT to_jsonb(summary_row) FROM ({$summary->getSQL()}) summary_row)::text AS summary
             SQL;
@@ -188,7 +208,9 @@ final readonly class BuildBuyoutRateReportAction
                 static fn (BuyoutRateRow $row): BuyoutRateSku => self::toSku($row, $forecastBySku[$row->marketplaceSku] ?? null),
                 $mapped,
             ),
-            nextCursor: $hasNext && [] !== $mapped ? $mapped[array_key_last($mapped)]->marketplaceSku : null,
+            nextCursor: $hasNext && [] !== $mapped
+                ? self::cursorFor($mapped[array_key_last($mapped)], $sort, $direction, $days)->toString()
+                : null,
         );
     }
 
@@ -269,6 +291,21 @@ final readonly class BuildBuyoutRateReportAction
             t2RateBps: $row->t2RateBps,
             partialReturnRateBps: $row->partialReturnRateBps,
             maturityStatus: $row->maturityStatus,
+        );
+    }
+
+    private static function cursorFor(
+        BuyoutRateRow $row,
+        BuyoutRateSort $sort,
+        BuyoutRateDirection $direction,
+        int $days,
+    ): BuyoutRateCursor {
+        return new BuyoutRateCursor(
+            sort: $sort,
+            direction: $direction,
+            days: $days,
+            sortValue: $sort->valueOf($row),
+            marketplaceSku: $row->marketplaceSku,
         );
     }
 }

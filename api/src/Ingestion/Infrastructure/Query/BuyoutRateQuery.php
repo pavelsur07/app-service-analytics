@@ -26,7 +26,9 @@ final readonly class BuyoutRateQuery
         \DateTimeImmutable $to,
         \DateTimeImmutable $asOf,
         int $limit,
-        ?string $cursor,
+        ?BuyoutRateCursor $cursor = null,
+        BuyoutRateSort $sort = BuyoutRateSort::Ordered,
+        BuyoutRateDirection $direction = BuyoutRateDirection::Desc,
     ): QueryBuilder {
         $maturitySample = BuyoutMaturityQuery::MIN_SAMPLE_SIZE;
         $source = <<<SQL
@@ -118,11 +120,16 @@ final readonly class BuyoutRateQuery
             ->setParameter('to', $to->format('Y-m-d'))
             ->setParameter('asOf', $asOf->setTimezone($utc)->format('Y-m-d H:i:s'))
             ->setParameter('cohortAgeSeconds', $cohortAgeSeconds)
-            ->orderBy('rate.marketplace_sku', 'ASC')
+            ->orderBy('rate.'.$sort->column(), $direction->sql().' NULLS LAST')
+            ->addOrderBy('rate.marketplace_sku', 'ASC')
             ->setMaxResults($limit + 1);
 
         if (null !== $cursor) {
-            $query->andWhere('rate.marketplace_sku > :cursor')->setParameter('cursor', $cursor);
+            $query->andWhere($cursor->after())
+                ->setParameter('cursorSku', $cursor->marketplaceSku);
+            if (null !== $cursor->sortValue) {
+                $query->setParameter('cursorValue', $cursor->sortValue);
+            }
         }
 
         return $query;

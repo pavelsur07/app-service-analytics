@@ -490,6 +490,9 @@ export interface components {
             name: string | null;
             orderedQuantity: number;
             resolvedQuantity: number;
+            deliveredQuantity: number;
+            actualBuyoutBaseQuantity: number;
+            actualBuyoutRateBps: number | null;
             projectedBuyoutQuantity: number | null;
             projectedBuyoutRateBps: number | null;
             t1RateBps: number | null;
@@ -1135,6 +1138,8 @@ export interface operations {
             query?: {
                 days?: 7 | 30 | 90;
                 limit?: number;
+                sort?: "ordered" | "actual_buyout";
+                direction?: "asc" | "desc";
                 cursor?: string;
             };
             header?: never;
@@ -1163,7 +1168,7 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
-            /** @description Некорректные days, limit или cursor */
+            /** @description Некорректные параметры списка */
             422: {
                 headers: {
                     [name: string]: unknown;

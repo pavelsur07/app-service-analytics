@@ -1,8 +1,12 @@
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight } from 'lucide-react'
 
 import { Badge } from '../../../../../../packages/ui/src'
 import type { components } from '../../../api/schema'
-import type { BuyoutDays } from '../lib/buyoutParams'
+import type {
+  BuyoutDays,
+  BuyoutSort,
+  BuyoutSortDirection,
+} from '../lib/buyoutParams'
 import {
   formatRateBps,
   maturityPresentation,
@@ -18,14 +22,20 @@ export function BuyoutRateTable({
   companyId,
   days,
   items,
+  sort,
+  direction,
   expandedSku,
   onExpandedSkuChange,
+  onSort,
 }: {
   companyId: string
   days: BuyoutDays
   items: BuyoutRateItem[]
+  sort: BuyoutSort
+  direction: BuyoutSortDirection
   expandedSku: string | null
   onExpandedSkuChange: (marketplaceSku: string | null) => void
+  onSort: (sort: BuyoutSort) => void
 }) {
   return (
     <table className="w-full min-w-200 text-sm">
@@ -34,18 +44,20 @@ export function BuyoutRateTable({
           <th className="border-b border-border-default px-4 py-2" scope="col">
             Артикул
           </th>
-          <th
-            className="border-b border-border-default px-4 py-2 text-right"
-            scope="col"
-          >
-            Заказано
-          </th>
-          <th
-            className="border-b border-border-default px-4 py-2 text-right"
-            scope="col"
-          >
-            Выкуп
-          </th>
+          <SortableHeader
+            activeSort={sort}
+            direction={direction}
+            label="Заказано, шт."
+            onSort={onSort}
+            sort="ordered"
+          />
+          <SortableHeader
+            activeSort={sort}
+            direction={direction}
+            label="Фактический выкуп, %"
+            onSort={onSort}
+            sort="actual_buyout"
+          />
           <th className="border-b border-border-default px-4 py-2" scope="col">
             Статус
           </th>
@@ -75,6 +87,46 @@ export function BuyoutRateTable({
         })}
       </tbody>
     </table>
+  )
+}
+
+function SortableHeader({
+  activeSort,
+  direction,
+  label,
+  onSort,
+  sort,
+}: {
+  activeSort: BuyoutSort
+  direction: BuyoutSortDirection
+  label: string
+  onSort: (sort: BuyoutSort) => void
+  sort: BuyoutSort
+}) {
+  const active = activeSort === sort
+  const Arrow = direction === 'asc' ? ArrowUp : ArrowDown
+
+  return (
+    <th
+      aria-sort={
+        active ? (direction === 'asc' ? 'ascending' : 'descending') : undefined
+      }
+      className="border-b border-border-default px-4 py-2 text-right"
+      scope="col"
+    >
+      <button
+        className="inline-flex w-full cursor-pointer items-center justify-end gap-1 hover:text-text-primary"
+        onClick={() => {
+          onSort(sort)
+        }}
+        type="button"
+      >
+        {label}
+        {active ? (
+          <Arrow aria-hidden="true" className="text-accent-default" size={14} />
+        ) : null}
+      </button>
+    </th>
   )
 }
 
@@ -112,14 +164,18 @@ function BuyoutRows({
         </td>
         <td className={`${CELL} text-right`}>
           <div className="font-semibold">
-            {formatRateBps(item.projectedBuyoutRateBps)}
+            Факт {formatRateBps(item.actualBuyoutRateBps)}
           </div>
           <div className="mt-0.5 text-xs text-text-muted">
+            {QUANTITY.format(item.deliveredQuantity)} из{' '}
+            {QUANTITY.format(item.actualBuyoutBaseQuantity)} шт
+          </div>
+          <div className="mt-1 text-xs text-text-muted">
+            Прогноз {formatRateBps(item.projectedBuyoutRateBps)}
             {item.projectedBuyoutQuantity === null ||
             item.projectedBuyoutQuantity === undefined
-              ? '—'
-              : QUANTITY.format(item.projectedBuyoutQuantity)}{' '}
-            из {QUANTITY.format(item.orderedQuantity)} шт
+              ? null
+              : ` · ожидается ${QUANTITY.format(item.projectedBuyoutQuantity)} шт`}
           </div>
         </td>
         <td className={CELL}>

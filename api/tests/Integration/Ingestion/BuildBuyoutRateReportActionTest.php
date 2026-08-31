@@ -13,7 +13,10 @@ use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplacePostingStatusWri
 use App\Ingestion\Infrastructure\Persistence\DoctrineSalesFactWriter;
 use App\Ingestion\Infrastructure\Query\BuyoutForecastQuery;
 use App\Ingestion\Infrastructure\Query\BuyoutForecastSummaryQuery;
+use App\Ingestion\Infrastructure\Query\BuyoutRateCursor;
+use App\Ingestion\Infrastructure\Query\BuyoutRateDirection;
 use App\Ingestion\Infrastructure\Query\BuyoutRateQuery;
+use App\Ingestion\Infrastructure\Query\BuyoutRateSort;
 use App\Tests\Support\Builder\MarketplacePostingStatusBuilder;
 use App\Tests\Support\Builder\MarketplaceReturnFactBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
@@ -93,6 +96,58 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
 
         self::assertSame('preliminary', $onBoundary->items[0]->maturityStatus);
         self::assertSame('mature', $afterBoundary->items[0]->maturityStatus);
+    }
+
+    public function testActualBuyoutSortPaginatesNullsLastWithoutLosingForecasts(): void
+    {
+        $this->seedActualSortCohort();
+        $action = $this->action();
+        $arguments = [
+            'companyId' => $this->companyId->toRfc4122(),
+            'from' => new \DateTimeImmutable('2026-08-01'),
+            'to' => new \DateTimeImmutable('2026-08-02'),
+            'asOf' => new \DateTimeImmutable('2026-08-02T22:00:01Z'),
+            'limit' => 2,
+            'sort' => BuyoutRateSort::ActualBuyout,
+            'direction' => BuyoutRateDirection::Desc,
+            'days' => 30,
+        ];
+
+        $first = $action(...$arguments, cursor: null);
+        self::assertSame(['SKU-HIGH', 'SKU-A'], array_column($first->items, 'marketplaceSku'));
+        self::assertNotNull($first->nextCursor);
+
+        $second = $action(...$arguments, cursor: BuyoutRateCursor::fromString($first->nextCursor));
+        self::assertSame(['SKU-LOW', 'SKU-NULL'], array_column($second->items, 'marketplaceSku'));
+        self::assertSame(4, $second->items[1]->projectedBuyoutQuantity);
+        self::assertSame(8929, $second->items[1]->projectedBuyoutRateBps);
+        self::assertNotNull($second->nextCursor);
+
+        $third = $action(...$arguments, cursor: BuyoutRateCursor::fromString($second->nextCursor));
+        self::assertSame(['SKU-Z'], array_column($third->items, 'marketplaceSku'));
+        self::assertNull($third->nextCursor);
+    }
+
+    public function testActualBuyoutAscendingReversesOnlyNonNullRates(): void
+    {
+        $this->seedActualSortCohort();
+
+        $report = ($this->action())(
+            companyId: $this->companyId->toRfc4122(),
+            from: new \DateTimeImmutable('2026-08-01'),
+            to: new \DateTimeImmutable('2026-08-02'),
+            asOf: new \DateTimeImmutable('2026-08-02T22:00:01Z'),
+            limit: 10,
+            sort: BuyoutRateSort::ActualBuyout,
+            direction: BuyoutRateDirection::Asc,
+            days: 30,
+            cursor: null,
+        );
+
+        self::assertSame(
+            ['SKU-LOW', 'SKU-A', 'SKU-HIGH', 'SKU-NULL', 'SKU-Z'],
+            array_column($report->items, 'marketplaceSku'),
+        );
     }
 
     public function testEmptyPeriodKeepsAllRatesUnknownInsteadOfInventingZeroPercent(): void
@@ -302,6 +357,31 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
             ->build();
         $this->sales()->upsertAll([$foreignFact]);
         $this->postingStatuses()->recordChanged($foreignCompany->toRfc4122(), [$foreignStatus]);
+    }
+
+    private function seedActualSortCohort(): void
+    {
+        $this->sales()->upsertAll([
+            $this->sale('FORECAST-TRAIN', 'ORDER-FORECAST-TRAIN', 'SKU-TRAIN', 'delivered', 30, '2026-07-10'),
+            $this->sale('HIGH-D', 'ORDER-HIGH-D', 'SKU-HIGH', 'delivered', 9),
+            $this->sale('HIGH-T2', 'ORDER-HIGH-T2', 'SKU-HIGH', 'cancelled', 1),
+            $this->sale('LOW-D', 'ORDER-LOW-D', 'SKU-LOW', 'delivered', 1),
+            $this->sale('LOW-T2', 'ORDER-LOW-T2', 'SKU-LOW', 'cancelled', 3),
+            $this->sale('NULL-U', 'ORDER-NULL-U', 'SKU-NULL', 'awaiting_packaging', 5),
+        ]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('FORECAST-TRAIN', 'ORDER-FORECAST-TRAIN', 'delivering', '2026-07-10 00:00:00'),
+            $this->postingStatus('FORECAST-TRAIN', 'ORDER-FORECAST-TRAIN', 'delivered', '2026-07-10 01:00:00'),
+            $this->postingStatus('HIGH-D', 'ORDER-HIGH-D', 'delivering', '2026-08-01 00:00:00'),
+            $this->postingStatus('HIGH-D', 'ORDER-HIGH-D', 'delivered', '2026-08-01 01:00:00'),
+            $this->postingStatus('HIGH-T2', 'ORDER-HIGH-T2', 'delivering', '2026-08-01 00:00:00'),
+            $this->postingStatus('HIGH-T2', 'ORDER-HIGH-T2', 'cancelled', '2026-08-01 01:00:00'),
+            $this->postingStatus('LOW-D', 'ORDER-LOW-D', 'delivering', '2026-08-01 00:00:00'),
+            $this->postingStatus('LOW-D', 'ORDER-LOW-D', 'delivered', '2026-08-01 01:00:00'),
+            $this->postingStatus('LOW-T2', 'ORDER-LOW-T2', 'delivering', '2026-08-01 00:00:00'),
+            $this->postingStatus('LOW-T2', 'ORDER-LOW-T2', 'cancelled', '2026-08-01 01:00:00'),
+            $this->postingStatus('NULL-U', 'ORDER-NULL-U', 'awaiting_packaging', '2026-08-01 00:00:00'),
+        ]);
     }
 
     private function sale(
