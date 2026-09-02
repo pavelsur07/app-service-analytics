@@ -10,7 +10,7 @@ import type {
 type SelfRegistrationResponse =
   components['schemas']['SelfRegistrationResponse']
 
-export type SignUpVariables = {
+export interface SignUpVariables {
   request: RegistrationPayload
   captchaToken: SignUpRequest['captchaToken']
 }

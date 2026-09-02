@@ -3,14 +3,14 @@ import type { paths } from '../../../api/schema'
 export const PASSWORD_MIN_LENGTH = 12
 export const COMPANY_NAME_MAX_LENGTH = 255
 
-export type RegistrationFormValues = {
+export interface RegistrationFormValues {
   email: string
   password: string
   companyName: string
   legalConsent: boolean
 }
 
-export type RegistrationPayload = {
+export interface RegistrationPayload {
   email: string
   password: string
   companyName: string

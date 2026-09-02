@@ -19,7 +19,9 @@ export default defineConfig(({ command }) => {
   const clientKey = process.env.VITE_SMARTCAPTCHA_CLIENT_KEY ?? ''
 
   if (command === 'build' && !SMARTCAPTCHA_CLIENT_KEY_PATTERN.test(clientKey)) {
-    throw new Error('VITE_SMARTCAPTCHA_CLIENT_KEY must contain a valid public SmartCaptcha client key')
+    throw new Error(
+      'VITE_SMARTCAPTCHA_CLIENT_KEY must contain a valid public SmartCaptcha client key',
+    )
   }
 
   return {
