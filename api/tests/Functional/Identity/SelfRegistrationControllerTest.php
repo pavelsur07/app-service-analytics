@@ -12,7 +12,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\Mailer\Messenger\SendEmailMessage;
+use Symfony\Component\Mailer\Event\MessageEvent;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Mime\Email;
 
@@ -20,11 +20,10 @@ final class SelfRegistrationControllerTest extends WebTestCase
 {
     private const string GENERIC_MESSAGE = 'Если адрес указан верно, письмо с дальнейшими инструкциями уже отправлено.';
 
-    public function testFreeEmailCreatesWholeAccountAndQueuesConfirmation(): void
+    public function testFreeEmailCreatesWholeAccountAndSendsConfirmationWithoutQueueingPlainToken(): void
     {
         $client = static::createClient();
         $before = $this->counts();
-        $transport = $this->transport();
 
         $this->signUp($client, $this->validPayload('new-owner@example.test'));
 
@@ -64,7 +63,13 @@ final class SelfRegistrationControllerTest extends WebTestCase
         self::assertSame($account['user_id'], $account['actor_user_id']);
         self::assertNull($account['actor_admin_id']);
 
-        $email = $this->onlyQueuedEmail($transport);
+        self::assertCount(0, $this->transport()->getSent());
+        self::assertEmailCount(1);
+        $event = self::getMailerEvent();
+        self::assertInstanceOf(MessageEvent::class, $event);
+        self::assertEmailIsNotQueued($event);
+        $email = self::getMailerMessage();
+        self::assertInstanceOf(Email::class, $email);
         self::assertSame('new-owner@example.test', $email->getTo()[0]->getAddress());
         self::assertSame('Conwix: подтвердите адрес электронной почты', $email->getSubject());
         $text = $email->getTextBody();
@@ -82,7 +87,6 @@ final class SelfRegistrationControllerTest extends WebTestCase
             ->withEmail('existing-owner@example.test')
             ->persistWith(new DoctrineUserRepository($this->entityManager()));
         $before = $this->counts();
-        $transport = $this->transport();
 
         $this->signUp($client, $this->validPayload('existing-owner@example.test'));
 
@@ -90,7 +94,13 @@ final class SelfRegistrationControllerTest extends WebTestCase
         self::assertSame($this->expectedResponseBody(), $client->getResponse()->getContent());
         self::assertSame($before, $this->counts());
 
-        $email = $this->onlyQueuedEmail($transport);
+        self::assertCount(0, $this->transport()->getSent());
+        self::assertEmailCount(1);
+        $event = self::getMailerEvent();
+        self::assertInstanceOf(MessageEvent::class, $event);
+        self::assertEmailIsNotQueued($event);
+        $email = self::getMailerMessage();
+        self::assertInstanceOf(Email::class, $email);
         self::assertSame('existing-owner@example.test', $email->getTo()[0]->getAddress());
         self::assertStringContainsString('уже существует', (string) $email->getTextBody());
         self::assertStringNotContainsString('token=', (string) $email->getTextBody());
@@ -104,13 +114,13 @@ final class SelfRegistrationControllerTest extends WebTestCase
     {
         $client = static::createClient();
         $before = $this->counts();
-        $transport = $this->transport();
 
         $this->signUp($client, $payload);
 
         self::assertResponseStatusCodeSame(422);
         self::assertSame($before, $this->counts());
-        self::assertCount(0, $transport->getSent());
+        self::assertCount(0, $this->transport()->getSent());
+        self::assertEmailCount(0);
     }
 
     /**
@@ -210,18 +220,6 @@ final class SelfRegistrationControllerTest extends WebTestCase
     private function incremented(array $counts): array
     {
         return array_map(static fn (int $count): int => $count + 1, $counts);
-    }
-
-    private function onlyQueuedEmail(InMemoryTransport $transport): Email
-    {
-        $queued = $transport->getSent();
-        self::assertCount(1, $queued);
-        $message = $queued[0]->getMessage();
-        self::assertInstanceOf(SendEmailMessage::class, $message);
-        $email = $message->getMessage();
-        self::assertInstanceOf(Email::class, $email);
-
-        return $email;
     }
 
     private function transport(): InMemoryTransport

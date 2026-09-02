@@ -11,4 +11,6 @@ interface RegistrationEmailSender
     public function sendConfirmation(string $email, EmailVerificationSecret $secret): void;
 
     public function sendAlreadyRegistered(string $email): void;
+
+    public function sendNoAccountFound(string $email): void;
 }

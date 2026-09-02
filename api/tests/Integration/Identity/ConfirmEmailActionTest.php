@@ -18,12 +18,34 @@ use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\EmailVerificationTokenBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
 
 final class ConfirmEmailActionTest extends KernelTestCase
 {
+    public function testConfirmationTakesSharedLockAgainstAccountCleanup(): void
+    {
+        self::bootKernel();
+        $maintenance = $this->independentConnection();
+        $maintenance->beginTransaction();
+        $maintenance->executeStatement(
+            "SELECT pg_advisory_xact_lock(hashtextextended('conwix.identity.email-verification-maintenance', 0))",
+        );
+
+        try {
+            $this->connection()->executeStatement("SET LOCAL lock_timeout = '100ms'");
+            $this->expectException(DriverException::class);
+
+            ($this->action())(EmailVerificationSecret::generate(), new \DateTimeImmutable());
+        } finally {
+            $maintenance->rollBack();
+            $maintenance->close();
+        }
+    }
+
     public function testValidTokenConfirmsUserConsumesTokenAndWritesOneAuditRecord(): void
     {
         self::bootKernel();
@@ -176,5 +198,20 @@ final class ConfirmEmailActionTest extends KernelTestCase
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
 
         return $entityManager;
+    }
+
+    private function independentConnection(): Connection
+    {
+        $params = $this->connection()->getParams();
+
+        return DriverManager::getConnection([
+            'driver' => 'pdo_pgsql',
+            'host' => $params['host'],
+            'port' => $params['port'],
+            'user' => $params['user'],
+            'password' => $params['password'],
+            'dbname' => $params['dbname'],
+            'serverVersion' => $params['serverVersion'],
+        ]);
     }
 }

@@ -10,7 +10,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\Mailer\Messenger\SendEmailMessage;
+use Symfony\Component\Mailer\Event\MessageEvent;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Mime\Email;
 
@@ -18,7 +18,7 @@ final class ResendEmailVerificationControllerTest extends WebTestCase
 {
     private const string GENERIC_MESSAGE = 'Если адрес указан верно, письмо с дальнейшими инструкциями уже отправлено.';
 
-    public function testTwoResendsAppendTwoTokensAndQueueTwoConfirmationEmails(): void
+    public function testTwoResendsAppendTwoTokensAndSendTwoConfirmationEmailsWithoutQueueingPlainTokens(): void
     {
         $client = static::createClient();
         $client->disableReboot();
@@ -26,14 +26,18 @@ final class ResendEmailVerificationControllerTest extends WebTestCase
             ->withEmail('waiting@example.test')
             ->unconfirmed()
             ->persistWith(new DoctrineUserRepository($this->entityManager()));
-        $transport = $this->transport();
-
         $this->resend($client, 'waiting@example.test');
         self::assertResponseStatusCodeSame(202);
         self::assertSame($this->expectedResponseBody(), $client->getResponse()->getContent());
         $firstRows = $this->tokenRows($user->id()->toRfc4122());
         self::assertCount(1, $firstRows);
-        $firstEmail = $this->onlyQueuedEmail($transport);
+        self::assertCount(0, $this->transport()->getSent());
+        self::assertEmailCount(1);
+        $firstEvent = self::getMailerEvent(0);
+        self::assertInstanceOf(MessageEvent::class, $firstEvent);
+        self::assertEmailIsNotQueued($firstEvent);
+        $firstEmail = self::getMailerMessage(0);
+        self::assertInstanceOf(Email::class, $firstEmail);
         self::assertStringContainsString('/confirm-email?token=', (string) $firstEmail->getTextBody());
 
         $this->resend($client, 'waiting@example.test');
@@ -46,21 +50,33 @@ final class ResendEmailVerificationControllerTest extends WebTestCase
         self::assertSame($firstRows[0], $rows[0], 'повторная отправка не меняет первую append-only строку');
         self::assertNull($rows[0]['consumed_at']);
         self::assertNull($rows[1]['consumed_at']);
-        $secondEmail = $this->onlyQueuedEmail($transport);
+        self::assertCount(0, $this->transport()->getSent());
+        self::assertEmailCount(1);
+        $secondEvent = self::getMailerEvent(0);
+        self::assertInstanceOf(MessageEvent::class, $secondEvent);
+        self::assertEmailIsNotQueued($secondEvent);
+        $secondEmail = self::getMailerMessage(0);
+        self::assertInstanceOf(Email::class, $secondEmail);
         self::assertStringContainsString('/confirm-email?token=', (string) $secondEmail->getTextBody());
     }
 
-    public function testUnknownEmailHasSameResponseAndDoesNothing(): void
+    public function testUnknownEmailHasSameResponseAndSynchronousMailShapeWithoutToken(): void
     {
         $client = static::createClient();
-        $transport = $this->transport();
-
         $this->resend($client, 'unknown@example.test');
 
         self::assertResponseStatusCodeSame(202);
         self::assertSame($this->expectedResponseBody(), $client->getResponse()->getContent());
         self::assertSame(0, $this->tokenCount());
-        self::assertCount(0, $transport->getSent());
+        self::assertCount(0, $this->transport()->getSent());
+        self::assertEmailCount(1);
+        $event = self::getMailerEvent();
+        self::assertInstanceOf(MessageEvent::class, $event);
+        self::assertEmailIsNotQueued($event);
+        $email = self::getMailerMessage();
+        self::assertInstanceOf(Email::class, $email);
+        self::assertSame('unknown@example.test', $email->getTo()[0]->getAddress());
+        self::assertStringNotContainsString('token=', (string) $email->getTextBody());
     }
 
     public function testConfirmedEmailHasSameResponseAndQueuesReminderWithoutToken(): void
@@ -69,18 +85,17 @@ final class ResendEmailVerificationControllerTest extends WebTestCase
         UserBuilder::aUser()
             ->withEmail('confirmed@example.test')
             ->persistWith(new DoctrineUserRepository($this->entityManager()));
-        $transport = $this->transport();
-
         $this->resend($client, 'confirmed@example.test');
 
         self::assertResponseStatusCodeSame(202);
         self::assertSame($this->expectedResponseBody(), $client->getResponse()->getContent());
         self::assertSame(0, $this->tokenCount());
-        $queued = $transport->getSent();
-        self::assertCount(1, $queued);
-        $message = $queued[0]->getMessage();
-        self::assertInstanceOf(SendEmailMessage::class, $message);
-        $email = $message->getMessage();
+        self::assertCount(0, $this->transport()->getSent());
+        self::assertEmailCount(1);
+        $event = self::getMailerEvent();
+        self::assertInstanceOf(MessageEvent::class, $event);
+        self::assertEmailIsNotQueued($event);
+        $email = self::getMailerMessage();
         self::assertInstanceOf(Email::class, $email);
         self::assertStringContainsString('уже существует', (string) $email->getTextBody());
         self::assertStringNotContainsString('token=', (string) $email->getTextBody());
@@ -89,13 +104,12 @@ final class ResendEmailVerificationControllerTest extends WebTestCase
     public function testInvalidEmailIsRejectedWithoutTokenOrMail(): void
     {
         $client = static::createClient();
-        $transport = $this->transport();
-
         $this->resend($client, 'not-an-email');
 
         self::assertResponseStatusCodeSame(422);
         self::assertSame(0, $this->tokenCount());
-        self::assertCount(0, $transport->getSent());
+        self::assertCount(0, $this->transport()->getSent());
+        self::assertEmailCount(0);
     }
 
     private function resend(KernelBrowser $client, string $email): void
@@ -138,18 +152,6 @@ final class ResendEmailVerificationControllerTest extends WebTestCase
         self::assertInstanceOf(InMemoryTransport::class, $transport);
 
         return $transport;
-    }
-
-    private function onlyQueuedEmail(InMemoryTransport $transport): Email
-    {
-        $queued = $transport->getSent();
-        self::assertCount(1, $queued);
-        $message = $queued[0]->getMessage();
-        self::assertInstanceOf(SendEmailMessage::class, $message);
-        $email = $message->getMessage();
-        self::assertInstanceOf(Email::class, $email);
-
-        return $email;
     }
 
     private function connection(): Connection

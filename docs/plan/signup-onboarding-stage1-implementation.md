@@ -4,7 +4,7 @@
 
 **Goal:** Дать продавцу самостоятельно и атомарно создать пару «компания + владелец», подтвердить адрес письмом, получить сессию и безопасно удалить брошенный неподтверждённый аккаунт ручной командой.
 
-**Architecture:** Существующий `RegisterClientAccountAction` остаётся единственной операцией создания пары и получает отдельный self-registration entry point; административный и публичный HTTP-сценарии различаются только актором, согласием, письмом и внешним ответом. Подтверждение — отдельная append-only сущность с SHA-256 токеном и DBAL-переходом `consumed_at IS NULL`; штатный Symfony `UserCheckerInterface` запрещает вход неподтверждённым пользователям на каждой аутентификации. Уборка — явная ручная операция одним консервативным SQL-запросом, который не удаляет компанию при наличии любого подтверждённого пользователя, подключения или company-scoped данных.
+**Architecture:** Существующий `RegisterClientAccountAction` остаётся единственной операцией создания пары и получает отдельный self-registration entry point; административный и публичный HTTP-сценарии различаются только актором, согласием, письмом и внешним ответом. Подтверждение — отдельная append-only сущность с SHA-256 токеном и DBAL-переходом `consumed_at IS NULL`; штатный Symfony `UserCheckerInterface` запрещает вход неподтверждённым пользователям на каждой аутентификации. Уборка — явная ручная операция: exclusive advisory-lock отдельным statement, затем один консервативный modifying SQL, который не удаляет компанию при наличии подтверждённого пользователя, живого confirmation token, подключения или company-scoped данных.
 
 **Tech Stack:** PHP 8.4, Symfony 7.4 Security/Mailer/Messenger/Console, Doctrine ORM 3.6 + DBAL 4.4, PostgreSQL 16, PHPUnit 13, OpenAPI/Nelmio. Новые Composer-пакеты не устанавливаются. Будущий OAuth Ozon использует уже установленные `symfony/http-client`, `symfony/lock`, Symfony Session и существующее шифрование credentials; `league/oauth2-client` и OAuth-bundle не добавляются.
 
@@ -22,9 +22,12 @@
 - Открытый confirmation token нигде не хранится и не логируется; в PostgreSQL лежит только SHA-256.
 - Срок confirmation token — ровно 24 часа; срок уборки — ровно 30 дней.
 - Согласие обязательно только для self-signup; сервер сохраняет собственную текущую версию документов, а не доверяет версии из запроса.
-- Письма отправляются только через Symfony Mailer и существующую Messenger-маршрутизацию.
+- Письма отправляются через Symfony Mailer синхронно: открытый confirmation
+  token не сериализуется в doctrine-очередь и не попадает в PostgreSQL.
 - Проверка email выполняется через Symfony user checker на firewall `api` и `extension`, не в login-контроллере.
 - Уборка запускается только командой человека; расписание и Messenger для неё не добавляются.
+- Resend берёт shared advisory-lock до user lookup; cleanup берёт exclusive
+  lock до eligibility snapshot, а свежий token защищает аккаунт до expiry.
 - Миграция задачи одна, с рабочим `down()`; `make db-rebuild-check` обязателен.
 - Работать в изолированном worktree: текущее дерево содержит несвязанные изменения процента выкупа, которые нельзя включать в пакет Stage 1.
 
@@ -52,7 +55,7 @@
 
 - [x] **Step 1: Create ADR-020 as Proposed and register it before code**
 
-Copy the ADR-021 draft from the spec into `docs/adr/0020-self-signup-email-confirmation-onboarding.md`, then make only these semantic edits:
+Copy the ADR-020 draft from the spec into `docs/adr/0020-self-signup-email-confirmation-onboarding.md`, then make only these semantic edits:
 
 ```markdown
 ## ADR-020: Самостоятельная регистрация, защита от роботов и минимальный онбординг
@@ -211,7 +214,10 @@ For the free email, assert one company, one unconfirmed user, one owner membersh
 
 For the taken email, assert no additional company/membership/token/audit rows. Compare status and complete JSON body between the free/taken calls.
 
-Use the Messenger test transport or inspect `messenger_messages` to assert that the free branch queued a confirmation email and the taken branch queued an already-registered reminder; never assert against a live SMTP server.
+Use Symfony Mailer's test event log to assert that the free branch sent a
+confirmation email and the taken branch sent an already-registered reminder.
+Assert that neither message was queued and the Messenger test transport stayed
+empty; never assert against a live SMTP server.
 
 - [x] **Step 2: Write failing validation and admin-regression tests**
 
@@ -319,7 +325,7 @@ git commit -m "Открывает самостоятельную регистр�
 
 Create an unconfirmed user, call `POST /api/auth/email-verification/resend` twice with its email and assert two distinct token rows exist with unchanged first-row fields. Assert two confirmation emails were queued.
 
-Call the same endpoint for an unknown email and a confirmed email; assert the exact status/body matches the unconfirmed case and no token is created. Do not expose whether the email exists or is already confirmed.
+Call the same endpoint for an unknown email and a confirmed email; assert the exact status/body matches the unconfirmed case and no token is created. All three branches must perform one synchronous SMTP call; unknown receives a neutral message without a token. Do not expose whether the email exists or is already confirmed through status or timing.
 
 - [x] **Step 2: Run the test and confirm RED**
 
@@ -331,7 +337,7 @@ Expected: route/action absent.
 
 - [x] **Step 3: Implement the action and endpoint**
 
-For an unconfirmed user, generate a fresh secret, persist a new `EmailVerificationToken`, then send confirmation. Never mutate or invalidate older rows. For unknown/confirmed users, send the already-registered reminder or no-op behind the same public response; choose one behavior and keep it indistinguishable over HTTP. Use the same generic `202` body as signup.
+For an unconfirmed user, generate a fresh secret, persist a new `EmailVerificationToken`, then send confirmation. Never mutate or invalidate older rows. A confirmed user receives the already-registered reminder; an unknown address receives a neutral message without a token. Use the same generic `202` body and one synchronous SMTP call in every branch.
 
 Add:
 
@@ -347,7 +353,7 @@ Rate limiting remains intentionally absent until Stage 2.
 docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ResendEmailVerificationControllerTest.php
 ```
 
-Expected: pass; two resends produce two append-only rows.
+Expected: pass; two resends produce two append-only rows, and every valid-email branch performs one non-queued SMTP call.
 
 - [x] **Step 5: Commit Task 3**
 
@@ -618,6 +624,8 @@ Using separate test cases/data provider, prove the company is retained when it h
 ```text
 confirmed user
 marketplace_account
+extension_token
+fresh live confirmation token
 sales_fact
 marketplace_expense_fact
 marketplace_raw_document
@@ -652,6 +660,7 @@ WITH eligible_company AS (
           WHERE cm.company_id = c.id AND u.email_confirmed_at IS NOT NULL
       )
       AND NOT EXISTS (SELECT 1 FROM marketplace_account ma WHERE ma.company_id = c.id)
+      AND NOT EXISTS (SELECT 1 FROM extension_token et WHERE et.company_id = c.id)
       AND NOT EXISTS (SELECT 1 FROM sales_fact sf WHERE sf.company_id = c.id)
       AND NOT EXISTS (SELECT 1 FROM marketplace_expense_fact mef WHERE mef.company_id = c.id)
       AND NOT EXISTS (SELECT 1 FROM marketplace_raw_document mrd WHERE mrd.company_id = c.id)
@@ -759,7 +768,7 @@ git commit -m "Документирует эксплуатацию самост�
 **Interfaces:**
 - Produces one review package named `Stage 1: самостоятельная регистрация и подтверждение email`.
 
-- [ ] **Step 1: Run the complete backend test and static-analysis suite**
+- [x] **Step 1: Run the complete backend test and static-analysis suite**
 
 ```bash
 make test
@@ -772,7 +781,7 @@ make api-types-check
 
 Expected: every command exits 0 with no new baseline/suppression.
 
-- [ ] **Step 2: Run the mandatory clean-database migration check**
+- [x] **Step 2: Run the mandatory clean-database migration check**
 
 ```bash
 make db-rebuild-check
@@ -780,7 +789,7 @@ make db-rebuild-check
 
 Expected: empty dev/test databases rebuild, the single Stage 1 migration applies, schema validates and all backend tests pass.
 
-- [ ] **Step 3: Perform the fixed CLAUDE.md self-review in order**
+- [x] **Step 3: Perform the fixed CLAUDE.md self-review in order**
 
 Record evidence for all 14 items. For this stage pay special attention to:
 
@@ -795,7 +804,7 @@ Record evidence for all 14 items. For this stage pay special attention to:
 14 no plain token, password, mail secret or environment secret in diff/logs
 ```
 
-- [ ] **Step 4: Generate both mandatory external reviews**
+- [x] **Step 4: Generate both mandatory external reviews**
 
 Stage 1 affects authentication, schema and personal data, so run both roles:
 
@@ -805,7 +814,7 @@ make review TASK="Stage 1: самостоятельная регистрация
 
 Expected: both `var/review/codex.md` and `var/review/codex-defects.md` contain completed reviews, not timeouts/truncated outputs.
 
-- [ ] **Step 5: Classify every finding and fix accepted defects**
+- [x] **Step 5: Classify every finding and fix accepted defects**
 
 For each finding, record one of:
 
@@ -818,7 +827,7 @@ rules gap -> update the relevant rule/document separately, then re-review
 
 Repeat full focused tests and both reviews until no accepted finding remains. Record how many unique accepted findings the defects-role added beyond the rules-role.
 
-- [ ] **Step 6: Keep ADR-020 Proposed and prepare the Stage 1 report**
+- [x] **Step 6: Keep ADR-020 Proposed and prepare the Stage 1 report**
 
 Do not mark ADR-020 Accepted: captcha and onboarding portions remain unimplemented in Stages 2–4. The report must list Stage 2 as the next package and use the repository format:
 
@@ -826,7 +835,7 @@ Do not mark ADR-020 Accepted: captcha and onboarding portions remain unimplement
 Задача / Сделано / Файлы / Ревью / Отклонено / Проверка / Открыто
 ```
 
-- [ ] **Step 7: Commit review fixes, if any**
+- [x] **Step 7: Commit review fixes, if any**
 
 ```bash
 git add -A

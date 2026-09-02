@@ -10,8 +10,10 @@ use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
 
 /**
- * Письма регистрации отправляются штатным Symfony Mailer и маршрутизируются
- * в Messenger. From задаётся глобально в mailer.yaml, не дублируется здесь.
+ * Письма регистрации отправляются штатным Symfony Mailer синхронно:
+ * confirmation URL содержит открытый одноразовый токен, который нельзя
+ * сериализовать в doctrine-очередь и резервные копии PostgreSQL. From
+ * задаётся глобально в mailer.yaml, не дублируется здесь.
  */
 final readonly class MailRegistrationEmailSender implements RegistrationEmailSender
 {
@@ -45,6 +47,20 @@ final readonly class MailRegistrationEmailSender implements RegistrationEmailSen
                 ->text(
                     "Аккаунт с этим адресом уже существует.\n\n"
                     ."Если вы не отправляли заявку на регистрацию, просто проигнорируйте это письмо.\n",
+                ),
+        );
+    }
+
+    public function sendNoAccountFound(string $email): void
+    {
+        $this->mailer->send(
+            (new Email())
+                ->to($email)
+                ->subject('Conwix: запрос подтверждения адреса')
+                ->text(
+                    "Получен запрос на повторную отправку подтверждения адреса.\n\n"
+                    ."Если аккаунт ещё не зарегистрирован, сначала создайте его в Conwix.\n"
+                    ."Если вы не отправляли этот запрос, просто проигнорируйте письмо.\n",
                 ),
         );
     }

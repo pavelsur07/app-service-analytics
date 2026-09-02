@@ -43,11 +43,13 @@ services:
         arguments:
             - '@redis.connection'
 
-    # Отправитель в обход очереди — только для сторожа свежести данных.
-    # Обычные письма едут через async_ingestion (messenger.yaml), и это
-    # правильно: отправка ретраится, отказ виден. Но оповещение о вставшей
-    # синхронизации, поставленное в ту же очередь, которая, возможно,
-    # и встала, не доедет ровно в том случае, ради которого написано.
+    # Отправитель в обход очереди — для писем, которые нельзя безопасно
+    # сериализовать в doctrine-транспорт, и для сторожа свежести данных.
+    # Подтверждение регистрации содержит открытый одноразовый токен:
+    # штатная маршрутизация SendEmailMessage записала бы его в
+    # messenger_messages и резервные копии PostgreSQL. Поэтому эти письма
+    # отправляются синхронно; хэш остаётся единственным представлением
+    # токена в базе.
     #
     # Аргументы позиционные: transport, bus, dispatcher. bus = null — это
     # и есть «мимо очереди»; dispatcher нужен, иначе не применится
@@ -60,6 +62,10 @@ services:
             - '@event_dispatcher'
 
     App\Ingestion\Application\NotifyStaleAccountsAction:
+        arguments:
+            $mailer: '@mailer.sync'
+
+    App\Identity\Infrastructure\Notification\MailRegistrationEmailSender:
         arguments:
             $mailer: '@mailer.sync'
 

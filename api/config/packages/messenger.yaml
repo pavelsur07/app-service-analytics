@@ -102,10 +102,10 @@ framework:
         # эта фраза была неправдой в первой половине: транспорта не было,
         # и «окончательный отказ» означал бесследное удаление.
         #
-        # Исключение — сторож свежести данных: он ходит мимо очереди
-        # намеренно (services.yaml, mailer.sync). Оповещение о вставшей
-        # синхронизации, поставленное в ту же очередь, которая и встала,
-        # не доедет ровно тогда, когда нужно.
+        # Исключения перечислены в services.yaml у mailer.sync. Сторож
+        # свежести не зависит от очереди, о поломке которой сообщает;
+        # регистрационные письма не кладут открытый confirmation token
+        # в messenger_messages и резервные копии PostgreSQL.
         routing:
             App\Ingestion\Application\Message\FetchOzonPostingsMessage: async_ingestion
             App\Ingestion\Application\Message\FetchOzonCatalogMessage: async_ingestion

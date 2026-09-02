@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Identity;
 
 use App\Identity\Application\PurgeUnconfirmedAccountsAction;
+use App\Identity\Application\ResendEmailVerificationAction;
 use App\Identity\Domain\AuditAction;
-use App\Identity\Domain\AuditRecord;
 use App\Identity\Domain\Company;
 use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\EmailVerificationToken;
 use App\Identity\Domain\User;
+use App\Identity\Infrastructure\Repository\DoctrineAuditRecordRepository;
 use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
+use App\Identity\Infrastructure\Repository\DoctrineExtensionTokenRepository;
 use App\Identity\Infrastructure\Repository\DoctrineMarketplaceAccountRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUnconfirmedAccountCleaner;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
@@ -23,9 +25,11 @@ use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceRawDocumentRepos
 use App\Ingestion\Infrastructure\Persistence\DoctrineSalesFactWriter;
 use App\PriceMonitoring\Infrastructure\Persistence\DoctrinePriceObservationWriter;
 use App\PriceMonitoring\Infrastructure\Repository\DoctrineTrackedSkuRepository;
+use App\Tests\Support\Builder\AuditRecordBuilder;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\EmailVerificationTokenBuilder;
+use App\Tests\Support\Builder\ExtensionTokenBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
 use App\Tests\Support\Builder\MarketplaceListingBuilder;
@@ -37,6 +41,8 @@ use App\Tests\Support\Builder\SalesFactBuilder;
 use App\Tests\Support\Builder\TrackedSkuBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -47,6 +53,47 @@ use Symfony\Component\Uid\Uuid;
 
 final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
 {
+    public function testResendTakesSharedLockBeforeLookingUpTheUser(): void
+    {
+        self::bootKernel();
+        $maintenance = $this->independentConnection();
+        $maintenance->beginTransaction();
+        $maintenance->executeStatement(
+            "SELECT pg_advisory_xact_lock(hashtextextended('conwix.identity.email-verification-maintenance', 0))",
+        );
+
+        try {
+            $this->connection()->executeStatement("SET LOCAL lock_timeout = '100ms'");
+            $this->expectException(DriverException::class);
+            $this->expectExceptionMessage('lock timeout');
+
+            $this->resendAction()('unknown-lock@example.test', new \DateTimeImmutable());
+        } finally {
+            $maintenance->rollBack();
+            $maintenance->close();
+        }
+    }
+
+    public function testCleanupTakesExclusiveLockAgainstEmailConfirmation(): void
+    {
+        self::bootKernel();
+        $confirmation = $this->independentConnection();
+        $confirmation->beginTransaction();
+        $confirmation->executeStatement(
+            "SELECT pg_advisory_xact_lock_shared(hashtextextended('conwix.identity.email-verification-maintenance', 0))",
+        );
+
+        try {
+            $this->connection()->executeStatement("SET LOCAL lock_timeout = '100ms'");
+            $this->expectException(DriverException::class);
+
+            ($this->action())(new \DateTimeImmutable('1970-01-01T00:00:00+00:00'));
+        } finally {
+            $confirmation->rollBack();
+            $confirmation->close();
+        }
+    }
+
     public function testCommandDeletesOnlyTheWholeAbandonedAccountGraph(): void
     {
         self::bootKernel();
@@ -69,8 +116,14 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
     public function testAnyProtectedStateKeepsTheCompany(string $kind): void
     {
         self::bootKernel();
-        [$company, $user, $token] = $this->selfRegisteredAccount(new \DateTimeImmutable('-31 days'));
-        $this->addProtection($kind, $company, $user);
+        $createdAt = new \DateTimeImmutable('newer_company' === $kind ? '-29 days' : '-31 days');
+        [$company, $user, $token] = $this->selfRegisteredAccount(
+            $createdAt,
+            confirmed: 'confirmed_user' === $kind,
+        );
+        if (!\in_array($kind, ['confirmed_user', 'newer_company'], true)) {
+            $this->addProtection($kind, $company, $user);
+        }
 
         $deleted = ($this->action())(new \DateTimeImmutable('-30 days'));
 
@@ -88,6 +141,8 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
     {
         yield 'confirmed user' => ['confirmed_user'];
         yield 'marketplace account' => ['marketplace_account'];
+        yield 'extension token' => ['extension_token'];
+        yield 'fresh confirmation token' => ['live_confirmation_token'];
         yield 'sales fact' => ['sales_fact'];
         yield 'expense fact' => ['marketplace_expense_fact'];
         yield 'raw document' => ['marketplace_raw_document'];
@@ -136,7 +191,7 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
     /**
      * @return array{Company, User, EmailVerificationToken}
      */
-    private function selfRegisteredAccount(\DateTimeImmutable $companyCreatedAt): array
+    private function selfRegisteredAccount(\DateTimeImmutable $companyCreatedAt, bool $confirmed = false): array
     {
         /** @var CompanyRepository $companies */
         $companies = self::getContainer()->get(CompanyRepository::class);
@@ -144,34 +199,30 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
         $members = new DoctrineCompanyMemberRepository($this->entityManager());
         $company = CompanyBuilder::aCompany()
             ->withName('Abandoned '.Uuid::v7()->toRfc4122())
+            ->withCreatedAt($companyCreatedAt)
             ->persistWith($companies);
-        $user = UserBuilder::aUser()
-            ->withEmail(\sprintf('abandoned-%s@example.test', Uuid::v7()->toRfc4122()))
-            ->unconfirmed()
-            ->persistWith($users);
+        $userBuilder = UserBuilder::aUser()
+            ->withEmail(\sprintf('abandoned-%s@example.test', Uuid::v7()->toRfc4122()));
+        if (!$confirmed) {
+            $userBuilder = $userBuilder->unconfirmed();
+        }
+        $user = $userBuilder->persistWith($users);
         CompanyMemberBuilder::aCompanyMember()
             ->withCompany($company)
             ->withUser($user)
             ->persistWith($companies, $users, $members);
         $token = EmailVerificationTokenBuilder::aToken($user, hash('sha256', Uuid::v7()->toRfc4122()))
+            ->withIssuedAt($companyCreatedAt)
             ->persistWith($this->entityManager());
-        $this->entityManager()->persist(AuditRecord::record(
-            companyId: $company->id(),
-            actorUserId: $user->id(),
-            action: AuditAction::CompanyRegistered,
-            subjectId: $company->id(),
-            previousValue: null,
-            newValue: $user->email(),
-            occurredAt: $companyCreatedAt,
-        ));
+        AuditRecordBuilder::anAuditRecord()
+            ->withCompanyId($company->id())
+            ->withActorUserId($user->id())
+            ->withAction(AuditAction::CompanyRegistered)
+            ->withSubjectId($company->id())
+            ->withChange(null, $user->email())
+            ->withOccurredAt($companyCreatedAt)
+            ->persistWith(new DoctrineAuditRecordRepository($this->entityManager()));
         $this->entityManager()->flush();
-        $this->connection()->executeStatement(
-            'UPDATE company SET created_at = :created_at WHERE id = :id',
-            [
-                'created_at' => $companyCreatedAt->format('Y-m-d H:i:s'),
-                'id' => $company->id()->toRfc4122(),
-            ],
-        );
 
         return [$company, $user, $token];
     }
@@ -181,14 +232,22 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
         $connection = $this->connection();
 
         match ($kind) {
-            'confirmed_user' => $connection->executeStatement(
-                'UPDATE "user" SET email_confirmed_at = :at WHERE id = :id',
-                ['at' => '2026-09-01 12:00:00', 'id' => $user->id()->toRfc4122()],
-            ),
             'marketplace_account' => MarketplaceAccountBuilder::aMarketplaceAccount()
                 ->withCompany($company)
                 ->withExternalShopId(Uuid::v7()->toRfc4122())
                 ->persistWith($this->companies(), new DoctrineMarketplaceAccountRepository($this->entityManager())),
+            'extension_token' => ExtensionTokenBuilder::anExtensionToken()
+                ->withCompany($company)
+                ->withUser($user)
+                ->persistWith(
+                    $this->companies(),
+                    new DoctrineUserRepository($this->entityManager()),
+                    new DoctrineExtensionTokenRepository($this->entityManager()),
+                ),
+            'live_confirmation_token' => EmailVerificationTokenBuilder::aToken(
+                $user,
+                hash('sha256', Uuid::v7()->toRfc4122()),
+            )->withIssuedAt(new \DateTimeImmutable())->persistWith($this->entityManager()),
             'sales_fact' => SalesFactBuilder::aSalesFact()
                 ->withCompanyId($company->id())
                 ->withSourceRowId(Uuid::v7()->toRfc4122())
@@ -214,10 +273,6 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
                 ->withCompany($company)
                 ->withCapturedBy($user)
                 ->persistWith(new DoctrinePriceObservationWriter($connection)),
-            'newer_company' => $connection->executeStatement(
-                'UPDATE company SET created_at = :created_at WHERE id = :id',
-                ['created_at' => (new \DateTimeImmutable('-29 days'))->format('Y-m-d H:i:s'), 'id' => $company->id()->toRfc4122()],
-            ),
             default => throw new \LogicException('Unknown protection kind '.$kind),
         };
     }
@@ -274,6 +329,14 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
         return new PurgeUnconfirmedAccountsAction(new DoctrineUnconfirmedAccountCleaner($this->connection()));
     }
 
+    private function resendAction(): ResendEmailVerificationAction
+    {
+        /** @var ResendEmailVerificationAction $action */
+        $action = self::getContainer()->get(ResendEmailVerificationAction::class);
+
+        return $action;
+    }
+
     private function command(): Command
     {
         /** @var \Symfony\Component\HttpKernel\KernelInterface $kernel */
@@ -301,5 +364,20 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
 
         return $entityManager;
+    }
+
+    private function independentConnection(): Connection
+    {
+        $params = $this->connection()->getParams();
+
+        return DriverManager::getConnection([
+            'driver' => 'pdo_pgsql',
+            'host' => $params['host'],
+            'port' => $params['port'],
+            'user' => $params['user'],
+            'password' => $params['password'],
+            'dbname' => $params['dbname'],
+            'serverVersion' => $params['serverVersion'],
+        ]);
     }
 }

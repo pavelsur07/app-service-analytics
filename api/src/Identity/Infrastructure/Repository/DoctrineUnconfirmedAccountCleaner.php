@@ -19,6 +19,12 @@ use Doctrine\DBAL\Connection;
  */
 final readonly class DoctrineUnconfirmedAccountCleaner implements UnconfirmedAccountCleaner
 {
+    private const string MAINTENANCE_LOCK_SQL = <<<'SQL'
+        SELECT pg_advisory_xact_lock(
+            hashtextextended('conwix.identity.email-verification-maintenance', 0)
+        )
+        SQL;
+
     public function __construct(
         private Connection $connection,
     ) {
@@ -26,8 +32,14 @@ final readonly class DoctrineUnconfirmedAccountCleaner implements UnconfirmedAcc
 
     public function purgeCreatedBefore(\DateTimeImmutable $cutoff): int
     {
-        $deleted = $this->connection->fetchOne(
-            <<<'SQL'
+        return $this->connection->transactional(static function (Connection $connection) use ($cutoff): int {
+            // Блокировка выполняется отдельным statement: после ожидания
+            // следующий statement получает новый READ COMMITTED snapshot
+            // и видит подтверждение, которое успело завершиться перед уборкой.
+            $connection->executeStatement(self::MAINTENANCE_LOCK_SQL);
+
+            $deleted = $connection->fetchOne(
+                <<<'SQL'
                 WITH eligible_company AS MATERIALIZED (
                     SELECT c.id
                     FROM company c
@@ -40,6 +52,15 @@ final readonly class DoctrineUnconfirmedAccountCleaner implements UnconfirmedAcc
                             AND u.email_confirmed_at IS NOT NULL
                       )
                       AND NOT EXISTS (SELECT 1 FROM marketplace_account ma WHERE ma.company_id = c.id)
+                      AND NOT EXISTS (SELECT 1 FROM extension_token et WHERE et.company_id = c.id)
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM company_member live_member
+                          JOIN email_verification_token live_token ON live_token.user_id = live_member.user_id
+                          WHERE live_member.company_id = c.id
+                            AND live_token.consumed_at IS NULL
+                            AND live_token.expires_at > CURRENT_TIMESTAMP
+                      )
                       AND NOT EXISTS (SELECT 1 FROM sales_fact sf WHERE sf.company_id = c.id)
                       AND NOT EXISTS (SELECT 1 FROM marketplace_expense_fact mef WHERE mef.company_id = c.id)
                       AND NOT EXISTS (SELECT 1 FROM marketplace_raw_document mrd WHERE mrd.company_id = c.id)
@@ -107,16 +128,17 @@ final readonly class DoctrineUnconfirmedAccountCleaner implements UnconfirmedAcc
                 )
                 SELECT count(*) FROM deleted_companies
                 SQL,
-            [
-                'cutoff' => $cutoff->format('Y-m-d H:i:s'),
-                'registration_action' => AuditAction::CompanyRegistered,
-            ],
-        );
+                [
+                    'cutoff' => $cutoff->format('Y-m-d H:i:s'),
+                    'registration_action' => AuditAction::CompanyRegistered,
+                ],
+            );
 
-        if (!\is_int($deleted) && !\is_string($deleted)) {
-            throw new \UnexpectedValueException('Expected deleted company count to be numeric.');
-        }
+            if (!\is_int($deleted) && !\is_string($deleted)) {
+                throw new \UnexpectedValueException('Expected deleted company count to be numeric.');
+            }
 
-        return (int) $deleted;
+            return (int) $deleted;
+        });
     }
 }

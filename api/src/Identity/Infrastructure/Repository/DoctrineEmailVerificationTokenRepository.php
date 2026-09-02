@@ -17,6 +17,12 @@ use Symfony\Component\Uid\Uuid;
 
 final readonly class DoctrineEmailVerificationTokenRepository implements EmailVerificationTokenRepository
 {
+    private const string MAINTENANCE_LOCK_SQL = <<<'SQL'
+        SELECT pg_advisory_xact_lock_shared(
+            hashtextextended('conwix.identity.email-verification-maintenance', 0)
+        )
+        SQL;
+
     public function __construct(
         private EntityManagerInterface $entityManager,
     ) {
@@ -24,8 +30,12 @@ final readonly class DoctrineEmailVerificationTokenRepository implements EmailVe
 
     public function add(EmailVerificationToken $token): void
     {
-        $this->entityManager->persist($token);
-        $this->entityManager->flush();
+        $connection = $this->entityManager->getConnection();
+        $connection->transactional(function (Connection $connection) use ($token): void {
+            $connection->executeStatement(self::MAINTENANCE_LOCK_SQL);
+            $this->entityManager->persist($token);
+            $this->entityManager->flush();
+        });
     }
 
     public function confirm(string $tokenHash, \DateTimeImmutable $now): EmailConfirmationTransition
@@ -34,6 +44,12 @@ final readonly class DoctrineEmailVerificationTokenRepository implements EmailVe
         $formattedNow = $now->format('Y-m-d H:i:s');
 
         return $connection->transactional(function (Connection $connection) use ($tokenHash, $now, $formattedNow): EmailConfirmationTransition {
+            // Ручная уборка берёт эксклюзивную версию той же блокировки
+            // отдельным statement до снимка кандидатов. Подтверждения
+            // используют shared-вариант и не мешают друг другу, но не могут
+            // подтвердить пользователя по снимку одновременно с его удалением.
+            $connection->executeStatement(self::MAINTENANCE_LOCK_SQL);
+
             $token = $connection->executeQuery(
                 <<<'SQL'
                     UPDATE email_verification_token

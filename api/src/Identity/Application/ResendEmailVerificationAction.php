@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Identity\Application;
 
+use App\Identity\Domain\EmailVerificationLifecycleGuard;
 use App\Identity\Domain\EmailVerificationToken;
 use App\Identity\Domain\EmailVerificationTokenRepository;
 use App\Identity\Domain\RegistrationEmailSender;
@@ -16,26 +17,33 @@ final readonly class ResendEmailVerificationAction
         private UserRepository $users,
         private EmailVerificationTokenRepository $tokens,
         private RegistrationEmailSender $registrationEmails,
+        private EmailVerificationLifecycleGuard $lifecycle,
     ) {
     }
 
     public function __invoke(string $email, \DateTimeImmutable $now): void
     {
-        // Здесь поиск допустим: пользователь явно просит повтор, а вставки
-        // аккаунта нет. Наружный ответ всё равно не раскрывает результат.
-        $user = $this->users->findByEmail($email);
-        if (null === $user) {
-            return;
-        }
+        $this->lifecycle->runShared(function () use ($email, $now): void {
+            // Здесь поиск допустим: пользователь явно просит повтор, а вставки
+            // аккаунта нет. Наружный ответ всё равно не раскрывает результат.
+            $user = $this->users->findByEmail($email);
+            if (null === $user) {
+                // SMTP-вызов есть во всех трёх ветках: иначе status/timing
+                // ответа превращается в oracle существования аккаунта.
+                $this->registrationEmails->sendNoAccountFound($email);
 
-        if (null !== $user->emailConfirmedAt()) {
-            $this->registrationEmails->sendAlreadyRegistered($user->email());
+                return;
+            }
 
-            return;
-        }
+            if (null !== $user->emailConfirmedAt()) {
+                $this->registrationEmails->sendAlreadyRegistered($user->email());
 
-        $secret = EmailVerificationSecret::generate();
-        $this->tokens->add(EmailVerificationToken::issue($user->id(), $secret->hash(), $now));
-        $this->registrationEmails->sendConfirmation($user->email(), $secret);
+                return;
+            }
+
+            $secret = EmailVerificationSecret::generate();
+            $this->tokens->add(EmailVerificationToken::issue($user->id(), $secret->hash(), $now));
+            $this->registrationEmails->sendConfirmation($user->email(), $secret);
+        });
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Identity;
 
+use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Tests\Support\Builder\EmailVerificationTokenBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -31,9 +32,8 @@ final class EmailVerificationSchemaTest extends KernelTestCase
         $user = UserBuilder::aUser()
             ->withEmail(\sprintf('signup-%s@example.com', Uuid::v7()->toRfc4122()))
             ->unconfirmed($consentedAt, '2026-09-02')
-            ->build();
+            ->persistWith(new DoctrineUserRepository($entityManager));
 
-        $entityManager->persist($user);
         $token = EmailVerificationTokenBuilder::aToken(
             $user,
             hash('sha256', Uuid::v7()->toRfc4122()),
@@ -52,27 +52,17 @@ final class EmailVerificationSchemaTest extends KernelTestCase
         $entityManager = $this->entityManager();
         $user = UserBuilder::aUser()
             ->withEmail(\sprintf('token-%s@example.com', Uuid::v7()->toRfc4122()))
-            ->build();
+            ->persistWith(new DoctrineUserRepository($entityManager));
 
-        $entityManager->persist($user);
-        $entityManager->flush();
-
-        $connection = $entityManager->getConnection();
         $tokenHash = hash('sha256', Uuid::v7()->toRfc4122());
-        $values = [
-            'id' => Uuid::v7()->toRfc4122(),
-            'user_id' => $user->id()->toRfc4122(),
-            'token_hash' => $tokenHash,
-            'issued_at' => '2026-09-02 10:01:00',
-            'expires_at' => '2026-09-03 10:01:00',
-            'consumed_at' => null,
-        ];
-
-        $connection->insert('email_verification_token', $values);
+        EmailVerificationTokenBuilder::aToken($user, $tokenHash)
+            ->withIssuedAt(new \DateTimeImmutable('2026-09-02T10:01:00+00:00'))
+            ->persistWith($entityManager);
 
         $this->expectException(UniqueConstraintViolationException::class);
-        $values['id'] = Uuid::v7()->toRfc4122();
-        $connection->insert('email_verification_token', $values);
+        EmailVerificationTokenBuilder::aToken($user, $tokenHash)
+            ->withIssuedAt(new \DateTimeImmutable('2026-09-02T10:02:00+00:00'))
+            ->persistWith($entityManager);
     }
 
     private function entityManager(): EntityManagerInterface
