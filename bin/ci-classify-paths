@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+changed=$(cat)
+
+matches() {
+    printf '%s\n' "$changed" | grep -qE "$1"
+}
+
+# Эти пути определяют, как выполняются проверки, поэтому всегда включают
+# обе половины конвейера. Сам классификатор тоже не может фильтровать себя.
+everything='^(\.github/|Makefile|docker-compose\.yml|docker-compose\.prod\.yml|docker/|api/migrations/|bin/ci-classify-paths$)'
+
+if [[ -z "$changed" ]] || matches "$everything"; then
+    backend=true
+    frontend=true
+else
+    backend=false
+    frontend=false
+    matches '^api/' && backend=true
+    # Скрипты bin/ и их поведенческие тесты исполняются в backend-job.
+    matches '^bin/' && backend=true
+    matches '^apps/' && frontend=true
+    # Контракт общий: правка схемы касается обеих половин.
+    if matches '^packages/api-schema/'; then
+        backend=true
+        frontend=true
+    fi
+fi
+
+printf 'backend=%s\nfrontend=%s\n' "$backend" "$frontend"

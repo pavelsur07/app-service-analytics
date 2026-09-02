@@ -19,6 +19,8 @@ app-service-analytics/
 ├── playwright.config.ts  один конфиг на репозиторий, проекты seller и admin
 ├── package.json          только @playwright/test под этот конфиг
 ├── bin/
+│   ├── ci-classify-paths  классифицирует изменённые пути для CI;
+│   │                         исполняется самим workflow и shell-тестом
 │   ├── review-prepare.sh сборка пакета для внешнего ревью (make review-prepare)
 │   ├── capture-ozon-buyout-fixtures.sh  интерактивно снимает raw-ответы
 │   │                         Ozon без передачи API-ключа в argv

@@ -35,7 +35,8 @@ test_smartcaptcha_secret_is_required_only_by_api() {
         'POSTGRES_PASSWORD=test' \
         'POSTGRES_DB=test' > "$env_file"
 
-    if docker compose --env-file "$env_file" -f "$ROOT/docker-compose.prod.yml" \
+    if env -u SMARTCAPTCHA_SERVER_KEY \
+        docker compose --env-file "$env_file" -f "$ROOT/docker-compose.prod.yml" \
         config > "$missing_output" 2>&1; then
         fail 'production Compose принят без SMARTCAPTCHA_SERVER_KEY'
     fi
@@ -43,7 +44,8 @@ test_smartcaptcha_secret_is_required_only_by_api() {
         fail 'production Compose упал не из-за отсутствующего SMARTCAPTCHA_SERVER_KEY'
 
     printf 'SMARTCAPTCHA_SERVER_KEY=%s\n' "$dummy_key" >> "$env_file"
-    docker compose --env-file "$env_file" -f "$ROOT/docker-compose.prod.yml" \
+    env -u SMARTCAPTCHA_SERVER_KEY \
+        docker compose --env-file "$env_file" -f "$ROOT/docker-compose.prod.yml" \
         config --format json > "$config_output"
 
     jq -e --arg key "$dummy_key" \
@@ -60,6 +62,7 @@ test_smartcaptcha_secret_is_required_only_by_api() {
         fail 'SMARTCAPTCHA_SERVER_KEY передан не только api'
 }
 
+export SMARTCAPTCHA_SERVER_KEY='smartcaptcha-ambient-test-only-do-not-use'
 test_smartcaptcha_secret_is_required_only_by_api
 
 printf 'OK: production SmartCaptcha secret is api-only\n'
