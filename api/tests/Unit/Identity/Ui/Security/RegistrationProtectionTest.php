@@ -63,6 +63,38 @@ final class RegistrationProtectionTest extends TestCase
         self::assertSame(0, $captcha->calls);
     }
 
+    public function testRejectingOnlyTheEmailLimitStillConsumesTheIpLimitWithoutCallingCaptcha(): void
+    {
+        $events = new FakeLimiterEvents();
+        $emailRetryAfter = new \DateTimeImmutable('2026-09-02T12:20:00+00:00');
+        $emailLimiter = new FakeLimiterFactory('email', $this->rejectedLimit($emailRetryAfter), $events);
+        $ipLimiter = new FakeLimiterFactory('ip', $this->acceptedLimit(), $events);
+        $captcha = new FakeCaptchaVerifier();
+
+        $result = $this->protection($emailLimiter, $ipLimiter, $captcha, new TestHandler())->check(self::EMAIL, self::CLIENT_IP, self::CAPTCHA_TOKEN);
+
+        self::assertSame(RegistrationProtectionDecision::RateLimited, $result->decision);
+        self::assertSame($emailRetryAfter, $result->retryAfter);
+        self::assertSame(['email.consume', 'ip.consume'], $events->entries);
+        self::assertSame(0, $captcha->calls);
+    }
+
+    public function testRejectingOnlyTheIpLimitStillConsumesTheEmailLimitWithoutCallingCaptcha(): void
+    {
+        $events = new FakeLimiterEvents();
+        $ipRetryAfter = new \DateTimeImmutable('2026-09-02T12:40:00+00:00');
+        $emailLimiter = new FakeLimiterFactory('email', $this->acceptedLimit(), $events);
+        $ipLimiter = new FakeLimiterFactory('ip', $this->rejectedLimit($ipRetryAfter), $events);
+        $captcha = new FakeCaptchaVerifier();
+
+        $result = $this->protection($emailLimiter, $ipLimiter, $captcha, new TestHandler())->check(self::EMAIL, self::CLIENT_IP, self::CAPTCHA_TOKEN);
+
+        self::assertSame(RegistrationProtectionDecision::RateLimited, $result->decision);
+        self::assertSame($ipRetryAfter, $result->retryAfter);
+        self::assertSame(['email.consume', 'ip.consume'], $events->entries);
+        self::assertSame(0, $captcha->calls);
+    }
+
     public function testReturnsCaptchaRejectedAfterAcceptedLimits(): void
     {
         $events = new FakeLimiterEvents();
