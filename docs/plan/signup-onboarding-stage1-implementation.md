@@ -484,19 +484,19 @@ git commit -m "Подтверждает email одноразовым токен�
 - Produces: `EmailConfirmedUserChecker implements UserCheckerInterface`.
 - Configures the checker only on firewalls `api` and `extension`; the administrator firewall remains unaffected.
 
-- [ ] **Step 1: Write failing real-login test**
+- [x] **Step 1: Write failing real-login test**
 
 Persist an unconfirmed user with a valid password and POST the correct credentials to `/api/auth/login`. Assert `401` and then `/api/auth/me` also returns `401`.
 
 Do not test configuration text; exercise HTTP as required by Stage 1 DoD.
 
-- [ ] **Step 2: Write failing restored-session test**
+- [x] **Step 2: Write failing restored-session test**
 
 Use `KernelBrowser::loginUser($unconfirmedUser, 'api')`, then request `/api/auth/me`. Assert the session-restored principal is rejected with `401`. This proves the check is not merely in JSON login.
 
 Keep/extend a confirmed-user control test proving normal login still succeeds.
 
-- [ ] **Step 3: Run tests and confirm RED**
+- [x] **Step 3: Run tests and confirm RED**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Functional/Identity/AuthControllerTest.php
@@ -505,7 +505,7 @@ docker compose exec php-cli php bin/phpunit tests/Functional/Identity/Unconfirme
 
 Expected: unconfirmed user currently authenticates.
 
-- [ ] **Step 4: Implement and configure the checker**
+- [x] **Step 4: Implement and configure the checker**
 
 `checkPreAuth()` must ignore non-`User` principals and throw a Symfony account-status authentication exception when `emailConfirmedAt()` is null. `checkPostAuth()` is a no-op.
 
@@ -520,11 +520,11 @@ api:
 
 Do not add it to `admin`; `Administrator` is a different principal by ADR-007.
 
-- [ ] **Step 5: Ensure the failure response does not enumerate account state**
+- [x] **Step 5: Ensure the failure response does not enumerate account state**
 
 The login failure handler must continue returning the generic external code/message used for wrong password and unknown email. If Symfony exposes the custom checker message, map it back to the existing `invalid_credentials` response and rely on resend/confirmation pages for recovery.
 
-- [ ] **Step 6: Run focused tests GREEN**
+- [x] **Step 6: Run focused tests GREEN**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Functional/Identity/AuthControllerTest.php
@@ -533,7 +533,7 @@ docker compose exec php-cli php bin/phpunit tests/Functional/Identity/Unconfirme
 
 Expected: all confirmed controls pass; both unconfirmed paths return 401.
 
-- [ ] **Step 7: Commit Task 5**
+- [x] **Step 7: Commit Task 5**
 
 ```bash
 git add api/src/Identity/Infrastructure/Security api/config/packages/security.yaml api/tests/Functional/Identity

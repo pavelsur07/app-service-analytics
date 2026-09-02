@@ -159,6 +159,31 @@ final class ExtensionTokenControllerTest extends WebTestCase
         self::assertResponseStatusCodeSame(401);
     }
 
+    public function testValidExtensionTokenOfUnconfirmedUserIsRejected(): void
+    {
+        $client = static::createClient();
+        [$companies, $users, $companyMembers, $tokens] = $this->repositories();
+        $company = CompanyBuilder::aCompany()->persistWith($companies);
+        $user = UserBuilder::aUser()
+            ->withEmail('unconfirmed-extension@example.test')
+            ->unconfirmed()
+            ->persistWith($users);
+        CompanyMemberBuilder::aCompanyMember()
+            ->withCompany($company)
+            ->withUser($user)
+            ->persistWith($companies, $users, $companyMembers);
+        $secret = ExtensionTokenSecret::generate();
+        ExtensionTokenBuilder::anExtensionToken()
+            ->withCompany($company)
+            ->withUser($user)
+            ->withSecret($secret)
+            ->persistWith($companies, $users, $tokens);
+
+        $this->extensionMe($client, $secret->plaintext());
+
+        self::assertResponseStatusCodeSame(401);
+    }
+
     public function testTokenStopsWorkingWhenMembershipIsGone(): void
     {
         $client = static::createClient();

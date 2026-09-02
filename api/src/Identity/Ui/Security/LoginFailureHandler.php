@@ -8,6 +8,7 @@ use App\Shared\Ui\Response\ValidationErrorResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Security\Core\Exception\AccountStatusException;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
 use Symfony\Component\Security\Http\Authentication\AuthenticationFailureHandlerInterface;
 
@@ -21,8 +22,12 @@ final class LoginFailureHandler implements AuthenticationFailureHandlerInterface
 {
     public function onAuthenticationFailure(Request $request, AuthenticationException $exception): Response
     {
+        $message = $exception instanceof AccountStatusException
+            ? 'Invalid credentials.'
+            : $exception->getMessageKey();
+
         return new JsonResponse(
-            new ValidationErrorResponse(status: Response::HTTP_UNAUTHORIZED, code: 'invalid_credentials', message: $exception->getMessageKey()),
+            new ValidationErrorResponse(status: Response::HTTP_UNAUTHORIZED, code: 'invalid_credentials', message: $message),
             Response::HTTP_UNAUTHORIZED,
         );
     }

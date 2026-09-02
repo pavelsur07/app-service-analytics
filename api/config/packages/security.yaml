@@ -30,6 +30,7 @@ security:
             # Сессии нет: расширение предъявляет токен на каждом запросе.
             stateless: true
             provider: identity_user_provider
+            user_checker: App\Identity\Infrastructure\Security\EmailConfirmedUserChecker
             # Две разные ветки отказа, и нужны обе — иначе 401 приходит
             # HTML-страницей или пустым телом:
             #   заголовка нет вовсе  → AccessTokenAuthenticator::supports()
@@ -85,6 +86,7 @@ security:
             pattern: ^/api/
             lazy: true
             provider: identity_user_provider
+            user_checker: App\Identity\Infrastructure\Security\EmailConfirmedUserChecker
             # Без него неаутентифицированный запрос к защищённому пути
             # получает HTML debug-страницу Symfony, не JSON.
             entry_point: App\Identity\Ui\Security\ApiAuthenticationEntryPoint

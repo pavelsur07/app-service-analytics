@@ -22,6 +22,7 @@ final readonly class UserProvider implements UserProviderInterface
 {
     public function __construct(
         private UserRepository $users,
+        private EmailConfirmedUserChecker $emailConfirmedUserChecker,
     ) {
     }
 
@@ -41,7 +42,21 @@ final readonly class UserProvider implements UserProviderInterface
             throw new UnsupportedUserException(\sprintf('Instances of "%s" are not supported.', $user::class));
         }
 
-        return $this->loadUserByIdentifier($user->getUserIdentifier());
+        $refreshed = $this->loadUserByIdentifier($user->getUserIdentifier());
+
+        try {
+            // Symfony user_checker проверяет новые Passport, но ContextListener
+            // при восстановлении сессии только вызывает refreshUser(). Тот же
+            // checker применяется здесь, чтобы старая сессия не обходила запрет.
+            $this->emailConfirmedUserChecker->checkPreAuth($refreshed);
+        } catch (\Symfony\Component\Security\Core\Exception\AccountStatusException) {
+            $notFound = new UserNotFoundException('User cannot be restored from the session.');
+            $notFound->setUserIdentifier($user->getUserIdentifier());
+
+            throw $notFound;
+        }
+
+        return $refreshed;
     }
 
     public function supportsClass(string $class): bool
