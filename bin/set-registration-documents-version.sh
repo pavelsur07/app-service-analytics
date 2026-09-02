@@ -35,7 +35,7 @@ awk -v version="$version" '
         key = "REGISTRATION_DOCUMENTS_VERSION="
         written = 0
     }
-    index($0, key) == 1 {
+    /^[[:space:]]*(export[[:space:]]+)?REGISTRATION_DOCUMENTS_VERSION[[:space:]]*=/ {
         if (written == 0) {
             print key version
             written = 1

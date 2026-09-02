@@ -18,13 +18,15 @@ test_replaces_duplicates_without_exposing_or_changing_other_values() {
         'APP_SECRET=do-not-print-me' \
         'REGISTRATION_DOCUMENTS_VERSION=old' \
         'DATABASE_URL=postgresql://keep-me' \
-        'REGISTRATION_DOCUMENTS_VERSION=duplicate' > "$dotenv"
+        'REGISTRATION_DOCUMENTS_VERSION=duplicate' \
+        '  export REGISTRATION_DOCUMENTS_VERSION = late-export' \
+        ' REGISTRATION_DOCUMENTS_VERSION = late-spaced' > "$dotenv"
     chmod 640 "$dotenv"
 
     output=$("$SCRIPT" "$dotenv" '2026-09-02')
 
-    [[ $(grep -c '^REGISTRATION_DOCUMENTS_VERSION=' "$dotenv") == 1 ]] ||
-        fail 'после обновления осталось не ровно одно значение версии'
+    [[ $(grep -Ec '^[[:space:]]*(export[[:space:]]+)?REGISTRATION_DOCUMENTS_VERSION[[:space:]]*=' "$dotenv") == 1 ]] ||
+        fail 'после обновления осталось позднее переопределение версии'
     grep -qx 'REGISTRATION_DOCUMENTS_VERSION=2026-09-02' "$dotenv" ||
         fail 'версия документов не обновлена'
     grep -qx 'APP_SECRET=do-not-print-me' "$dotenv" ||
