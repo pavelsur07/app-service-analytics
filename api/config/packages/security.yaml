@@ -126,6 +126,7 @@ security:
     # Пинг-эндпоинты — публичны как раньше: отсутствие правила
     # не ограничивает.
     access_control:
+        - { path: ^/api/auth/sign-up$, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/login, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/logout, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/me, roles: ROLE_USER }

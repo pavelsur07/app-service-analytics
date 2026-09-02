@@ -188,7 +188,7 @@ git commit -m "Добавляет модель подтверждения email 
 - Produces: `RegistrationEmailSender::sendConfirmation(string $email, EmailVerificationSecret $secret): void` and `sendAlreadyRegistered(string $email): void`.
 - Changes: `CompanyRepository::registerWithOwner(Company $company, User $owner, CompanyMember $membership, AuditRecord $trail, ?EmailVerificationToken $verificationToken = null): bool`; `true` means the whole aggregate appeared, `false` means the unique email rejected it and the transaction left no rows.
 
-- [ ] **Step 1: Write failing functional tests for both email branches**
+- [x] **Step 1: Write failing functional tests for both email branches**
 
 Test `POST /api/auth/sign-up` with:
 
@@ -213,7 +213,7 @@ For the taken email, assert no additional company/membership/token/audit rows. C
 
 Use the Messenger test transport or inspect `messenger_messages` to assert that the free branch queued a confirmation email and the taken branch queued an already-registered reminder; never assert against a live SMTP server.
 
-- [ ] **Step 2: Write failing validation and admin-regression tests**
+- [x] **Step 2: Write failing validation and admin-regression tests**
 
 Add tests that `legalConsent: false`, missing consent, invalid email, blank company and password shorter than 12 chars return `422` without any database rows or queued email.
 
@@ -223,7 +223,7 @@ Keep the existing admin registration test and add:
 self::assertNotNull($owner->emailConfirmedAt(), 'admin-created owners remain usable without the public confirmation flow');
 ```
 
-- [ ] **Step 3: Run focused tests and confirm RED**
+- [x] **Step 3: Run focused tests and confirm RED**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Functional/Identity/SelfRegistrationControllerTest.php
@@ -232,13 +232,13 @@ docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ClientAcco
 
 Expected: signup route and new interfaces are absent.
 
-- [ ] **Step 4: Make the repository transaction return inserted/not-inserted**
+- [x] **Step 4: Make the repository transaction return inserted/not-inserted**
 
 Extend the existing transaction so its single flush includes optional `EmailVerificationToken`. Catch only `UniqueConstraintViolationException` caused by the unique user email, clear any closed EntityManager state if required by the current Doctrine version, and return `false`; rethrow unrelated database failures. Do not call `findByEmail()` before the insert.
 
 Preserve the existing admin `__invoke()` API. It passes no token, uses `AuditRecord::recordByAdmin()` and returns conflict to its controller exactly as before, adapting the controller from exception branching to the boolean result only if the repository now contains the conflict.
 
-- [ ] **Step 5: Implement self-registration inside the shared action**
+- [x] **Step 5: Implement self-registration inside the shared action**
 
 The self entry point must perform this order:
 
@@ -254,7 +254,7 @@ $created = $companies->registerWithOwner($company, $owner, $membership, $audit, 
 
 After the transaction returns, call `sendConfirmation()` when `$created` is true, otherwise `sendAlreadyRegistered()`. Never include the secret in logs or in `SelfRegistrationResult` after the mail sender has accepted it.
 
-- [ ] **Step 6: Implement mail sender without a new package**
+- [x] **Step 6: Implement mail sender without a new package**
 
 Add non-secret environment defaults:
 
@@ -271,7 +271,7 @@ $url = rtrim($sellerAppOrigin, '/').'/confirm-email?token='.rawurlencode($secret
 
 Use `Symfony\Component\Mailer\MailerInterface` and `Symfony\Component\Mime\Email`. Do not set `From` in code; `mailer.yaml` owns it. The free-email subject/body contains the URL; the taken-email subject/body says the account already exists and does not contain a token.
 
-- [ ] **Step 7: Implement request/controller and public access rule**
+- [x] **Step 7: Implement request/controller and public access rule**
 
 `SelfRegistrationRequest::fromJson()` accepts only server-relevant values and exposes `email`, `password`, `companyName`, `legalConsent`; it does not accept a document version. The controller hashes only after all request validation succeeds, passes the server-injected version and a single `new DateTimeImmutable()` to the action, and always returns the same `202` response for both valid-email branches.
 
@@ -283,7 +283,7 @@ Add exact public access rule before protected `/api/companies/` rules:
 
 Do not add rate limiting or captcha in Stage 1; those are Stage 2 and must run before hashing then.
 
-- [ ] **Step 8: Run focused tests GREEN**
+- [x] **Step 8: Run focused tests GREEN**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Functional/Identity/SelfRegistrationControllerTest.php
@@ -292,7 +292,7 @@ docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ClientAcco
 
 Expected: both pass, including mail queue and audit assertions.
 
-- [ ] **Step 9: Commit Task 2**
+- [x] **Step 9: Commit Task 2**
 
 ```bash
 git add api/.env api/config api/src/Identity api/tests/Functional/Identity

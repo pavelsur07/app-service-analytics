@@ -10,7 +10,6 @@ use App\Identity\Domain\User;
 use App\Identity\Ui\Request\RegisterClientAccountRequest;
 use App\Identity\Ui\Response\AdminCompanyResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
 use Symfony\Bundle\SecurityBundle\Security;
@@ -88,9 +87,8 @@ final class RegisterClientAccountController
             $payload->ownerPassword,
         );
 
-        try {
-            $company = ($this->registerAccount)($payload->companyName, $payload->ownerEmail, $passwordHash, $actor);
-        } catch (UniqueConstraintViolationException) {
+        $company = ($this->registerAccount)($payload->companyName, $payload->ownerEmail, $passwordHash, $actor);
+        if (null === $company) {
             // Транзакция откатилась целиком: компании без участников
             // после этого отказа не остаётся.
             return $this->error(Response::HTTP_CONFLICT, 'owner_email_taken', 'Пользователь с таким адресом уже существует.');

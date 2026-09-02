@@ -17,6 +17,8 @@ services:
         bind:
             string $alertEmail: '%env(ALERT_EMAIL)%'
             string $mailerDsn: '%env(MAILER_DSN)%'
+            string $sellerAppOrigin: '%env(SELLER_APP_ORIGIN)%'
+            string $registrationDocumentsVersion: '%env(REGISTRATION_DOCUMENTS_VERSION)%'
             int $expenseWindowDays: '%env(int:OZON_EXPENSE_WINDOW_DAYS)%'
 
     # makes classes in src/ available to be used as services

@@ -10,8 +10,11 @@ use App\Identity\Domain\AuditRecord;
 use App\Identity\Domain\Company;
 use App\Identity\Domain\CompanyMember;
 use App\Identity\Domain\CompanyRepository;
+use App\Identity\Domain\EmailVerificationToken;
+use App\Identity\Domain\RegistrationEmailSender;
 use App\Identity\Domain\User;
 use App\Identity\Domain\ValueObject\CompanyMemberRole;
+use App\Identity\Domain\ValueObject\EmailVerificationSecret;
 
 /**
  * Регистрация клиентского аккаунта администратором (ADR-017): компания
@@ -30,6 +33,7 @@ final readonly class RegisterClientAccountAction
 {
     public function __construct(
         private CompanyRepository $companies,
+        private RegistrationEmailSender $registrationEmails,
     ) {
     }
 
@@ -38,7 +42,7 @@ final readonly class RegisterClientAccountAction
         string $ownerEmail,
         string $ownerPasswordHash,
         Administrator $actor,
-    ): Company {
+    ): ?Company {
         $company = Company::register($companyName);
         $owner = User::register($ownerEmail, $ownerPasswordHash);
         $membership = CompanyMember::create($company->id(), $owner->id(), CompanyMemberRole::Owner);
@@ -56,8 +60,43 @@ final readonly class RegisterClientAccountAction
             occurredAt: new \DateTimeImmutable(),
         );
 
-        $this->companies->registerWithOwner($company, $owner, $membership, $trail);
+        if (!$this->companies->registerWithOwner($company, $owner, $membership, $trail)) {
+            return null;
+        }
 
         return $company;
+    }
+
+    public function selfRegister(
+        string $companyName,
+        string $ownerEmail,
+        string $passwordHash,
+        \DateTimeImmutable $consentedAt,
+        string $documentsVersion,
+    ): SelfRegistrationResult {
+        $owner = User::selfRegister($ownerEmail, $passwordHash, $consentedAt, $documentsVersion);
+        $company = Company::register($companyName);
+        $membership = CompanyMember::create($company->id(), $owner->id(), CompanyMemberRole::Owner);
+        $secret = EmailVerificationSecret::generate();
+        $token = EmailVerificationToken::issue($owner->id(), $secret->hash(), $consentedAt);
+        $trail = AuditRecord::record(
+            companyId: $company->id(),
+            actorUserId: $owner->id(),
+            action: AuditAction::CompanyRegistered,
+            subjectId: $company->id(),
+            previousValue: null,
+            newValue: $owner->email(),
+            occurredAt: $consentedAt,
+        );
+
+        $created = $this->companies->registerWithOwner($company, $owner, $membership, $trail, $token);
+
+        if ($created) {
+            $this->registrationEmails->sendConfirmation($owner->email(), $secret);
+        } else {
+            $this->registrationEmails->sendAlreadyRegistered($owner->email());
+        }
+
+        return new SelfRegistrationResult($created);
     }
 }

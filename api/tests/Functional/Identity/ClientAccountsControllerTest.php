@@ -109,6 +109,7 @@ final class ClientAccountsControllerTest extends WebTestCase
 
         $owner = (new DoctrineUserRepository($this->entityManager()))->findByEmail('owner@romashka.test');
         self::assertNotNull($owner, 'владелец заводится тем же действием');
+        self::assertNotNull($owner->emailConfirmedAt(), 'admin-created owners remain usable without the public confirmation flow');
 
         $membership = $this->connection()->fetchAssociative(
             'SELECT role FROM company_member WHERE company_id = :c AND user_id = :u',
