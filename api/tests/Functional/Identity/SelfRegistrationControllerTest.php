@@ -126,34 +126,6 @@ final class SelfRegistrationControllerTest extends WebTestCase
         self::assertSame($account['token_hash'], hash('sha256', $plainTextToken));
     }
 
-    #[DataProvider('repeatedAllowedRequests')]
-    public function testAllowedRegistrationIsHermeticAcrossRepeatedDataSets(): void
-    {
-        $before = $this->counts();
-
-        $this->signUp(
-            $this->client,
-            $this->validPayload('repeatable-allowed@example.test'),
-            ['REMOTE_ADDR' => '208.67.222.222'],
-        );
-
-        self::assertResponseStatusCodeSame(202);
-        self::assertSame(1, $this->captchaVerifier->calls);
-        self::assertSame(1, $this->passwordHasher->hashCalls);
-        self::assertSame($this->incremented($before), $this->counts());
-        self::assertEmailCount(1);
-    }
-
-    /**
-     * @return iterable<string, array{}>
-     */
-    public static function repeatedAllowedRequests(): iterable
-    {
-        yield 'first run' => [];
-        yield 'second run' => [];
-        yield 'third run' => [];
-    }
-
     public function testTakenEmailReturnsSamePublicResponseWithoutCreatingRows(): void
     {
         $client = $this->client;

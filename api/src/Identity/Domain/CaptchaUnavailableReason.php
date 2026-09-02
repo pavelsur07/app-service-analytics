@@ -10,4 +10,5 @@ enum CaptchaUnavailableReason: string
     case HttpStatus = 'http_status';
     case InvalidJson = 'invalid_json';
     case UnexpectedStatus = 'unexpected_status';
+    case UnexpectedHost = 'unexpected_host';
 }

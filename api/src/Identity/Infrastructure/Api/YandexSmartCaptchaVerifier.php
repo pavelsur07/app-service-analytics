@@ -19,17 +19,22 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  */
 final readonly class YandexSmartCaptchaVerifier implements CaptchaVerifier
 {
+    private string $expectedHost;
+
     public function __construct(
         private HttpClientInterface $smartCaptchaClient,
         private string $smartCaptchaServerKey,
         private LoggerInterface $logger,
+        string $sellerAppOrigin,
     ) {
+        $this->expectedHost = self::authorityHost($sellerAppOrigin);
     }
 
     public function verify(string $token, string $clientIp): CaptchaVerification
     {
         try {
             $response = $this->smartCaptchaClient->request('POST', '/validate', [
+                'max_redirects' => 0,
                 'body' => [
                     'secret' => $this->smartCaptchaServerKey,
                     'token' => $token,
@@ -53,11 +58,58 @@ final readonly class YandexSmartCaptchaVerifier implements CaptchaVerifier
             throw $this->unavailable(CaptchaUnavailableReason::Transport);
         }
 
-        return match ($payload['status'] ?? null) {
-            'ok' => CaptchaVerification::Passed,
-            'failed' => CaptchaVerification::Rejected,
-            default => throw $this->unavailable(CaptchaUnavailableReason::UnexpectedStatus),
-        };
+        $status = $payload['status'] ?? null;
+        if ('ok' === $status) {
+            if (($payload['host'] ?? null) !== $this->expectedHost) {
+                throw $this->unavailable(CaptchaUnavailableReason::UnexpectedHost);
+            }
+
+            return CaptchaVerification::Passed;
+        }
+
+        if ('failed' === $status) {
+            return CaptchaVerification::Rejected;
+        }
+
+        throw $this->unavailable(CaptchaUnavailableReason::UnexpectedStatus);
+    }
+
+    private static function authorityHost(string $sellerAppOrigin): string
+    {
+        try {
+            $parts = parse_url($sellerAppOrigin);
+        } catch (\ValueError) {
+            throw self::invalidSellerOrigin();
+        }
+
+        if (!\is_array($parts)) {
+            throw self::invalidSellerOrigin();
+        }
+
+        $scheme = $parts['scheme'] ?? null;
+        $host = $parts['host'] ?? null;
+        $path = $parts['path'] ?? '';
+        if (!\is_string($scheme)
+            || !\in_array(strtolower($scheme), ['http', 'https'], true)
+            || !\is_string($host)
+            || '' === $host
+            || (!\is_string($path) || !\in_array($path, ['', '/'], true))
+            || isset($parts['user'])
+            || isset($parts['pass'])
+            || isset($parts['query'])
+            || isset($parts['fragment'])
+        ) {
+            throw self::invalidSellerOrigin();
+        }
+
+        $port = $parts['port'] ?? null;
+
+        return $host.(\is_int($port) ? ':'.$port : '');
+    }
+
+    private static function invalidSellerOrigin(): \InvalidArgumentException
+    {
+        return new \InvalidArgumentException('SELLER_APP_ORIGIN must be an absolute HTTP(S) origin.');
     }
 
     private function unavailable(CaptchaUnavailableReason $reason, ?int $httpStatus = null): CaptchaUnavailable
