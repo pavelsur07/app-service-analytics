@@ -45,6 +45,40 @@ describe('signupFailure', () => {
     })
   })
 
+  it.each([
+    ['registration_rate_limited', 'Слишком много попыток. Попробуйте позже'],
+    ['captcha_unavailable', 'Проверка временно недоступна. Попробуйте позже'],
+  ] as const)(
+    'recognizes the %s code without relying on its HTTP status',
+    (code, message) => {
+      expect(signupFailure(new ApiError(422, code, 'backend detail'))).toEqual({
+        kind: 'general',
+        message,
+      })
+    },
+  )
+
+  it.each([
+    [429, 'email_invalid', 'Слишком много попыток. Попробуйте позже'],
+    [503, 'captcha_invalid', 'Проверка временно недоступна. Попробуйте позже'],
+    [429, 'captcha_unavailable', 'Слишком много попыток. Попробуйте позже'],
+    [
+      503,
+      'registration_rate_limited',
+      'Проверка временно недоступна. Попробуйте позже',
+    ],
+  ] as const)(
+    'gives the fixed %i response precedence over the conflicting %s code',
+    (status, code, message) => {
+      expect(
+        signupFailure(new ApiError(status, code, 'backend detail')),
+      ).toEqual({
+        kind: 'general',
+        message,
+      })
+    },
+  )
+
   it('does not expose unknown backend or network details', () => {
     const failure = signupFailure(new Error('SMTP recipient and stack trace'))
 
