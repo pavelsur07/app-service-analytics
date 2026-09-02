@@ -7,9 +7,10 @@ namespace App\Tests\Support\Fake;
 use App\Identity\Domain\CaptchaUnavailable;
 use App\Identity\Domain\CaptchaVerification;
 use App\Identity\Domain\CaptchaVerifier;
+use Symfony\Contracts\Service\ResetInterface;
 
 /** Test double for flows that must never make an external CAPTCHA request. */
-final class FakeCaptchaVerifier implements CaptchaVerifier
+final class FakeCaptchaVerifier implements CaptchaVerifier, ResetInterface
 {
     public int $calls = 0;
 
@@ -18,8 +19,8 @@ final class FakeCaptchaVerifier implements CaptchaVerifier
     public ?string $receivedClientIp = null;
 
     public function __construct(
-        private readonly CaptchaVerification $outcome = CaptchaVerification::Passed,
-        private readonly ?CaptchaUnavailable $unavailable = null,
+        private CaptchaVerification $outcome = CaptchaVerification::Passed,
+        private ?CaptchaUnavailable $unavailable = null,
     ) {
     }
 
@@ -34,5 +35,25 @@ final class FakeCaptchaVerifier implements CaptchaVerifier
         }
 
         return $this->outcome;
+    }
+
+    public function reject(): void
+    {
+        $this->outcome = CaptchaVerification::Rejected;
+        $this->unavailable = null;
+    }
+
+    public function becomeUnavailable(CaptchaUnavailable $unavailable): void
+    {
+        $this->unavailable = $unavailable;
+    }
+
+    public function reset(): void
+    {
+        $this->calls = 0;
+        $this->receivedToken = null;
+        $this->receivedClientIp = null;
+        $this->outcome = CaptchaVerification::Passed;
+        $this->unavailable = null;
     }
 }
