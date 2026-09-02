@@ -7,11 +7,7 @@ import { ConfirmEmailView } from './ConfirmEmailPage'
 
 function renderState(state: ConfirmEmailState): string {
   return renderToStaticMarkup(
-    <MemoryRouter
-      initialEntries={[
-        '/confirm-email?token=never-render-this&utm_source=mail',
-      ]}
-    >
+    <MemoryRouter initialEntries={['/confirm-email#token=never-render-this']}>
       <ConfirmEmailView state={state} onRetry={() => undefined} />
     </MemoryRouter>,
   )

@@ -68,6 +68,7 @@ test_node_seller_receives_only_the_public_client_key
 
 if [[ "${SMARTCAPTCHA_CLIENT_CONFIG_RUN_BUILDS:-0}" = '1' ]]; then
     test_vite_rejects_missing_key_and_accepts_public_key
+    printf 'OK: public SmartCaptcha client configuration is isolated and build-validated\n'
+else
+    printf 'OK: public SmartCaptcha client configuration is isolated (build checks skipped)\n'
 fi
-
-printf 'OK: public SmartCaptcha client configuration is isolated and build-validated\n'

@@ -4,10 +4,7 @@ import { CircleAlert, CircleCheck, Link2Off, LoaderCircle } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { Button, Card, StatusPanel } from '../../../../../../packages/ui/src'
-import {
-  eraseConfirmationAddress,
-  takeConfirmationToken,
-} from '../lib/confirmationToken'
+import { consumeBootstrappedConfirmationToken } from '../lib/confirmationToken'
 import { useConfirmEmail } from '../model/useConfirmEmail'
 import type { ConfirmEmailState } from '../model/useConfirmEmail'
 
@@ -128,10 +125,7 @@ export function ConfirmEmailPage() {
   const { state, start, retry } = useConfirmEmail()
 
   useEffect(() => {
-    const taken = takeConfirmationToken(window.location.href)
-
-    eraseConfirmationAddress(window.history, taken.sanitizedPath)
-    start(taken.token)
+    start(consumeBootstrappedConfirmationToken())
   }, [start])
 
   return <ConfirmEmailView state={state} onRetry={retry} />

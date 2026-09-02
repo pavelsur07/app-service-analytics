@@ -17,6 +17,8 @@ describe('EmailSentPage', () => {
     expect(markup).toContain(
       'Если указанный адрес можно использовать, мы отправим на него письмо с инструкциями.',
     )
+    expect(markup).toContain('«Входящие»')
+    expect(markup).toContain('«Спам»')
     expect(markup).not.toContain('known@example.com')
     expect(markup).toContain('href="/resend-confirmation"')
     expect(markup).toContain('href="/login"')

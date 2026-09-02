@@ -272,7 +272,7 @@ REGISTRATION_DOCUMENTS_VERSION=2026-09-02
 Bind both strings in `services.yaml`. `MailRegistrationEmailSender` builds the confirmation URL as:
 
 ```php
-$url = rtrim($sellerAppOrigin, '/').'/confirm-email?token='.rawurlencode($secret->plainText());
+$url = rtrim($sellerAppOrigin, '/').'/confirm-email#token='.rawurlencode($secret->plainText());
 ```
 
 Use `Symfony\Component\Mailer\MailerInterface` and `Symfony\Component\Mime\Email`. Do not set `From` in code; `mailer.yaml` owns it. The free-email subject/body contains the URL; the taken-email subject/body says the account already exists and does not contain a token.

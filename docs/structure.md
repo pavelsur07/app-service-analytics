@@ -397,7 +397,7 @@ apps/seller/
 ```
 apps/seller/
 ├── src/
-│   ├── main.tsx                       точка входа
+│   ├── main.tsx                       точка входа + раннее стирание confirmation fragment
 │   ├── index.css                      @import "tailwindcss"
 │   ├── app/
 │   │   ├── Root.tsx                   роутер + QueryClientProvider
@@ -418,7 +418,7 @@ apps/seller/
 │       │   ├── lib/
 │       │   │   ├── captchaFlow.ts       автомат invisible SmartCaptcha
 │       │   │   ├── captchaLoaderGuard.ts watchdog загрузки виджета
-│       │   │   └── confirmationToken.ts одноразовое чтение token из URL
+│       │   │   └── confirmationToken.ts одноразовый fragment-token bootstrap
 │       │   ├── model/                   auth-запросы и useCurrentUser
 │       │   └── ui/
 │       │       ├── SignUpPage.tsx

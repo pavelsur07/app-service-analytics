@@ -18,7 +18,7 @@ export function EmailSentPage({ onResend }: Props = {}) {
           <StatusPanel
             icon={<MailCheck aria-hidden="true" size={20} />}
             title="Проверьте почту"
-            description="Если указанный адрес можно использовать, мы отправим на него письмо с инструкциями."
+            description="Если указанный адрес можно использовать, мы отправим на него письмо с инструкциями. Проверьте папки «Входящие» и «Спам»."
             tone="accent"
             action={
               <div className="flex flex-col items-center gap-2 text-sm">

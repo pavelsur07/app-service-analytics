@@ -17,6 +17,7 @@ import {
 import {
   acceptCaptcha,
   failCaptcha,
+  failCaptchaLoader,
   resetCaptcha,
   retryCaptcha,
   showChallenge,
@@ -53,11 +54,7 @@ export function SignUpPage() {
 
   const failProviderLoad = useCallback(() => {
     const current = flowRef.current
-    const next = failCaptcha(
-      current,
-      CAPTCHA_UNAVAILABLE_MESSAGE,
-      'reload-page',
-    )
+    const next = failCaptchaLoader(current, CAPTCHA_UNAVAILABLE_MESSAGE)
 
     if (next === current) {
       return
@@ -108,6 +105,19 @@ export function SignUpPage() {
     if (next === current) {
       return
     }
+
+    setCaptchaRevision((revision) => revision + 1)
+    updateFlow(next)
+  }
+
+  const failPendingProviderLoad = () => {
+    const current = flowRef.current
+
+    if (current.status !== 'checking') {
+      return
+    }
+
+    const next = failCaptchaLoader(current, CAPTCHA_UNAVAILABLE_MESSAGE)
 
     setCaptchaRevision((revision) => revision + 1)
     updateFlow(next)
@@ -277,7 +287,7 @@ export function SignUpPage() {
                 onTokenExpired={() => {
                   failAndRemount(CAPTCHA_RETRY_MESSAGE)
                 }}
-                onJavascriptError={failProviderLoad}
+                onJavascriptError={failPendingProviderLoad}
                 onSuccess={submitWithCaptcha}
               />
             )}

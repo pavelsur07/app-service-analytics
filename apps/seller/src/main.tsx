@@ -1,6 +1,9 @@
 import { createRoot } from 'react-dom/client'
 import { Root } from './app/Root'
+import { bootstrapBrowserConfirmationToken } from './features/auth/lib/confirmationToken'
 import './index.css'
+
+bootstrapBrowserConfirmationToken(window.location, window.history)
 
 const container = document.getElementById('root')
 if (!container) {

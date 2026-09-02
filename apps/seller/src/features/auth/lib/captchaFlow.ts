@@ -10,7 +10,7 @@ export type CaptchaFlowState =
       recovery: CaptchaFailureRecovery
     }
 
-export type CaptchaFailureRecovery = 'remount' | 'reload-page'
+type CaptchaFailureRecovery = 'remount' | 'reload-page'
 
 export type CaptchaRetryDecision =
   | { action: 'continue'; state: CaptchaFlowState }
@@ -45,13 +45,23 @@ export function acceptCaptcha(
 export function failCaptcha(
   state: CaptchaFlowState,
   message: string,
-  recovery: CaptchaFailureRecovery = 'remount',
+): CaptchaFlowState {
+  if (state.status !== 'checking') {
+    return state
+  }
+
+  return { status: 'failed', message, recovery: 'remount' }
+}
+
+export function failCaptchaLoader(
+  state: CaptchaFlowState,
+  message: string,
 ): CaptchaFlowState {
   if (state.status !== 'idle' && state.status !== 'checking') {
     return state
   }
 
-  return { status: 'failed', message, recovery }
+  return { status: 'failed', message, recovery: 'reload-page' }
 }
 
 export function retryCaptcha(state: CaptchaFlowState): CaptchaRetryDecision {

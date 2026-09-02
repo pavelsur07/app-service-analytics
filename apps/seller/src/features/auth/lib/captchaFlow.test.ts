@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   acceptCaptcha,
   failCaptcha,
+  failCaptchaLoader,
   resetCaptcha,
   retryCaptcha,
   showChallenge,
@@ -57,6 +58,7 @@ describe('captcha flow', () => {
   it('fails provider callbacks only while checking', () => {
     const checking = { status: 'checking' as const, request }
     const submitting = { status: 'submitting' as const, request }
+    const idle = { status: 'idle' as const }
 
     expect(failCaptcha(checking, 'Captcha is unavailable.')).toEqual({
       status: 'failed',
@@ -64,13 +66,13 @@ describe('captcha flow', () => {
       recovery: 'remount',
     })
     expect(failCaptcha(submitting, 'Captcha is unavailable.')).toBe(submitting)
+    expect(failCaptcha(idle, 'Late widget failure.')).toBe(idle)
   })
 
   it('records a pre-submit loader failure and requires a page reload', () => {
-    const failed = failCaptcha(
+    const failed = failCaptchaLoader(
       { status: 'idle' },
       'Captcha loader is unavailable.',
-      'reload-page',
     )
 
     expect(failed).toEqual({
@@ -82,6 +84,23 @@ describe('captcha flow', () => {
       action: 'reload-page',
       state: failed,
     })
+
+    expect(
+      failCaptchaLoader(
+        { status: 'checking', request },
+        'Captcha loader timed out.',
+      ),
+    ).toEqual({
+      status: 'failed',
+      message: 'Captcha loader timed out.',
+      recovery: 'reload-page',
+    })
+  })
+
+  it('ignores a stale loader callback after submission has settled to idle', () => {
+    const idle = resetCaptcha()
+
+    expect(failCaptcha(idle, 'Late widget failure.')).toBe(idle)
   })
 
   it('starts a fresh widget after a recoverable provider failure', () => {

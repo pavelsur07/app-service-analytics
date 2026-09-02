@@ -388,14 +388,17 @@ git commit -m "Добавляет экран самостоятельной ре
 - Create: `apps/seller/src/features/auth/model/useConfirmEmail.ts`
 - Create: `apps/seller/src/features/auth/model/useConfirmEmail.test.ts`
 - Create: `apps/seller/src/features/auth/ui/ConfirmEmailPage.tsx`
+- Modify: `apps/seller/src/main.tsx`
+- Modify: `api/src/Identity/Infrastructure/Notification/MailRegistrationEmailSender.php`
 
 - [ ] **Step 1: Write failing tests for extracting and erasing the token**
 
-Define a pure helper that reads `token` from a supplied URL, and a browser helper that calls `history.replaceState` before any request. Tests cover:
+Define a pure helper that reads `token` only from the fragment of a supplied URL, and a bootstrap helper that calls `history.replaceState` before React renders or any request starts. Tests cover:
 
-- a non-empty token is returned only in memory;
-- missing/blank token is rejected locally;
-- the rewritten URL is exactly `/confirm-email`, with the complete query string removed;
+- a generated 64-character lowercase hex token is returned only in memory;
+- missing/blank/malformed fragment token is rejected locally;
+- query-token is never accepted;
+- the rewritten URL is exactly `/confirm-email`, with query and fragment removed;
 - token never enters localStorage, sessionStorage, logs, or rendered markup.
 
 Run:
@@ -408,14 +411,16 @@ Expected: FAIL because the helpers do not exist.
 
 - [ ] **Step 2: Implement token extraction and address-bar cleanup**
 
-On first page evaluation:
+At the beginning of `main.tsx`, before `createRoot(...).render(...)`:
 
 ```ts
-const token = takeConfirmationToken(window.location.href);
-window.history.replaceState(window.history.state, "", token.sanitizedPath);
+bootstrapBrowserConfirmationToken(window.location, window.history);
 ```
 
-Retain the token in component memory only for a transient retry. Perform cleanup before invoking the mutation.
+`ConfirmEmailPage` consumes that bootstrapped value once and retains it in
+component memory only for a transient retry. Perform cleanup before invoking
+the mutation. Backend emails must generate
+`/confirm-email#token=<encoded-token>`, never `?token=`.
 
 - [ ] **Step 3: Write failing outcome-routing tests**
 
@@ -520,7 +525,7 @@ Wrap only `/onboarding` in `RequireAuth`. Keep it outside the company/applicatio
 Update:
 
 - `docs/structure.md` with the new auth/onboarding model and UI files;
-- `docs/patterns.md` with the invisible-captcha state-machine pattern, one-use token rule, query-token erasure, and exact pinned-package rationale;
+- `docs/patterns.md` with the invisible-captcha state-machine pattern, one-use token rule, fragment-token bootstrap/erasure, and exact pinned-package rationale;
 - `docs/operations-checklist.md` with `SMARTCAPTCHA_CLIENT_KEY` as a public GitHub repository variable, build fail-fast behavior, legal-page preflight, real-mailbox smoke, and rollback checks.
 
 Explicitly record the rollout blocker: the legal pages currently load Google Fonts while the privacy text denies cross-border transfer; public opening waits for removal or policy reconciliation.
@@ -653,7 +658,8 @@ Use a fresh, actually available alias controlled by the operator. Exercise:
 1. `/sign-up` loads all three legal links and an unchecked consent box;
 2. valid submit executes invisible captcha and returns the neutral email-sent page;
 3. the external mailbox receives the confirmation email;
-4. opening the link removes `token` from the address bar before the request is observable;
+4. the link carries the token only in the URL fragment, and opening it removes
+   query and fragment from the address bar before React render and the POST;
 5. confirmation opens the session and lands on protected `/onboarding`;
 6. the page mentions future store name, `Client-Id`, and `Api-Key` only;
 7. refresh retains the authenticated session;

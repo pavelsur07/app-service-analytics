@@ -34,9 +34,10 @@ OAuth, новые backend endpoints, миграции или изменение 
   `VITE_SMARTCAPTCHA_CLIENT_KEY`.
 - Server key остаётся только в окружении production API и во frontend не
   передаётся ни при сборке, ни в рантайме.
-- API Stage 1–2 уже содержит нужный контракт. Stage 3 использует
+- API Stage 1–2 уже содержит нужный HTTP-контракт. Stage 3 использует
   `/api/auth/sign-up`, `/api/auth/email-verification/resend` и
-  `/api/auth/email-verification/confirm` без backend-правок.
+  `/api/auth/email-verification/confirm`; формат ссылки в синхронном письме
+  меняется так, чтобы bearer token находился только во fragment URL.
 - Юридическое согласие — одна обязательная непредзаполненная отметка с тремя
   отдельными ссылками:
   - `https://conwix.com/oferta.html`;
@@ -83,10 +84,13 @@ email и не обещает, что новый аккаунт был созда
 нейтральный результат для неизвестного, подтверждённого и неподтверждённого
 адреса. Так frontend сохраняет oracle-safe поведение backend.
 
-### `/confirm-email?token=...`
+### `/confirm-email#token=...`
 
-Страница один раз читает токен из query string, немедленно удаляет query
-через `history.replaceState` и выполняет POST подтверждения. Токен не
+Bootstrap приложения один раз читает токен из fragment, до первого React
+render заменяет полный адрес на `/confirm-email` через `history.replaceState`,
+а страница затем выполняет POST подтверждения. Fragment не отправляется
+nginx в исходном HTTP-запросе; query-вариант намеренно не поддерживается.
+Токен не
 попадает в TanStack Query, `localStorage` или сообщения интерфейса.
 
 Исходы:
@@ -234,7 +238,8 @@ fail-fast завершаться при пустом или не похожем 
   перезагрузки страницы;
 - loader guard доказывает, что зависшая загрузка завершается fail-closed,
   а успешная загрузка отменяет watchdog;
-- страница подтверждения удаляет token из URL до сетевого вызова;
+- bootstrap извлекает fragment-token и удаляет query/fragment из URL до
+  React render и сетевого вызова, а query-token отклоняется;
 - нейтральные экраны не содержат email и не различают существование
   аккаунта;
 - `/onboarding` проходит через `RequireAuth` и не входит в CompanyLayout.
