@@ -50,7 +50,7 @@
 - Produces: `User::selfRegister(string $email, string $passwordHash, DateTimeImmutable $consentedAt, string $legalDocumentsVersion): self`.
 - Preserves: `User::register(string $email, string $passwordHash): self` for trusted/admin/test setup, with `emailConfirmedAt = createdAt`.
 
-- [ ] **Step 1: Create ADR-020 as Proposed and register it before code**
+- [x] **Step 1: Create ADR-020 as Proposed and register it before code**
 
 Copy the ADR-021 draft from the spec into `docs/adr/0020-self-signup-email-confirmation-onboarding.md`, then make only these semantic edits:
 
@@ -69,7 +69,7 @@ Add registry row after ADR-019:
 
 Add a registry note that ADR-020 partially supersedes ADR-007 only after acceptance; while Proposed, it records the staged implementation and does not yet alter Accepted decisions.
 
-- [ ] **Step 2: Write failing secret and schema tests**
+- [x] **Step 2: Write failing secret and schema tests**
 
 In `EmailVerificationSecretTest`, assert 100 generated secrets are non-empty, pairwise different, and expose a 64-character lowercase SHA-256 hash that equals `hash('sha256', $secret->plainText())`.
 
@@ -85,7 +85,7 @@ self::assertNull($token->consumedAt());
 
 Also execute raw SQL twice with the same `token_hash` and assert the second insert raises `UniqueConstraintViolationException`.
 
-- [ ] **Step 3: Run the focused tests and confirm RED**
+- [x] **Step 3: Run the focused tests and confirm RED**
 
 Run:
 
@@ -96,7 +96,7 @@ docker compose exec php-cli php bin/phpunit tests/Integration/Identity/EmailVeri
 
 Expected: failure because the secret, token entity, user factories and columns do not exist.
 
-- [ ] **Step 4: Implement the value object, entities and migration**
+- [x] **Step 4: Implement the value object, entities and migration**
 
 `EmailVerificationSecret` must generate `bin2hex(random_bytes(32))`; it must never implement `__toString()` or serialization that exposes the plain text.
 
@@ -128,7 +128,7 @@ consumed_at timestamp null
 
 Add `idx_email_verification_token_user_id` and `uq_email_verification_token_hash`. Do not add Doctrine associations. The migration must add the three user columns, backfill `email_confirmed_at = created_at` for all existing rows, then create the token table. `down()` drops the token table and the three user columns.
 
-- [ ] **Step 5: Update immutable builders**
+- [x] **Step 5: Update immutable builders**
 
 `UserBuilder` defaults to confirmed and adds:
 
@@ -140,7 +140,7 @@ Because PHP does not allow `new` as a portable default in every supported contex
 
 `EmailVerificationTokenBuilder` is immutable, accepts an explicit user and token hash, and persists through the repository introduced in Task 2; until then its `build()` is usable by schema tests through `EntityManagerInterface`.
 
-- [ ] **Step 6: Apply the migration and run focused tests GREEN**
+- [x] **Step 6: Apply the migration and run focused tests GREEN**
 
 Run:
 
@@ -154,7 +154,7 @@ docker compose exec php-cli php bin/console doctrine:schema:validate
 
 Expected: all pass; Doctrine mapping and database schema agree.
 
-- [ ] **Step 7: Commit Task 1**
+- [x] **Step 7: Commit Task 1**
 
 ```bash
 git add docs/adr/0020-self-signup-email-confirmation-onboarding.md docs/adr/README.md api/src/Identity/Domain api/migrations api/tests/Unit/Identity api/tests/Integration/Identity/EmailVerificationSchemaTest.php api/tests/Support/Builder
@@ -834,4 +834,3 @@ git commit -m "Исправляет замечания ревью регистр
 ```
 
 Skip the commit only when no files changed after review.
-

@@ -14,6 +14,9 @@ final class UserBuilder
 {
     private string $email = 'owner@example.com';
     private string $passwordHash = 'stub-hash';
+    private bool $unconfirmed = false;
+    private ?\DateTimeImmutable $legalConsentAt = null;
+    private ?string $legalDocumentsVersion = null;
 
     private function __construct()
     {
@@ -40,8 +43,32 @@ final class UserBuilder
         return $clone;
     }
 
+    public function unconfirmed(
+        ?\DateTimeImmutable $consentedAt = null,
+        string $documentsVersion = '2026-09-02',
+    ): self {
+        $clone = clone $this;
+        $clone->unconfirmed = true;
+        $clone->legalConsentAt = $consentedAt ?? new \DateTimeImmutable('2026-09-02T10:00:00+00:00');
+        $clone->legalDocumentsVersion = $documentsVersion;
+
+        return $clone;
+    }
+
     public function build(): User
     {
+        if ($this->unconfirmed) {
+            \assert(null !== $this->legalConsentAt);
+            \assert(null !== $this->legalDocumentsVersion);
+
+            return User::selfRegister(
+                $this->email,
+                $this->passwordHash,
+                $this->legalConsentAt,
+                $this->legalDocumentsVersion,
+            );
+        }
+
         return User::register($this->email, $this->passwordHash);
     }
 
