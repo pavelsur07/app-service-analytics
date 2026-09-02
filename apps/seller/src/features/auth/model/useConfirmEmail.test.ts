@@ -43,6 +43,10 @@ describe('confirmation model', () => {
         invalidatedQueryKey = queryKey
         await invalidation
       },
+      removeAuth: () => {
+        events.push('remove')
+      },
+      clearToken: () => undefined,
     })
 
     void resultPromise.then(() => {
@@ -79,6 +83,8 @@ describe('confirmation model', () => {
       invalidateAuth: async () => {
         invalidated = true
       },
+      removeAuth: () => undefined,
+      clearToken: () => undefined,
     })
 
     expect(result).toEqual({ kind: 'failure', action: 'none' })
@@ -95,6 +101,8 @@ describe('confirmation model', () => {
       invalidateAuth: async () => {
         invalidated = true
       },
+      removeAuth: () => undefined,
+      clearToken: () => undefined,
     })
 
     expect(result).toEqual({
@@ -103,6 +111,99 @@ describe('confirmation model', () => {
       destination: '/resend-confirmation',
     })
     expect(invalidated).toBe(false)
+  })
+
+  it.each([
+    [
+      'confirmed success',
+      async () => ({ outcome: 'confirmed', next: '/onboarding' }),
+    ],
+    [
+      'already-used response',
+      async () => {
+        throw new ApiError(409, null, 'backend-only detail')
+      },
+    ],
+    [
+      'expired response',
+      async () => {
+        throw new ApiError(410, null, 'backend-only detail')
+      },
+    ],
+    [
+      'generic failure',
+      async () => {
+        throw new Error('unexpected detail')
+      },
+    ],
+  ] as const)('clears the token before returning %s', async (_name, post) => {
+    let retainedToken: string | null = 'terminal-token'
+
+    const result = await confirmEmailAttempt('terminal-token', {
+      post,
+      invalidateAuth: async () => undefined,
+      removeAuth: () => undefined,
+      clearToken: () => {
+        retainedToken = null
+      },
+    })
+
+    expect(result.kind).not.toBe('transient')
+    expect(retainedToken).toBeNull()
+  })
+
+  it('retains the token only for a transient POST failure', async () => {
+    let retainedToken: string | null = 'retry-token'
+
+    const result = await confirmEmailAttempt('retry-token', {
+      post: async () => {
+        throw new TypeError('network detail')
+      },
+      invalidateAuth: async () => undefined,
+      removeAuth: () => undefined,
+      clearToken: () => {
+        retainedToken = null
+      },
+    })
+
+    expect(result).toEqual({ kind: 'transient', action: 'retry' })
+    expect(retainedToken).toBe('retry-token')
+  })
+
+  it('removes stale auth and never repeats the POST when invalidation rejects', async () => {
+    let postCount = 0
+    let retainedToken: string | null = 'confirmed-token'
+    let removedQueryKey: readonly unknown[] | null = null
+    const dependencies = {
+      post: async () => {
+        postCount += 1
+        return { outcome: 'confirmed', next: '/onboarding' }
+      },
+      invalidateAuth: async () => {
+        throw new TypeError('refetch failed')
+      },
+      removeAuth: (queryKey: readonly unknown[]) => {
+        removedQueryKey = queryKey
+      },
+      clearToken: () => {
+        retainedToken = null
+      },
+    }
+
+    const result = await confirmEmailAttempt('confirmed-token', dependencies)
+
+    if (result.kind === 'transient' && retainedToken !== null) {
+      await confirmEmailAttempt(retainedToken, dependencies)
+    }
+
+    expect(result).toEqual({
+      kind: 'confirmed',
+      action: 'navigate',
+      destination: '/onboarding',
+    })
+    expect(postCount).toBe(1)
+    expect(removedQueryKey).toEqual(['auth', 'me'])
+    expect(retainedToken).toBeNull()
   })
 })
 

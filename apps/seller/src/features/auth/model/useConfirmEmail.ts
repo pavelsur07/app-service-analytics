@@ -28,6 +28,8 @@ interface ConfirmationAttemptDependencies {
     request: ConfirmationRequest,
   ): Promise<EmailConfirmationResponse>
   invalidateAuth(queryKey: ReturnType<typeof authQueryKey>): Promise<unknown>
+  removeAuth(queryKey: ReturnType<typeof authQueryKey>): void
+  clearToken(): void
 }
 
 export type ConfirmEmailState =
@@ -44,21 +46,33 @@ export async function confirmEmailAttempt(
   token: string,
   dependencies: ConfirmationAttemptDependencies,
 ): Promise<ConfirmationResolution> {
+  let resolution: ConfirmationResolution
+
   try {
     const response = await dependencies.post(
       CONFIRMATION_ENDPOINT,
       confirmationRequest(token),
     )
-    const resolution = confirmationOutcome(response)
-
-    if (resolution.kind === 'confirmed') {
-      await dependencies.invalidateAuth(authQueryKey())
-    }
-
-    return resolution
+    resolution = confirmationOutcome(response)
   } catch (error: unknown) {
-    return confirmationFailure(error)
+    resolution = confirmationFailure(error)
   }
+
+  if (resolution.kind !== 'transient') {
+    dependencies.clearToken()
+  }
+
+  if (resolution.kind === 'confirmed') {
+    const queryKey = authQueryKey()
+
+    try {
+      await dependencies.invalidateAuth(queryKey)
+    } catch {
+      dependencies.removeAuth(queryKey)
+    }
+  }
+
+  return resolution
 }
 
 export function useConfirmEmail() {
@@ -83,6 +97,12 @@ export function useConfirmEmail() {
           apiPost<EmailConfirmationResponse>(path, request),
         invalidateAuth: (queryKey) =>
           queryClient.invalidateQueries({ queryKey }),
+        removeAuth: (queryKey) => {
+          queryClient.removeQueries({ queryKey })
+        },
+        clearToken: () => {
+          tokenRef.current = null
+        },
       })
 
       inFlightRef.current = false
