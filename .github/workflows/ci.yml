@@ -21,6 +21,7 @@ env:
   # и на них ссылаются docker save/load в кэше. Без явного значения имя
   # берётся из названия каталога и молча меняется вместе с ним.
   COMPOSE_PROJECT_NAME: conwix
+  SMARTCAPTCHA_CLIENT_KEY: ${{ vars.SMARTCAPTCHA_CLIENT_KEY }}
 
 jobs:
   changes:
@@ -244,6 +245,8 @@ jobs:
         run: make front-install-apps
 
       - run: make front-dev
+
+      - run: SMARTCAPTCHA_CLIENT_CONFIG_RUN_BUILDS=1 bin/tests/smartcaptcha-client-config.test.sh
 
       - run: make front-typecheck front-lint front-test front-knip front-build
 
