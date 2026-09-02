@@ -20,6 +20,7 @@ services:
             string $sellerAppOrigin: '%env(SELLER_APP_ORIGIN)%'
             string $registrationDocumentsVersion: '%env(REGISTRATION_DOCUMENTS_VERSION)%'
             string $smartCaptchaServerKey: '%env(SMARTCAPTCHA_SERVER_KEY)%'
+            string $kernelSecret: '%kernel.secret%'
             int $expenseWindowDays: '%env(int:OZON_EXPENSE_WINDOW_DAYS)%'
 
     # makes classes in src/ available to be used as services
@@ -75,6 +76,11 @@ services:
     App\Identity\Infrastructure\Api\YandexSmartCaptchaVerifier:
         arguments:
             $smartCaptchaClient: '@smartcaptcha.client'
+
+    App\Identity\Ui\Security\RegistrationProtection:
+        arguments:
+            $registrationEmailLimiter: '@limiter.registration_email'
+            $registrationIpLimiter: '@limiter.registration_ip'
 
     # Тег вешается явно: автоконфигурация Monolog подхватывает процессоры
     # по интерфейсу только внутри самого бандла, не в App\.
