@@ -709,7 +709,7 @@ git commit -m "Добавляет ручную уборку неподтверж
 - Documents the public signup/resend/confirm endpoints and the purge command.
 - Generates TypeScript API types; Stage 3 will consume them, but no seller UI is added now.
 
-- [ ] **Step 1: Update living documentation**
+- [x] **Step 1: Update living documentation**
 
 In `docs/structure.md`, add focused entries for registration Application actions, email notification adapter, security checker, token repository/entity and purge command; do not enumerate every filename if the existing section documents directories by responsibility.
 
@@ -724,7 +724,7 @@ In `docs/operations-checklist.md`, add:
 
 OAuth `404` release-check добавляется вместе со Stage 5, когда маршруты появятся; до этого проверять несуществующий код бессмысленно.
 
-- [ ] **Step 2: Generate and verify the API contract**
+- [x] **Step 2: Generate and verify the API contract**
 
 ```bash
 make api-doc-export
@@ -734,7 +734,7 @@ make api-types-check
 
 Expected: OpenAPI contains signup/resend/confirm request and response shapes, and generated TypeScript types are synchronized.
 
-- [ ] **Step 3: Run structural checks**
+- [x] **Step 3: Run structural checks**
 
 ```bash
 make structure-check
@@ -743,7 +743,7 @@ make deptrac
 
 Expected: zero violations; the cleanup capability is unreachable from HTTP layers.
 
-- [ ] **Step 4: Commit Task 8**
+- [x] **Step 4: Commit Task 8**
 
 ```bash
 git add docs/structure.md docs/operations-checklist.md packages/api-schema
