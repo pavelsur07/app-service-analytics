@@ -100,6 +100,7 @@ final class ListClientAccountsController
                 name: $row->name,
                 status: $row->status,
                 createdAt: $row->createdAt,
+                hasConfirmedUser: $row->hasConfirmedUser,
             ),
             array_map(AllCompaniesForAdminQuery::mapRow(...), $rawRows),
         );

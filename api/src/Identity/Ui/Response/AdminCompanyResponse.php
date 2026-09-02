@@ -11,6 +11,7 @@ final readonly class AdminCompanyResponse
         public string $name,
         public string $status,
         public string $createdAt,
+        public bool $hasConfirmedUser,
     ) {
     }
 }

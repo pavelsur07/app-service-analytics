@@ -100,6 +100,7 @@ final class RegisterClientAccountController
                 name: $company->name(),
                 status: $company->status()->value,
                 createdAt: $company->createdAt()->format(\DATE_ATOM),
+                hasConfirmedUser: true,
             ),
             Response::HTTP_CREATED,
         );

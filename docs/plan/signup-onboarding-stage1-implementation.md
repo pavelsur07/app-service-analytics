@@ -553,11 +553,11 @@ git commit -m "Закрывает вход до подтверждения email
 - Adds: `AdminCompanyRow::$hasConfirmedUser: bool`.
 - Adds: JSON field `hasConfirmedUser` to `AdminCompanyResponse`.
 
-- [ ] **Step 1: Write failing list test**
+- [x] **Step 1: Write failing list test**
 
 Create one company with a confirmed member and one with only an unconfirmed member. GET the admin list and assert `hasConfirmedUser` is true/false for the corresponding rows. Ensure the test does not rely on ordering alone; index returned items by company id.
 
-- [ ] **Step 2: Run test and confirm RED**
+- [x] **Step 2: Run test and confirm RED**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ClientAccountsControllerTest.php
@@ -565,7 +565,7 @@ docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ClientAcco
 
 Expected: response field absent.
 
-- [ ] **Step 3: Extend the single DBAL list query**
+- [x] **Step 3: Extend the single DBAL list query**
 
 Add a correlated `EXISTS`, not a per-row repository call:
 
@@ -581,7 +581,7 @@ EXISTS (
 
 Map PostgreSQL boolean safely (`true`, `false`, `'1'`, `'0'` as actually returned by the configured DBAL driver) and expose it in the response.
 
-- [ ] **Step 4: Run test GREEN**
+- [x] **Step 4: Run test GREEN**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ClientAccountsControllerTest.php
@@ -589,7 +589,7 @@ docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ClientAcco
 
 Expected: pass with no extra queries per company.
 
-- [ ] **Step 5: Commit Task 6**
+- [x] **Step 5: Commit Task 6**
 
 ```bash
 git add api/src/Identity/Infrastructure/Query api/src/Identity/Ui api/tests/Functional/Identity/ClientAccountsControllerTest.php
