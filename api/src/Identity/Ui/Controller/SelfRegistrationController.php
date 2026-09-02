@@ -20,8 +20,6 @@ use Symfony\Component\Routing\Attribute\Route;
 #[Route('/api/auth/sign-up', name: 'identity_self_registration', methods: ['POST'])]
 final readonly class SelfRegistrationController
 {
-    private const string ACCEPTED_MESSAGE = 'Если адрес указан верно, письмо с дальнейшими инструкциями уже отправлено.';
-
     public function __construct(
         private RegisterClientAccountAction $registerAccount,
         private UserPasswordHasherInterface $passwordHasher,
@@ -70,7 +68,10 @@ final readonly class SelfRegistrationController
             $this->registrationDocumentsVersion,
         );
 
-        return new JsonResponse(new SelfRegistrationResponse(self::ACCEPTED_MESSAGE), Response::HTTP_ACCEPTED);
+        return new JsonResponse(
+            new SelfRegistrationResponse(SelfRegistrationResponse::ACCEPTED_MESSAGE),
+            Response::HTTP_ACCEPTED,
+        );
     }
 
     private function validationMessage(string $code): string

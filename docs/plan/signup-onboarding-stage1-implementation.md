@@ -315,13 +315,13 @@ git commit -m "Открывает самостоятельную регистр�
 - Uses: `UserRepository::findByEmail(string): ?User` only after the client explicitly requests resend; signup itself remains insert-first.
 - Uses: `EmailVerificationTokenRepository::add(EmailVerificationToken): void`.
 
-- [ ] **Step 1: Write failing tests for append-only resend**
+- [x] **Step 1: Write failing tests for append-only resend**
 
 Create an unconfirmed user, call `POST /api/auth/email-verification/resend` twice with its email and assert two distinct token rows exist with unchanged first-row fields. Assert two confirmation emails were queued.
 
 Call the same endpoint for an unknown email and a confirmed email; assert the exact status/body matches the unconfirmed case and no token is created. Do not expose whether the email exists or is already confirmed.
 
-- [ ] **Step 2: Run the test and confirm RED**
+- [x] **Step 2: Run the test and confirm RED**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ResendEmailVerificationControllerTest.php
@@ -329,7 +329,7 @@ docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ResendEmai
 
 Expected: route/action absent.
 
-- [ ] **Step 3: Implement the action and endpoint**
+- [x] **Step 3: Implement the action and endpoint**
 
 For an unconfirmed user, generate a fresh secret, persist a new `EmailVerificationToken`, then send confirmation. Never mutate or invalidate older rows. For unknown/confirmed users, send the already-registered reminder or no-op behind the same public response; choose one behavior and keep it indistinguishable over HTTP. Use the same generic `202` body as signup.
 
@@ -341,7 +341,7 @@ Add:
 
 Rate limiting remains intentionally absent until Stage 2.
 
-- [ ] **Step 4: Run the test GREEN**
+- [x] **Step 4: Run the test GREEN**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ResendEmailVerificationControllerTest.php
@@ -349,7 +349,7 @@ docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ResendEmai
 
 Expected: pass; two resends produce two append-only rows.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```bash
 git add api/src/Identity api/config/packages/security.yaml api/tests/Functional/Identity/ResendEmailVerificationControllerTest.php
