@@ -95,6 +95,8 @@ jobs:
             backend=false
             frontend=false
             matches '^api/' && backend=true
+            # Скрипты bin/ и их поведенческие тесты исполняются в backend-job.
+            matches '^bin/' && backend=true
             matches '^apps/' && frontend=true
             # Контракт общий: правка схемы касается обеих половин.
             matches '^packages/api-schema/' && { backend=true; frontend=true; }
@@ -131,6 +133,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      - name: production env updater
+        run: bin/tests/set-registration-documents-version.test.sh
 
       # Контейнеры и хост делят чекаут и обязаны сходиться в uid: часть
       # целей Makefile пишет с хоста, а не из контейнера. Подробнее —
@@ -627,6 +632,11 @@ jobs:
     # Не GitHub Environment с обязательным подтверждением: выкладка
     # автоматическая по решению владельца. Предохранитель остался один
     # и он настоящий — миграции ниже, их конвейер не применяет.
+    env:
+      # Несекретная версия юридических документов — часть релиза: смена
+      # проходит code review вместе с формой и текстами, а не правится
+      # вручную на сервере после того, как required env уже остановил deploy.
+      REGISTRATION_DOCUMENTS_VERSION: '2026-09-02'
     permissions:
       contents: read
       packages: read
@@ -651,6 +661,18 @@ jobs:
           # выкладка приняла бы любой сервер, оказавшийся по этому адресу.
           printf '%s\n' '${{ secrets.DEPLOY_KNOWN_HOSTS }}' > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+
+      - name: версия юридических документов на сервере
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -eu
+          # .env содержит секреты, поэтому не скачивается на runner и не
+          # печатается. Скрипт уезжает по stdin и атомарно меняет ровно
+          # одну несекретную строку, сохраняя права файла.
+          ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes "root@$DEPLOY_HOST" \
+            "sh -s -- /opt/conwix/.env '$REGISTRATION_DOCUMENTS_VERSION'" \
+            < bin/set-registration-documents-version.sh
 
       - name: топология и статика на сервер
         run: |
