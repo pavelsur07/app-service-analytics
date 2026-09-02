@@ -798,7 +798,7 @@ Expected: empty dev/test databases rebuild, the single Stage 1 migration applies
 Record evidence for all 14 items. For this stage pay special attention to:
 
 ```text
-1  no company-scoped repository read without companyId except the explicitly documented cleanup/auth boundary
+1  no company-scoped repository read without companyId except the explicitly documented cleanup/auth/pre-auth lifecycle boundary
 6  no find-then-insert in signup; token consumption condition is inside UPDATE
 7  token.user_id index exists in the same migration
 8  mail/list/cleanup code contains no queries in loops

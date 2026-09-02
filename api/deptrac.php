@@ -36,6 +36,7 @@ return static function (DeptracConfig $config): void {
                         ClassLikeConfig::create('^App\\Identity\\Domain\\UnconfirmedAccountCleaner$'),
                         ClassLikeConfig::create('^App\\Identity\\Domain\\EmailVerificationTokenRepository$'),
                         ClassLikeConfig::create('^App\\Identity\\Domain\\EmailVerificationLifecycleGuard$'),
+                        ClassLikeConfig::create('^App\\Identity\\Domain\\EmailVerificationUserByEmailQuery$'),
                     ],
                 ),
             ),
@@ -81,6 +82,7 @@ return static function (DeptracConfig $config): void {
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineUnconfirmedAccountCleaner$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineEmailVerificationTokenRepository$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineEmailVerificationLifecycleGuard$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineEmailVerificationUserByEmailQuery$'),
                     ],
                 ),
             ),
@@ -129,13 +131,14 @@ return static function (DeptracConfig $config): void {
             $identityPurgeCommand = Layer::withName('IdentityPurgeCommand')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\Ui\\Command\\PurgeUnconfirmedAccountsCommand$'),
             ),
-            // Подтверждение по предъявленному token hash определяет пользователя
-            // и компанию только после lookup, поэтому это authentication boundary
-            // из CLAUDE.md §1. Репозиторий, два допустимых сценария и ровно два
-            // их HTTP-входа вынесены из широких слоёв: никакой будущий seller
-            // controller не получает межарендаторный lookup автоматически.
+            // Две явно описанные ADR-021 pre-auth lifecycle-операции:
+            // confirm определяет пользователя по предъявленному token hash,
+            // resend по email выполняет только нейтральный побочный эффект.
+            // Репозитории/guard, ровно два action и ровно два HTTP-входа
+            // вынесены из широких слоёв: никакой будущий seller controller
+            // не получает межарендаторный lookup автоматически (CLAUDE.md §1).
             $identityEmailVerificationBoundary = Layer::withName('IdentityEmailVerificationBoundary')->collectors(
-                ClassLikeConfig::create('^App\\Identity\\(Domain\\EmailVerification(LifecycleGuard|TokenRepository)|Infrastructure\\Repository\\DoctrineEmailVerification(LifecycleGuard|TokenRepository))$'),
+                ClassLikeConfig::create('^App\\Identity\\(Domain\\EmailVerification(LifecycleGuard|TokenRepository|UserByEmailQuery)|Infrastructure\\Repository\\DoctrineEmailVerification(LifecycleGuard|TokenRepository|UserByEmailQuery))$'),
             ),
             $identityEmailVerificationAction = Layer::withName('IdentityEmailVerificationAction')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\Application\\(ConfirmEmail|ResendEmailVerification)Action$'),
