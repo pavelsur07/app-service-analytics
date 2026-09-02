@@ -23,6 +23,9 @@ final class AuditAction
     /** Зарегистрирован клиентский аккаунт: компания и её владелец. */
     public const string CompanyRegistered = 'company.registered';
 
+    /** Пользователь подтвердил владение адресом электронной почты. */
+    public const string UserEmailConfirmed = 'user.email_confirmed';
+
     public const string CompanyBlocked = 'company.blocked';
 
     public const string CompanyActivated = 'company.activated';

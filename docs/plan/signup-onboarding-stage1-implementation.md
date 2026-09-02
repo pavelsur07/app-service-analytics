@@ -378,7 +378,7 @@ git commit -m "Добавляет повторную отправку подтв
 - Produces: `ConfirmEmailAction::__invoke(EmailVerificationSecret $secret, DateTimeImmutable $now): EmailConfirmationResult`.
 - `EmailConfirmationResult` contains outcome and `?User`; `User` is non-null only for `Confirmed` so the controller can open a session.
 
-- [ ] **Step 1: Write failing integration tests for the conditional transition**
+- [x] **Step 1: Write failing integration tests for the conditional transition**
 
 Cover:
 
@@ -387,7 +387,7 @@ Cover:
 3. expired token returns `Expired`, changes no row and writes no audit;
 4. two different live tokens for one user: first returns `Confirmed`, second cannot create another confirmation event and returns `AlreadyConsumed` after consuming or recognizing the already-confirmed user atomically.
 
-- [ ] **Step 2: Run integration test and confirm RED**
+- [x] **Step 2: Run integration test and confirm RED**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Integration/Identity/ConfirmEmailActionTest.php
@@ -395,7 +395,7 @@ docker compose exec php-cli php bin/phpunit tests/Integration/Identity/ConfirmEm
 
 Expected: repository transition and outcome types absent.
 
-- [ ] **Step 3: Implement one database transaction with the condition inside UPDATE**
+- [x] **Step 3: Implement one database transaction with the condition inside UPDATE**
 
 The winning statement must contain both conditions:
 
@@ -434,13 +434,13 @@ AuditRecord::record(
 
 Resolve `$companyId` in the same transaction by joining `company_member` for the owner membership created by signup. If the first update affects zero rows, read only that token row to distinguish expired/unknown from consumed; unknown maps to `Expired` so the API does not gain a token oracle.
 
-- [ ] **Step 4: Write failing HTTP/session tests**
+- [x] **Step 4: Write failing HTTP/session tests**
 
 Post a valid secret to `/api/auth/email-verification/confirm`, assert `200`, `outcome = confirmed`, then call `/api/auth/me` with the same browser and assert success without a password login.
 
 Post the same secret again and assert `409` with `outcome = already_consumed`. Post an expired/unknown secret and assert `410` with `outcome = expired`.
 
-- [ ] **Step 5: Implement controller and programmatic login**
+- [x] **Step 5: Implement controller and programmatic login**
 
 Add the public rule:
 
@@ -456,7 +456,7 @@ $security->login($result->user, firewallName: 'api');
 
 Return only outcome and next route metadata needed by Stage 3; never return the token. The backend next target is the seller onboarding route, not a company dashboard.
 
-- [ ] **Step 6: Run focused tests GREEN**
+- [x] **Step 6: Run focused tests GREEN**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Integration/Identity/ConfirmEmailActionTest.php
@@ -465,7 +465,7 @@ docker compose exec php-cli php bin/phpunit tests/Functional/Identity/ConfirmEma
 
 Expected: pass; duplicate confirmation produces one audit row and the first call opens a working session.
 
-- [ ] **Step 7: Commit Task 4**
+- [x] **Step 7: Commit Task 4**
 
 ```bash
 git add api/src/Identity api/config/packages/security.yaml api/tests/Integration/Identity/ConfirmEmailActionTest.php api/tests/Functional/Identity/ConfirmEmailControllerTest.php
