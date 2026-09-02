@@ -3,6 +3,7 @@ import type { ChangeEventHandler, FocusEventHandler, Ref } from 'react'
 
 interface Props {
   checked: boolean
+  disabled: boolean
   error?: string | undefined
   inputRef?: Ref<HTMLInputElement>
   name: string
@@ -15,6 +16,7 @@ const LINK_CLASS =
 
 export function LegalConsentField({
   checked,
+  disabled,
   error,
   inputRef,
   name,
@@ -31,6 +33,7 @@ export function LegalConsentField({
           type="checkbox"
           name={name}
           checked={checked}
+          disabled={disabled}
           onBlur={onBlur}
           onChange={onChange}
           aria-invalid={error === undefined ? undefined : true}

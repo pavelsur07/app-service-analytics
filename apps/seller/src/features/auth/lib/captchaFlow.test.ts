@@ -4,6 +4,7 @@ import {
   acceptCaptcha,
   failCaptcha,
   resetCaptcha,
+  retryCaptcha,
   showChallenge,
   startCaptcha,
 } from './captchaFlow'
@@ -42,7 +43,11 @@ describe('captcha flow', () => {
   it('ignores a duplicate or stale success outside checking', () => {
     const submitting = { status: 'submitting' as const, request }
     const idle = { status: 'idle' as const }
-    const failed = { status: 'failed' as const, message: 'Retry.' }
+    const failed = {
+      status: 'failed' as const,
+      message: 'Retry.',
+      recovery: 'remount' as const,
+    }
 
     expect(acceptCaptcha(submitting, 'widget-token')).toBe(submitting)
     expect(acceptCaptcha(idle, 'widget-token')).toBe(idle)
@@ -56,8 +61,39 @@ describe('captcha flow', () => {
     expect(failCaptcha(checking, 'Captcha is unavailable.')).toEqual({
       status: 'failed',
       message: 'Captcha is unavailable.',
+      recovery: 'remount',
     })
     expect(failCaptcha(submitting, 'Captcha is unavailable.')).toBe(submitting)
+  })
+
+  it('records a pre-submit loader failure and requires a page reload', () => {
+    const failed = failCaptcha(
+      { status: 'idle' },
+      'Captcha loader is unavailable.',
+      'reload-page',
+    )
+
+    expect(failed).toEqual({
+      status: 'failed',
+      message: 'Captcha loader is unavailable.',
+      recovery: 'reload-page',
+    })
+    expect(retryCaptcha(failed)).toEqual({
+      action: 'reload-page',
+      state: failed,
+    })
+  })
+
+  it('starts a fresh widget after a recoverable provider failure', () => {
+    const failed = failCaptcha(
+      { status: 'checking', request },
+      'Captcha is unavailable.',
+    )
+
+    expect(retryCaptcha(failed)).toEqual({
+      action: 'continue',
+      state: { status: 'idle' },
+    })
   })
 
   it('resets to idle', () => {

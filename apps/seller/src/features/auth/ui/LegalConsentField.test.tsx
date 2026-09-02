@@ -8,6 +8,7 @@ describe('LegalConsentField', () => {
     const markup = renderToStaticMarkup(
       <LegalConsentField
         checked={false}
+        disabled={false}
         name="legalConsent"
         onBlur={() => undefined}
         onChange={() => undefined}
@@ -30,5 +31,19 @@ describe('LegalConsentField', () => {
     }
 
     expect(markup).toMatch(/<label[^>]*>.*<input[^>]*>.*Я принимаю.*<\/label>/s)
+  })
+
+  it('prevents consent changes while the submitted snapshot is being checked', () => {
+    const markup = renderToStaticMarkup(
+      <LegalConsentField
+        checked
+        disabled
+        name="legalConsent"
+        onBlur={() => undefined}
+        onChange={() => undefined}
+      />,
+    )
+
+    expect(markup).toMatch(/<input[^>]*type="checkbox"[^>]*disabled=""/)
   })
 })

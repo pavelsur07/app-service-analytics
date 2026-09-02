@@ -21,4 +21,16 @@ describe('EmailSentPage', () => {
     expect(markup).toContain('href="/resend-confirmation"')
     expect(markup).toContain('href="/login"')
   })
+
+  it('offers an in-place resend action instead of a same-route link', () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter initialEntries={['/resend-confirmation']}>
+        <EmailSentPage onResend={() => undefined} />
+      </MemoryRouter>,
+    )
+
+    expect(markup).toMatch(/<button[^>]*type="button"/)
+    expect(markup).toContain('Отправить письмо ещё раз')
+    expect(markup).not.toContain('href="/resend-confirmation"')
+  })
 })

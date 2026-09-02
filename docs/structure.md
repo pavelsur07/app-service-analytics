@@ -417,6 +417,7 @@ apps/seller/
 │       ├── auth/
 │       │   ├── lib/
 │       │   │   ├── captchaFlow.ts       автомат invisible SmartCaptcha
+│       │   │   ├── captchaLoaderGuard.ts watchdog загрузки виджета
 │       │   │   └── confirmationToken.ts одноразовое чтение token из URL
 │       │   ├── model/                   auth-запросы и useCurrentUser
 │       │   └── ui/

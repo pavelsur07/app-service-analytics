@@ -1,6 +1,9 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEventHandler } from 'react'
-import { InvisibleSmartCaptcha } from '@yandex/smart-captcha'
+import {
+  InvisibleSmartCaptcha,
+  useSmartCaptchaLoader,
+} from '@yandex/smart-captcha'
 import { CircleAlert } from 'lucide-react'
 import { Controller, useForm } from 'react-hook-form'
 import { Link, useNavigate } from 'react-router'
@@ -15,10 +18,12 @@ import {
   acceptCaptcha,
   failCaptcha,
   resetCaptcha,
+  retryCaptcha,
   showChallenge,
   startCaptcha,
 } from '../lib/captchaFlow'
 import type { CaptchaFlowState } from '../lib/captchaFlow'
+import { scheduleCaptchaLoaderTimeout } from '../lib/captchaLoaderGuard'
 import {
   COMPANY_NAME_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
@@ -45,6 +50,23 @@ export function SignUpPage() {
   const [flow, setFlow] = useState<CaptchaFlowState>(resetCaptcha())
   const [failureMessage, setFailureMessage] = useState<string | null>(null)
   const flowRef = useRef<CaptchaFlowState>(flow)
+
+  const failProviderLoad = useCallback(() => {
+    const current = flowRef.current
+    const next = failCaptcha(
+      current,
+      CAPTCHA_UNAVAILABLE_MESSAGE,
+      'reload-page',
+    )
+
+    if (next === current) {
+      return
+    }
+
+    flowRef.current = next
+    setFlow(next)
+  }, [])
+  const smartCaptcha = useSmartCaptchaLoader(undefined, failProviderLoad)
   const {
     control,
     register,
@@ -54,6 +76,14 @@ export function SignUpPage() {
   } = useForm<RegistrationFormValues>({
     defaultValues: { legalConsent: false },
   })
+
+  useEffect(() => {
+    if (flow.status !== 'checking' || smartCaptcha !== undefined) {
+      return
+    }
+
+    return scheduleCaptchaLoaderTimeout(failProviderLoad)
+  }, [failProviderLoad, flow.status, smartCaptcha])
 
   const updateFlow = (next: CaptchaFlowState) => {
     flowRef.current = next
@@ -114,6 +144,14 @@ export function SignUpPage() {
   }
 
   const onSubmit: FormEventHandler<HTMLFormElement> = (event) => {
+    const initialRetry = retryCaptcha(flowRef.current)
+
+    if (initialRetry.action === 'reload-page') {
+      event.preventDefault()
+      window.location.reload()
+      return
+    }
+
     void handleSubmit((values) => {
       const request = toRegistrationPayload(values)
 
@@ -125,9 +163,14 @@ export function SignUpPage() {
       }
 
       setFailureMessage(null)
-      const current =
-        flowRef.current.status === 'failed' ? resetCaptcha() : flowRef.current
-      updateFlow(startCaptcha(current, request))
+      const retry = retryCaptcha(flowRef.current)
+
+      if (retry.action === 'reload-page') {
+        window.location.reload()
+        return
+      }
+
+      updateFlow(startCaptcha(retry.state, request))
     })(event)
   }
 
@@ -195,6 +238,7 @@ export function SignUpPage() {
               render={({ field }) => (
                 <LegalConsentField
                   checked={field.value}
+                  disabled={busy}
                   error={errors.legalConsent?.message}
                   inputRef={field.ref}
                   name={field.name}
@@ -216,27 +260,27 @@ export function SignUpPage() {
               </Card>
             )}
 
-            <InvisibleSmartCaptcha
-              key={captchaRevision}
-              sitekey={import.meta.env.VITE_SMARTCAPTCHA_CLIENT_KEY}
-              visible={flow.status === 'checking'}
-              onChallengeVisible={() => {
-                transition(showChallenge)
-              }}
-              onChallengeHidden={() => {
-                failAndRemount(CAPTCHA_RETRY_MESSAGE)
-              }}
-              onNetworkError={() => {
-                failAndRemount(CAPTCHA_UNAVAILABLE_MESSAGE)
-              }}
-              onTokenExpired={() => {
-                failAndRemount(CAPTCHA_RETRY_MESSAGE)
-              }}
-              onJavascriptError={() => {
-                failAndRemount(CAPTCHA_UNAVAILABLE_MESSAGE)
-              }}
-              onSuccess={submitWithCaptcha}
-            />
+            {smartCaptcha === undefined ? null : (
+              <InvisibleSmartCaptcha
+                key={captchaRevision}
+                sitekey={import.meta.env.VITE_SMARTCAPTCHA_CLIENT_KEY}
+                visible={flow.status === 'checking'}
+                onChallengeVisible={() => {
+                  transition(showChallenge)
+                }}
+                onChallengeHidden={() => {
+                  failAndRemount(CAPTCHA_RETRY_MESSAGE)
+                }}
+                onNetworkError={() => {
+                  failAndRemount(CAPTCHA_UNAVAILABLE_MESSAGE)
+                }}
+                onTokenExpired={() => {
+                  failAndRemount(CAPTCHA_RETRY_MESSAGE)
+                }}
+                onJavascriptError={failProviderLoad}
+                onSuccess={submitWithCaptcha}
+              />
+            )}
 
             <Button type="submit" loading={busy}>
               {flow.status === 'failed'

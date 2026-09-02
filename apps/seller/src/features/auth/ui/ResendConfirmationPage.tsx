@@ -28,7 +28,14 @@ export function ResendConfirmationPage() {
   } = useForm<ResendFormValues>()
 
   if (sent) {
-    return <EmailSentPage />
+    return (
+      <EmailSentPage
+        onResend={() => {
+          resend.reset()
+          setSent(false)
+        }}
+      />
+    )
   }
 
   const onSubmit = handleSubmit((values) => {

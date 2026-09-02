@@ -402,12 +402,14 @@ TypeScript `strict` со всеми флагами, включая `noUncheckedI
 ручное описание типов ответов запрещено.
 
 Сетевые запросы — только через клиент, привязанный к компании;
-прямые вызовы `fetch` и `axios` запрещены. Исключение — Identity-эндпоинты
-входа и текущего пользователя (`/api/auth/login`, `/api/auth/logout`,
-`/api/auth/me`): по ADR-002 они не привязаны к компании и вызываются до
-её выбора, поэтому идут через `apiGet`/`apiPost` напрямую, не через
-`createCompanyApiClient`. `fetch` вне `src/api/` по-прежнему запрещён —
-исключение про компанию, не про точку входа.
+прямые вызовы `fetch` и `axios` запрещены. Исключение — точный
+allow-list Identity-эндпоинтов, вызываемых до выбора компании:
+`/api/auth/login`, `/api/auth/logout`, `/api/auth/me` по ADR-002 и
+`/api/auth/sign-up`, `/api/auth/email-verification/resend`,
+`/api/auth/email-verification/confirm` по ADR-021. Они идут через
+`apiGet`/`apiPost` напрямую, не через `createCompanyApiClient`.
+`fetch` вне `src/api/` по-прежнему запрещён — исключение про компанию,
+не про точку входа.
 
 **Правило написано про контур продавца и на системный контур
 не распространяется** (`apps/admin`, ADR-017). Там компании нет ни у
