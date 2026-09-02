@@ -44,7 +44,20 @@ test_production_compose_change_runs_both_suites() {
     assert_classification 'docker-compose.prod.yml' true true 'production Compose'
 }
 
+test_early_force_all_match_survives_large_trailing_list() {
+    local paths index
+    paths=$(
+        printf 'docker-compose.prod.yml\n'
+        for ((index = 1; index <= 5000; index++)); do
+            printf 'docs/%05d-%0240d.md\n' "$index" 0
+        done
+    )
+
+    assert_classification "$paths" true true 'production Compose с большим docs-хвостом'
+}
+
 test_existing_classification_semantics_are_preserved
 test_production_compose_change_runs_both_suites
+test_early_force_all_match_survives_large_trailing_list
 
 printf 'OK: CI path classifier covers production Compose\n'
