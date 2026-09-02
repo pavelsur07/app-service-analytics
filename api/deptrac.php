@@ -30,12 +30,24 @@ return static function (DeptracConfig $config): void {
             ),
 
             $identityDomain = Layer::withName('IdentityDomain')->collectors(
-                DirectoryConfig::create('src/Identity/Domain/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Identity/Domain/.*')],
+                    mustNot: [
+                        ClassLikeConfig::create('^App\\Identity\\Domain\\UnconfirmedAccountCleaner$'),
+                        ClassLikeConfig::create('^App\\Identity\\Domain\\EmailVerificationTokenRepository$'),
+                        ClassLikeConfig::create('^App\\Identity\\Domain\\EmailVerificationLifecycleGuard$'),
+                        ClassLikeConfig::create('^App\\Identity\\Domain\\EmailVerificationUserByEmailQuery$'),
+                    ],
+                ),
             ),
             $identityApplication = Layer::withName('IdentityApplication')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Identity/Application/.*')],
-                    mustNot: [DirectoryConfig::create('src/Identity/Application/Facade/.*')],
+                    mustNot: [
+                        DirectoryConfig::create('src/Identity/Application/Facade/.*'),
+                        ClassLikeConfig::create('^App\\Identity\\Application\\PurgeUnconfirmedAccountsAction$'),
+                        ClassLikeConfig::create('^App\\Identity\\Application\\(ConfirmEmail|ResendEmailVerification)Action$'),
+                    ],
                 ),
             ),
             // IdentityScheduleFacade вынесен из IdentityFacade в отдельный
@@ -67,6 +79,10 @@ return static function (DeptracConfig $config): void {
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\AllCompaniesForAdminQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ExtensionTokenByHashQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Security\\ExtensionTokenHandler$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineUnconfirmedAccountCleaner$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineEmailVerificationTokenRepository$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineEmailVerificationLifecycleGuard$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineEmailVerificationUserByEmailQuery$'),
                     ],
                 ),
             ),
@@ -106,6 +122,30 @@ return static function (DeptracConfig $config): void {
             $identityAdminAccountsUi = Layer::withName('IdentityAdminAccountsUi')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\ListClientAccountsController$'),
             ),
+            $identityPurgeCleaner = Layer::withName('IdentityPurgeCleaner')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\(Domain\\UnconfirmedAccountCleaner|Infrastructure\\Repository\\DoctrineUnconfirmedAccountCleaner)$'),
+            ),
+            $identityPurgeAction = Layer::withName('IdentityPurgeAction')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Application\\PurgeUnconfirmedAccountsAction$'),
+            ),
+            $identityPurgeCommand = Layer::withName('IdentityPurgeCommand')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Ui\\Command\\PurgeUnconfirmedAccountsCommand$'),
+            ),
+            // Две явно описанные ADR-021 pre-auth lifecycle-операции:
+            // confirm определяет пользователя по предъявленному token hash,
+            // resend по email выполняет только нейтральный побочный эффект.
+            // Репозитории/guard, ровно два action и ровно два HTTP-входа
+            // вынесены из широких слоёв: никакой будущий seller controller
+            // не получает межарендаторный lookup автоматически (CLAUDE.md §1).
+            $identityEmailVerificationBoundary = Layer::withName('IdentityEmailVerificationBoundary')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\(Domain\\EmailVerification(LifecycleGuard|TokenRepository|UserByEmailQuery)|Infrastructure\\Repository\\DoctrineEmailVerification(LifecycleGuard|TokenRepository|UserByEmailQuery))$'),
+            ),
+            $identityEmailVerificationAction = Layer::withName('IdentityEmailVerificationAction')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Application\\(ConfirmEmail|ResendEmailVerification)Action$'),
+            ),
+            $identityEmailVerificationUi = Layer::withName('IdentityEmailVerificationUi')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\(ConfirmEmail|ResendEmailVerification)Controller$'),
+            ),
             // Широкий Ui продавца — без единственного контроллера выше.
             // Без mustNot он попал бы сюда, и грант на межарендаторный
             // запрос пришлось бы выдавать всему IdentityUi, то есть
@@ -113,7 +153,11 @@ return static function (DeptracConfig $config): void {
             $identityUi = Layer::withName('IdentityUi')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Identity/Ui/.*')],
-                    mustNot: [ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\ListClientAccountsController$')],
+                    mustNot: [
+                        ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\ListClientAccountsController$'),
+                        ClassLikeConfig::create('^App\\Identity\\Ui\\Command\\PurgeUnconfirmedAccountsCommand$'),
+                        ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\(ConfirmEmail|ResendEmailVerification)Controller$'),
+                    ],
                 ),
             ),
 
@@ -299,6 +343,12 @@ return static function (DeptracConfig $config): void {
             // не открывает межарендаторный запрос никому ещё: он вынесен
             // из широкого слоя через mustNot выше.
             Ruleset::forLayer($identityAdminAccountsUi)->accesses($identityAdminAccountsQuery, $identityInfrastructure, $identityUi, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($identityPurgeCommand)->accesses($identityPurgeAction, $symfonyComponent),
+            Ruleset::forLayer($identityPurgeAction)->accesses($identityDomain, $identityPurgeCleaner),
+            Ruleset::forLayer($identityPurgeCleaner)->accesses($identityDomain),
+            Ruleset::forLayer($identityEmailVerificationUi)->accesses($identityEmailVerificationAction, $identityDomain, $identityUi, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($identityEmailVerificationAction)->accesses($identityEmailVerificationBoundary, $identityApplication, $identityDomain),
+            Ruleset::forLayer($identityEmailVerificationBoundary)->accesses($identityDomain, $symfonyUid),
             Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
 

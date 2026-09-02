@@ -94,6 +94,11 @@ x-api-env: &api-env
   MAILER_DSN: ${MAILER_DSN:-null://null}
   MAILER_FROM: ${MAILER_FROM:-}
   ALERT_EMAIL: ${ALERT_EMAIL:-}
+  # Ссылка в письме подтверждения не должна унаследовать локальный origin
+  # из api/.env. Версия документов — часть зафиксированного согласия, поэтому
+  # перед открытием регистрации задаётся явно рядом с остальными prod-секретами.
+  SELLER_APP_ORIGIN: ${SELLER_APP_ORIGIN:-https://app.conwix.com}
+  REGISTRATION_DOCUMENTS_VERSION: ${REGISTRATION_DOCUMENTS_VERSION:?}
 
 services:
   traefik:

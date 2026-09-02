@@ -80,6 +80,27 @@ final class AuthControllerTest extends WebTestCase
         self::assertSame($wrongPasswordPayload['message'], $unknownEmailPayload['message']);
     }
 
+    public function testUnconfirmedUserCannotLoginEvenWithCorrectPassword(): void
+    {
+        $client = static::createClient();
+        [, $users] = $this->repositories();
+        UserBuilder::aUser()
+            ->withEmail('unconfirmed-login@example.test')
+            ->withPasswordHash($this->hash('correct-horse-battery-staple'))
+            ->unconfirmed()
+            ->persistWith($users);
+
+        $this->login($client, 'unconfirmed-login@example.test', 'correct-horse-battery-staple');
+
+        self::assertResponseStatusCodeSame(401);
+        $payload = $this->decodeResponse($client);
+        self::assertSame('invalid_credentials', $payload['code']);
+        self::assertSame('Invalid credentials.', $payload['message']);
+
+        $client->request('GET', '/api/auth/me');
+        self::assertResponseStatusCodeSame(401);
+    }
+
     public function testMeWithoutSessionReturns401(): void
     {
         $client = static::createClient();

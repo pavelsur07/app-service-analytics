@@ -49,9 +49,9 @@ class Company
         $this->createdAt = $createdAt;
     }
 
-    public static function register(string $name): self
+    public static function register(string $name, ?\DateTimeImmutable $createdAt = null): self
     {
-        return new self(Uuid::v7(), $name, CompanyStatus::Active, new \DateTimeImmutable());
+        return new self(Uuid::v7(), $name, CompanyStatus::Active, $createdAt ?? new \DateTimeImmutable());
     }
 
     public function id(): Uuid

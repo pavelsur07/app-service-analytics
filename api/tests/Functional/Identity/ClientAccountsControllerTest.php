@@ -9,9 +9,11 @@ use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\ValueObject\CompanyStatus;
 use App\Identity\Infrastructure\Query\AllCompaniesForAdminQuery;
 use App\Identity\Infrastructure\Repository\DoctrineAdministratorRepository;
+use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Tests\Support\Builder\AdministratorBuilder;
 use App\Tests\Support\Builder\CompanyBuilder;
+use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -59,6 +61,42 @@ final class ClientAccountsControllerTest extends WebTestCase
         $client->request('GET', '/api/admin/companies');
 
         self::assertResponseStatusCodeSame(401);
+    }
+
+    public function testListShowsWhetherCompanyHasAnyConfirmedUser(): void
+    {
+        $client = static::createClient();
+        $companies = $this->companies();
+        $users = new DoctrineUserRepository($this->entityManager());
+        $members = new DoctrineCompanyMemberRepository($this->entityManager());
+        $confirmedCompany = CompanyBuilder::aCompany()->withName('Confirmed tenant')->persistWith($companies);
+        $unconfirmedCompany = CompanyBuilder::aCompany()->withName('Waiting tenant')->persistWith($companies);
+        $confirmedUser = UserBuilder::aUser()->withEmail('confirmed-list@example.test')->persistWith($users);
+        $unconfirmedUser = UserBuilder::aUser()->withEmail('waiting-list@example.test')->unconfirmed()->persistWith($users);
+        CompanyMemberBuilder::aCompanyMember()
+            ->withCompany($confirmedCompany)
+            ->withUser($confirmedUser)
+            ->persistWith($companies, $users, $members);
+        CompanyMemberBuilder::aCompanyMember()
+            ->withCompany($unconfirmedCompany)
+            ->withUser($unconfirmedUser)
+            ->persistWith($companies, $users, $members);
+        $this->loginAdmin($client);
+
+        $client->request('GET', '/api/admin/companies');
+
+        self::assertResponseIsSuccessful();
+        $payload = $this->decode($client);
+        self::assertIsArray($payload['items']);
+        $byId = [];
+        foreach ($payload['items'] as $item) {
+            self::assertIsArray($item);
+            self::assertIsString($item['id']);
+            $byId[$item['id']] = $item;
+        }
+
+        self::assertTrue($byId[$confirmedCompany->id()->toRfc4122()]['hasConfirmedUser']);
+        self::assertFalse($byId[$unconfirmedCompany->id()->toRfc4122()]['hasConfirmedUser']);
     }
 
     public function testLimitAboveMaximumIsRejectedNotSilentlyTruncated(): void
@@ -109,6 +147,7 @@ final class ClientAccountsControllerTest extends WebTestCase
 
         $owner = (new DoctrineUserRepository($this->entityManager()))->findByEmail('owner@romashka.test');
         self::assertNotNull($owner, 'владелец заводится тем же действием');
+        self::assertNotNull($owner->emailConfirmedAt(), 'admin-created owners remain usable without the public confirmation flow');
 
         $membership = $this->connection()->fetchAssociative(
             'SELECT role FROM company_member WHERE company_id = :c AND user_id = :u',

@@ -23,15 +23,17 @@ interface CompanyRepository
      * регистрация аккаунта — это создание компании; владелец и членство
      * здесь части одного акта, а не самостоятельные события.
      *
-     * Конфликт по email перехватывается вызывающим на вставке
-     * (CLAUDE.md §4), а не проверкой перед ней.
+     * Возвращает false только при конфликте uq_user_email. Он ловится
+     * на вставке (CLAUDE.md §4), а не проверкой перед ней. Любой другой
+     * конфликт или отказ базы выходит исключением.
      */
     public function registerWithOwner(
         Company $company,
         User $owner,
         CompanyMember $membership,
         AuditRecord $trail,
-    ): void;
+        ?EmailVerificationToken $verificationToken = null,
+    ): bool;
 
     /**
      * Переход `active` → `blocked` (ADR-017). Возвращает false, если

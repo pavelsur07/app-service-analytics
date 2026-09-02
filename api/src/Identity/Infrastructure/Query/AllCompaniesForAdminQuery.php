@@ -47,6 +47,15 @@ final readonly class AllCompaniesForAdminQuery
     {
         return $this->connection->createQueryBuilder()
             ->select('c.id', 'c.name', 'c.status', 'c.created_at')
+            ->addSelect(<<<'SQL'
+                EXISTS (
+                    SELECT 1
+                    FROM company_member cm
+                    JOIN "user" u ON u.id = cm.user_id
+                    WHERE cm.company_id = c.id
+                      AND u.email_confirmed_at IS NOT NULL
+                ) AS has_confirmed_user
+                SQL)
             ->from('company', 'c')
             // Свежие сверху: администратор заходит сюда после
             // регистрации, а не листать алфавит. id вторым ключом —
@@ -82,6 +91,7 @@ final readonly class AllCompaniesForAdminQuery
             name: self::stringValue($row['name']),
             status: self::stringValue($row['status']),
             createdAt: self::dateValue($row['created_at']),
+            hasConfirmedUser: self::boolValue($row['has_confirmed_user']),
         );
     }
 
@@ -101,5 +111,22 @@ final readonly class AllCompaniesForAdminQuery
         }
 
         return (new \DateTimeImmutable($value))->format(\DATE_ATOM);
+    }
+
+    private static function boolValue(mixed $value): bool
+    {
+        if (\is_bool($value)) {
+            return $value;
+        }
+
+        if (\in_array($value, [1, '1', 't', 'true'], true)) {
+            return true;
+        }
+
+        if (\in_array($value, [0, '0', 'f', 'false'], true)) {
+            return false;
+        }
+
+        throw new \UnexpectedValueException('Expected a boolean value in a company row.');
     }
 }

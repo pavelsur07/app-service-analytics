@@ -8,9 +8,11 @@ use App\Identity\Domain\AuditRecord;
 use App\Identity\Domain\Company;
 use App\Identity\Domain\CompanyMember;
 use App\Identity\Domain\CompanyRepository;
+use App\Identity\Domain\EmailVerificationToken;
 use App\Identity\Domain\User;
 use App\Identity\Domain\ValueObject\CompanyStatus;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 
 final readonly class DoctrineCompanyRepository implements CompanyRepository
@@ -31,17 +33,33 @@ final readonly class DoctrineCompanyRepository implements CompanyRepository
         User $owner,
         CompanyMember $membership,
         AuditRecord $trail,
-    ): void {
+        ?EmailVerificationToken $verificationToken = null,
+    ): bool {
         // Один flush на всё: вложенные persist попадают в одну
         // транзакцию, и падение любого из них не оставляет половины
         // аккаунта (см. интерфейс).
-        $this->entityManager->wrapInTransaction(function () use ($company, $owner, $membership, $trail): void {
-            $this->entityManager->persist($company);
-            $this->entityManager->persist($owner);
-            $this->entityManager->persist($membership);
-            $this->entityManager->persist($trail);
-            $this->entityManager->flush();
-        });
+        try {
+            $this->entityManager->wrapInTransaction(function () use ($company, $owner, $membership, $trail, $verificationToken): void {
+                $this->entityManager->persist($company);
+                $this->entityManager->persist($owner);
+                $this->entityManager->persist($membership);
+                $this->entityManager->persist($trail);
+                if (null !== $verificationToken) {
+                    $this->entityManager->persist($verificationToken);
+                }
+            });
+        } catch (UniqueConstraintViolationException $exception) {
+            // PostgreSQL включает имя нарушенного ограничения в сообщение.
+            // Не поглощаем уникальность токена или будущий индекс компании:
+            // неразличимый публичный ответ относится только к занятому email.
+            if (!str_contains($exception->getMessage(), 'uq_user_email')) {
+                throw $exception;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 
     public function blockIfActive(string $companyId, AuditRecord $trail): bool

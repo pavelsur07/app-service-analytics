@@ -13,6 +13,7 @@ use App\Identity\Domain\CompanyRepository;
 final class CompanyBuilder
 {
     private string $name = 'Test Company';
+    private ?\DateTimeImmutable $createdAt = null;
 
     private function __construct()
     {
@@ -31,9 +32,17 @@ final class CompanyBuilder
         return $clone;
     }
 
+    public function withCreatedAt(\DateTimeImmutable $createdAt): self
+    {
+        $clone = clone $this;
+        $clone->createdAt = $createdAt;
+
+        return $clone;
+    }
+
     public function build(): Company
     {
-        return Company::register($this->name);
+        return Company::register($this->name, $this->createdAt);
     }
 
     public function persistWith(CompanyRepository $repository): Company
