@@ -240,6 +240,13 @@ security checker. Публичные HTTP-контроллеры находят�
 выделена узкая цепочка Command → Application action → cleanup port/adapter:
 из HTTP-слоя этот деструктивный сценарий недостижим.
 
+Граница Stage 2 самостоятельной регистрации проходит через доменный порт
+`CaptchaVerifier`: его адаптер `Infrastructure/Api/YandexSmartCaptchaVerifier`
+делает единственный короткий запрос к Yandex SmartCaptcha и возвращает только
+пройденную или отклонённую проверку. Недоступность превращается в
+`CaptchaUnavailable` без тела ответа, токена, IP или server key; решение
+создать аккаунт остаётся в следующем Application-сценарии.
+
 Ingestion дополнительно:
 
 ```

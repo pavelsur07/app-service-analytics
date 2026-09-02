@@ -55,6 +55,14 @@ framework:
         scoped_clients:
             ozon.client:
                 base_uri: '%env(OZON_API_BASE_URL)%'
+            # Stage 2 регистрации ждёт результат SmartCaptcha в этом же
+            # запросе: один короткий вызов без повторов, иначе пользователь
+            # может получить ответ на уже неактуальный captcha token.
+            smartcaptcha.client:
+                base_uri: 'https://smartcaptcha.cloud.yandex.ru'
+                timeout: 1.0
+                max_duration: 2.0
+                retry_failed: false
 
 when@test:
     framework:
