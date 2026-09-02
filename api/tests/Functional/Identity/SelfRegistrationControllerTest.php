@@ -29,6 +29,7 @@ final class SelfRegistrationControllerTest extends WebTestCase
     private KernelBrowser $client;
     private FakeCaptchaVerifier $captchaVerifier;
     private PasswordHasherProbe $passwordHasher;
+    private ?CacheItemPoolInterface $rateLimiterPool = null;
 
     protected function setUp(): void
     {
@@ -36,6 +37,10 @@ final class SelfRegistrationControllerTest extends WebTestCase
 
         $this->client = static::createClient();
         $this->client->disableReboot();
+        $rateLimiterPool = self::getContainer()->get('cache.rate_limiter');
+        self::assertInstanceOf(CacheItemPoolInterface::class, $rateLimiterPool);
+        $this->rateLimiterPool = $rateLimiterPool;
+        self::assertTrue($this->rateLimiterPool->clear());
         $captchaVerifier = self::getContainer()->get(FakeCaptchaVerifier::class);
         self::assertInstanceOf(FakeCaptchaVerifier::class, $captchaVerifier);
         $this->captchaVerifier = $captchaVerifier;
@@ -44,6 +49,18 @@ final class SelfRegistrationControllerTest extends WebTestCase
         $this->passwordHasher = $passwordHasher;
         $this->captchaVerifier->reset();
         $this->passwordHasher->reset();
+    }
+
+    protected function tearDown(): void
+    {
+        try {
+            if (null !== $this->rateLimiterPool) {
+                self::assertTrue($this->rateLimiterPool->clear());
+            }
+        } finally {
+            $this->rateLimiterPool = null;
+            parent::tearDown();
+        }
     }
 
     public function testFreeEmailCreatesWholeAccountAndSendsConfirmationWithoutQueueingPlainToken(): void
@@ -107,6 +124,34 @@ final class SelfRegistrationControllerTest extends WebTestCase
         $plainTextToken = $matches[1] ?? null;
         self::assertIsString($plainTextToken);
         self::assertSame($account['token_hash'], hash('sha256', $plainTextToken));
+    }
+
+    #[DataProvider('repeatedAllowedRequests')]
+    public function testAllowedRegistrationIsHermeticAcrossRepeatedDataSets(): void
+    {
+        $before = $this->counts();
+
+        $this->signUp(
+            $this->client,
+            $this->validPayload('repeatable-allowed@example.test'),
+            ['REMOTE_ADDR' => '208.67.222.222'],
+        );
+
+        self::assertResponseStatusCodeSame(202);
+        self::assertSame(1, $this->captchaVerifier->calls);
+        self::assertSame(1, $this->passwordHasher->hashCalls);
+        self::assertSame($this->incremented($before), $this->counts());
+        self::assertEmailCount(1);
+    }
+
+    /**
+     * @return iterable<string, array{}>
+     */
+    public static function repeatedAllowedRequests(): iterable
+    {
+        yield 'first run' => [];
+        yield 'second run' => [];
+        yield 'third run' => [];
     }
 
     public function testTakenEmailReturnsSamePublicResponseWithoutCreatingRows(): void
@@ -470,8 +515,8 @@ final class SelfRegistrationControllerTest extends WebTestCase
 
     private function withCleanRateLimiter(\Closure $scenario): void
     {
-        $pool = self::getContainer()->get('cache.rate_limiter');
-        self::assertInstanceOf(CacheItemPoolInterface::class, $pool);
+        $pool = $this->rateLimiterPool;
+        self::assertNotNull($pool);
         self::assertTrue($pool->clear());
 
         try {
