@@ -8,12 +8,12 @@
 
 **Tech Stack:** PHP 8.4, Symfony 7.4 Security/Mailer/Messenger/Console, Doctrine ORM 3.6 + DBAL 4.4, PostgreSQL 16, PHPUnit 13, OpenAPI/Nelmio. Новые Composer-пакеты не устанавливаются. Будущий OAuth Ozon использует уже установленные `symfony/http-client`, `symfony/lock`, Symfony Session и существующее шифрование credentials; `league/oauth2-client` и OAuth-bundle не добавляются.
 
-**Spec:** `docs/task/task-signup-onboarding-ozon-oauth.md` — только Stage 1; новый ADR получает фактически свободный номер ADR-020.
+**Spec:** `docs/task/task-signup-onboarding-ozon-oauth.md` — только Stage 1; новый ADR получает фактически свободный номер ADR-021.
 
 ## Global Constraints
 
 - Один пакет внешнего ревью реализует только Stage 1; Stage 2–6 не входят.
-- ADR-020 создаётся со статусом `Proposed` до кода и остаётся `Proposed`, пока не подтверждены все относящиеся к нему этапы 1–4.
+- ADR-021 создаётся со статусом `Proposed` до кода и остаётся `Proposed`, пока не подтверждены все относящиеся к нему этапы 1–4.
 - `Company.status` остаётся только `active | blocked`; подтверждение хранится у `User`.
 - Существующие и созданные администратором пользователи после миграции остаются способными войти; неподтверждёнными создаются только self-signup пользователи.
 - Компания, владелец, membership, confirmation token и `company.registered` фиксируются одной транзакцией.
@@ -33,10 +33,10 @@
 
 ---
 
-### Task 1: ADR-020 и модель подтверждения
+### Task 1: ADR-021 и модель подтверждения
 
 **Files:**
-- Create: `docs/adr/0020-self-signup-email-confirmation-onboarding.md`
+- Create: `docs/adr/0021-self-signup-email-confirmation-onboarding.md`
 - Modify: `docs/adr/README.md`
 - Create: `api/src/Identity/Domain/ValueObject/EmailVerificationSecret.php`
 - Create: `api/src/Identity/Domain/EmailVerificationToken.php`
@@ -53,24 +53,24 @@
 - Produces: `User::selfRegister(string $email, string $passwordHash, DateTimeImmutable $consentedAt, string $legalDocumentsVersion): self`.
 - Preserves: `User::register(string $email, string $passwordHash): self` for trusted/admin/test setup, with `emailConfirmedAt = createdAt`.
 
-- [x] **Step 1: Create ADR-020 as Proposed and register it before code**
+- [x] **Step 1: Create ADR-021 as Proposed and register it before code**
 
-Copy the ADR-020 draft from the spec into `docs/adr/0020-self-signup-email-confirmation-onboarding.md`, then make only these semantic edits:
+Copy the ADR-021 draft from the spec into `docs/adr/0021-self-signup-email-confirmation-onboarding.md`, then make only these semantic edits:
 
 ```markdown
-## ADR-020: Самостоятельная регистрация, защита от роботов и минимальный онбординг
+## ADR-021: Самостоятельная регистрация, защита от роботов и минимальный онбординг
 
 **Дата:** 2026-09-02
 **Статус:** Proposed
 ```
 
-Add registry row after ADR-019:
+Add registry row after ADR-020:
 
 ```markdown
-| 020 | Самостоятельная регистрация, защита от роботов и минимальный онбординг | Proposed |
+| 021 | Самостоятельная регистрация, защита от роботов и минимальный онбординг | Proposed |
 ```
 
-Add a registry note that ADR-020 partially supersedes ADR-007 only after acceptance; while Proposed, it records the staged implementation and does not yet alter Accepted decisions.
+Add a registry note that ADR-021 partially supersedes ADR-007 only after acceptance; while Proposed, it records the staged implementation and does not yet alter Accepted decisions.
 
 - [x] **Step 2: Write failing secret and schema tests**
 
@@ -160,7 +160,7 @@ Expected: all pass; Doctrine mapping and database schema agree.
 - [x] **Step 7: Commit Task 1**
 
 ```bash
-git add docs/adr/0020-self-signup-email-confirmation-onboarding.md docs/adr/README.md api/src/Identity/Domain api/migrations api/tests/Unit/Identity api/tests/Integration/Identity/EmailVerificationSchemaTest.php api/tests/Support/Builder
+git add docs/adr/0021-self-signup-email-confirmation-onboarding.md docs/adr/README.md api/src/Identity/Domain api/migrations api/tests/Unit/Identity api/tests/Integration/Identity/EmailVerificationSchemaTest.php api/tests/Support/Builder
 git commit -m "Добавляет модель подтверждения email для регистрации"
 ```
 
@@ -631,7 +631,7 @@ marketplace_expense_fact
 marketplace_raw_document
 marketplace_listing / marketplace_listing_cost / marketplace_listing_price
 tracked_sku / price_observation
-marketplace_posting_status / marketplace_return_fact when those tables exist in the task base
+marketplace_posting_status / marketplace_return_fact
 created_at exactly 30 days ago or newer
 ```
 
@@ -664,6 +664,8 @@ WITH eligible_company AS (
       AND NOT EXISTS (SELECT 1 FROM sales_fact sf WHERE sf.company_id = c.id)
       AND NOT EXISTS (SELECT 1 FROM marketplace_expense_fact mef WHERE mef.company_id = c.id)
       AND NOT EXISTS (SELECT 1 FROM marketplace_raw_document mrd WHERE mrd.company_id = c.id)
+      AND NOT EXISTS (SELECT 1 FROM marketplace_posting_status mps WHERE mps.company_id = c.id)
+      AND NOT EXISTS (SELECT 1 FROM marketplace_return_fact mrf WHERE mrf.company_id = c.id)
       AND NOT EXISTS (SELECT 1 FROM marketplace_listing ml WHERE ml.company_id = c.id)
       AND NOT EXISTS (SELECT 1 FROM marketplace_listing_cost mlc WHERE mlc.company_id = c.id)
       AND NOT EXISTS (SELECT 1 FROM marketplace_listing_price mlp WHERE mlp.company_id = c.id)
@@ -673,11 +675,13 @@ WITH eligible_company AS (
 )
 ```
 
-If `marketplace_posting_status` and `marketplace_return_fact` are present in the branch base before implementation begins, add their two explicit `NOT EXISTS` clauses and corresponding protection cases in the same change. They are currently uncommitted work from a separate package and therefore must not be pulled into the isolated Stage 1 branch merely to satisfy this plan.
+After synchronization with the current `master`, `marketplace_posting_status`
+and `marketplace_return_fact` are part of the branch base. Their explicit
+`NOT EXISTS` clauses and protection cases are therefore included in Stage 1.
 
 Use data-modifying CTEs in the same statement/transaction to delete email tokens, registration audit rows, memberships, orphaned unconfirmed users and finally companies, returning the deleted company count. Never dynamically discover tables from `information_schema`; the protected data set is an explicit reviewed contract.
 
-The class docblock must link to CLAUDE.md §1 and ADR-020 and explain the deliberate operational cross-module read: this is the one cleanup eligibility query spanning Identity/Ingestion/PriceMonitoring, not a reusable way for seller UI to read foreign modules. Keep the class outside every layer reachable from HTTP; only the console action receives it. If Deptrac needs a narrow operational layer, add one class-level collector and grant it only to the purge action/command.
+The class docblock must link to CLAUDE.md §1 and ADR-021 and explain the deliberate operational cross-module read: this is the one cleanup eligibility query spanning Identity/Ingestion/PriceMonitoring, not a reusable way for seller UI to read foreign modules. Keep the class outside every layer reachable from HTTP; only the console action receives it. If Deptrac needs a narrow operational layer, add one class-level collector and grant it only to the purge action/command.
 
 - [x] **Step 4: Implement the manual command**
 
@@ -820,16 +824,16 @@ For each finding, record one of:
 
 ```text
 accepted defect/rule violation -> add failing regression test, confirm RED, implement fix, confirm GREEN
-rejected ADR alternative -> cite ADR-020 section
+rejected ADR alternative -> cite ADR-021 section
 rejected taste-only suggestion -> one-line concrete reason
 rules gap -> update the relevant rule/document separately, then re-review
 ```
 
 Repeat full focused tests and both reviews until no accepted finding remains. Record how many unique accepted findings the defects-role added beyond the rules-role.
 
-- [x] **Step 6: Keep ADR-020 Proposed and prepare the Stage 1 report**
+- [x] **Step 6: Keep ADR-021 Proposed and prepare the Stage 1 report**
 
-Do not mark ADR-020 Accepted: captcha and onboarding portions remain unimplemented in Stages 2–4. The report must list Stage 2 as the next package and use the repository format:
+Do not mark ADR-021 Accepted: captcha and onboarding portions remain unimplemented in Stages 2–4. The report must list Stage 2 as the next package and use the repository format:
 
 ```text
 Задача / Сделано / Файлы / Ревью / Отклонено / Проверка / Открыто

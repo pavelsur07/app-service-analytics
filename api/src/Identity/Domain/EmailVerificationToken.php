@@ -8,7 +8,7 @@ use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Append-only выпуск ссылки подтверждения email (ADR-020).
+ * Append-only выпуск ссылки подтверждения email (ADR-021).
  *
  * Ассоциации Doctrine нет намеренно: жизненный цикл токена управляется
  * сценарием регистрации, а конкурентное погашение выполняет DBAL UPDATE

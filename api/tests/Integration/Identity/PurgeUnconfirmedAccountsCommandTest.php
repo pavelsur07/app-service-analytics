@@ -21,7 +21,9 @@ use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceExpenseFactWrite
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceListingCostRepository;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceListingPriceWriter;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceListingWriter;
+use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplacePostingStatusWriter;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceRawDocumentRepository;
+use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceReturnFactWriter;
 use App\Ingestion\Infrastructure\Persistence\DoctrineSalesFactWriter;
 use App\PriceMonitoring\Infrastructure\Persistence\DoctrinePriceObservationWriter;
 use App\PriceMonitoring\Infrastructure\Repository\DoctrineTrackedSkuRepository;
@@ -35,7 +37,9 @@ use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
 use App\Tests\Support\Builder\MarketplaceListingBuilder;
 use App\Tests\Support\Builder\MarketplaceListingCostBuilder;
 use App\Tests\Support\Builder\MarketplaceListingPriceBuilder;
+use App\Tests\Support\Builder\MarketplacePostingStatusBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
+use App\Tests\Support\Builder\MarketplaceReturnFactBuilder;
 use App\Tests\Support\Builder\PriceObservationBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
 use App\Tests\Support\Builder\TrackedSkuBuilder;
@@ -149,6 +153,8 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
         yield 'listing' => ['marketplace_listing'];
         yield 'listing cost' => ['marketplace_listing_cost'];
         yield 'listing price' => ['marketplace_listing_price'];
+        yield 'posting status' => ['marketplace_posting_status'];
+        yield 'return fact' => ['marketplace_return_fact'];
         yield 'tracked sku' => ['tracked_sku'];
         yield 'price observation' => ['price_observation'];
         yield 'newer than cutoff' => ['newer_company'];
@@ -265,6 +271,11 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
                 ->withCompanyId($company->id())
                 ->persistWith(new DoctrineMarketplaceListingCostRepository($this->entityManager())),
             'marketplace_listing_price' => $this->protectWithListingPrice($company),
+            'marketplace_posting_status' => $this->protectWithPostingStatus($company),
+            'marketplace_return_fact' => MarketplaceReturnFactBuilder::aMarketplaceReturnFact()
+                ->withCompanyId($company->id())
+                ->withSourceRowId(Uuid::v7()->toRfc4122())
+                ->persistWith(new DoctrineMarketplaceReturnFactWriter($connection)),
             'tracked_sku' => TrackedSkuBuilder::aTrackedSku()
                 ->withCompany($company)
                 ->withCreatedBy($user)
@@ -300,6 +311,18 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
         (new DoctrineMarketplaceListingPriceWriter($this->connection()))->recordChanged(
             $company->id()->toRfc4122(),
             [$price],
+        );
+    }
+
+    private function protectWithPostingStatus(Company $company): void
+    {
+        $status = MarketplacePostingStatusBuilder::aMarketplacePostingStatus()
+            ->withCompanyId($company->id())
+            ->withPostingNumber(Uuid::v7()->toRfc4122())
+            ->build();
+        (new DoctrineMarketplacePostingStatusWriter($this->connection()))->recordChanged(
+            $company->id()->toRfc4122(),
+            [$status],
         );
     }
 

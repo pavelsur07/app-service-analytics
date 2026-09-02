@@ -8,7 +8,7 @@ use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 
 /**
- * Подтверждение email для самостоятельной регистрации (ADR-020).
+ * Подтверждение email для самостоятельной регистрации (ADR-021).
  *
  * Существующие учётные записи созданы доверенным администратором, поэтому
  * backfill сохраняет им вход. Только новый self-signup пишет NULL.
@@ -17,7 +17,7 @@ final class Version20260902120000 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'User confirmation/consent fields and append-only email verification tokens (ADR-020).';
+        return 'User confirmation/consent fields and append-only email verification tokens (ADR-021).';
     }
 
     public function up(Schema $schema): void

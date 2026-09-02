@@ -9,7 +9,7 @@ use App\Identity\Domain\UnconfirmedAccountCleaner;
 use Doctrine\DBAL\Connection;
 
 /**
- * Операционная межмодульная проверка уборки (CLAUDE.md §1, ADR-020).
+ * Операционная межмодульная проверка уборки (CLAUDE.md §1, ADR-021).
  *
  * Запрос намеренно знает все таблицы, наличие данных в которых запрещает
  * удаление арендатора. Это единая ручная операция Identity, Ingestion и
@@ -64,6 +64,8 @@ final readonly class DoctrineUnconfirmedAccountCleaner implements UnconfirmedAcc
                       AND NOT EXISTS (SELECT 1 FROM sales_fact sf WHERE sf.company_id = c.id)
                       AND NOT EXISTS (SELECT 1 FROM marketplace_expense_fact mef WHERE mef.company_id = c.id)
                       AND NOT EXISTS (SELECT 1 FROM marketplace_raw_document mrd WHERE mrd.company_id = c.id)
+                      AND NOT EXISTS (SELECT 1 FROM marketplace_posting_status mps WHERE mps.company_id = c.id)
+                      AND NOT EXISTS (SELECT 1 FROM marketplace_return_fact mrf WHERE mrf.company_id = c.id)
                       AND NOT EXISTS (SELECT 1 FROM marketplace_listing ml WHERE ml.company_id = c.id)
                       AND NOT EXISTS (SELECT 1 FROM marketplace_listing_cost mlc WHERE mlc.company_id = c.id)
                       AND NOT EXISTS (SELECT 1 FROM marketplace_listing_price mlp WHERE mlp.company_id = c.id)

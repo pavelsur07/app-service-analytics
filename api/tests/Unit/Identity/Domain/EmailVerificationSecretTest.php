@@ -8,7 +8,7 @@ use App\Identity\Domain\ValueObject\EmailVerificationSecret;
 use PHPUnit\Framework\TestCase;
 
 /**
- * ADR-020: открытый токен существует только до отправки письма, а база
+ * ADR-021: открытый токен существует только до отправки письма, а база
  * получает его необратимый SHA-256 хэш.
  */
 final class EmailVerificationSecretTest extends TestCase
