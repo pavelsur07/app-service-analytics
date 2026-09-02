@@ -2,7 +2,7 @@
 
 **Дата:** 2026-09-02
 
-**Статус:** согласовано в диалоге; ожидает проверки письменной спецификации
+**Статус:** утверждено владельцем 2 сентября 2026 года
 
 **Исходное задание:** `docs/task/task-signup-onboarding-ozon-oauth.md`, только Stage 2
 
@@ -62,7 +62,7 @@ OpenAPI помечает `captchaToken` обязательным и докуме
 2. `RegistrationProtection` — отдельный компонент HTTP-границы Identity.
    Он принимает уже нормализованный email, реальный IP и CAPTCHA-токен,
    расходует оба лимитера и затем вызывает порт проверки CAPTCHA.
-3. `CaptchaVerifier` — узкий порт Identity Application. Он принимает токен
+3. `CaptchaVerifier` — узкий порт Identity Domain. Он принимает токен
    и IP, возвращает `passed` или `rejected` и может бросить только
    поименованное исключение недоступности.
 4. `YandexSmartCaptchaVerifier` — Infrastructure-адаптер порта. Внутри него
@@ -143,6 +143,11 @@ server key, CAPTCHA-токен, тело ответа, email, IP или сооб
 Обычный `status=failed` не журналируется: это ожидаемый пользовательский
 отказ, а не эксплуатационная неисправность.
 
+У каждой записи один владелец: адаптер логирует внешний сбой Yandex до
+выбрасывания sanitized-исключения, а `RegistrationProtection` логирует
+только отсутствие клиентского IP. При перехвате уже записанного
+`CaptchaUnavailable` второй warning не создаётся.
+
 ## Конфигурация и секреты
 
 - Backend получает `SMARTCAPTCHA_SERVER_KEY` из env.
@@ -188,7 +193,8 @@ server key, CAPTCHA-токен, тело ответа, email, IP или сооб
 
 - успешная CAPTCHA сохраняет существующий `202`-сценарий;
 - rejected CAPTCHA даёт `422` и не создаёт строки, audit или письмо;
-- unavailable CAPTCHA даёт `503` и sanitized `warning`;
+- unavailable CAPTCHA даёт `503`; единственный sanitized `warning`
+  доказывается unit-тестом адаптера;
 - password hasher не вызывается при отказе CAPTCHA, недоступности или
   rate limit;
 - отклонённый лимитером запрос не вызывает fake CAPTCHA;
