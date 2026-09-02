@@ -30,12 +30,18 @@ return static function (DeptracConfig $config): void {
             ),
 
             $identityDomain = Layer::withName('IdentityDomain')->collectors(
-                DirectoryConfig::create('src/Identity/Domain/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Identity/Domain/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Identity\\Domain\\UnconfirmedAccountCleaner$')],
+                ),
             ),
             $identityApplication = Layer::withName('IdentityApplication')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Identity/Application/.*')],
-                    mustNot: [DirectoryConfig::create('src/Identity/Application/Facade/.*')],
+                    mustNot: [
+                        DirectoryConfig::create('src/Identity/Application/Facade/.*'),
+                        ClassLikeConfig::create('^App\\Identity\\Application\\PurgeUnconfirmedAccountsAction$'),
+                    ],
                 ),
             ),
             // IdentityScheduleFacade вынесен из IdentityFacade в отдельный
@@ -67,6 +73,7 @@ return static function (DeptracConfig $config): void {
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\AllCompaniesForAdminQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ExtensionTokenByHashQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Security\\ExtensionTokenHandler$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineUnconfirmedAccountCleaner$'),
                     ],
                 ),
             ),
@@ -106,6 +113,15 @@ return static function (DeptracConfig $config): void {
             $identityAdminAccountsUi = Layer::withName('IdentityAdminAccountsUi')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\ListClientAccountsController$'),
             ),
+            $identityPurgeCleaner = Layer::withName('IdentityPurgeCleaner')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\(Domain\\UnconfirmedAccountCleaner|Infrastructure\\Repository\\DoctrineUnconfirmedAccountCleaner)$'),
+            ),
+            $identityPurgeAction = Layer::withName('IdentityPurgeAction')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Application\\PurgeUnconfirmedAccountsAction$'),
+            ),
+            $identityPurgeCommand = Layer::withName('IdentityPurgeCommand')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Ui\\Command\\PurgeUnconfirmedAccountsCommand$'),
+            ),
             // Широкий Ui продавца — без единственного контроллера выше.
             // Без mustNot он попал бы сюда, и грант на межарендаторный
             // запрос пришлось бы выдавать всему IdentityUi, то есть
@@ -113,7 +129,10 @@ return static function (DeptracConfig $config): void {
             $identityUi = Layer::withName('IdentityUi')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Identity/Ui/.*')],
-                    mustNot: [ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\ListClientAccountsController$')],
+                    mustNot: [
+                        ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\ListClientAccountsController$'),
+                        ClassLikeConfig::create('^App\\Identity\\Ui\\Command\\PurgeUnconfirmedAccountsCommand$'),
+                    ],
                 ),
             ),
 
@@ -299,6 +318,9 @@ return static function (DeptracConfig $config): void {
             // не открывает межарендаторный запрос никому ещё: он вынесен
             // из широкого слоя через mustNot выше.
             Ruleset::forLayer($identityAdminAccountsUi)->accesses($identityAdminAccountsQuery, $identityInfrastructure, $identityUi, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($identityPurgeCommand)->accesses($identityPurgeAction, $symfonyComponent),
+            Ruleset::forLayer($identityPurgeAction)->accesses($identityDomain, $identityPurgeCleaner),
+            Ruleset::forLayer($identityPurgeCleaner)->accesses($identityDomain),
             Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
 

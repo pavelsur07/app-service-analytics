@@ -609,7 +609,7 @@ git commit -m "Показывает подтверждение email в спис
 - Produces: `UnconfirmedAccountCleaner::purgeCreatedBefore(DateTimeImmutable $cutoff): int`.
 - Produces: command `app:identity:purge-unconfirmed-accounts` with no destructive options and a fixed 30-day cutoff computed from current UTC time.
 
-- [ ] **Step 1: Write failing eligibility/protection tests**
+- [x] **Step 1: Write failing eligibility/protection tests**
 
 Create a deletable account older than 30 days with only unconfirmed users and no business data; assert command success, company/member/user/token/registration-audit removal, and deleted count `1`.
 
@@ -629,7 +629,7 @@ created_at exactly 30 days ago or newer
 
 Also assert a shared user who still has membership in a retained company is not deleted.
 
-- [ ] **Step 2: Run the test and confirm RED**
+- [x] **Step 2: Run the test and confirm RED**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Integration/Identity/PurgeUnconfirmedAccountsCommandTest.php
@@ -637,7 +637,7 @@ docker compose exec php-cli php bin/phpunit tests/Integration/Identity/PurgeUnco
 
 Expected: command/cleaner absent.
 
-- [ ] **Step 3: Implement one conservative SQL transaction**
+- [x] **Step 3: Implement one conservative SQL transaction**
 
 The eligibility CTE must put every condition inside SQL:
 
@@ -670,7 +670,7 @@ Use data-modifying CTEs in the same statement/transaction to delete email tokens
 
 The class docblock must link to CLAUDE.md §1 and ADR-020 and explain the deliberate operational cross-module read: this is the one cleanup eligibility query spanning Identity/Ingestion/PriceMonitoring, not a reusable way for seller UI to read foreign modules. Keep the class outside every layer reachable from HTTP; only the console action receives it. If Deptrac needs a narrow operational layer, add one class-level collector and grant it only to the purge action/command.
 
-- [ ] **Step 4: Implement the manual command**
+- [x] **Step 4: Implement the manual command**
 
 Compute:
 
@@ -681,7 +681,7 @@ $deleted = ($action)($cutoff->modify('-30 days'));
 
 Print the exact cutoff and number deleted. Do not ask for confirmation inside the command: eligibility is conservative and the command is itself the explicit human action. Do not schedule it.
 
-- [ ] **Step 5: Run test GREEN**
+- [x] **Step 5: Run test GREEN**
 
 ```bash
 docker compose exec php-cli php bin/phpunit tests/Integration/Identity/PurgeUnconfirmedAccountsCommandTest.php
@@ -689,7 +689,7 @@ docker compose exec php-cli php bin/phpunit tests/Integration/Identity/PurgeUnco
 
 Expected: only the fully empty, old, unconfirmed account is removed.
 
-- [ ] **Step 6: Commit Task 7**
+- [x] **Step 6: Commit Task 7**
 
 ```bash
 git add api/src/Identity api/deptrac.php api/tests/Integration/Identity/PurgeUnconfirmedAccountsCommandTest.php
