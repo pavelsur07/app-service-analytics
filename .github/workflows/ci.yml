@@ -134,8 +134,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: production env updater
-        run: bin/tests/set-registration-documents-version.test.sh
+      - name: shell regression guards
+        run: |
+          set -eu
+
+          for test_script in bin/tests/*.test.sh; do
+            "$test_script"
+          done
 
       # Контейнеры и хост делят чекаут и обязаны сходиться в uid: часть
       # целей Makefile пишет с хоста, а не из контейнера. Подробнее —
