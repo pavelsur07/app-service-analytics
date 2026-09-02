@@ -548,7 +548,8 @@
                                     "email",
                                     "password",
                                     "companyName",
-                                    "legalConsent"
+                                    "legalConsent",
+                                    "captchaToken"
                                 ],
                                 "properties": {
                                     "email": {
@@ -565,6 +566,11 @@
                                     },
                                     "legalConsent": {
                                         "type": "boolean"
+                                    },
+                                    "captchaToken": {
+                                        "type": "string",
+                                        "maxLength": 4096,
+                                        "minLength": 1
                                     }
                                 },
                                 "type": "object"
@@ -585,6 +591,46 @@
                     },
                     "422": {
                         "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435 \u0438\u043b\u0438 \u0441\u043e\u0433\u043b\u0430\u0441\u0438\u0435 \u043d\u0435 \u0434\u0430\u043d\u043e",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "\u041b\u0438\u043c\u0438\u0442 \u043f\u043e\u043f\u044b\u0442\u043e\u043a \u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0430\u0446\u0438\u0438 \u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "\u0421\u0435\u043a\u0443\u043d\u0434\u044b \u0434\u043e \u0440\u0430\u0437\u0440\u0435\u0448\u0451\u043d\u043d\u043e\u0439 \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u043e\u0439 \u043f\u043e\u043f\u044b\u0442\u043a\u0438",
+                                "required": true,
+                                "schema": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 CAPTCHA \u0432\u0440\u0435\u043c\u0435\u043d\u043d\u043e \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0430",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "\u0421\u0435\u043a\u0443\u043d\u0434\u044b \u0434\u043e \u0440\u0435\u043a\u043e\u043c\u0435\u043d\u0434\u0443\u0435\u043c\u043e\u0439 \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u043e\u0439 \u043f\u043e\u043f\u044b\u0442\u043a\u0438",
+                                "required": true,
+                                "schema": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                }
+                            }
+                        },
                         "content": {
                             "application/json": {
                                 "schema": {

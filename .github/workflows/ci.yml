@@ -81,26 +81,11 @@ jobs:
             reason="диф $base..${GITHUB_SHA} ($origin)"
           fi
 
-          matches() { printf '%s\n' "$changed" | grep -qE "$1"; }
-
-          # Затрагивает то, КАК прогоняются проверки, а не только что
-          # проверяется: конвейер, окружение, образы, схема БД.
-          # Здесь фильтровать нельзя — фильтр судил бы сам о себе.
-          everything='^(\.github/|Makefile|docker-compose\.yml|docker/|api/migrations/)'
-
-          if [ -z "$changed" ] || matches "$everything"; then
-            backend=true
-            frontend=true
-          else
-            backend=false
-            frontend=false
-            matches '^api/' && backend=true
-            # Скрипты bin/ и их поведенческие тесты исполняются в backend-job.
-            matches '^bin/' && backend=true
-            matches '^apps/' && frontend=true
-            # Контракт общий: правка схемы касается обеих половин.
-            matches '^packages/api-schema/' && { backend=true; frontend=true; }
-          fi
+          classification=$(printf '%s\n' "$changed" | bin/ci-classify-paths)
+          backend=${classification%%$'\n'*}
+          backend=${backend#backend=}
+          frontend=${classification##*$'\n'}
+          frontend=${frontend#frontend=}
 
           echo "backend=$backend" >> "$GITHUB_OUTPUT"
           echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
@@ -134,8 +119,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: production env updater
-        run: bin/tests/set-registration-documents-version.test.sh
+      - name: shell regression guards
+        run: |
+          set -eu
+
+          for test_script in bin/tests/*.test.sh; do
+            "$test_script"
+          done
 
       # Контейнеры и хост делят чекаут и обязаны сходиться в uid: часть
       # целей Makefile пишет с хоста, а не из контейнера. Подробнее —

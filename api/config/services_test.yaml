@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+
+services:
+    App\Tests\Support\Fake\FakeCaptchaVerifier:
+        public: true
+        shared: true
+
+    App\Identity\Domain\CaptchaVerifier:
+        alias: App\Tests\Support\Fake\FakeCaptchaVerifier
+
+    App\Tests\Support\Probe\PasswordHasherProbe:
+        public: true
+        shared: true
+        arguments:
+            $inner: '@security.user_password_hasher'
+
+    Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface:
+        alias: App\Tests\Support\Probe\PasswordHasherProbe

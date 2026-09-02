@@ -19,6 +19,8 @@ app-service-analytics/
 ├── playwright.config.ts  один конфиг на репозиторий, проекты seller и admin
 ├── package.json          только @playwright/test под этот конфиг
 ├── bin/
+│   ├── ci-classify-paths  классифицирует изменённые пути для CI;
+│   │                         исполняется самим workflow и shell-тестом
 │   ├── review-prepare.sh сборка пакета для внешнего ревью (make review-prepare)
 │   ├── capture-ozon-buyout-fixtures.sh  интерактивно снимает raw-ответы
 │   │                         Ozon без передачи API-ключа в argv
@@ -239,6 +241,13 @@ security checker. Публичные HTTP-контроллеры находят�
 `app:identity:purge-unconfirmed-accounts` в `Ui/Command`. Для уборки в Deptrac
 выделена узкая цепочка Command → Application action → cleanup port/adapter:
 из HTTP-слоя этот деструктивный сценарий недостижим.
+
+Граница Stage 2 самостоятельной регистрации проходит через доменный порт
+`CaptchaVerifier`: его адаптер `Infrastructure/Api/YandexSmartCaptchaVerifier`
+делает единственный короткий запрос к Yandex SmartCaptcha и возвращает только
+пройденную или отклонённую проверку. Недоступность превращается в
+`CaptchaUnavailable` без тела ответа, токена, IP или server key; решение
+создать аккаунт остаётся в следующем Application-сценарии.
 
 Ingestion дополнительно:
 

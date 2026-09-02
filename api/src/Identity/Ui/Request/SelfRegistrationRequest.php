@@ -8,12 +8,14 @@ final readonly class SelfRegistrationRequest
 {
     public const int MIN_PASSWORD_LENGTH = 12;
     public const int MAX_COMPANY_NAME_LENGTH = 255;
+    public const int MAX_CAPTCHA_TOKEN_LENGTH = 4096;
 
     private function __construct(
         public string $email,
         public string $password,
         public string $companyName,
         public bool $legalConsent,
+        public string $captchaToken,
     ) {
     }
 
@@ -51,6 +53,11 @@ final readonly class SelfRegistrationRequest
             throw new \InvalidArgumentException('legal_consent_required');
         }
 
-        return new self(trim($email), $password, trim($companyName), true);
+        $captchaToken = $decoded['captchaToken'] ?? null;
+        if (!\is_string($captchaToken) || '' === $captchaToken || mb_strlen($captchaToken) > self::MAX_CAPTCHA_TOKEN_LENGTH) {
+            throw new \InvalidArgumentException('captcha_invalid');
+        }
+
+        return new self(trim($email), $password, trim($companyName), true, $captchaToken);
     }
 }

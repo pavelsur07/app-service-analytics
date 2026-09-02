@@ -166,7 +166,9 @@ services:
   api:
     image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
     restart: unless-stopped
-    environment: *api-env
+    environment:
+      <<: *api-env
+      SMARTCAPTCHA_SERVER_KEY: ${SMARTCAPTCHA_SERVER_KEY:?}
     networks: [internal, egress]
     dns: *egress-dns
     mem_limit: 384m

@@ -17,6 +17,16 @@ framework:
             policy: sliding_window
             limit: 500
             interval: '1 hour'
+        # Публичная регистрация ограничена по двум независимым HMAC-ключам:
+        # email защищает один адрес, IP — общую стоимость атаки.
+        registration_email:
+            policy: sliding_window
+            limit: 5
+            interval: '1 hour'
+        registration_ip:
+            policy: sliding_window
+            limit: 30
+            interval: '1 hour'
 
 when@test:
     framework:
@@ -27,3 +37,7 @@ when@test:
                 # а каждый тест заводит свою, поэтому счётчики тестов
                 # между собой не пересекаются.
                 limit: 5
+            registration_email:
+                limit: 2
+            registration_ip:
+                limit: 3

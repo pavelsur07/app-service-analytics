@@ -1187,6 +1187,7 @@ export interface operations {
                     password: string;
                     companyName: string;
                     legalConsent: boolean;
+                    captchaToken: string;
                 };
             };
         };
@@ -1203,6 +1204,28 @@ export interface operations {
             /** @description Некорректные данные или согласие не дано */
             422: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Лимит попыток регистрации исчерпан */
+            429: {
+                headers: {
+                    /** @description Секунды до разрешённой повторной попытки */
+                    "Retry-After": number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Проверка CAPTCHA временно недоступна */
+            503: {
+                headers: {
+                    /** @description Секунды до рекомендуемой повторной попытки */
+                    "Retry-After": number;
                     [name: string]: unknown;
                 };
                 content: {
