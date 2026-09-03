@@ -23,6 +23,12 @@ http:
       middlewares: ["to-https"]
       service: nginx
 
+    links-insecure:
+      rule: "Host(`lin.conwix.com`)"
+      entryPoints: ["web"]
+      middlewares: ["to-https"]
+      service: nginx
+
     app:
       rule: "Host(`app.conwix.com`)"
       entryPoints: ["websecure"]
@@ -41,11 +47,25 @@ http:
       tls:
         certResolver: letsencrypt
 
+    links:
+      rule: "Host(`lin.conwix.com`)"
+      entryPoints: ["websecure"]
+      middlewares: ["links-rate-limit"]
+      service: nginx
+      tls:
+        certResolver: letsencrypt
+
   middlewares:
     to-https:
       redirectScheme:
         scheme: https
         permanent: true
+
+    links-rate-limit:
+      rateLimit:
+        average: 20
+        period: 1s
+        burst: 50
 
     # Вход в админку — только с перечисленных адресов. Список ведётся
     # здесь, а не на сервере:

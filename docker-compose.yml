@@ -2,7 +2,7 @@ services:
   traefik:
     image: traefik:v3.5
     # Статический file provider, не обнаружение по docker-меткам:
-    # маршрутизация фиксирована (два хоста, один бэкенд), и это избавляет
+    # маршрутизация фиксирована (три хоста, один бэкенд), и это избавляет
     # от монтирования docker.sock. Переходить на docker provider — когда
     # маршруты должны будут реагировать на появление контейнеров.
     command:
@@ -32,6 +32,7 @@ services:
         aliases:
           - app.conwix.internal
           - admin.conwix.internal
+          - lin.conwix.internal
 
   # Оба сервиса собирают одну и ту же стадию dev одного Dockerfile. Разными
   # остаются роли, а не образы: php-fpm обслуживает FastCGI, php-cli —

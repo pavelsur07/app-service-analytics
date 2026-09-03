@@ -27,7 +27,7 @@ DB_TEST_NAME := $(DB_NAME)_test
 .PHONY: help \
 	init up down down-clear build pull ps logs \
 	api-shell api-install api-migrate api-migrate-test api-console \
-	db-wait db-test-create db-test-rebuild db-rebuild-check \
+	db-wait db-test-create db-test-rebuild db-schema-validate db-rebuild-check \
 	test test-unit test-int test-func test-e2e test-cov \
 	lint lint-fix stan deptrac structure-check audit \
 	front-typecheck front-lint front-test front-knip \
@@ -103,6 +103,10 @@ db-test-rebuild: db-wait ## полное пересоздание тестово
 	$(COMPOSE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE DATABASE $(DB_TEST_NAME)"
 	$(MAKE) api-migrate-test
 
+db-schema-validate: ## Doctrine mapping и обе мигрированные схемы совпадают
+	$(COMPOSE) exec -T php-cli php bin/console doctrine:schema:validate
+	$(COMPOSE) exec -T php-cli php bin/console doctrine:schema:validate --env=test
+
 # Условие закрытия задачи с миграцией (CLAUDE.md, «Миграции и изменения
 # схемы»). Проверяет не то, что миграция применилась у разработчика
 # поверх схемы, сложившейся за несколько итераций, а то, что она
@@ -110,7 +114,7 @@ db-test-rebuild: db-wait ## полное пересоздание тестово
 #
 # Порядок задан списком зависимостей; он соблюдается благодаря
 # .NOTPARALLEL в начале файла.
-db-rebuild-check: down-clear up db-wait api-migrate api-migrate-test test ## down-clear → up → migrate → migrate-test → test: миграция с пустой базы
+db-rebuild-check: down-clear up db-wait api-migrate api-migrate-test db-schema-validate test ## down-clear → up → migrate → schema-validate → test
 	@echo "db-rebuild-check: OK"
 
 # --- Тесты -------------------------------------------------------------
@@ -159,7 +163,7 @@ stan: ## PHPStan
 deptrac: ## границы модулей
 	$(COMPOSE) exec php-cli composer deptrac
 
-structure-check: ## api/src содержит только Shared/Identity/Ingestion/PriceMonitoring/Kernel.php
+structure-check: ## api/src содержит только Shared/Identity/Ingestion/PriceMonitoring/Links/Kernel.php
 	$(COMPOSE) exec php-cli sh bin/check-src-structure.sh
 
 audit: ## composer audit + npm audit (оба приложения и packages/api-schema)

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Проверяет, что api/src/ содержит только Shared, Identity, Ingestion,
-# PriceMonitoring и Kernel.php — ничего сверх спроектированных модулей
+# PriceMonitoring, Links и Kernel.php — ничего сверх спроектированных модулей
 # (см. docs/structure.md).
 # Нужна машинная проверка, а не «на глаз»: рецепты Symfony Flex заводят
 # src/Entity, src/Repository, src/Controller при установке любого пакета,
@@ -14,13 +14,13 @@ unexpected=""
 for entry in src/*; do
     name="$(basename "$entry")"
     case "$name" in
-        Shared|Identity|Ingestion|PriceMonitoring|Kernel.php) ;;
+        Shared|Identity|Ingestion|PriceMonitoring|Links|Kernel.php) ;;
         *) unexpected="$unexpected $name" ;;
     esac
 done
 
 if [ -n "$unexpected" ]; then
-    echo "api/src/ содержит лишнее (не Shared/Identity/Ingestion/PriceMonitoring/Kernel.php):" >&2
+    echo "api/src/ содержит лишнее (не Shared/Identity/Ingestion/PriceMonitoring/Links/Kernel.php):" >&2
     for name in $unexpected; do
         echo "  - $name" >&2
     done
@@ -28,4 +28,4 @@ if [ -n "$unexpected" ]; then
     exit 1
 fi
 
-echo "OK: api/src/ содержит только Shared, Identity, Ingestion, PriceMonitoring, Kernel.php"
+echo "OK: api/src/ содержит только Shared, Identity, Ingestion, PriceMonitoring, Links, Kernel.php"

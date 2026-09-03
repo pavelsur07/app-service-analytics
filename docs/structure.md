@@ -29,8 +29,8 @@ app-service-analytics/
 │                         Ozon в sales_fact перед Playwright (make test-e2e);
 │                         реальных ключей площадки в песочнице нет
 ├── traefik/
-│   ├── dynamic.yml       dev: *.conwix.localhost (file provider)
-│   └── dynamic.prod.yml  prod: app/admin.conwix.com, TLS, редирект с http
+│   ├── dynamic.yml       dev: app/admin/lin.conwix.localhost (file provider)
+│   └── dynamic.prod.yml  prod: app/admin/lin.conwix.com, TLS, редирект с http
 ├── .dockerignore         контекст сборки — корень репозитория
 ├── docker/
 │   ├── nginx/
@@ -74,18 +74,22 @@ app-service-analytics/
 **`docker-compose.prod.yml` — топология, а не выкладка.** Куда она
 разворачивается, не решено; файл существует, чтобы решения были записаны
 исполнимо. В нём: Traefik (TLS через Let's Encrypt, маршруты
-`app.conwix.com` и `admin.conwix.com`), nginx (статика томом, проксирование
-в php-fpm), `api` и два воркера из одного образа, Redis, PostgreSQL.
+`app.conwix.com`, `admin.conwix.com` и `lin.conwix.com`), nginx (статика
+томом, проксирование в php-fpm), `api` и два воркера из одного образа,
+Redis, PostgreSQL.
 База на той же машине; плата — восстановление на момент времени
 и проверенные копии предстоит построить самим, причина записана
 комментарием в самом файле. Лендинга `conwix.com` здесь нет:
 он в отдельном репозитории со своей выкладкой.
 
-**Топология развёрнута и обслуживает боевой трафик.** Не «проверена
+**Основная топология развёрнута и обслуживает боевой трафик.** Не «проверена
 локально», а работает: `app.conwix.com` и `admin.conwix.com` отвечают
 по TLS с сертификатами Let's Encrypt, все семь сервисов `healthy`,
 `http` отвечает редиректом на `https`. Каталог выкладки на сервере —
-`/opt/conwix`.
+`/opt/conwix`. Конфигурация `lin.conwix.com` находится в репозитории,
+но её DNS, миграция и production smoke остаются отдельными ручными
+пунктами `docs/operations-checklist.md`; этот документ не объявляет их
+выполненными заранее.
 
 Проверка попутно показала, чего файл не мог показать чтением: пока
 таблицы `messenger_messages` нет, оба воркера уходят в цикл
@@ -94,7 +98,7 @@ app-service-analytics/
 
 **Выкладка автоматическая.** Задача `deploy` конвейера после публикации
 образа переносит топологию и статику на сервер, обновляет `IMAGE`
-в `/opt/conwix/.env`, поднимает контейнеры и проверяет, что оба домена
+в `/opt/conwix/.env`, поднимает контейнеры и проверяет, что оба основных домена
 отдают именно тот тег, который собрался.
 
 Миграции она **не применяет** — CLAUDE.md, «Миграции и изменения схемы»:
@@ -132,12 +136,19 @@ app-service-analytics/
 
 ### Два имени у одного хоста
 
-Снаружи, из браузера разработчика — `app.conwix.localhost`
-и `admin.conwix.localhost`. Внутри docker-сети эти адреса недостижимы:
+Снаружи, из браузера разработчика — `app.conwix.localhost`,
+`admin.conwix.localhost` и `lin.conwix.localhost`. Внутри docker-сети
+эти адреса недостижимы:
 по RFC 6761 резолверы отображают весь домен `.localhost` в loopback,
 игнорируя DNS. Поэтому у тех же vhost'ов есть вторые имена
-`app.conwix.internal` и `admin.conwix.internal` — их используют
+`app.conwix.internal`, `admin.conwix.internal` и `lin.conwix.internal` —
+их используют
 контейнеры, обращающиеся друг к другу по HTTP, в частности Playwright.
+
+Публичный URL ответа admin API строится из `LINKS_PUBLIC_BASE_URL`:
+локально это `http://lin.conwix.localhost`, в production-топологии —
+`https://lin.conwix.com`. Сам redirect маршрутизируется по Host и не
+зависит от этой переменной.
 
 Подробности и отвергнутые варианты — в `patterns.md`, раздел
 «Сеть окружения».
@@ -156,7 +167,8 @@ api/
 │   ├── Shared/
 │   ├── Identity/
 │   ├── Ingestion/
-│   └── PriceMonitoring/
+│   ├── PriceMonitoring/
+│   └── Links/
 ├── tests/
 ├── var/                  всё, что порождается прогонами
 │   ├── cache/            Symfony (dev, test, prod)
@@ -215,6 +227,12 @@ Inventory обсуждались, но решения по ним не прин�
 и публичный контракт под несуществующего потребителя не заводится.
 От `Ingestion` модуль не зависит и зависеть не должен — цену приносит
 клиент, а не забирает наш коннектор.
+
+`Links` заведён вместе с ADR-022. Он обращается в `Identity` только через
+узкий `IdentityAdminFacade`, чтобы разрешить автора и записать аудит:
+направление остаётся `Links → Identity → Shared`. Публичный контроллер
+редиректа не открывает admin API на lin-хосте — nginx пропускает к PHP
+только путь из семи base62-символов.
 
 ### Внутри модуля
 
@@ -460,7 +478,8 @@ apps/admin/src/
 ├── features/
 │   ├── auth/           вход, выход
 │   ├── accounts/       список аккаунтов, регистрация, блокировка
-│   └── administrators/ SuperAdmin заводит Admin
+│   ├── administrators/ SuperAdmin заводит Admin
+│   └── links/          короткие ссылки и переходы по дням месяца
 ├── shared/
 │   ├── lib/            adminQueryKey, форматирование
 │   └── model/          useCurrentAdmin — «кто я», нужен и оболочке,
@@ -471,6 +490,8 @@ apps/admin/src/
 Сквозной сценарий в `tests/e2e/` у каждого свой: у продавца — компании
 и продажи, у админки — вход `SuperAdmin`, регистрация клиентского
 аккаунта, его блокировка и включение, заведение `Admin`, выход.
+Админский сценарий также создаёт и редактирует короткую ссылку, проверяет
+отключение/включение и сквозной 302 с ростом дневного счётчика.
 
 **Конфиг Playwright один, в корне репозитория** — `projects` seller
 и admin, `testDir` каждого указывает в своё приложение. Так и было

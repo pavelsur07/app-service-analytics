@@ -10,6 +10,19 @@ http:
       entryPoints: ["web"]
       service: nginx
 
+    links:
+      rule: "Host(`lin.conwix.localhost`)"
+      entryPoints: ["web"]
+      middlewares: ["links-rate-limit"]
+      service: nginx
+
+  middlewares:
+    links-rate-limit:
+      rateLimit:
+        average: 20
+        period: 1s
+        burst: 50
+
   services:
     nginx:
       loadBalancer:

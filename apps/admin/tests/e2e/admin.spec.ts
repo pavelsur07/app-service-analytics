@@ -66,6 +66,82 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
   await row.getByRole('button', { name: 'Включить' }).click()
   await expect(row).toContainText('работает')
 
+  // Ссылки доступны обеим административным ролям. В одном сценарии
+  // проверяем полный рабочий цикл: создать, выбрать статистику,
+  // исправить и временно отключить.
+  await page.getByRole('link', { name: 'Ссылки' }).click()
+  await expect(page).toHaveURL(/\/links$/)
+
+  const campaignName = `E2E Campaign ${String(stamp)}`
+  const campaignNameUpdated = `${campaignName} updated`
+  await page.getByLabel('Название ссылки').fill(campaignName)
+  await page
+    .getByLabel('Адрес назначения')
+    .fill('https://example.com/e2e-campaign')
+  const createLinkResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/admin/links') &&
+      response.request().method() === 'POST',
+  )
+  await page.getByRole('button', { name: 'Создать ссылку' }).click()
+  const createdLink: unknown = await (await createLinkResponse).json()
+  if (!isRecord(createdLink) || typeof createdLink.id !== 'string') {
+    throw new Error('Ответ создания ссылки не содержит id.')
+  }
+
+  const linkRow = page.getByRole('row').filter({ hasText: campaignName })
+  await expect(linkRow).toBeVisible()
+
+  // Другая вкладка успела изменить ссылку: первый клик из
+  // устаревшего UI получит 409, после чего строка сама подтянет
+  // свежую version и повторное действие сработает без reload.
+  const externalDisable = await page.request.post(
+    `/api/admin/links/${encodeURIComponent(createdLink.id)}/status`,
+    { data: { status: 'disabled', version: 1 } },
+  )
+  expect(externalDisable.ok()).toBe(true)
+  await linkRow.getByRole('button', { name: 'Отключить' }).click()
+  await expect(linkRow).toContainText('отключена')
+  await expect(linkRow.getByRole('alert')).toHaveCount(0)
+  await linkRow.getByRole('button', { name: 'Включить' }).click()
+  await expect(linkRow).toContainText('работает')
+
+  await linkRow.getByRole('button', { name: 'Показать переходы' }).click()
+
+  const today = new Date().toISOString().slice(0, 10)
+  const todayRow = page.getByRole('row').filter({ hasText: today })
+  await expect(todayRow.getByRole('cell').last()).toHaveText('0')
+
+  const code = (await linkRow.locator('code').textContent()) ?? ''
+  expect(code).toMatch(/^[0-9A-Za-z]{7}$/)
+  const redirect = await page.request.get(
+    `http://lin.conwix.internal/${code}`,
+    {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 Chrome/130.0 Safari/537.36',
+      },
+      maxRedirects: 0,
+    },
+  )
+  expect(redirect.status()).toBe(302)
+
+  // Переход записан вне React-приложения, поэтому перечитываем экран:
+  // статистика должна прийти из PostgreSQL, а не из клиентского кэша.
+  await page.reload()
+  await expect(todayRow.getByRole('cell').last()).toHaveText('1')
+
+  await linkRow.getByRole('button', { name: 'Редактировать' }).click()
+  await page
+    .getByLabel('Название ссылки для изменения')
+    .fill(campaignNameUpdated)
+  await page.getByRole('button', { name: 'Сохранить изменения' }).click()
+  await expect(linkRow).toContainText(campaignNameUpdated)
+
+  await linkRow.getByRole('button', { name: 'Отключить' }).click()
+  await expect(linkRow).toContainText('отключена')
+  await linkRow.getByRole('button', { name: 'Включить' }).click()
+  await expect(linkRow).toContainText('работает')
+
   // Заведение администратора — отдельный экран верхней роли.
   await page.getByRole('link', { name: 'Администраторы' }).click()
   await expect(page).toHaveURL(/\/administrators$/)
@@ -88,3 +164,7 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
   await page.getByRole('button', { name: 'Выйти' }).click()
   await expect(page).toHaveURL(/\/login$/)
 })
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
