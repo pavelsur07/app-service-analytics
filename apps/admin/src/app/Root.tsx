@@ -4,6 +4,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 import { AccountsPage } from '../features/accounts/ui/AccountsPage'
 import { CreateAdministratorPage } from '../features/administrators/ui/CreateAdministratorPage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
+import { LinksPage } from '../features/links/ui/LinksPage'
 import { AdminLayout } from './AdminLayout'
 import { RequireAuth } from './RequireAuth'
 
@@ -31,6 +32,7 @@ const router = createBrowserRouter([
     ),
     children: [
       { path: '/accounts', element: <AccountsPage /> },
+      { path: '/links', element: <LinksPage /> },
       { path: '/administrators', element: <CreateAdministratorPage /> },
     ],
   },

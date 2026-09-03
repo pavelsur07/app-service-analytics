@@ -1,4 +1,4 @@
-import { Building2, LogOut, ShieldCheck } from 'lucide-react'
+import { Building2, Link2, LogOut, ShieldCheck } from 'lucide-react'
 import { NavLink } from 'react-router'
 
 import { Button } from '../../../../packages/ui/src'
@@ -28,6 +28,16 @@ export function Sidebar() {
       >
         <Building2 aria-hidden="true" size={16} />
         Аккаунты
+      </NavLink>
+
+      <NavLink
+        to="/links"
+        className={({ isActive }) =>
+          `${ITEM} ${isActive ? ITEM_ACTIVE : ITEM_IDLE}`
+        }
+      >
+        <Link2 aria-hidden="true" size={16} />
+        Ссылки
       </NavLink>
 
       {currentAdmin.data?.role === 'super_admin' && (

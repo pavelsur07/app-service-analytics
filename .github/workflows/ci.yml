@@ -187,7 +187,7 @@ jobs:
 
       - run: make lint stan deptrac structure-check
 
-      - run: make db-wait db-test-create api-migrate-test test-unit test-int test-func
+      - run: make db-wait db-test-create api-migrate-test db-schema-validate test-unit test-int test-func
 
   frontend:
     name: frontend

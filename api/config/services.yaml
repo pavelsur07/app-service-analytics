@@ -16,6 +16,7 @@ services:
         autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
         bind:
             string $alertEmail: '%env(ALERT_EMAIL)%'
+            string $linksPublicBaseUrl: '%env(LINKS_PUBLIC_BASE_URL)%'
             string $mailerDsn: '%env(MAILER_DSN)%'
             string $sellerAppOrigin: '%env(SELLER_APP_ORIGIN)%'
             string $registrationDocumentsVersion: '%env(REGISTRATION_DOCUMENTS_VERSION)%'

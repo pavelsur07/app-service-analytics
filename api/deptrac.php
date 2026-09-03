@@ -60,11 +60,17 @@ return static function (DeptracConfig $config): void {
             $identityFacade = Layer::withName('IdentityFacade')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Identity/Application/Facade/.*')],
-                    mustNot: [ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityScheduleFacade$')],
+                    mustNot: [
+                        ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityScheduleFacade$'),
+                        ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityAdminFacade$'),
+                    ],
                 ),
             ),
             $identityScheduleFacade = Layer::withName('IdentityScheduleFacade')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityScheduleFacade$'),
+            ),
+            $identityAdminFacade = Layer::withName('IdentityAdminFacade')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityAdminFacade$'),
             ),
             // ActiveOzonAccountsQuery вынесен из IdentityInfrastructure тем же
             // приёмом: IdentityUi уже имеет широкий доступ к IdentityInfrastructure
@@ -159,6 +165,19 @@ return static function (DeptracConfig $config): void {
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\(ConfirmEmail|ResendEmailVerification)Controller$'),
                     ],
                 ),
+            ),
+
+            $linksDomain = Layer::withName('LinksDomain')->collectors(
+                DirectoryConfig::create('src/Links/Domain/.*'),
+            ),
+            $linksApplication = Layer::withName('LinksApplication')->collectors(
+                DirectoryConfig::create('src/Links/Application/.*'),
+            ),
+            $linksInfrastructure = Layer::withName('LinksInfrastructure')->collectors(
+                DirectoryConfig::create('src/Links/Infrastructure/.*'),
+            ),
+            $linksUi = Layer::withName('LinksUi')->collectors(
+                DirectoryConfig::create('src/Links/Ui/.*'),
             ),
 
             $ingestionDomain = Layer::withName('IngestionDomain')->collectors(
@@ -321,6 +340,7 @@ return static function (DeptracConfig $config): void {
             // где результат превращается в межмодульный DTO. Тот же грант
             // и по той же причине есть у identityScheduleFacade.
             Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $identityInfrastructure, $sharedApplication, $sharedDomain, $symfonyUid),
+            Ruleset::forLayer($identityAdminFacade)->accesses($identityDomain, $symfonyUid),
             // identityOperationalQuery/identityInfrastructure (ради
             // ActiveOzonAccountRow) — только у IdentityScheduleFacade,
             // не у IdentityFacade выше: это и есть граница CLAUDE.md §1.
@@ -351,6 +371,14 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($identityEmailVerificationBoundary)->accesses($identityDomain, $symfonyUid),
             Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
+
+            // Links пересекает Identity только через узкий фасад системного
+            // администратора. Ни Entity, ни широкий IdentityFacade модулю
+            // не доступны.
+            Ruleset::forLayer($linksUi)->accesses($linksApplication, $linksDomain, $linksInfrastructure, $identityAdminFacade, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $symfonySecurityUser, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($linksApplication)->accesses($linksDomain, $linksInfrastructure, $identityAdminFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($linksInfrastructure)->accesses($linksDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($linksDomain)->accesses($sharedDomain, $symfonyUid),
 
             // Ingestion — вход в Identity только через IdentityFacade;
             // Ui вообще не пересекает границу модуля, даже через Facade.
