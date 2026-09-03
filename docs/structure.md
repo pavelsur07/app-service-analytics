@@ -384,10 +384,20 @@ apps/seller/
 на выбор компании. Эндпоинт `/api/seller/ping` остаётся, его опрашивает
 задача выкладки.
 
+**Самостоятельная регистрация Stage 3** живёт в `features/auth`, но не в
+оболочке компании: публичные маршруты `/sign-up`, `/sign-up/email-sent`,
+`/resend-confirmation` и `/confirm-email` показывают соответственно
+`SignUpPage`, `EmailSentPage`, `ResendConfirmationPage` и `ConfirmEmailPage`.
+`/onboarding` — отдельный маршрут с `RequireAuth`, намеренно вне
+`/companies/:companyId` и `CompanyLayout`: только что подтвердивший email
+пользователь ещё не выбирал компанию. `OnboardingStartPage` лишь сообщает,
+что Stage 4 запросит название магазина, Ozon `Client-Id` и `Api-Key`; формы,
+сохранения учётных данных, запроса компании и навигации оболочки здесь нет.
+
 ```
 apps/seller/
 ├── src/
-│   ├── main.tsx                       точка входа
+│   ├── main.tsx                       точка входа + раннее стирание confirmation fragment
 │   ├── index.css                      @import "tailwindcss"
 │   ├── app/
 │   │   ├── Root.tsx                   роутер + QueryClientProvider
@@ -404,6 +414,18 @@ apps/seller/
 │   │       ├── formatMinorAmount.ts   копейки → отображаемая сумма
 │   │       └── companyQueryKey.ts     ['company', companyId, модуль, сущность, ...]
 │   └── features/
+│       ├── auth/
+│       │   ├── lib/
+│       │   │   ├── captchaFlow.ts       автомат invisible SmartCaptcha
+│       │   │   ├── captchaLoaderGuard.ts watchdog загрузки виджета
+│       │   │   └── confirmationToken.ts одноразовый fragment-token bootstrap
+│       │   ├── model/                   auth-запросы и useCurrentUser
+│       │   └── ui/
+│       │       ├── SignUpPage.tsx
+│       │       ├── EmailSentPage.tsx
+│       │       ├── ResendConfirmationPage.tsx
+│       │       ├── ConfirmEmailPage.tsx
+│       │       └── OnboardingStartPage.tsx  граница перед Stage 4, без формы
 │       └── ingestion/
 │           ├── model/
 │           │   └── useSalesFacts.ts   TanStack Query, курсорная пагинация

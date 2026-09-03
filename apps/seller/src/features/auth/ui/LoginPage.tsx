@@ -1,6 +1,6 @@
 import { useForm } from 'react-hook-form'
 import { CircleAlert } from 'lucide-react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { Button, Card, Input } from '../../../../../../packages/ui/src'
 import { useLogin } from '../model/useLogin'
 
@@ -72,6 +72,15 @@ export function LoginPage() {
             <Button type="submit" loading={login.isPending}>
               Войти
             </Button>
+            <p className="text-center text-sm text-text-muted">
+              Нет аккаунта?{' '}
+              <Link
+                className="font-medium text-accent-default underline hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-default"
+                to="/sign-up"
+              >
+                Зарегистрироваться
+              </Link>
+            </p>
           </form>
         </Card>
       </div>

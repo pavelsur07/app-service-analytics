@@ -11,9 +11,10 @@ use Symfony\Component\Mime\Email;
 
 /**
  * Письма регистрации отправляются штатным Symfony Mailer синхронно:
- * confirmation URL содержит открытый одноразовый токен, который нельзя
- * сериализовать в doctrine-очередь и резервные копии PostgreSQL. From
- * задаётся глобально в mailer.yaml, не дублируется здесь.
+ * confirmation URL содержит открытый одноразовый токен только во fragment,
+ * который браузер не отправляет HTTP-серверу. Письмо нельзя сериализовать
+ * в doctrine-очередь и резервные копии PostgreSQL. From задаётся глобально
+ * в mailer.yaml, не дублируется здесь.
  */
 final readonly class MailRegistrationEmailSender implements RegistrationEmailSender
 {
@@ -25,7 +26,7 @@ final readonly class MailRegistrationEmailSender implements RegistrationEmailSen
 
     public function sendConfirmation(string $email, EmailVerificationSecret $secret): void
     {
-        $url = rtrim($this->sellerAppOrigin, '/').'/confirm-email?token='.rawurlencode($secret->plainText());
+        $url = rtrim($this->sellerAppOrigin, '/').'/confirm-email#token='.rawurlencode($secret->plainText());
 
         $this->mailer->send(
             (new Email())

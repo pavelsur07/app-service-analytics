@@ -96,6 +96,7 @@ services:
     user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
     environment:
       - HOME=/tmp
+      - VITE_SMARTCAPTCHA_CLIENT_KEY=${SMARTCAPTCHA_CLIENT_KEY:-}
     working_dir: /var/www/apps/seller
     volumes:
       - ./apps:/var/www/apps

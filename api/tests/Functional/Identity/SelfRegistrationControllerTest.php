@@ -120,7 +120,8 @@ final class SelfRegistrationControllerTest extends WebTestCase
         self::assertSame('Conwix: подтвердите адрес электронной почты', $email->getSubject());
         $text = $email->getTextBody();
         self::assertIsString($text);
-        self::assertSame(1, preg_match('~/confirm-email\?token=([0-9a-f]{64})~', $text, $matches));
+        self::assertStringNotContainsString('?token=', $text);
+        self::assertSame(1, preg_match('~/confirm-email#token=([0-9a-f]{64})~', $text, $matches));
         $plainTextToken = $matches[1] ?? null;
         self::assertIsString($plainTextToken);
         self::assertSame($account['token_hash'], hash('sha256', $plainTextToken));

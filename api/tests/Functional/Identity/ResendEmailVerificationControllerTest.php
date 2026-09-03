@@ -38,7 +38,8 @@ final class ResendEmailVerificationControllerTest extends WebTestCase
         self::assertEmailIsNotQueued($firstEvent);
         $firstEmail = self::getMailerMessage(0);
         self::assertInstanceOf(Email::class, $firstEmail);
-        self::assertStringContainsString('/confirm-email?token=', (string) $firstEmail->getTextBody());
+        self::assertStringContainsString('/confirm-email#token=', (string) $firstEmail->getTextBody());
+        self::assertStringNotContainsString('?token=', (string) $firstEmail->getTextBody());
 
         $this->resend($client, 'waiting@example.test');
         self::assertResponseStatusCodeSame(202);
@@ -57,7 +58,8 @@ final class ResendEmailVerificationControllerTest extends WebTestCase
         self::assertEmailIsNotQueued($secondEvent);
         $secondEmail = self::getMailerMessage(0);
         self::assertInstanceOf(Email::class, $secondEmail);
-        self::assertStringContainsString('/confirm-email?token=', (string) $secondEmail->getTextBody());
+        self::assertStringContainsString('/confirm-email#token=', (string) $secondEmail->getTextBody());
+        self::assertStringNotContainsString('?token=', (string) $secondEmail->getTextBody());
     }
 
     public function testUnknownEmailHasSameResponseAndSynchronousMailShapeWithoutToken(): void
