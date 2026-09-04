@@ -152,7 +152,9 @@ docker compose exec -T php-cli php bin/console app:identity:add-company-member \
     "$user_email" "$second_company_id"
 
 # Администратор системного контура (ADR-017). Сначала удаление, потом
-# создание: строка без автора в таблице возможна ровно одна
+# создание. Ссылки и их клики удаляются первыми: short_link хранит
+# обязательного автора-администратора, а short_link_click — саму ссылку.
+# Строка без автора в таблице администраторов возможна ровно одна
 # (uq_administrator_bootstrap), поэтому повторный запуск сида иначе
 # упёрся бы в ограничение. Сид — не боевые данные, детерминированность
 # здесь важнее сохранности.
@@ -160,6 +162,8 @@ admin_email="e2e-admin@example.com"
 admin_password="e2e-admin-password"
 
 docker compose exec -T postgres psql -U app -d app -q \
+    -c "DELETE FROM short_link_click" \
+    -c "DELETE FROM short_link" \
     -c "DELETE FROM audit_record WHERE actor_admin_id IS NOT NULL" \
     -c "DELETE FROM administrator" > /dev/null
 
