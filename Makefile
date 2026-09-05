@@ -33,7 +33,7 @@ DB_TEST_NAME := $(DB_NAME)_test
 	front-typecheck front-lint front-test front-knip \
 	api-doc-export api-types api-types-check \
 	front-install front-install-apps e2e-install front-dev front-build \
-	review-prepare review-codex review-defects review \
+	review-prepare review-claude review-codex review-defects review \
 	ci-local
 
 help: ## список целей с описаниями
@@ -258,46 +258,31 @@ front-build: ## production-сборка (APP=seller|admin, по умолчани
 
 # --- Ревью ---------------------------------------------------------------
 
-review-prepare: ## сборка пакета для ревью (var/review/package.md): make review-prepare TASK="..." [ADR="0006 0007"]
+# Параметры передаются через окружение, а не интерполируются в shell-код.
+export TASK CRITERIA CHECKS REVIEW_PATHS_FILE REVIEW_CONTEXT_FILE REVIEW_BASE REVIEW_PACKAGE
+# Не экспортировать неопределённый ADR: отсутствие запускает подбор по дифу,
+# ADR="" явно означает «к предмету нет относящихся ADR».
+ifneq ($(origin ADR),undefined)
+export ADR
+endif
+REVIEW_RISK ?= high
+REVIEW_TIMEOUT ?= 900
+export REVIEW_RISK REVIEW_TIMEOUT
+
+review-prepare: ## снимок файлов задачи; параметры и примеры — docs/review-package-template.md
 	sh bin/review-prepare.sh
 
-# Роли разведены (CLAUDE.md, «Порог внешнего ревью»): общая часть пакета
-# собирается один раз, инструкция роли добавляется своя. Один и тот же
-# текст, отданный двум моделям, даёт два сильно пересекающихся ответа —
-# тогда второй ревьюер перестаёт быть вторым мнением.
-#
-# review-prepare выдаёт разделы 1–4; 5A, 5B и 6 живут в шаблоне,
-# поэтому нужный раздел вырезается оттуда, а не из пакета.
-REVIEW_TEMPLATE := docs/review-package-template.md
+review-claude: ## обязательное независимое ревью Claude, отдельные запрос/ответ/метаданные
+	python3 -X utf8 bin/review.py run claude
 
-# $(1) — заголовок раздела роли; берётся он и раздел 6 «Формат ответа».
-define review_request
-	@test -f var/review/package.md || { echo "Сначала make review-prepare TASK=\"...\"" >&2; exit 1; }
-	@cp var/review/package.md $(2)
-	@awk '/^## $(1)\./{on=1; print; next} /^## 5[AB]\./ || /^## 6\./{on=0} on' $(REVIEW_TEMPLATE) >> $(2)
-	@awk '/^## 6\./{on=1} on' $(REVIEW_TEMPLATE) >> $(2)
-endef
+review-codex: ## дополнительное ревью соответствия правилам (5A)
+	python3 -X utf8 bin/review.py run codex
 
-review-codex: ## роль «соответствие» (5A): запрос в package-rules.md, ответ в codex.md
-	@mkdir -p var/review
-	$(call review_request,5A,var/review/package-rules.md)
-	timeout 900 codex exec --sandbox read-only -o var/review/codex.md - < var/review/package-rules.md
+review-defects: ## дополнительное ревью дефектов (5B, Codex)
+	python3 -X utf8 bin/review.py run defects
 
-# Тот же инструмент, что и выше, и это не лень, а замена выбывшего:
-# Kimi CLI занимал эту роль до 2026-08-18 и снят после шести таймаутов
-# из восьми прогонов (CLAUDE.md, «Роли инструментов разведены»).
-# Роли разводит теперь промпт, а не вторая модель: раздел 5B спрашивает
-# «сломается ли это в проде», 5A — «нарушено ли записанное правило».
-# Ответ уходит в свой файл, иначе второй прогон затирал бы первый.
-review-defects: ## роль «дефекты» (5B): запрос в package-defects.md, ответ в codex-defects.md
-	@mkdir -p var/review
-	$(call review_request,5B,var/review/package-defects.md)
-	timeout 900 codex exec --sandbox read-only -o var/review/codex-defects.md - < var/review/package-defects.md
-
-review: review-prepare ## review-prepare + оба прогона: make review TASK="..."
-	$(MAKE) review-codex
-	$(MAKE) review-defects
-	@echo "Ответы: var/review/codex.md (соответствие), var/review/codex-defects.md (дефекты)"
+review: ## подготовка + Claude; REVIEW_RISK=high (по умолчанию) добавляет оба прохода Codex
+	python3 -X utf8 bin/review.py review
 
 # --- Сводная ---------------------------------------------------------------
 # Предполагает уже поднятое и установленное окружение (make init) —

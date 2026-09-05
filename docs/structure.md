@@ -21,7 +21,8 @@ app-service-analytics/
 ├── bin/
 │   ├── ci-classify-paths  классифицирует изменённые пути для CI;
 │   │                         исполняется самим workflow и shell-тестом
-│   ├── review-prepare.sh сборка пакета для внешнего ревью (make review-prepare)
+│   ├── review-prepare.sh точка входа сборки пакета (make review-prepare)
+│   ├── review.py         явный Git-снимок, Claude/Codex и артефакты ревью
 │   ├── capture-ozon-buyout-fixtures.sh  интерактивно снимает raw-ответы
 │   │                         Ozon без передачи API-ключа в argv
 │   ├── tests/             автономные shell-контрактные тесты утилит
@@ -40,6 +41,8 @@ app-service-analytics/
 │   └── php/
 │       └── Dockerfile    один файл, стадии base / prod-deps / prod / dev;
 │                         выбор через --target
+├── AGENTS.md             общая точка входа агента и обязательное ревью Claude
+├── CLAUDE.md             подробные правила проекта и процесса
 ├── docs/
 │   ├── adr/
 │   ├── design/           эталонные макеты дизайн-системы
