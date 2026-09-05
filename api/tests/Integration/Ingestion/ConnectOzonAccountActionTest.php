@@ -16,7 +16,13 @@ use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Domain\OzonCatalogFetcher;
+use App\Ingestion\Domain\OzonExpensesFetcher;
+use App\Ingestion\Domain\OzonPostingsFetcher;
+use App\Ingestion\Domain\OzonReturnsFetcher;
+use App\Ingestion\Infrastructure\Connector\Ozon\OzonAccrualByDayClient;
+use App\Ingestion\Infrastructure\Connector\Ozon\OzonPostingFboListClient;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonProductListClient;
+use App\Ingestion\Infrastructure\Connector\Ozon\OzonReturnsListClient;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
@@ -30,8 +36,13 @@ use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
  * Подключение кабинета при онбординге (ADR-021): ключи проверяются живым
- * запросом ДО сохранения, и три исхода различаются, потому что клиенту
- * нужно разное действие в каждом.
+ * запросом ДО сохранения, и исходы различаются, потому что клиенту нужно
+ * разное действие в каждом.
+ *
+ * Проба покрывает все четыре области синхронизации (боевой инцидент:
+ * ключ, прошедший только товары, сломал подключение через секунды на
+ * первом реальном запросе продаж). Каждая область проверяется отдельным
+ * тестом: отказ на ней даёт свой код и НЕ создаёт подключение.
  *
  * Обращений к настоящему Ozon нет (ADR-005).
  */
@@ -40,7 +51,7 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
     public function testAcceptedKeyIsSavedAndSchedulesTheCurrentMonth(): void
     {
         [$companyId, $userId] = $this->companyWithOwner();
-        $this->ozonAnswers(200);
+        $this->allScopesSucceed();
 
         $outcome = ($this->action())($companyId, 'Мой магазин', 'shop-1', 'live-key', $userId);
 
@@ -71,11 +82,56 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
         [$companyId, $userId] = $this->companyWithOwner();
         // Подключение, созданное с неверными ключами, — это broken через
         // несколько часов и клиент, который считает, что всё настроил.
-        $this->ozonAnswers(401);
+        $this->stubCatalog(401);
 
         $outcome = ($this->action())($companyId, 'Мой магазин', 'shop-1', 'wrong-key', $userId);
 
         self::assertSame(ConnectOzonAccountResult::Rejected, $outcome->result);
+        self::assertSame(0, $this->accountCount($companyId));
+        self::assertSame([], $this->dispatchedMessages());
+    }
+
+    public function testSalesScopeRejectionDoesNotCreateConnection(): void
+    {
+        [$companyId, $userId] = $this->companyWithOwner();
+        // Товарная область проходит, а продажи — нет: ровно тот сценарий,
+        // который единственная проба каталога не отличала бы от рабочего
+        // ключа.
+        $this->stubCatalog(200);
+        $this->stubPostings(401);
+
+        $outcome = ($this->action())($companyId, 'Мой магазин', 'shop-1', 'sales-scope-missing', $userId);
+
+        self::assertSame(ConnectOzonAccountResult::RejectedSales, $outcome->result);
+        self::assertSame(0, $this->accountCount($companyId));
+        self::assertSame([], $this->dispatchedMessages());
+    }
+
+    public function testExpensesScopeRejectionDoesNotCreateConnection(): void
+    {
+        [$companyId, $userId] = $this->companyWithOwner();
+        $this->stubCatalog(200);
+        $this->stubPostings(200);
+        $this->stubExpenses(403);
+
+        $outcome = ($this->action())($companyId, 'Мой магазин', 'shop-1', 'expenses-scope-missing', $userId);
+
+        self::assertSame(ConnectOzonAccountResult::RejectedExpenses, $outcome->result);
+        self::assertSame(0, $this->accountCount($companyId));
+        self::assertSame([], $this->dispatchedMessages());
+    }
+
+    public function testReturnsScopeRejectionDoesNotCreateConnection(): void
+    {
+        [$companyId, $userId] = $this->companyWithOwner();
+        $this->stubCatalog(200);
+        $this->stubPostings(200);
+        $this->stubExpenses(200);
+        $this->stubReturns(401);
+
+        $outcome = ($this->action())($companyId, 'Мой магазин', 'shop-1', 'returns-scope-missing', $userId);
+
+        self::assertSame(ConnectOzonAccountResult::RejectedReturns, $outcome->result);
         self::assertSame(0, $this->accountCount($companyId));
         self::assertSame([], $this->dispatchedMessages());
     }
@@ -86,7 +142,7 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
         // Лимит запросов и сбой площадки лечатся повтором, а не выпуском
         // нового ключа. Сказать «ключ не подошёл» здесь значит отправить
         // клиента делать бесполезную работу.
-        $this->ozonAnswers(503);
+        $this->stubCatalog(503);
 
         $outcome = ($this->action())($companyId, 'Мой магазин', 'shop-1', 'live-key', $userId);
 
@@ -107,6 +163,21 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
         }
     }
 
+    public function testUnavailableOnALaterProbeIsStillUnavailableNotRejected(): void
+    {
+        [$companyId, $userId] = $this->companyWithOwner();
+        // 429/5xx на любой пробе — недоступность площадки, а не отказ
+        // права, независимо от того, какая по счёту это проба.
+        $this->stubCatalog(200);
+        $this->stubPostings(200);
+        $this->stubExpenses(429);
+
+        $outcome = ($this->action())($companyId, 'Мой магазин', 'shop-1', 'live-key', $userId);
+
+        self::assertSame(ConnectOzonAccountResult::Unavailable, $outcome->result);
+        self::assertSame(0, $this->accountCount($companyId));
+    }
+
     public function testCabinetOfAnotherCompanyIsReportedAsAlreadyConnected(): void
     {
         $companies = $this->companies();
@@ -116,7 +187,7 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
             ->persistWith($companies, $this->marketplaceAccounts());
 
         [$companyId, $userId] = $this->companyWithOwner();
-        $this->ozonAnswers(200);
+        $this->allScopesSucceed();
 
         $outcome = ($this->action())($companyId, 'Второй магазин', 'shop-taken', 'live-key', $userId);
 
@@ -201,12 +272,17 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
         return (int) $count;
     }
 
-    private function ozonAnswers(int $status): void
+    private function allScopesSucceed(): void
     {
-        $body = 200 === $status
-            ? '{"result":{"items":[],"total":0,"last_id":""}}'
-            : '{"code":16,"message":"unauthenticated"}';
+        $this->stubCatalog(200);
+        $this->stubPostings(200);
+        $this->stubExpenses(200);
+        $this->stubReturns(200);
+    }
 
+    private function stubCatalog(int $status): void
+    {
+        $body = $this->bodyFor($status);
         static::getContainer()->set(OzonProductListClient::class, new class($body, $status) implements OzonCatalogFetcher {
             public function __construct(
                 private readonly string $body,
@@ -221,6 +297,76 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
                 return $client->request('POST', 'https://api-seller.ozon.ru/v3/product/list')->getContent();
             }
         });
+    }
+
+    private function stubPostings(int $status): void
+    {
+        $body = $this->bodyFor($status);
+        static::getContainer()->set(OzonPostingFboListClient::class, new class($body, $status) implements OzonPostingsFetcher {
+            public function __construct(
+                private readonly string $body,
+                private readonly int $status,
+            ) {
+            }
+
+            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            {
+                $client = new MockHttpClient(new MockResponse($this->body, ['http_code' => $this->status]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v2/posting/fbo/list')->getContent();
+            }
+        });
+    }
+
+    private function stubExpenses(int $status): void
+    {
+        $body = $this->bodyFor($status);
+        static::getContainer()->set(OzonAccrualByDayClient::class, new class($body, $status) implements OzonExpensesFetcher {
+            public function __construct(
+                private readonly string $body,
+                private readonly int $status,
+            ) {
+            }
+
+            public function fetchDay(string $clientId, string $apiKey, \DateTimeImmutable $day, string $lastId): string
+            {
+                $client = new MockHttpClient(new MockResponse($this->body, ['http_code' => $this->status]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v1/finance/accrual/by-day')->getContent();
+            }
+        });
+    }
+
+    private function stubReturns(int $status): void
+    {
+        $body = $this->bodyFor($status);
+        static::getContainer()->set(OzonReturnsListClient::class, new class($body, $status) implements OzonReturnsFetcher {
+            public function __construct(
+                private readonly string $body,
+                private readonly int $status,
+            ) {
+            }
+
+            public function fetchPage(
+                string $clientId,
+                string $apiKey,
+                \DateTimeImmutable $from,
+                \DateTimeImmutable $to,
+                int $lastId,
+                int $limit = self::MAX_LIMIT,
+            ): string {
+                $client = new MockHttpClient(new MockResponse($this->body, ['http_code' => $this->status]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v1/returns/list')->getContent();
+            }
+        });
+    }
+
+    private function bodyFor(int $status): string
+    {
+        return 200 === $status
+            ? '{"result":{"items":[],"total":0,"last_id":""}}'
+            : '{"code":16,"message":"unauthenticated"}';
     }
 
     private function action(): ConnectOzonAccountAction

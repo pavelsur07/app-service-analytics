@@ -13,6 +13,21 @@ const BY_CODE: Record<string, ConnectAccountFailure> = {
     description:
       'Проверьте, что Client-Id и Api-Key скопированы целиком и выпущены в одном кабинете. Подключение не создано.',
   },
+  credentials_rejected_sales: {
+    title: 'Ключу не хватает права на продажи',
+    description:
+      'Включите доступ к отправлениям (FBO/FBS) в кабинете продавца и выпустите ключ заново. Подключение не создано.',
+  },
+  credentials_rejected_expenses: {
+    title: 'Ключу не хватает права на финансы',
+    description:
+      'Включите доступ к финансовым отчётам в кабинете продавца и выпустите ключ заново. Подключение не создано.',
+  },
+  credentials_rejected_returns: {
+    title: 'Ключу не хватает права на возвраты',
+    description:
+      'Включите доступ к возвратам в кабинете продавца и выпустите ключ заново. Подключение не создано.',
+  },
   cabinet_already_connected: {
     title: 'Кабинет уже подключён',
     description:

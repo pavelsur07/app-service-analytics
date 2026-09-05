@@ -24,6 +24,22 @@ describe('replaceCredentialsFailure', () => {
     expect(failure.description).toContain('другого магазина')
   })
 
+  // Та же расширенная проба, что у подключения: замена ключа, прошедшего
+  // только товарную область, оживила бы сломанное подключение на секунды.
+  it.each([
+    ['credentials_rejected_sales', 'продажи'],
+    ['credentials_rejected_expenses', 'финансы'],
+    ['credentials_rejected_returns', 'возвраты'],
+  ] as const)(
+    'называет область для кода %s и не требует refetch',
+    (code, area) => {
+      const failure = replaceCredentialsFailure(code)
+
+      expect(failure.title).toContain(area)
+      expect(failure.refetch).toBe(false)
+    },
+  )
+
   it('незнакомый код не обещает, что старый ключ на месте', () => {
     // Неизвестно, дошёл ли запрос: сеть могла упасть после сохранения.
     const failure = replaceCredentialsFailure('some_future_code')

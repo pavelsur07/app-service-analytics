@@ -60,7 +60,7 @@ final class ConnectOzonAccountController
     )]
     #[OA\Response(
         response: 422,
-        description: 'Площадка не приняла ключ либо тело запроса неполное',
+        description: 'Площадка не приняла ключ (целиком или на отдельной области — товары/продажи/расходы/возвраты, код называет какой: credentials_rejected, credentials_rejected_sales, credentials_rejected_expenses, credentials_rejected_returns) либо тело запроса неполное',
         content: new Model(type: ValidationErrorResponse::class),
     )]
     #[OA\Response(
@@ -105,6 +105,25 @@ final class ConnectOzonAccountController
                 Response::HTTP_UNPROCESSABLE_ENTITY,
                 'credentials_rejected',
                 'Площадка не приняла ключ. Проверьте Client-Id и Api-Key в кабинете продавца.',
+            ),
+            // Ниже — тот же код 422, но своя область и свой текст: клиенту
+            // нужно включить конкретное право в кабинете продавца, а не
+            // гадать, какое (боевой инцидент, из-за которого проба
+            // расширена с одного эндпоинта на все четыре).
+            ConnectOzonAccountResult::RejectedSales => $this->error(
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                'credentials_rejected_sales',
+                'У ключа нет права читать продажи. Включите доступ к отправлениям (FBO/FBS) в кабинете продавца и выпустите ключ заново.',
+            ),
+            ConnectOzonAccountResult::RejectedExpenses => $this->error(
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                'credentials_rejected_expenses',
+                'У ключа нет права читать финансовые начисления. Включите доступ к финансовым отчётам в кабинете продавца и выпустите ключ заново.',
+            ),
+            ConnectOzonAccountResult::RejectedReturns => $this->error(
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                'credentials_rejected_returns',
+                'У ключа нет права читать возвраты. Включите доступ к возвратам в кабинете продавца и выпустите ключ заново.',
             ),
             ConnectOzonAccountResult::AlreadyConnected => $this->error(
                 Response::HTTP_CONFLICT,
