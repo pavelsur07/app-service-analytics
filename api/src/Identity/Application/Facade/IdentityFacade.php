@@ -195,6 +195,13 @@ final class IdentityFacade
      *
      * Client-Id становится external_shop_id — под ним подключение заведено,
      * и по нему же работает глобальная уникальность кабинета.
+     *
+     * Исход `AlreadyConnected` приходит из `tryConnect`, где перехваченный
+     * конфликт закрыл инжектированный EntityManager (`wrapInTransaction`
+     * делает это при любом откате, не только на пробросе): вызывающий код
+     * не должен звать `persist()`/`flush()` этого EntityManager дальше
+     * в том же запросе — получит `EntityManagerClosed` вместо доменной
+     * ошибки.
      */
     public function connectOzonAccount(
         string $companyId,

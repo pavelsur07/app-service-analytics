@@ -41,6 +41,12 @@ interface MarketplaceAccountRepository
      * нет намеренно: между ней и вставкой два параллельных запроса прошли
      * бы её оба (CLAUDE.md §4), поэтому уникальность держит индекс,
      * а конфликт перехватывается здесь.
+     *
+     * `wrapInTransaction` закрывает EntityManager при любом откате —
+     * в том числе на пути `false`, не только на пробросе. После вызова,
+     * вернувшего false, инжектированный EntityManager закрыт до конца
+     * запроса: следующий `persist()`/`flush()` в нём упадёт `EntityManagerClosed`
+     * вместо доменной ошибки, а не отработает как ни в чём не бывало.
      */
     public function tryConnect(MarketplaceAccount $account, AuditRecord $trail): bool;
 }
