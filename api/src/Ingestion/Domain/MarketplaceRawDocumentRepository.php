@@ -25,4 +25,12 @@ interface MarketplaceRawDocumentRepository
 
     /** Возвращает точные сохранённые байты документа для повторного разбора. */
     public function body(string $companyId, Uuid $marketplaceAccountId, Uuid $id): string;
+
+    /**
+     * Признак «подключение хоть что-то загрузило» (удаление неиспользованных
+     * подключений). Идёт по префиксу (company_id, marketplace_account_id)
+     * существующего idx_marketplace_raw_document_ozon_history — новый
+     * индекс не нужен.
+     */
+    public function existsForAccount(string $companyId, Uuid $marketplaceAccountId): bool;
 }
