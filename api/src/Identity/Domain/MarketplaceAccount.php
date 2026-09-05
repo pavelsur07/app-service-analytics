@@ -22,6 +22,12 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\UniqueConstraint(
     name: 'uq_marketplace_account_company_marketplace_external_shop',
     columns: ['company_id', 'marketplace', 'external_shop_id'],
+    // Условие обязано быть тем же самым, что у соседнего глобального
+    // индекса, и по той же причине (ADR-011: отзыв необратим). Без него
+    // отзыв освобождает кабинет для чужой компании, но навсегда занимает
+    // его для своей же — клиент, отключивший и захотевший вернуть кабинет,
+    // упирается в стену, которой у постороннего нет.
+    options: ['where' => "((state)::text <> 'revoked'::text)"],
 )]
 #[ORM\UniqueConstraint(
     name: 'uq_marketplace_account_marketplace_external_shop_active',

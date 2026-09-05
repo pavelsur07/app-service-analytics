@@ -32,6 +32,18 @@ final class Version20260905090000 extends AbstractMigration
         $this->addSql('UPDATE marketplace_account SET name = external_shop_id WHERE name IS NULL');
         $this->addSql('ALTER TABLE marketplace_account ALTER COLUMN name SET NOT NULL');
 
+        // Старый индекс (company_id, marketplace, external_shop_id) был
+        // безусловным: отзыв освобождал кабинет для чужой компании (через
+        // новый индекс ниже), но навсегда занимал его для своей же —
+        // асимметрия наизнанку. Пересоздаём с тем же условием, что и у
+        // нового индекса (ADR-011: отзыв необратим).
+        $this->addSql('DROP INDEX uq_marketplace_account_company_marketplace_external_shop');
+        $this->addSql(<<<'SQL'
+            CREATE UNIQUE INDEX uq_marketplace_account_company_marketplace_external_shop
+                ON marketplace_account (company_id, marketplace, external_shop_id)
+                WHERE state <> 'revoked'
+            SQL);
+
         // Условие WHERE обязательно: отзыв необратим (ADR-011),
         // и безусловный индекс занял бы кабинет навсегда.
         $this->addSql(<<<'SQL'
@@ -44,6 +56,14 @@ final class Version20260905090000 extends AbstractMigration
     public function down(Schema $schema): void
     {
         $this->addSql('DROP INDEX uq_marketplace_account_marketplace_external_shop_active');
+
+        // Возвращаем старый индекс в исходное безусловное состояние.
+        $this->addSql('DROP INDEX uq_marketplace_account_company_marketplace_external_shop');
+        $this->addSql(<<<'SQL'
+            CREATE UNIQUE INDEX uq_marketplace_account_company_marketplace_external_shop
+                ON marketplace_account (company_id, marketplace, external_shop_id)
+            SQL);
+
         $this->addSql('ALTER TABLE marketplace_account DROP name');
     }
 }
