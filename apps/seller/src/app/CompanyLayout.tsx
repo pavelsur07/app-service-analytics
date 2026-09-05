@@ -1,3 +1,4 @@
+import type { UseQueryResult } from '@tanstack/react-query'
 import { Navigate, Outlet, useParams } from 'react-router'
 
 import type { components } from '../api/schema'
@@ -83,6 +84,17 @@ export function resolveCompanyGate(
  * Внутри RequireAuth, а не снаружи: иначе неаутентифицированный запрос
  * за подключениями получил бы 401 раньше, чем сработает редирект
  * на /login.
+ *
+ * Результат `useConnections` спускается в `CompanyShell` и `Topbar`
+ * пропом, а не читается там повторным вызовом хука: два независимых
+ * наблюдателя одного и того же ошибающегося запроса (свежесть в шапке
+ * уже вызывала `useConnections` до этого гейта) заводили у чужой
+ * компании настоящий цикл перезапросов — TanStack Query держит
+ * `retry: false`, но два одновременных наблюдателя одной и той же
+ * `error`-записи пересоздавали подписку друг за другом, и `/connections`
+ * с `/api/auth/me` били по бэкенду десятками запросов в секунду, пока
+ * `SalesFactsPage` не успевал увести на /companies. Один наблюдатель —
+ * гейт — и проблема снята вместе с одним лишним запросом на экран.
  */
 function ConnectionGate({ companyId }: { companyId: string }) {
   const connections = useConnections(companyId)
@@ -96,7 +108,7 @@ function ConnectionGate({ companyId }: { companyId: string }) {
     return <Navigate to={decision.to} replace />
   }
 
-  return <CompanyShell companyId={companyId} />
+  return <CompanyShell companyId={companyId} connections={connections} />
 }
 
 /**
@@ -127,7 +139,13 @@ export function CompanyLayout() {
   )
 }
 
-function CompanyShell({ companyId }: { companyId: string }) {
+function CompanyShell({
+  companyId,
+  connections,
+}: {
+  companyId: string
+  connections: UseQueryResult<ConnectionsResponse>
+}) {
   return (
     // Шапка на всю ширину над сайдбаром, а не внутри контента —
     // как в ките (раздел 14, эталонные экраны): компания и свежесть
@@ -140,7 +158,7 @@ function CompanyShell({ companyId }: { companyId: string }) {
     // main никогда не переполняется — и скролла не появляется
     // нигде.
     <div className="flex h-screen flex-col overflow-hidden bg-bg-base">
-      <Topbar companyId={companyId} />
+      <Topbar companyId={companyId} connections={connections} />
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         {/* Отступ и вертикальный ритм — свойство рабочей зоны, а не

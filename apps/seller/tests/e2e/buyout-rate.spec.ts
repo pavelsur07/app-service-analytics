@@ -29,6 +29,12 @@ test.describe('buyout rate', () => {
     await page.getByRole('link', { name: 'E2E Sandbox LLC' }).click()
 
     const nav = page.getByRole('navigation', { name: 'Разделы компании' })
+    // Сайдбар не пуст физически до этого момента — ConnectionGate
+    // (app/CompanyLayout.tsx) рендерит null, пока список подключений
+    // не прочитан, и появляется вместе с оболочкой одним кадром позже.
+    // allTextContents() не ждёт этого сама, поэтому первый пункт ждём
+    // явно; count()/toEqual ниже уже застают сайдбар отрисованным.
+    await expect(nav.getByRole('link', { name: 'Продажи' })).toBeVisible()
     const firstLinks = await nav.getByRole('link').allTextContents()
     expect(firstLinks.slice(0, 2)).toEqual(['Продажи', 'Выкуп'])
 
