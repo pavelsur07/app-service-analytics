@@ -14,9 +14,11 @@ import { connectAccountFailure } from '../lib/connectAccountError'
 import type { ConnectAccountFailure } from '../lib/connectAccountError'
 import { useConnectAccount } from '../model/useConnectAccount'
 import type { ConnectAccountInput } from '../model/useConnectAccount'
+import { useConnections } from '../../../shared/model/useConnections'
 import { useCurrentUser } from '../../../shared/model/useCurrentUser'
 
 type MeCompany = components['schemas']['MeCompanyResponse']
+type ConnectionsResponse = components['schemas']['ConnectionsResponse']
 
 /**
  * Подключение кабинета — обязательный шаг, а не приглашение (ADR-021):
@@ -34,25 +36,140 @@ type MeCompany = components['schemas']['MeCompanyResponse']
  * Без первого источника участник двух компаний попадал бы в петлю:
  * гейт уводит сюда, здесь компаний больше одной, значит на /companies,
  * оттуда снова в ту же компанию и снова на гейт.
+ *
+ * Форму эта страница показывает не любой определившейся компании,
+ * а только той, у которой подключений нет вовсе — см.
+ * `resolveOnboardingDecision`. `/onboarding` — верхнеуровневый маршрут
+ * (Root.tsx), обёрнутый только в `RequireAuth`, а не в `CompanyLayout`:
+ * гейт `resolveCompanyGate`, который решает то же самое в обратную
+ * сторону для company-scoped экранов, сюда не дотягивается, и решение
+ * приходится принимать здесь же, повторно читая тот же список.
  */
 export function OnboardingStartPage() {
   const currentUser = useCurrentUser()
   const [searchParams] = useSearchParams()
 
+  const company =
+    currentUser.status === 'success'
+      ? selectOnboardingCompany(
+          currentUser.data.companies,
+          searchParams.get('company'),
+        )
+      : undefined
+
+  // useConnections вызывается безусловно, до любого раннего return.
+  // currentUser.status и company меняются между рендерами (сеть ещё
+  // не ответила → ответила → компания определилась), и если бы хук
+  // стоял после условного return, число вызванных хуков менялось бы
+  // вместе с этим состоянием — React падает («Rendered fewer hooks
+  // than expected»). Тот же приём, что у ConnectFormView ниже: все
+  // useState стоят до первого return ровно по этой причине.
+  // companyId пуст, пока компания не определена, — enabled:false не
+  // даёт запросу уйти впустую (тот же приём, что useConnections
+  // в ConnectionsPage.tsx: `companyId ?? ''` с `enabled`).
+  const connections = useConnections(company?.id ?? '', {
+    enabled: company !== undefined,
+  })
+
   if (currentUser.status !== 'success') {
     return null
   }
-
-  const company = selectOnboardingCompany(
-    currentUser.data.companies,
-    searchParams.get('company'),
-  )
 
   if (company === undefined) {
     return <Navigate to="/companies" replace />
   }
 
+  const decision = resolveOnboardingDecision(company.id, connections)
+
+  if (decision.kind === 'pending') {
+    return null
+  }
+
+  if (decision.kind === 'connections') {
+    return <Navigate to={decision.to} replace />
+  }
+
   return <ConnectForm companyId={company.id} />
+}
+
+/**
+ * Минимум, который решению нужно от результата useConnections — см.
+ * тот же приём в CompanyLayout.tsx (`ConnectionsQueryState`). Не
+ * импортирован оттуда: `import/no-restricted-paths` (eslint.config.js)
+ * запрещает импорт из `app/` кому бы то ни было, а с другой стороны,
+ * features/A не импортирует из features/B — общий тип пришлось бы
+ * тащить в shared/ ради одного поля, которое и так видно из схемы.
+ * Реальный `UseQueryResult`, который отдаёт `useConnections`, структурно
+ * этому типу соответствует — тот же приём, что и в `ConnectionGate`.
+ */
+export type ConnectionsQueryState =
+  | { status: 'pending' }
+  | { status: 'error' }
+  | { status: 'success'; data: ConnectionsResponse }
+
+export type OnboardingDecision =
+  { kind: 'pending' } | { kind: 'form' } | { kind: 'connections'; to: string }
+
+function connectionsPath(companyId: string): string {
+  return `/companies/${encodeURIComponent(companyId)}/connections`
+}
+
+/**
+ * Решение: показать компании форму подключения или увести её на экран
+ * подключений. Вынесено из JSX в чистую функцию тем же приёмом, что
+ * `resolveCompanyGate` (app/CompanyLayout.tsx) и `selectOnboardingCompany`
+ * выше — «рендер не тестировать» (CLAUDE.md §9) про разметку, не про
+ * решение.
+ *
+ * - список подключений ещё не прочитан → решения нет: показать форму
+ *   сейчас значит нарисовать её компании, у которой кабинет уже есть,
+ *   и тут же увести редиректом — заметный мигающий переход вместо
+ *   тихого ожидания одного вспомогательного запроса;
+ * - запрос списка сам упал с ошибкой → форма, как и при пустом списке.
+ *   Осознанный компромисс: отказ вспомогательного запроса не должен
+ *   лишать клиента единственного пути подключить кабинет — альтернатива
+ *   («решения нет», как у pending) держала бы онбординг в вечном
+ *   ожидании при любом транзиентном сбое. Ошибочная отправка формы
+ *   компании, у которой кабинет на самом деле уже есть, вернёт понятный
+ *   409 `cabinet_already_connected` от бэкенда, а не тихий тупик;
+ * - подключений нет вовсе → форма. Единственный случай, когда её
+ *   вообще есть смысл показывать: ни одной пары учётных данных,
+ *   которую можно было бы чинить, ещё не существует;
+ * - подключение есть — любое, в любом состоянии (`active`, `broken`,
+ *   `revoked`) → на экран подключений этой компании, адрес несёт
+ *   companyId закодированным (тот же `connectionsPath`, что у
+ *   `resolveCompanyGate`, для согласованности значения). Кабинет уже
+ *   занят: заявка на тот же кабинет вернёт 409 (частичный уникальный
+ *   индекс держит `broken` как «не revoked», ADR-006), а чинить или
+ *   смотреть состояние подключения умеет только company-scoped экран
+ *   «Подключения», не эта форма.
+ *
+ *   Встречной петли с гейтом (`resolveCompanyGate`) нет: та же
+ *   компания, оказавшись на `/companies/{id}/connections` с любым
+ *   непустым списком подключений, получает от гейта `ready`
+ *   (resolveCompanyGate: `hasActive` не требуется — ветка `!hasActive`
+ *   сама сверяет `pathname` с `connectionsPath` и отдаёт `ready`, а при
+ *   наличии `active` гейт отдаёт `ready` безусловно) — редиректа назад
+ *   на /onboarding оттуда нет. `/onboarding` сюда не ведёт: маршрут
+ *   верхнеуровневый (Root.tsx), а не company-scoped экран за гейтом,
+ *   и обратно на себя эта функция никогда не адресует.
+ */
+export function resolveOnboardingDecision(
+  companyId: string,
+  connections: ConnectionsQueryState,
+): OnboardingDecision {
+  if (connections.status === 'pending') {
+    return { kind: 'pending' }
+  }
+
+  if (
+    connections.status === 'success' &&
+    connections.data.connections.length > 0
+  ) {
+    return { kind: 'connections', to: connectionsPath(companyId) }
+  }
+
+  return { kind: 'form' }
 }
 
 /**
