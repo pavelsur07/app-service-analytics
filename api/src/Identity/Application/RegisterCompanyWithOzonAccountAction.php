@@ -28,7 +28,7 @@ final readonly class RegisterCompanyWithOzonAccountAction
     /**
      * @param array<string, string> $credentials
      */
-    public function __invoke(string $companyName, string $externalShopId, array $credentials): MarketplaceAccount
+    public function __invoke(string $companyName, string $name, string $externalShopId, array $credentials): MarketplaceAccount
     {
         $company = Company::register($companyName);
         $this->companies->add($company);
@@ -38,6 +38,7 @@ final readonly class RegisterCompanyWithOzonAccountAction
         $account = MarketplaceAccount::connect(
             companyId: $company->id(),
             marketplace: Marketplace::Ozon,
+            name: $name,
             externalShopId: $externalShopId,
             credentialsCiphertext: $encrypted->ciphertext,
             credentialsKeyVersion: $encrypted->keyVersion,

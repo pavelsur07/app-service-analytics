@@ -1,19 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
 import { createCompanyApiClient } from '../../../api/companyClient'
 import type { components } from '../../../api/schema'
-import { companyQueryKey } from '../../../shared/lib/companyQueryKey'
+import { connectionsQueryKey } from '../../../shared/lib/connectionsQueryKey'
 
 type ConnectionsResponse = components['schemas']['ConnectionsResponse']
 
 /**
- * Ключ отдельной функцией, а не выражением внутри хука: без DOM-окружения
- * в тестах хук не вызвать, и проверить, что companyId в ключе есть,
- * можно только так. Потеря companyId здесь означала бы, что после
- * переключения компании экран покажет чужие подключения из кэша (§7).
+ * Реэкспорт: ключ определён в shared (features/onboarding инвалидирует
+ * тот же список после подключения, а один feature не импортирует другой
+ * напрямую — import/no-restricted-paths, eslint.config.js), но здесь
+ * остаётся публичным именем хука для уже существующих вызовов внутри
+ * этой же фичи (useReplaceCredentials.ts и тесты).
  */
-export function connectionsQueryKey(companyId: string): readonly unknown[] {
-  return companyQueryKey(companyId, 'identity', 'connections')
-}
+export { connectionsQueryKey }
 
 export function useConnections(
   companyId: string,

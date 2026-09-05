@@ -1,10 +1,13 @@
+import type { UseQueryResult } from '@tanstack/react-query'
 import { Check, ChevronDown, CircleX, Clock } from 'lucide-react'
 import { NavLink } from 'react-router'
 
-import { useCurrentUser } from '../features/auth/model/useCurrentUser'
+import type { components } from '../api/schema'
+import { useCurrentUser } from '../shared/model/useCurrentUser'
 import { dataFreshness } from '../features/connections/lib/dataFreshness'
 import type { DataFreshness } from '../features/connections/lib/dataFreshness'
-import { useConnections } from '../features/connections/model/useConnections'
+
+type ConnectionsResponse = components['schemas']['ConnectionsResponse']
 
 // Шапка — эталон docs/design/ui-kit/v0.6.html, разделы 10 и 14: высота 56,
 // поверхность surface/raised, нижняя граница border/default, отступы 24,
@@ -39,9 +42,19 @@ const CHIP_ICON: Record<DataFreshness['tone'], typeof Check> = {
  * а не выпадающий список: у первого клиента компания одна, а поповера
  * в packages/ui нет намеренно (docs/patterns.md, «Чего в UI Kit нет»).
  */
-export function Topbar({ companyId }: { companyId: string }) {
+// connections приходит пропом из CompanyLayout (ConnectionGate уже читает
+// тот же список для решения гейта), а не своим вызовом useConnections:
+// второй наблюдатель того же запроса заводил цикл перезапросов у чужой
+// компании (CompanyLayout.tsx, докблок ConnectionGate) и лишний запрос
+// на каждый экран — у компании с рабочим подключением.
+export function Topbar({
+  companyId,
+  connections,
+}: {
+  companyId: string
+  connections: UseQueryResult<ConnectionsResponse>
+}) {
   const currentUser = useCurrentUser()
-  const connections = useConnections(companyId)
 
   const company = currentUser.data?.companies.find(
     (candidate) => candidate.id === companyId,

@@ -281,6 +281,24 @@ Ingestion/Infrastructure/Connector/
 Общая абстракция коннектора появляется после второго коннектора,
 не до первого.
 
+**Подключение кабинета Ozon при онбординге (ADR-021) живёт в `Ingestion`**,
+хотя пишет данные `Identity`: проверка ключа требует похода в площадку,
+клиент площадки принадлежит `Ingestion`, а зависимости строго вниз.
+`Application/ConnectOzonAccountAction` пробует ключ у площадки до
+сохранения и различает три исхода (`ConnectOzonAccountResult`: `Rejected`,
+`AlreadyConnected`, `Unavailable`) плюс успешное подключение с
+идентификатором созданной строки (`ConnectOzonAccountOutcome`) — ответ 201
+обязан назвать созданный ресурс, поэтому идентификатор поднимается снизу
+вверх из `IdentityFacade::connectOzonAccount`, а не читается вторым
+запросом сразу после записи. `Application/InitialBackfillWindow` считает
+ступень 1 первичной загрузки — список бизнес-дат текущего календарного
+месяца в часовом поясе площадки (ADR-009), а не скользящее окно.
+`Ui/Controller/ConnectOzonAccountController` публикует
+`POST /api/companies/{companyId}/connections`; `Ui/Request/ConnectOzonAccountRequest` —
+DTO с ручным разбором тела (не Symfony Form), не пропускающий значения
+секрета в исключения; `Ui/Response/ConnectedAccountResponse` не несёт
+учётных данных кабинета — только id, название и состояние.
+
 Витрина процента выкупа Ozon также остаётся внутри `Ingestion`: raw-ответы,
 история posting status и return facts лежат в `Domain`/`Infrastructure`,
 DBAL-запросы классифицируют T1/D/T2/P/R, а `Ui` публикует list/daily API.
@@ -411,9 +429,22 @@ apps/seller/
 `SignUpPage`, `EmailSentPage`, `ResendConfirmationPage` и `ConfirmEmailPage`.
 `/onboarding` — отдельный маршрут с `RequireAuth`, намеренно вне
 `/companies/:companyId` и `CompanyLayout`: только что подтвердивший email
-пользователь ещё не выбирал компанию. `OnboardingStartPage` лишь сообщает,
-что Stage 4 запросит название магазина, Ozon `Client-Id` и `Api-Key`; формы,
-сохранения учётных данных, запроса компании и навигации оболочки здесь нет.
+пользователь ещё не выбирал компанию.
+
+**Подключение кабинета Ozon (Stage 4) живёт в `features/onboarding`**,
+отдельно от `features/auth`: `OnboardingStartPage` рисует форму
+(название магазина, `Client-Id`, `Api-Key`), отправляет её через
+`useConnectAccount` и показывает разобранную ошибку (`lib/connectAccountError.ts`)
+или экран «Кабинет подключён» с переходом к продажам. Компания для формы
+берётся из параметра `?company=` (ставит гейт `CompanyLayout`, ADR-021)
+или, при его отсутствии, как единственная компания пользователя —
+membership параметра проверяется, а не берётся на веру.
+
+`useCurrentUser` — в `shared/model/`, не в `features/auth`: он нужен
+и оболочке (`app/RequireAuth`, `app/Sidebar`, `app/Topbar`), и обеим
+фичам (`features/auth/ui/CompanyListPage`, `features/onboarding/ui/OnboardingStartPage`),
+а одна фича не импортирует другую (`import/no-restricted-paths`,
+`eslint.config.js`) — тот же приём, что у `useCurrentAdmin` в `apps/admin`.
 
 ```
 apps/seller/
@@ -431,22 +462,33 @@ apps/seller/
 │   │   ├── ApiError.ts                разбор { status, code, message } бэкенда
 │   │   └── schema.ts                  реэкспорт типов из packages/api-schema
 │   ├── shared/
-│   │   └── lib/
-│   │       ├── formatMinorAmount.ts   копейки → отображаемая сумма
-│   │       └── companyQueryKey.ts     ['company', companyId, модуль, сущность, ...]
+│   │   ├── lib/
+│   │   │   ├── formatMinorAmount.ts   копейки → отображаемая сумма
+│   │   │   ├── companyQueryKey.ts     ['company', companyId, модуль, сущность, ...]
+│   │   │   └── connectionsQueryKey.ts ключ списка подключений — общий
+│   │   │                              для features/connections и features/onboarding
+│   │   └── model/
+│   │       └── useCurrentUser.ts      «кто я» — нужен оболочке и обеим фичам
 │   └── features/
 │       ├── auth/
 │       │   ├── lib/
 │       │   │   ├── captchaFlow.ts       автомат invisible SmartCaptcha
 │       │   │   ├── captchaLoaderGuard.ts watchdog загрузки виджета
 │       │   │   └── confirmationToken.ts одноразовый fragment-token bootstrap
-│       │   ├── model/                   auth-запросы и useCurrentUser
+│       │   ├── model/                   auth-запросы (useSignUp, useConfirmEmail, ...)
 │       │   └── ui/
 │       │       ├── SignUpPage.tsx
 │       │       ├── EmailSentPage.tsx
 │       │       ├── ResendConfirmationPage.tsx
 │       │       ├── ConfirmEmailPage.tsx
-│       │       └── OnboardingStartPage.tsx  граница перед Stage 4, без формы
+│       │       └── CompanyListPage.tsx
+│       ├── onboarding/
+│       │   ├── lib/
+│       │   │   └── connectAccountError.ts  сообщение под код отказа (ADR-021)
+│       │   ├── model/
+│       │   │   └── useConnectAccount.ts    мутация подключения кабинета
+│       │   └── ui/
+│       │       └── OnboardingStartPage.tsx форма Stage 4, выбор компании по членству
 │       └── ingestion/
 │           ├── model/
 │           │   └── useSalesFacts.ts   TanStack Query, курсорная пагинация

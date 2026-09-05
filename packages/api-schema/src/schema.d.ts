@@ -212,6 +212,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_company_connections"];
+        put?: never;
+        post: operations["post_ingestion_company_connection_connect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/listing-costs/{costId}": {
         parameters: {
             query?: never;
@@ -252,22 +268,6 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_ingestion_extension_company_skus"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/companies/{companyId}/connections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_ingestion_company_connections"];
         put?: never;
         post?: never;
         delete?: never;
@@ -597,6 +597,32 @@ export interface components {
             status: string;
             changed: boolean;
         };
+        ConnectionResponse: {
+            id: string;
+            marketplace: string;
+            externalShopId: string;
+            state: string;
+            createdAt: string;
+            lastLoadedAt: {
+                [key: string]: string;
+            };
+            /**
+             * Версия для оптимистической блокировки (ADR-008): клиент
+             *     присылает её обратно при замене ключей.
+             */
+            version: number;
+        };
+        ConnectionsResponse: {
+            connections: components["schemas"]["ConnectionResponse"][];
+        };
+        ConnectedAccountResponse: {
+            /** @description Идентификатор подключения */
+            id: string;
+            /** @description Название магазина */
+            name: string;
+            /** @description Состояние подключения */
+            state: string;
+        };
         BuyoutRateSummaryResponse: {
             orderedQuantity: number;
             resolvedQuantity: number;
@@ -630,24 +656,6 @@ export interface components {
         CompanySkuListResponse: {
             items: string[];
             nextCursor?: string | null;
-        };
-        ConnectionResponse: {
-            id: string;
-            marketplace: string;
-            externalShopId: string;
-            state: string;
-            createdAt: string;
-            lastLoadedAt: {
-                [key: string]: string;
-            };
-            /**
-             * Версия для оптимистической блокировки (ADR-008): клиент
-             *     присылает её обратно при замене ключей.
-             */
-            version: number;
-        };
-        ConnectionsResponse: {
-            connections: components["schemas"]["ConnectionResponse"][];
         };
         ListingCostItemResponse: {
             marketplaceSku: string;
@@ -1363,6 +1371,104 @@ export interface operations {
             };
         };
     };
+    get_ingestion_company_connections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Подключения компании с состоянием и моментом последней загрузки по каждой выгрузке */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionsResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_ingestion_company_connection_connect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Название магазина; после создания не меняется (ADR-021) */
+                    name: string;
+                    clientId: string;
+                    apiKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Ключ принят площадкой, подключение создано, первичная загрузка поставлена в очередь */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedAccountResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Кабинет уже подключён — к этой или другой компании (ADR-021) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Площадка не приняла ключ либо тело запроса неполное */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Площадка не ответила — повторить позже, ключ выпускать не нужно */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     put_ingestion_listing_cost_correct: {
         parameters: {
             query?: never;
@@ -1512,37 +1618,6 @@ export interface operations {
             };
             /** @description Некорректный limit */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ValidationErrorResponse"];
-                };
-            };
-        };
-    };
-    get_ingestion_company_connections: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                companyId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Подключения компании с состоянием и моментом последней загрузки по каждой выгрузке */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectionsResponse"];
-                };
-            };
-            /** @description Пользователь не состоит в этой компании */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };

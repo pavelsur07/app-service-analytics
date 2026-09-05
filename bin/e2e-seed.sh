@@ -51,6 +51,41 @@ if [ "$target_db" != "app" ]; then
     exit 1
 fi
 
+# ADR-021 сделал (marketplace, external_shop_id) уникальным глобально,
+# а не в пределах компании: второй прогон без пересоздания базы иначе
+# не заводит компанию с тем же кабинетом — INSERT в marketplace_account
+# упирается в uq_marketplace_account_marketplace_external_shop_active.
+# До этой миграции уникальность была только внутри компании, и старая
+# компания просто копилась рядом с новой без последствий; теперь
+# прошлое состояние обязано быть удалено до первого
+# seed-ozon-sandbox-company, иначе падает сам сид, а не только его
+# идемпотентность. Внешних ключей у company и marketplace_account нет
+# (ссылки в других модулях — scalar-поля без ManyToOne, CLAUDE.md §6),
+# поэтому порядок удаления ниже продиктован не ограничениями БД,
+# а тем, что company_id и user_id нужно прочитать во временные таблицы,
+# пока данные, на которые они ссылаются, ещё не удалены.
+docker compose exec -T postgres psql -U app -d app -q \
+    -c "CREATE TEMP TABLE e2e_target_companies AS SELECT DISTINCT company_id FROM marketplace_account WHERE marketplace = 'ozon' AND external_shop_id IN ('e2e-shop', 'e2e-shop-2')" \
+    -c "CREATE TEMP TABLE e2e_target_users AS SELECT DISTINCT user_id FROM company_member WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM price_observation WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM tracked_sku WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM sales_fact WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM marketplace_return_fact WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM marketplace_expense_fact WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM marketplace_posting_status WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM buyout_outcome WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM marketplace_listing_cost WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM marketplace_listing_price WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM marketplace_listing WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM marketplace_raw_document WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM extension_token WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM audit_record WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM company_member WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM marketplace_account WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM company WHERE id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM \"user\" WHERE id IN (SELECT user_id FROM e2e_target_users)" \
+    > /dev/null
+
 seed_output=$(docker compose exec -T php-cli php bin/console app:identity:seed-ozon-sandbox-company \
     "E2E Sandbox LLC" "e2e-shop" "e2e-api-key")
 

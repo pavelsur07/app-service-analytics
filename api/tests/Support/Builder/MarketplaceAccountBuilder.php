@@ -21,6 +21,7 @@ final class MarketplaceAccountBuilder
 {
     private ?Company $company = null;
     private Marketplace $marketplace = Marketplace::Ozon;
+    private string $name = 'Песочный магазин';
     private string $externalShopId = 'sandbox-shop';
     private string $credentialsCiphertext = 'stub-ciphertext';
     private int $credentialsKeyVersion = 1;
@@ -39,6 +40,14 @@ final class MarketplaceAccountBuilder
     {
         $clone = clone $this;
         $clone->company = $company;
+
+        return $clone;
+    }
+
+    public function withName(string $name): self
+    {
+        $clone = clone $this;
+        $clone->name = $name;
 
         return $clone;
     }
@@ -90,6 +99,7 @@ final class MarketplaceAccountBuilder
         $account = MarketplaceAccount::connect(
             companyId: $company->id(),
             marketplace: $this->marketplace,
+            name: $this->name,
             externalShopId: $this->externalShopId,
             credentialsCiphertext: $this->credentialsCiphertext,
             credentialsKeyVersion: $this->credentialsKeyVersion,
@@ -106,6 +116,7 @@ final class MarketplaceAccountBuilder
         $account = MarketplaceAccount::connect(
             companyId: $company->id(),
             marketplace: $this->marketplace,
+            name: $this->name,
             externalShopId: $this->externalShopId,
             credentialsCiphertext: $this->credentialsCiphertext,
             credentialsKeyVersion: $this->credentialsKeyVersion,

@@ -6,12 +6,16 @@ namespace App\Identity\Application\Facade;
 
 use App\Identity\Application\MarkMarketplaceAccountBrokenAction;
 use App\Identity\Application\ReplaceMarketplaceCredentialsAction;
+use App\Identity\Domain\AuditAction;
 use App\Identity\Domain\AuditRecord;
 use App\Identity\Domain\AuditRecordRepository;
+use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\ReplaceCredentialsOutcome;
+use App\Identity\Domain\ValueObject\Marketplace;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
+use App\Identity\Domain\ValueObject\MarketplaceCredentials;
 use App\Identity\Infrastructure\Query\CompanyConnectionsQuery;
 use Symfony\Component\Uid\Uuid;
 
@@ -182,5 +186,57 @@ final class IdentityFacade
             newValue: $newValue,
             occurredAt: new \DateTimeImmutable(),
         ));
+    }
+
+    /**
+     * Подключение кабинета при онбординге (ADR-021). Ключ обязан быть
+     * проверен площадкой до вызова: Identity в площадку не ходит,
+     * зависимости строго вниз, и проба живёт в Ingestion.
+     *
+     * Client-Id становится external_shop_id — под ним подключение заведено,
+     * и по нему же работает глобальная уникальность кабинета.
+     *
+     * Исход `AlreadyConnected` приходит из `tryConnect`, где перехваченный
+     * конфликт закрыл инжектированный EntityManager (`wrapInTransaction`
+     * делает это при любом откате, не только на пробросе): вызывающий код
+     * не должен звать `persist()`/`flush()` этого EntityManager дальше
+     * в том же запросе — получит `EntityManagerClosed` вместо доменной
+     * ошибки.
+     */
+    public function connectOzonAccount(
+        string $companyId,
+        string $name,
+        string $clientId,
+        string $apiKey,
+        string $actorUserId,
+    ): MarketplaceAccountConnection {
+        $encrypted = $this->credentialsEncryptor->encrypt(
+            MarketplaceCredentials::fromArray(['client_id' => $clientId, 'api_key' => $apiKey]),
+        );
+
+        $account = MarketplaceAccount::connect(
+            companyId: Uuid::fromString($companyId),
+            marketplace: Marketplace::Ozon,
+            name: $name,
+            externalShopId: $clientId,
+            credentialsCiphertext: $encrypted->ciphertext,
+            credentialsKeyVersion: $encrypted->keyVersion,
+        );
+
+        // «Стало» — название и кабинет, не ключ: журнал не место для секрета
+        // (ADR-011). «Было» пусто — подключения до этого не существовало.
+        $trail = AuditRecord::record(
+            companyId: Uuid::fromString($companyId),
+            actorUserId: Uuid::fromString($actorUserId),
+            action: AuditAction::MarketplaceAccountConnected,
+            subjectId: $account->id(),
+            previousValue: null,
+            newValue: \sprintf('%s (%s)', $name, $clientId),
+            occurredAt: new \DateTimeImmutable(),
+        );
+
+        return $this->marketplaceAccounts->tryConnect($account, $trail)
+            ? MarketplaceAccountConnection::connected($account->id()->toRfc4122())
+            : MarketplaceAccountConnection::alreadyConnected();
     }
 }

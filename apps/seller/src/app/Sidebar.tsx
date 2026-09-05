@@ -11,7 +11,7 @@ import {
 import { NavLink } from 'react-router'
 
 import { Button } from '../../../../packages/ui/src'
-import { useCurrentUser } from '../features/auth/model/useCurrentUser'
+import { useCurrentUser } from '../shared/model/useCurrentUser'
 import { useLogout } from '../features/auth/model/useLogout'
 
 // Раскладка навигации — эталон docs/design/ui-kit/v0.6.html, раздел 9:

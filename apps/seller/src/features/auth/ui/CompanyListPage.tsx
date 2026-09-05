@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Building2, CircleX, LoaderCircle, LogOut } from 'lucide-react'
 import { Link, useNavigate } from 'react-router'
 import { Button, Card, StatusPanel } from '../../../../../../packages/ui/src'
-import { useCurrentUser } from '../model/useCurrentUser'
+import { useCurrentUser } from '../../../shared/model/useCurrentUser'
 import { useLogout } from '../model/useLogout'
 
 // Автопереход при единственной компании, список — при нескольких (ТЗ §7.6).

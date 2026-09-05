@@ -318,7 +318,10 @@ final class PriceOverviewControllerTest extends WebTestCase
         $company = CompanyBuilder::aCompany()->withName('Acme LLC')->persistWith($companies);
         $user = UserBuilder::aUser()->withEmail($email)->persistWith($users);
         CompanyMemberBuilder::aCompanyMember()->withCompany($company)->withUser($user)->persistWith($companies, $users, $members);
-        $account = MarketplaceAccountBuilder::aMarketplaceAccount()->withCompany($company)->persistWith($companies, $accounts);
+        // externalShopId по email: несколько компаний в одном тесте требуют
+        // разных кабинетов — глобальный индекс (marketplace, external_shop_id)
+        // теперь не пускает два одинаковых id в разные компании (ADR-021).
+        $account = MarketplaceAccountBuilder::aMarketplaceAccount()->withCompany($company)->withExternalShopId('shop-'.$email)->persistWith($companies, $accounts);
 
         return new CompanyFixture($company, $user, $account);
     }

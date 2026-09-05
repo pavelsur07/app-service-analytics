@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { CircleX, LoaderCircle } from 'lucide-react'
 import { Navigate } from 'react-router'
 import { ApiError } from '../api/ApiError'
-import { useCurrentUser } from '../features/auth/model/useCurrentUser'
+import { useCurrentUser } from '../shared/model/useCurrentUser'
 import { Button, Card, StatusPanel } from '../../../../packages/ui/src'
 
 // Единая проверка живой сессии перед защищёнными экранами — 401 от
