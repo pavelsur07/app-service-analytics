@@ -92,7 +92,21 @@ export function ConnectionsPage() {
         {query.status === 'success' && query.data.connections.length === 0 && (
           <Card>
             <StatusPanel
-              description="Подключение к площадке заводит поддержка. Напишите нам, и мы подключим кабинет."
+              action={
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="compact"
+                  onClick={() => {
+                    void navigate(
+                      `/onboarding?company=${encodeURIComponent(companyId)}`,
+                    )
+                  }}
+                >
+                  Подключить кабинет
+                </Button>
+              }
+              description="Подключите кабинет Ozon сами — ключи проверяются сразу, и данные начнут загружаться, как только площадка их примет."
               icon={<PlugZap aria-hidden="true" size={20} />}
               title="Подключений пока нет"
               tone="neutral"
