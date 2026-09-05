@@ -13,6 +13,7 @@ import {
   reportLabel,
 } from '../lib/connectionPresentation'
 import { useConnections } from '../model/useConnections'
+import { onboardingPathToAddAnotherCabinet } from '../../../shared/lib/onboardingIntent'
 import { ReplaceCredentialsForm } from './ReplaceCredentialsForm'
 
 // Экран отвечает на два вопроса, на которые ответить было негде:
@@ -53,7 +54,30 @@ export function ConnectionsPage() {
   return (
     <div>
       <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-semibold">Подключения</h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-xl font-semibold">Подключения</h1>
+
+          {/* Действие над списком, не над карточкой конкретного
+              подключения — доступно всегда, когда список прочитан
+              (а не только когда он пуст): второй кабинет — норма,
+              не исключение, и подключить его нужно и компании,
+              у которой уже есть рабочее подключение. Адрес несёт
+              осознанное намерение (`intent`), а не просто companyId:
+              без него `resolveOnboardingDecision` увела бы обратно
+              сюда же — тот самый тупик, который и защищает признак. */}
+          {query.status === 'success' && (
+            <Button
+              type="button"
+              variant="primary"
+              size="compact"
+              onClick={() => {
+                void navigate(onboardingPathToAddAnotherCabinet(companyId))
+              }}
+            >
+              Подключить кабинет
+            </Button>
+          )}
+        </div>
 
         {query.status === 'pending' && (
           <Card>
@@ -91,21 +115,10 @@ export function ConnectionsPage() {
 
         {query.status === 'success' && query.data.connections.length === 0 && (
           <Card>
+            {/* Действие «Подключить кабинет» теперь одно и живёт в шапке
+                выше — не здесь: оно уже не отличается от того же действия
+                для компании со списком подключений. */}
             <StatusPanel
-              action={
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="compact"
-                  onClick={() => {
-                    void navigate(
-                      `/onboarding?company=${encodeURIComponent(companyId)}`,
-                    )
-                  }}
-                >
-                  Подключить кабинет
-                </Button>
-              }
               description="Подключите кабинет Ozon сами — ключи проверяются сразу, и данные начнут загружаться, как только площадка их примет."
               icon={<PlugZap aria-hidden="true" size={20} />}
               title="Подключений пока нет"
