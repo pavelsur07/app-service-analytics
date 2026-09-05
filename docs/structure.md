@@ -281,6 +281,24 @@ Ingestion/Infrastructure/Connector/
 Общая абстракция коннектора появляется после второго коннектора,
 не до первого.
 
+**Подключение кабинета Ozon при онбординге (ADR-021) живёт в `Ingestion`**,
+хотя пишет данные `Identity`: проверка ключа требует похода в площадку,
+клиент площадки принадлежит `Ingestion`, а зависимости строго вниз.
+`Application/ConnectOzonAccountAction` пробует ключ у площадки до
+сохранения и различает три исхода (`ConnectOzonAccountResult`: `Rejected`,
+`AlreadyConnected`, `Unavailable`) плюс успешное подключение с
+идентификатором созданной строки (`ConnectOzonAccountOutcome`) — ответ 201
+обязан назвать созданный ресурс, поэтому идентификатор поднимается снизу
+вверх из `IdentityFacade::connectOzonAccount`, а не читается вторым
+запросом сразу после записи. `Application/InitialBackfillWindow` считает
+ступень 1 первичной загрузки — список бизнес-дат текущего календарного
+месяца в часовом поясе площадки (ADR-009), а не скользящее окно.
+`Ui/Controller/ConnectOzonAccountController` публикует
+`POST /api/companies/{companyId}/connections`; `Ui/Request/ConnectOzonAccountRequest` —
+DTO с ручным разбором тела (не Symfony Form), не пропускающий значения
+секрета в исключения; `Ui/Response/ConnectedAccountResponse` не несёт
+учётных данных кабинета — только id, название и состояние.
+
 Витрина процента выкупа Ozon также остаётся внутри `Ingestion`: raw-ответы,
 история posting status и return facts лежат в `Domain`/`Infrastructure`,
 DBAL-запросы классифицируют T1/D/T2/P/R, а `Ui` публикует list/daily API.
