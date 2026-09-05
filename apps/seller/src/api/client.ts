@@ -46,3 +46,13 @@ export async function apiPut<T = unknown>(
   }
   return response.json() as Promise<T>
 }
+
+// DELETE — удаление подключения, которое ничего не загрузило. Ответ
+// сервера — 204 без тела (DiscardConnectionController), поэтому
+// response.json() здесь не читается вовсе, в отличие от GET/POST/PUT.
+export async function apiDelete(path: string): Promise<void> {
+  const response = await fetch(path, { method: 'DELETE' })
+  if (!response.ok) {
+    throw await parseApiError(response)
+  }
+}

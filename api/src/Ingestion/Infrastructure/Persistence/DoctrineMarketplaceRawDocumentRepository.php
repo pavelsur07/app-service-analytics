@@ -68,4 +68,22 @@ final readonly class DoctrineMarketplaceRawDocumentRepository implements Marketp
 
         return $body;
     }
+
+    public function existsForAccount(string $companyId, Uuid $marketplaceAccountId): bool
+    {
+        $exists = $this->connection->fetchOne(
+            <<<'SQL'
+                SELECT EXISTS (
+                    SELECT 1 FROM marketplace_raw_document
+                    WHERE company_id = :companyId AND marketplace_account_id = :marketplaceAccountId
+                )
+                SQL,
+            [
+                'companyId' => $companyId,
+                'marketplaceAccountId' => $marketplaceAccountId->toRfc4122(),
+            ],
+        );
+
+        return (bool) $exists;
+    }
 }

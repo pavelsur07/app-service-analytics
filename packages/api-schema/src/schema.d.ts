@@ -244,6 +244,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/connections/{marketplaceAccountId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_ingestion_connection_discard"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/buyout-rate": {
         parameters: {
             query?: never;
@@ -1528,6 +1544,54 @@ export interface operations {
             };
             /** @description Тело запроса некорректно либо валюта отличается от валюты позиции */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_ingestion_connection_discard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                marketplaceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Подключение удалено. Повторное удаление идемпотентно. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description У этой компании нет такого подключения */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description У подключения есть загруженные документы — удалить нельзя, только заменить ключ */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Identity\Infrastructure\Repository;
 
+use App\Identity\Domain\AuditAction;
 use App\Identity\Domain\AuditRecord;
+use App\Identity\Domain\DiscardAccountOutcome;
 use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
@@ -92,5 +94,71 @@ final readonly class DoctrineMarketplaceAccountRepository implements Marketplace
         }
 
         return true;
+    }
+
+    public function deleteIfNoHistory(string $companyId, Uuid $id, \Closure $isEligibleForDeletion, Uuid $actorUserId): DiscardAccountOutcome
+    {
+        $outcome = DiscardAccountOutcome::NotFound;
+
+        $this->entityManager->wrapInTransaction(function () use ($companyId, $id, $isEligibleForDeletion, $actorUserId, &$outcome): void {
+            $connection = $this->entityManager->getConnection();
+
+            // companyId в самом запросе — изоляция арендаторов на уровне
+            // SQL (CLAUDE.md §1), а не доверием к тому, что вызывающий
+            // уже проверил.
+            $row = $connection->fetchAssociative(
+                'SELECT name, external_shop_id FROM marketplace_account WHERE id = :id AND company_id = :companyId',
+                ['id' => $id->toRfc4122(), 'companyId' => $companyId],
+            );
+            if (false === $row) {
+                // outcome остаётся NotFound: подключения с таким id
+                // у этой компании нет — ни разу не существовало, ни уже
+                // удалено (повторный вызов идемпотентен).
+                return;
+            }
+
+            // Последнее, что происходит перед DELETE, внутри этой же ещё
+            // не закоммиченной транзакции — приём против гонки описан
+            // в докблоке интерфейса (MarketplaceAccountRepository::deleteIfNoHistory).
+            if (!$isEligibleForDeletion()) {
+                $outcome = DiscardAccountOutcome::InUse;
+
+                return;
+            }
+
+            $affected = $connection->executeStatement(
+                'DELETE FROM marketplace_account WHERE id = :id AND company_id = :companyId',
+                ['id' => $id->toRfc4122(), 'companyId' => $companyId],
+            );
+            if (0 === $affected) {
+                // Параллельный вызов удалил ту же строку между SELECT выше
+                // и этим DELETE — тот же класс защиты, что и у markBrokenIfActive:
+                // условие живёт в самом DELETE, а не в проверке перед ним.
+                return;
+            }
+
+            $this->entityManager->persist(AuditRecord::record(
+                companyId: Uuid::fromString($companyId),
+                actorUserId: $actorUserId,
+                action: AuditAction::MarketplaceAccountDiscarded,
+                subjectId: $id,
+                previousValue: \sprintf('%s (%s)', self::stringValue($row['name']), self::stringValue($row['external_shop_id'])),
+                newValue: null,
+                occurredAt: new \DateTimeImmutable(),
+            ));
+
+            $outcome = DiscardAccountOutcome::Discarded;
+        });
+
+        return $outcome;
+    }
+
+    private static function stringValue(mixed $value): string
+    {
+        if (!\is_string($value)) {
+            throw new \UnexpectedValueException('Expected a string value in a marketplace account row.');
+        }
+
+        return $value;
     }
 }

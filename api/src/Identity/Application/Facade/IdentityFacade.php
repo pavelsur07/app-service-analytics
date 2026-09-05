@@ -9,6 +9,7 @@ use App\Identity\Application\ReplaceMarketplaceCredentialsAction;
 use App\Identity\Domain\AuditAction;
 use App\Identity\Domain\AuditRecord;
 use App\Identity\Domain\AuditRecordRepository;
+use App\Identity\Domain\DiscardAccountOutcome;
 use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
@@ -238,5 +239,35 @@ final class IdentityFacade
         return $this->marketplaceAccounts->tryConnect($account, $trail)
             ? MarketplaceAccountConnection::connected($account->id()->toRfc4122())
             : MarketplaceAccountConnection::alreadyConnected();
+    }
+
+    /**
+     * Удаление подключения, которое, по утверждению Ingestion, ничего
+     * не загрузило (owner's decision: опечатка в кабинете — не актив).
+     *
+     * $hasNoIngestedHistory — колбэк Ingestion, не проверка здесь:
+     * «есть ли raw-документы» — вопрос о таблице, принадлежащей
+     * Ingestion, а Identity в Ingestion ходить не может (зависимости
+     * строго вниз). Приём против гонки «проверили → воркер записал
+     * документ → удалили» описан в докблоке
+     * MarketplaceAccountRepository::deleteIfNoHistory — колбэк вызывается
+     * оттуда, изнутри транзакции удаления, а не отсюда заранее.
+     */
+    public function discardUnusedOzonAccount(
+        string $companyId,
+        string $marketplaceAccountId,
+        \Closure $hasNoIngestedHistory,
+        string $actorUserId,
+    ): DiscardConnectionOutcome {
+        return match ($this->marketplaceAccounts->deleteIfNoHistory(
+            $companyId,
+            Uuid::fromString($marketplaceAccountId),
+            $hasNoIngestedHistory,
+            Uuid::fromString($actorUserId),
+        )) {
+            DiscardAccountOutcome::Discarded => DiscardConnectionOutcome::Discarded,
+            DiscardAccountOutcome::NotFound => DiscardConnectionOutcome::NotFound,
+            DiscardAccountOutcome::InUse => DiscardConnectionOutcome::InUse,
+        };
     }
 }

@@ -14,6 +14,7 @@ import {
 } from '../lib/connectionPresentation'
 import { useConnections } from '../model/useConnections'
 import { onboardingPathToAddAnotherCabinet } from '../../../shared/lib/onboardingIntent'
+import { DiscardConnectionButton } from './DiscardConnectionButton'
 import { ReplaceCredentialsForm } from './ReplaceCredentialsForm'
 
 // Экран отвечает на два вопроса, на которые ответить было негде:
@@ -192,6 +193,18 @@ export function ConnectionsPage() {
                       version={connection.version}
                     />
                   )}
+
+                  {/* Видна всегда, независимо от state: сервер сам знает,
+                      есть ли уже загруженные данные, и откажет своим
+                      кодом (connection_has_history) — гадать об этом
+                      здесь по state незачем, у сломанного или только что
+                      подключённого кабинета документов может не быть
+                      точно так же, как у активного. */}
+                  <DiscardConnectionButton
+                    companyId={companyId}
+                    externalShopId={connection.externalShopId}
+                    marketplaceAccountId={connection.id}
+                  />
                 </div>
               </Card>
             )
