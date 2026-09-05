@@ -17,6 +17,12 @@ const ACTIVE_CONNECTION: ConnectionResponse = {
   version: 1,
 }
 
+const BROKEN_CONNECTION: ConnectionResponse = {
+  ...ACTIVE_CONNECTION,
+  id: 'connection-b',
+  state: 'broken',
+}
+
 // Обязательное покрытие §9/§10 — гейт «компания без подключения не
 // видит company-scoped экраны» проверяется как решение, вынесенное
 // в чистую функцию (CLAUDE.md §9, «рендер не тестировать» — это
@@ -78,6 +84,29 @@ describe('resolveCompanyGate', () => {
     const decision = resolveCompanyGate(COMPANY_ID, {
       status: 'success',
       data: { connections: [ACTIVE_CONNECTION] },
+    })
+
+    expect(decision).toEqual({ kind: 'ready' })
+  })
+
+  it('уводит на онбординг компанию, у которой единственное подключение сломано', () => {
+    // Гейт формулируется как отсутствие АКТИВНОГО подключения (ADR-021),
+    // а не любого: сломанный кабинет не даёт содержательного экрана.
+    const decision = resolveCompanyGate(COMPANY_ID, {
+      status: 'success',
+      data: { connections: [BROKEN_CONNECTION] },
+    })
+
+    expect(decision).toEqual({
+      kind: 'onboarding',
+      to: `/onboarding?company=${COMPANY_ID}`,
+    })
+  })
+
+  it('показывает оболочку, когда рядом со сломанным есть активное подключение', () => {
+    const decision = resolveCompanyGate(COMPANY_ID, {
+      status: 'success',
+      data: { connections: [BROKEN_CONNECTION, ACTIVE_CONNECTION] },
     })
 
     expect(decision).toEqual({ kind: 'ready' })

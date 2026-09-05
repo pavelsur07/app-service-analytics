@@ -8,6 +8,11 @@ import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 
 type ConnectionsResponse = components['schemas']['ConnectionsResponse']
+type ConnectionResponse = components['schemas']['ConnectionResponse']
+
+function isActiveConnection(connection: ConnectionResponse): boolean {
+  return connection.state === 'active'
+}
 
 /**
  * Минимум, который гейту нужен от результата useConnections — не сам
@@ -30,10 +35,14 @@ export type CompanyGateDecision =
  *
  * - список подключений ещё не прочитан → решения нет: показать оболочку
  *   сейчас значит мигнуть пустым дашбордом и увести с него;
- * - список пуст → на онбординг, адрес несёт именно этот companyId
- *   (закодированным), иначе участник двух компаний ходит по кругу
- *   между гейтом и экраном выбора компании;
- * - иначе (есть хотя бы одно подключение, либо запрос списка сам
+ * - нет ни одного подключения в состоянии `active` (список пуст, либо
+ *   в нём только `broken`/`revoked`) → на онбординг, адрес несёт именно
+ *   этот companyId (закодированным), иначе участник двух компаний ходит
+ *   по кругу между гейтом и экраном выбора компании. Компания с единственным
+ *   подключением, которое сломалось или было отозвано, гейт формулирует
+ *   как «нет активного» (ADR-021) — иначе она проходит на экраны, где
+ *   данные не обновляются, и это неотличимо от рабочей синхронизации;
+ * - иначе (есть хотя бы одно `active` подключение, либо запрос списка сам
  *   упал с ошибкой) → оболочка компании.
  *
  *   Ветка ошибки — осознанный компромисс, а не забытое умолчание.
@@ -62,7 +71,7 @@ export function resolveCompanyGate(
 
   if (
     connections.status === 'success' &&
-    connections.data.connections.length === 0
+    !connections.data.connections.some(isActiveConnection)
   ) {
     return {
       kind: 'onboarding',
