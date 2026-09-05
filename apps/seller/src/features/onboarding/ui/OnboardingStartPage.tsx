@@ -14,6 +14,7 @@ import { connectAccountFailure } from '../lib/connectAccountError'
 import type { ConnectAccountFailure } from '../lib/connectAccountError'
 import { useConnectAccount } from '../model/useConnectAccount'
 import type { ConnectAccountInput } from '../model/useConnectAccount'
+import { ADD_ANOTHER_CABINET_INTENT } from '../../../shared/lib/onboardingIntent'
 import { useConnections } from '../../../shared/model/useConnections'
 import { useCurrentUser } from '../../../shared/model/useCurrentUser'
 
@@ -38,12 +39,14 @@ type ConnectionsResponse = components['schemas']['ConnectionsResponse']
  * оттуда снова в ту же компанию и снова на гейт.
  *
  * Форму эта страница показывает не любой определившейся компании,
- * а только той, у которой подключений нет вовсе — см.
- * `resolveOnboardingDecision`. `/onboarding` — верхнеуровневый маршрут
- * (Root.tsx), обёрнутый только в `RequireAuth`, а не в `CompanyLayout`:
- * гейт `resolveCompanyGate`, который решает то же самое в обратную
- * сторону для company-scoped экранов, сюда не дотягивается, и решение
- * приходится принимать здесь же, повторно читая тот же список.
+ * а только той, у которой подключений нет вовсе, — или той, что явно
+ * попросила добавить ещё один кабинет параметром `?intent=` (см.
+ * `resolveOnboardingDecision` и `ADD_ANOTHER_CABINET_INTENT`).
+ * `/onboarding` — верхнеуровневый маршрут (Root.tsx), обёрнутый только
+ * в `RequireAuth`, а не в `CompanyLayout`: гейт `resolveCompanyGate`,
+ * который решает то же самое в обратную сторону для company-scoped
+ * экранов, сюда не дотягивается, и решение приходится принимать здесь
+ * же, повторно читая тот же список.
  */
 export function OnboardingStartPage() {
   const currentUser = useCurrentUser()
@@ -79,7 +82,11 @@ export function OnboardingStartPage() {
     return <Navigate to="/companies" replace />
   }
 
-  const decision = resolveOnboardingDecision(company.id, connections)
+  const decision = resolveOnboardingDecision(
+    company.id,
+    connections,
+    searchParams.get('intent'),
+  )
 
   if (decision.kind === 'pending') {
     return null
@@ -121,10 +128,13 @@ function connectionsPath(companyId: string): string {
  * выше — «рендер не тестировать» (CLAUDE.md §9) про разметку, не про
  * решение.
  *
- * - список подключений ещё не прочитан → решения нет: показать форму
- *   сейчас значит нарисовать её компании, у которой кабинет уже есть,
- *   и тут же увести редиректом — заметный мигающий переход вместо
- *   тихого ожидания одного вспомогательного запроса;
+ * - список подключений ещё не прочитан → решения нет, независимо от
+ *   `intent`: показать форму сейчас значит нарисовать её компании,
+ *   у которой кабинет уже есть, и тут же увести редиректом — заметный
+ *   мигающий переход вместо тихого ожидания одного вспомогательного
+ *   запроса. `intent` не снимает эту паузу: он меняет решение о том,
+ *   что показать ПОСЛЕ чтения списка, а не сам факт «список ещё
+ *   не прочитан»;
  * - запрос списка сам упал с ошибкой → форма, как и при пустом списке.
  *   Осознанный компромисс: отказ вспомогательного запроса не должен
  *   лишать клиента единственного пути подключить кабинет — альтернатива
@@ -132,37 +142,52 @@ function connectionsPath(companyId: string): string {
  *   ожидании при любом транзиентном сбое. Ошибочная отправка формы
  *   компании, у которой кабинет на самом деле уже есть, вернёт понятный
  *   409 `cabinet_already_connected` от бэкенда, а не тихий тупик;
- * - подключений нет вовсе → форма. Единственный случай, когда её
- *   вообще есть смысл показывать: ни одной пары учётных данных,
- *   которую можно было бы чинить, ещё не существует;
+ * - подключений нет вовсе → форма, независимо от `intent`. Единственный
+ *   случай, когда её вообще есть смысл показывать без явного намерения:
+ *   ни одной пары учётных данных, которую можно было бы чинить, ещё
+ *   не существует;
  * - подключение есть — любое, в любом состоянии (`active`, `broken`,
- *   `revoked`) → на экран подключений этой компании, адрес несёт
- *   companyId закодированным (тот же `connectionsPath`, что у
- *   `resolveCompanyGate`, для согласованности значения). Кабинет уже
- *   занят: заявка на тот же кабинет вернёт 409 (частичный уникальный
- *   индекс держит `broken` как «не revoked», ADR-006), а чинить или
- *   смотреть состояние подключения умеет только company-scoped экран
- *   «Подключения», не эта форма.
+ *   `revoked`) — и `intent` не равен `ADD_ANOTHER_CABINET_INTENT` →
+ *   на экран подключений этой компании, адрес несёт companyId
+ *   закодированным (тот же `connectionsPath`, что у `resolveCompanyGate`,
+ *   для согласованности значения). Кабинет уже занят: заявка на тот же
+ *   кабинет вернёт 409 (частичный уникальный индекс держит `broken` как
+ *   «не revoked», ADR-006), а чинить или смотреть состояние подключения
+ *   умеет только company-scoped экран «Подключения», не эта форма;
+ * - подключение есть, но `intent` равен `ADD_ANOTHER_CABINET_INTENT` →
+ *   форма. Клиент явно попросил добавить второй кабинет кнопкой на
+ *   экране подключений (features/connections, `onboardingPathToAddAnotherCabinet`)
+ *   — это не тот автоматический случай «нет активного подключения»,
+ *   от которого защищает ветка выше, а осознанное действие. Ошибочная
+ *   повторная отправка той же пары ключей всё равно вернёт понятный 409,
+ *   а не тихую подмену чужого кабинета: `ReplaceOzonCredentialsAction`
+ *   не участвует в этом пути.
  *
- *   Встречной петли с гейтом (`resolveCompanyGate`) нет: та же
- *   компания, оказавшись на `/companies/{id}/connections` с любым
- *   непустым списком подключений, получает от гейта `ready`
+ *   Встречной петли с гейтом (`resolveCompanyGate`) нет ни с `intent`,
+ *   ни без него: та же компания, оказавшись на `/companies/{id}/connections`
+ *   с любым непустым списком подключений, получает от гейта `ready`
  *   (resolveCompanyGate: `hasActive` не требуется — ветка `!hasActive`
  *   сама сверяет `pathname` с `connectionsPath` и отдаёт `ready`, а при
  *   наличии `active` гейт отдаёт `ready` безусловно) — редиректа назад
  *   на /onboarding оттуда нет. `/onboarding` сюда не ведёт: маршрут
  *   верхнеуровневый (Root.tsx), а не company-scoped экран за гейтом,
- *   и обратно на себя эта функция никогда не адресует.
+ *   и обратно на себя эта функция никогда не адресует. Гейт при этом
+ *   никогда сам не пишет `intent` в свой редирект на /onboarding
+ *   (`resolveCompanyGate`, ветка «подключений нет вовсе») — этот путь
+ *   и без признака уже ведёт на форму, а простановка `intent` там,
+ *   где клиент ничего не просил, обесценила бы сигнал.
  */
 export function resolveOnboardingDecision(
   companyId: string,
   connections: ConnectionsQueryState,
+  intent: string | null,
 ): OnboardingDecision {
   if (connections.status === 'pending') {
     return { kind: 'pending' }
   }
 
   if (
+    intent !== ADD_ANOTHER_CABINET_INTENT &&
     connections.status === 'success' &&
     connections.data.connections.length > 0
   ) {

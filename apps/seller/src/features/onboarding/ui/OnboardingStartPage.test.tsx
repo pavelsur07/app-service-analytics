@@ -8,6 +8,10 @@ import type { components } from '../../../api/schema'
 import { authQueryKey } from '../../../shared/lib/authQueryKey'
 import { connectionsQueryKey } from '../../../shared/lib/connectionsQueryKey'
 import {
+  ADD_ANOTHER_CABINET_INTENT,
+  onboardingPathToAddAnotherCabinet,
+} from '../../../shared/lib/onboardingIntent'
+import {
   ConnectFormView,
   OnboardingStartPage,
   connectAccountFailureFromError,
@@ -79,25 +83,61 @@ describe('selectOnboardingCompany', () => {
 describe('resolveOnboardingDecision', () => {
   it('не решает, пока список подключений не прочитан', () => {
     expect(
-      resolveOnboardingDecision(COMPANY_A.id, { status: 'pending' }),
+      resolveOnboardingDecision(COMPANY_A.id, { status: 'pending' }, null),
+    ).toEqual({ kind: 'pending' })
+  })
+
+  it('не решает, пока список не прочитан, даже с признаком осознанного добавления', () => {
+    // Признак меняет решение ПОСЛЕ чтения списка, а не сам факт «список
+    // ещё не прочитан» — иначе форма мигнула бы компании, у которой
+    // кабинет, возможно, уже есть, раньше ответа сети.
+    expect(
+      resolveOnboardingDecision(
+        COMPANY_A.id,
+        { status: 'pending' },
+        ADD_ANOTHER_CABINET_INTENT,
+      ),
     ).toEqual({ kind: 'pending' })
   })
 
   it('показывает форму компании, у которой подключений нет вовсе', () => {
     expect(
-      resolveOnboardingDecision(COMPANY_A.id, {
-        status: 'success',
-        data: { connections: [] },
-      }),
+      resolveOnboardingDecision(
+        COMPANY_A.id,
+        {
+          status: 'success',
+          data: { connections: [] },
+        },
+        null,
+      ),
+    ).toEqual({ kind: 'form' })
+  })
+
+  it('показывает форму компании без подключений и с признаком добавления', () => {
+    // Требование задачи: подключений нет вовсе → форма, независимо
+    // от признака.
+    expect(
+      resolveOnboardingDecision(
+        COMPANY_A.id,
+        {
+          status: 'success',
+          data: { connections: [] },
+        },
+        ADD_ANOTHER_CABINET_INTENT,
+      ),
     ).toEqual({ kind: 'form' })
   })
 
   it('ведёт на экран подключений, когда единственное подключение сломано', () => {
     expect(
-      resolveOnboardingDecision(COMPANY_A.id, {
-        status: 'success',
-        data: { connections: [BROKEN_CONNECTION] },
-      }),
+      resolveOnboardingDecision(
+        COMPANY_A.id,
+        {
+          status: 'success',
+          data: { connections: [BROKEN_CONNECTION] },
+        },
+        null,
+      ),
     ).toEqual({
       kind: 'connections',
       to: `/companies/${COMPANY_A.id}/connections`,
@@ -105,14 +145,68 @@ describe('resolveOnboardingDecision', () => {
   })
 
   it('ведёт на экран подключений и тогда, когда подключение уже активно', () => {
-    // На онбординге компании с активным подключением делать нечего —
-    // повторная заявка на тот же кабинет вернёт 409, а не второе
-    // подключение.
+    // На онбординге компании с активным подключением делать нечего без
+    // явного намерения — повторная заявка на тот же кабинет вернёт 409,
+    // а не второе подключение.
     expect(
-      resolveOnboardingDecision(COMPANY_A.id, {
-        status: 'success',
-        data: { connections: [ACTIVE_CONNECTION] },
-      }),
+      resolveOnboardingDecision(
+        COMPANY_A.id,
+        {
+          status: 'success',
+          data: { connections: [ACTIVE_CONNECTION] },
+        },
+        null,
+      ),
+    ).toEqual({
+      kind: 'connections',
+      to: `/companies/${COMPANY_A.id}/connections`,
+    })
+  })
+
+  it('показывает форму компании с активным подключением и признаком осознанного добавления', () => {
+    // Кнопка «Подключить кабинет» на экране подключений (features/connections)
+    // ведёт именно на этот адрес — с признаком, а не без него.
+    expect(
+      resolveOnboardingDecision(
+        COMPANY_A.id,
+        {
+          status: 'success',
+          data: { connections: [ACTIVE_CONNECTION] },
+        },
+        ADD_ANOTHER_CABINET_INTENT,
+      ),
+    ).toEqual({ kind: 'form' })
+  })
+
+  it('показывает форму компании со сломанным подключением и признаком осознанного добавления', () => {
+    // Ровно тот тупик, который признак и должен снимать: чужой или
+    // сломанный кабинет остаётся заведённым, а клиент осознанно
+    // добавляет другой — не заменяет старый.
+    expect(
+      resolveOnboardingDecision(
+        COMPANY_A.id,
+        {
+          status: 'success',
+          data: { connections: [BROKEN_CONNECTION] },
+        },
+        ADD_ANOTHER_CABINET_INTENT,
+      ),
+    ).toEqual({ kind: 'form' })
+  })
+
+  it('игнорирует значение intent, не совпадающее с признаком добавления', () => {
+    // Любое другое или случайное значение параметра — не согласие,
+    // а шум в адресной строке: прежнее поведение (увести на подключения)
+    // должно сохраниться.
+    expect(
+      resolveOnboardingDecision(
+        COMPANY_A.id,
+        {
+          status: 'success',
+          data: { connections: [ACTIVE_CONNECTION] },
+        },
+        'something-else',
+      ),
     ).toEqual({
       kind: 'connections',
       to: `/companies/${COMPANY_A.id}/connections`,
@@ -124,7 +218,7 @@ describe('resolveOnboardingDecision', () => {
     // пути подключиться: форма останется рабочей, а ошибочная повторная
     // отправка вернёт понятный 409 от бэкенда, а не молчание на экране.
     expect(
-      resolveOnboardingDecision(COMPANY_A.id, { status: 'error' }),
+      resolveOnboardingDecision(COMPANY_A.id, { status: 'error' }, null),
     ).toEqual({ kind: 'form' })
   })
 
@@ -132,10 +226,14 @@ describe('resolveOnboardingDecision', () => {
     const rawCompanyId = 'company a/b'
 
     expect(
-      resolveOnboardingDecision(rawCompanyId, {
-        status: 'success',
-        data: { connections: [ACTIVE_CONNECTION] },
-      }),
+      resolveOnboardingDecision(
+        rawCompanyId,
+        {
+          status: 'success',
+          data: { connections: [ACTIVE_CONNECTION] },
+        },
+        null,
+      ),
     ).toEqual({
       kind: 'connections',
       to: '/companies/company%20a%2Fb/connections',
@@ -314,6 +412,30 @@ describe('OnboardingStartPage', () => {
     const markup = renderPage([COMPANY_A], '/onboarding', {
       [COMPANY_A.id]: [BROKEN_CONNECTION],
     })
+
+    expect(markup).not.toContain('Подключите кабинет Ozon')
+  })
+
+  it('показывает форму компании с подключением по адресу кнопки «Подключить кабинет»', () => {
+    // Тот же адрес, что строит ConnectionsPage (onboardingPathToAddAnotherCabinet):
+    // компания уже не пуста, но признак в адресе явно просит форму.
+    const markup = renderPage(
+      [COMPANY_A],
+      onboardingPathToAddAnotherCabinet(COMPANY_A.id),
+      { [COMPANY_A.id]: [ACTIVE_CONNECTION] },
+    )
+
+    expect(markup).toContain('Подключите кабинет Ozon')
+  })
+
+  it('не открывает форму компании с подключением без признака в адресе', () => {
+    // Голый ?company= при наличии подключений — прежнее поведение,
+    // признак его не расширяет молча.
+    const markup = renderPage(
+      [COMPANY_A],
+      `/onboarding?company=${COMPANY_A.id}`,
+      { [COMPANY_A.id]: [ACTIVE_CONNECTION] },
+    )
 
     expect(markup).not.toContain('Подключите кабинет Ozon')
   })
