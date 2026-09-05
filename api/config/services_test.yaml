@@ -1,16 +1,6 @@
 # yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
 
 services:
-    # Без контроллера, который его вызывает (появится в следующей задаче
-    # серии), сценарий не имеет ни одного потребителя — компилятор
-    # контейнера убирает недостижимый private-сервис целиком, и `test:
-    # true` этого не предотвращает: оно даёт доступ к приватным сервисам,
-    # но не спасает уже удалённые. Публичность нужна только тестовому
-    # контейнеру, поэтому здесь, а не в services.yaml.
-    App\Ingestion\Application\ConnectOzonAccountAction:
-        public: true
-        autowire: true
-
     App\Tests\Support\Fake\FakeCaptchaVerifier:
         public: true
         shared: true
