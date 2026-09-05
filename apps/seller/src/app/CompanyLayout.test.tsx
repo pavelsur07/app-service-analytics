@@ -31,18 +31,24 @@ const BROKEN_CONNECTION: ConnectionResponse = {
 // (apps/seller/vite.config.ts), ни jsdom, ни @testing-library
 // в зависимостях нет — тот же предел, что решило прежнее задание
 // приёмом selectOnboardingCompany (OnboardingStartPage.tsx).
+const SALES_PATH = `/companies/${COMPANY_ID}/sales`
+const CONNECTIONS_PATH = `/companies/${COMPANY_ID}/connections`
+
 describe('resolveCompanyGate', () => {
   it('не решает, пока список подключений не прочитан', () => {
-    expect(resolveCompanyGate(COMPANY_ID, { status: 'pending' })).toEqual({
+    expect(
+      resolveCompanyGate(COMPANY_ID, { status: 'pending' }, SALES_PATH),
+    ).toEqual({
       kind: 'pending',
     })
   })
 
   it('уводит компанию без единого подключения на онбординг с её companyId', () => {
-    const decision = resolveCompanyGate(COMPANY_ID, {
-      status: 'success',
-      data: { connections: [] },
-    })
+    const decision = resolveCompanyGate(
+      COMPANY_ID,
+      { status: 'success', data: { connections: [] } },
+      SALES_PATH,
+    )
 
     expect(decision).toEqual({
       kind: 'onboarding',
@@ -51,10 +57,11 @@ describe('resolveCompanyGate', () => {
   })
 
   it('несёт в адресе редиректа именно запрошенную компанию, не первую попавшуюся', () => {
-    const decision = resolveCompanyGate('company-b', {
-      status: 'success',
-      data: { connections: [] },
-    })
+    const decision = resolveCompanyGate(
+      'company-b',
+      { status: 'success', data: { connections: [] } },
+      `/companies/company-b/sales`,
+    )
 
     expect(decision).toEqual({
       kind: 'onboarding',
@@ -66,13 +73,14 @@ describe('resolveCompanyGate', () => {
     })
   })
 
-  it('кодирует companyId в адресе редиректа', () => {
+  it('кодирует companyId в адресе редиректа на онбординг', () => {
     const rawCompanyId = 'company a/b'
 
-    const decision = resolveCompanyGate(rawCompanyId, {
-      status: 'success',
-      data: { connections: [] },
-    })
+    const decision = resolveCompanyGate(
+      rawCompanyId,
+      { status: 'success', data: { connections: [] } },
+      `/companies/${rawCompanyId}/sales`,
+    )
 
     expect(decision).toEqual({
       kind: 'onboarding',
@@ -81,21 +89,66 @@ describe('resolveCompanyGate', () => {
   })
 
   it('показывает оболочку компании, у которой есть хотя бы одно подключение', () => {
-    const decision = resolveCompanyGate(COMPANY_ID, {
-      status: 'success',
-      data: { connections: [ACTIVE_CONNECTION] },
-    })
+    const decision = resolveCompanyGate(
+      COMPANY_ID,
+      { status: 'success', data: { connections: [ACTIVE_CONNECTION] } },
+      SALES_PATH,
+    )
 
     expect(decision).toEqual({ kind: 'ready' })
   })
 
-  it('уводит на онбординг компанию, у которой единственное подключение сломано', () => {
-    // Гейт формулируется как отсутствие АКТИВНОГО подключения (ADR-021),
-    // а не любого: сломанный кабинет не даёт содержательного экрана.
-    const decision = resolveCompanyGate(COMPANY_ID, {
-      status: 'success',
-      data: { connections: [BROKEN_CONNECTION] },
+  it('ведёт на экран подключений компанию, у которой единственное подключение сломано', () => {
+    // С июля 2026 сломанное подключение больше не уводит на онбординг:
+    // онбординг не примет тот же кабинет повторно (409, частичный
+    // уникальный индекс держит `broken` как «не revoked»), и клиент
+    // застревал между гейтом и формой подключения, до формы замены
+    // ключа так и не добравшись. Правильный адрес — «Подключения»,
+    // где живёт ReplaceOzonCredentialsAction.
+    const decision = resolveCompanyGate(
+      COMPANY_ID,
+      { status: 'success', data: { connections: [BROKEN_CONNECTION] } },
+      SALES_PATH,
+    )
+
+    expect(decision).toEqual({
+      kind: 'connections',
+      to: CONNECTIONS_PATH,
     })
+  })
+
+  it('не заводит петлю: на самом экране подключений сломанное подключение — ready', () => {
+    // Экран подключений сам company-scoped и рендерится внутри той же
+    // оболочки, за тем же гейтом. Без этой ветки редирект на /connections
+    // зациклился бы через сам гейт.
+    const decision = resolveCompanyGate(
+      COMPANY_ID,
+      { status: 'success', data: { connections: [BROKEN_CONNECTION] } },
+      CONNECTIONS_PATH,
+    )
+
+    expect(decision).toEqual({ kind: 'ready' })
+  })
+
+  it('показывает оболочку, когда рядом со сломанным есть активное подключение', () => {
+    const decision = resolveCompanyGate(
+      COMPANY_ID,
+      {
+        status: 'success',
+        data: { connections: [BROKEN_CONNECTION, ACTIVE_CONNECTION] },
+      },
+      SALES_PATH,
+    )
+
+    expect(decision).toEqual({ kind: 'ready' })
+  })
+
+  it('уводит на онбординг компанию, у которой подключений нет вовсе', () => {
+    const decision = resolveCompanyGate(
+      COMPANY_ID,
+      { status: 'success', data: { connections: [] } },
+      CONNECTIONS_PATH,
+    )
 
     expect(decision).toEqual({
       kind: 'onboarding',
@@ -103,20 +156,30 @@ describe('resolveCompanyGate', () => {
     })
   })
 
-  it('показывает оболочку, когда рядом со сломанным есть активное подключение', () => {
-    const decision = resolveCompanyGate(COMPANY_ID, {
-      status: 'success',
-      data: { connections: [BROKEN_CONNECTION, ACTIVE_CONNECTION] },
-    })
+  it('кодирует companyId в адресе редиректа на экран подключений', () => {
+    const rawCompanyId = 'company a/b'
 
-    expect(decision).toEqual({ kind: 'ready' })
+    const decision = resolveCompanyGate(
+      rawCompanyId,
+      { status: 'success', data: { connections: [BROKEN_CONNECTION] } },
+      `/companies/${rawCompanyId}/sales`,
+    )
+
+    expect(decision).toEqual({
+      kind: 'connections',
+      to: '/companies/company%20a%2Fb/connections',
+    })
   })
 
   it('не блокирует экран собственной ошибкой чтения списка подключений', () => {
     // Гейт не имеет права положить весь экран компании из-за отказа
     // одного вспомогательного запроса — у списка подключений своя
     // обработка ошибки на своём экране (features/connections).
-    const decision = resolveCompanyGate(COMPANY_ID, { status: 'error' })
+    const decision = resolveCompanyGate(
+      COMPANY_ID,
+      { status: 'error' },
+      SALES_PATH,
+    )
 
     expect(decision).toEqual({ kind: 'ready' })
   })

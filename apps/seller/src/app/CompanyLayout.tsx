@@ -1,5 +1,5 @@
 import type { UseQueryResult } from '@tanstack/react-query'
-import { Navigate, Outlet, useParams } from 'react-router'
+import { Navigate, Outlet, useLocation, useParams } from 'react-router'
 
 import type { components } from '../api/schema'
 import { useConnections } from '../features/connections/model/useConnections'
@@ -25,7 +25,14 @@ export type ConnectionsQueryState =
   | { status: 'success'; data: ConnectionsResponse }
 
 export type CompanyGateDecision =
-  { kind: 'pending' } | { kind: 'onboarding'; to: string } | { kind: 'ready' }
+  | { kind: 'pending' }
+  | { kind: 'onboarding'; to: string }
+  | { kind: 'connections'; to: string }
+  | { kind: 'ready' }
+
+function connectionsPath(companyId: string): string {
+  return `/companies/${encodeURIComponent(companyId)}/connections`
+}
 
 /**
  * Решение гейта: что показать компании с этим списком подключений.
@@ -35,47 +42,77 @@ export type CompanyGateDecision =
  *
  * - список подключений ещё не прочитан → решения нет: показать оболочку
  *   сейчас значит мигнуть пустым дашбордом и увести с него;
- * - нет ни одного подключения в состоянии `active` (список пуст, либо
- *   в нём только `broken`/`revoked`) → на онбординг, адрес несёт именно
- *   этот companyId (закодированным), иначе участник двух компаний ходит
- *   по кругу между гейтом и экраном выбора компании. Компания с единственным
- *   подключением, которое сломалось или было отозвано, гейт формулирует
- *   как «нет активного» (ADR-021) — иначе она проходит на экраны, где
- *   данные не обновляются, и это неотличимо от рабочей синхронизации;
- * - иначе (есть хотя бы одно `active` подключение, либо запрос списка сам
- *   упал с ошибкой) → оболочка компании.
+ * - запрос списка сам упал с ошибкой → оболочка компании (`ready`).
+ *   Осознанный компромисс, а не забытое умолчание: альтернатива
+ *   («не решено», как у pending) клала бы весь экран у КАЖДОЙ компании
+ *   при любом транзиентном сбое одного вспомогательного запроса,
+ *   а подключение есть у подавляющего большинства сессий — регулярная
+ *   блокировка всех ради редкого сбоя хуже, чем редкий тупик
+ *   у меньшинства. Цена компромисса: у компании без единого подключения
+ *   та же ошибка воспроизводит тот тупик, ради устранения которого
+ *   писался весь этот гейт. Выход не потерян: пункт «Подключения»
+ *   в сайдбаре (Sidebar.tsx) остаётся доступным из оболочки и ведёт
+ *   на ConnectionsPage — у него свой повтор того же запроса
+ *   («Повторить» на ветке ошибки);
+ * - подключений нет вовсе (список пуст) → на онбординг, адрес несёт
+ *   именно этот companyId (закодированным), иначе участник двух
+ *   компаний ходит по кругу между гейтом и экраном выбора компании.
+ *   Онбординг здесь уместен: нет ни одной пары учётных данных,
+ *   которую можно было бы чинить, — заводить кабинет ещё только
+ *   предстоит;
+ * - подключения есть, но ни одного `active` (только `broken`/`revoked`)
+ *   → на экран подключений этой компании, а НЕ на онбординг. До июля
+ *   2026 сюда тоже вела ветка «на онбординг» (тем же поводом — ADR-021,
+ *   «нет активного» неотличимо от рабочей синхронизации), и это было
+ *   ловушкой: онбординг не принимает повторную заявку на тот же кабинет
+ *   («broken» — не «revoked», частичный уникальный индекс держит его),
+ *   возвращает 409, а форма замены ключа, которая единственная умеет
+ *   вернуть сломанное подключение в `active`
+ *   (`ReplaceOzonCredentialsAction`), живёт на company-scoped экране
+ *   «Подключения» — том самом, откуда этот же гейт разворачивает
+ *   клиента раньше, чем он до формы доберётся. Починка ключа — не то
+ *   же действие, что первое подключение, и вести их на один и тот же
+ *   экран значит запирать клиента между гейтом и 409;
  *
- *   Ветка ошибки — осознанный компромисс, а не забытое умолчание.
- *   Альтернатива («не решено», как у pending) клала бы весь экран
- *   у КАЖДОЙ компании при любом транзиентном сбое одного
- *   вспомогательного запроса, а подключение есть у подавляющего
- *   большинства сессий — регулярная блокировка всех ради редкого сбоя
- *   хуже, чем редкий тупик у меньшинства.
- *
- *   Цена компромисса: у компании без единого подключения та же ошибка
- *   воспроизводит ровно тот тупик, ради устранения которого писался
- *   весь этот гейт — оболочка отрисуется, а на онбординг гейт не уведёт.
- *   Выход не потерян: пункт «Подключения» в сайдбаре (Sidebar.tsx)
- *   остаётся доступным из оболочки и ведёт на ConnectionsPage
- *   (features/connections/ui/ConnectionsPage.tsx) — у него свой повтор
- *   того же запроса («Повторить» на ветке ошибки) и своя ссылка
- *   на /onboarding в пустом состоянии. Тупик решается там, не здесь.
+ *   этой ветке нужен текущий адрес (третий параметр), а не просто
+ *   решение по списку подключений: экран подключений сам company-scoped
+ *   и рендерится ВНУТРИ этой же оболочки, то есть за этим же гейтом.
+ *   Без проверки адреса решение «веди на /connections» сработало бы
+ *   и когда клиент уже там — гейт увёл бы на /connections, там опять
+ *   сработал бы тот же гейт с тем же списком подключений, снова увёл
+ *   бы на /connections, и так по кругу. Поэтому: уже на экране
+ *   подключений → `ready` (форма замены ключа успевает отрисоваться
+ *   и сделать своё дело), где угодно ещё → редирект туда. Параметр —
+ *   значение, а не хук: функция остаётся чистой и проверяется тестами
+ *   без DOM (CLAUDE.md §10, окружение тестов `node`-only);
+ * - иначе (есть хотя бы одно `active` подключение) → оболочка компании.
  */
 export function resolveCompanyGate(
   companyId: string,
   connections: ConnectionsQueryState,
+  pathname: string,
 ): CompanyGateDecision {
   if (connections.status === 'pending') {
     return { kind: 'pending' }
   }
 
-  if (
-    connections.status === 'success' &&
-    !connections.data.connections.some(isActiveConnection)
-  ) {
-    return {
-      kind: 'onboarding',
-      to: `/onboarding?company=${encodeURIComponent(companyId)}`,
+  if (connections.status === 'success') {
+    const hasActive = connections.data.connections.some(isActiveConnection)
+
+    if (!hasActive) {
+      if (connections.data.connections.length === 0) {
+        return {
+          kind: 'onboarding',
+          to: `/onboarding?company=${encodeURIComponent(companyId)}`,
+        }
+      }
+
+      const to = connectionsPath(companyId)
+      if (pathname === to) {
+        return { kind: 'ready' }
+      }
+
+      return { kind: 'connections', to }
     }
   }
 
@@ -107,13 +144,14 @@ export function resolveCompanyGate(
  */
 function ConnectionGate({ companyId }: { companyId: string }) {
   const connections = useConnections(companyId)
-  const decision = resolveCompanyGate(companyId, connections)
+  const { pathname } = useLocation()
+  const decision = resolveCompanyGate(companyId, connections, pathname)
 
   if (decision.kind === 'pending') {
     return null
   }
 
-  if (decision.kind === 'onboarding') {
+  if (decision.kind === 'onboarding' || decision.kind === 'connections') {
     return <Navigate to={decision.to} replace />
   }
 
