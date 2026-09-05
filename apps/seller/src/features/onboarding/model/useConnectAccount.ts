@@ -13,22 +13,56 @@ export interface ConnectAccountInput {
   apiKey: string
 }
 
+const CONNECT_ENDPOINT = '/connections' as const
+
+interface ConnectAccountDependencies {
+  post(
+    path: typeof CONNECT_ENDPOINT,
+    body: ConnectAccountInput,
+  ): Promise<ConnectedAccountResponse>
+  invalidateConnections(queryKey: readonly unknown[]): Promise<unknown>
+}
+
+/**
+ * Отдельная функция с инъекцией зависимостей — тот же приём, что
+ * у `confirmEmailAttempt` в useConfirmEmail.ts. Хук с реальным `fetch`
+ * и живым `QueryClient` собрать в тесте без DOM-окружения нельзя
+ * (vite.config.ts, test.environment: 'node'), а проверить, что запрос
+ * уходит по /connections с введёнными полями и что по успеху
+ * инвалидируется ключ ровно той компании, с которой создан хук —
+ * обязательное покрытие §10 — можно только так: подставными
+ * зависимостями, без `useMutation` и без сети.
+ */
+export async function connectAccount(
+  companyId: string,
+  input: ConnectAccountInput,
+  dependencies: ConnectAccountDependencies,
+): Promise<ConnectedAccountResponse> {
+  const response = await dependencies.post(CONNECT_ENDPOINT, input)
+
+  // Список подключений изменился, и от него зависит гейт онбординга:
+  // оставить кэш прежним значит увести клиента обратно на форму сразу
+  // после успешного подключения. До инвалидации доходит только здесь,
+  // после успешного `post` — отказ площадки не должен трогать кэш чужого,
+  // уже прочитанного списка.
+  await dependencies.invalidateConnections(connectionsQueryKey(companyId))
+
+  return response
+}
+
 export function useConnectAccount(companyId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: (input: ConnectAccountInput) =>
-      createCompanyApiClient(companyId).post<ConnectedAccountResponse>(
-        '/connections',
-        input,
-      ),
-    onSuccess: () => {
-      // Список подключений изменился, и от него зависит гейт онбординга:
-      // оставить кэш прежним значит увести клиента обратно на форму
-      // сразу после успешного подключения.
-      void queryClient.invalidateQueries({
-        queryKey: connectionsQueryKey(companyId),
-      })
-    },
+      connectAccount(companyId, input, {
+        post: (path, body) =>
+          createCompanyApiClient(companyId).post<ConnectedAccountResponse>(
+            path,
+            body,
+          ),
+        invalidateConnections: (queryKey) =>
+          queryClient.invalidateQueries({ queryKey }),
+      }),
   })
 }
