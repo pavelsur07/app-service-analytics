@@ -1,7 +1,7 @@
 import { Check, ChevronDown, CircleX, Clock } from 'lucide-react'
 import { NavLink } from 'react-router'
 
-import { useCurrentUser } from '../features/auth/model/useCurrentUser'
+import { useCurrentUser } from '../shared/model/useCurrentUser'
 import { dataFreshness } from '../features/connections/lib/dataFreshness'
 import type { DataFreshness } from '../features/connections/lib/dataFreshness'
 import { useConnections } from '../features/connections/model/useConnections'

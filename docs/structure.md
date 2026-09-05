@@ -411,9 +411,22 @@ apps/seller/
 `SignUpPage`, `EmailSentPage`, `ResendConfirmationPage` и `ConfirmEmailPage`.
 `/onboarding` — отдельный маршрут с `RequireAuth`, намеренно вне
 `/companies/:companyId` и `CompanyLayout`: только что подтвердивший email
-пользователь ещё не выбирал компанию. `OnboardingStartPage` лишь сообщает,
-что Stage 4 запросит название магазина, Ozon `Client-Id` и `Api-Key`; формы,
-сохранения учётных данных, запроса компании и навигации оболочки здесь нет.
+пользователь ещё не выбирал компанию.
+
+**Подключение кабинета Ozon (Stage 4) живёт в `features/onboarding`**,
+отдельно от `features/auth`: `OnboardingStartPage` рисует форму
+(название магазина, `Client-Id`, `Api-Key`), отправляет её через
+`useConnectAccount` и показывает разобранную ошибку (`lib/connectAccountError.ts`)
+или экран «Кабинет подключён» с переходом к продажам. Компания для формы
+берётся из параметра `?company=` (ставит гейт `CompanyLayout`, ADR-021)
+или, при его отсутствии, как единственная компания пользователя —
+membership параметра проверяется, а не берётся на веру.
+
+`useCurrentUser` — в `shared/model/`, не в `features/auth`: он нужен
+и оболочке (`app/RequireAuth`, `app/Sidebar`, `app/Topbar`), и обеим
+фичам (`features/auth/ui/CompanyListPage`, `features/onboarding/ui/OnboardingStartPage`),
+а одна фича не импортирует другую (`import/no-restricted-paths`,
+`eslint.config.js`) — тот же приём, что у `useCurrentAdmin` в `apps/admin`.
 
 ```
 apps/seller/
@@ -431,22 +444,33 @@ apps/seller/
 │   │   ├── ApiError.ts                разбор { status, code, message } бэкенда
 │   │   └── schema.ts                  реэкспорт типов из packages/api-schema
 │   ├── shared/
-│   │   └── lib/
-│   │       ├── formatMinorAmount.ts   копейки → отображаемая сумма
-│   │       └── companyQueryKey.ts     ['company', companyId, модуль, сущность, ...]
+│   │   ├── lib/
+│   │   │   ├── formatMinorAmount.ts   копейки → отображаемая сумма
+│   │   │   ├── companyQueryKey.ts     ['company', companyId, модуль, сущность, ...]
+│   │   │   └── connectionsQueryKey.ts ключ списка подключений — общий
+│   │   │                              для features/connections и features/onboarding
+│   │   └── model/
+│   │       └── useCurrentUser.ts      «кто я» — нужен оболочке и обеим фичам
 │   └── features/
 │       ├── auth/
 │       │   ├── lib/
 │       │   │   ├── captchaFlow.ts       автомат invisible SmartCaptcha
 │       │   │   ├── captchaLoaderGuard.ts watchdog загрузки виджета
 │       │   │   └── confirmationToken.ts одноразовый fragment-token bootstrap
-│       │   ├── model/                   auth-запросы и useCurrentUser
+│       │   ├── model/                   auth-запросы (useSignUp, useConfirmEmail, ...)
 │       │   └── ui/
 │       │       ├── SignUpPage.tsx
 │       │       ├── EmailSentPage.tsx
 │       │       ├── ResendConfirmationPage.tsx
 │       │       ├── ConfirmEmailPage.tsx
-│       │       └── OnboardingStartPage.tsx  граница перед Stage 4, без формы
+│       │       └── CompanyListPage.tsx
+│       ├── onboarding/
+│       │   ├── lib/
+│       │   │   └── connectAccountError.ts  сообщение под код отказа (ADR-021)
+│       │   ├── model/
+│       │   │   └── useConnectAccount.ts    мутация подключения кабинета
+│       │   └── ui/
+│       │       └── OnboardingStartPage.tsx форма Stage 4, выбор компании по членству
 │       └── ingestion/
 │           ├── model/
 │           │   └── useSalesFacts.ts   TanStack Query, курсорная пагинация
