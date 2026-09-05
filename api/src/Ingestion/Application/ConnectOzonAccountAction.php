@@ -12,7 +12,9 @@ use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
 
 /**
  * Подключение кабинета Ozon при онбординге (ADR-021).
@@ -24,6 +26,25 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * Живёт в Ingestion, хотя пишет данные Identity: проверка требует похода
  * в площадку, клиент площадки принадлежит Ingestion, а зависимости
  * строго вниз.
+ *
+ * Проба различает три ветви отказа, а не две, — по тому, кто должен
+ * узнать об отказе и как:
+ *
+ * 1. `OzonAuthorizationFailure` (401/403) — ключ отклонён самой площадкой.
+ *    Клиенту нужно другое действие (перевыпустить ключ), поэтому это
+ *    отдельный исход `Rejected`.
+ * 2. Любой другой отказ HTTP-клиента (сеть, таймаут, лимит запросов,
+ *    прочие 4xx и 5xx) — площадка не ответила по причине, которая лечится
+ *    повтором, а не новым ключом. `Unavailable` — ожидаемое доменное
+ *    условие уровня warning, не наша ошибка, и в трекер намеренно
+ *    не идёт: обработчика Sentry в конфиге журнала нет (CLAUDE.md,
+ *    «Наблюдаемость»), и топить в нём такие случаи означало бы прятать
+ *    в шуме настоящие ошибки.
+ * 3. Всё остальное (`TypeError`, `Error`, `LogicException` нашего кода) —
+ *    не отказ площадки, а наш дефект. Спрятать его под «Ozon недоступен»
+ *    значило бы навсегда лишить себя шанса его увидеть: клиент решит,
+ *    что дело в площадке, а трекер об этом не узнает никогда. Поэтому
+ *    эта ветвь пробрасывается, а не превращается в исход.
  */
 final readonly class ConnectOzonAccountAction
 {
@@ -33,6 +54,7 @@ final readonly class ConnectOzonAccountAction
         private OzonCatalogFetcher $client,
         private IdentityFacade $identityFacade,
         private MessageBusInterface $bus,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -50,10 +72,24 @@ final readonly class ConnectOzonAccountAction
                 return ConnectOzonAccountOutcome::failed(ConnectOzonAccountResult::Rejected);
             }
 
-            // Лимит запросов, сбой площадки, обрыв сети. В отличие
-            // от замены ключей, недоступность здесь не пробрасывается
-            // исключением: ADR-021 требует именно трёх различимых
-            // исходов, а 500 не может честно сказать «попробуйте позже».
+            if (!$failure instanceof HttpClientExceptionInterface) {
+                // Не «площадка недоступна» — наш дефект (опечатка в коде,
+                // отсутствующий метод, нарушенный инвариант). Он обязан
+                // выглядеть как наш: дойти до трекера и стать 500,
+                // а не спрятаться под благополучным на вид исходом.
+                throw $failure;
+            }
+
+            // Лимит запросов, сбой площадки, обрыв сети, прочие отказы
+            // HTTP-клиента. В отличие от замены ключей, недоступность
+            // здесь не пробрасывается исключением: ADR-021 требует именно
+            // трёх различимых исходов, а 500 не может честно сказать
+            // «попробуйте позже». api_key в журнал не попадает ни в каком
+            // виде; request_id и company_id добавляет RequestContextProcessor.
+            $this->logger->warning('Ozon не ответил при проверке ключей подключения', [
+                'client_id' => $clientId,
+            ]);
+
             return ConnectOzonAccountOutcome::failed(ConnectOzonAccountResult::Unavailable);
         }
 

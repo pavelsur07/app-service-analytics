@@ -10,9 +10,11 @@ use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Ingestion\Application\ConnectOzonAccountAction;
 use App\Ingestion\Application\ConnectOzonAccountResult;
+use App\Ingestion\Application\InitialBackfillWindow;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
+use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonProductListClient;
 use App\Tests\Support\Builder\CompanyBuilder;
@@ -20,6 +22,7 @@ use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Handler\TestHandler;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -50,6 +53,17 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
         self::assertContains(FetchOzonCatalogMessage::class, $dispatched);
         self::assertContains(FetchOzonPostingsMessage::class, $dispatched);
         self::assertContains(FetchOzonExpensesMessage::class, $dispatched);
+
+        // Возвраты принимают диапазон, а не один день: ровно одно
+        // сообщение на весь месяц, не по одному на день, и его границы —
+        // первый и последний день окна, а не перепутанные local от/до.
+        $returnsMessages = $this->dispatchedMessagesOf(FetchOzonReturnsMessage::class);
+        self::assertCount(1, $returnsMessages);
+
+        $businessDates = InitialBackfillWindow::businessDates(new \DateTimeImmutable());
+        $returns = $returnsMessages[0];
+        self::assertSame($businessDates[0], $returns->from);
+        self::assertSame($businessDates[\count($businessDates) - 1], $returns->to);
     }
 
     public function testRejectedKeyIsNotSaved(): void
@@ -78,6 +92,19 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
 
         self::assertSame(ConnectOzonAccountResult::Unavailable, $outcome->result);
         self::assertSame(0, $this->accountCount($companyId));
+        // Постановка загрузки — только после успешного сохранения:
+        // отказной путь не должен ставить ничего в очередь.
+        self::assertSame([], $this->dispatchedMessages());
+
+        // Сигнал уровня warning остаётся в журнале (см. docblock третьей
+        // ветви в ConnectOzonAccountAction), но секрет в него не попадает.
+        $handler = static::getContainer()->get('monolog.handler.in_memory');
+        self::assertInstanceOf(TestHandler::class, $handler);
+        self::assertTrue($handler->hasWarningThatContains('не ответил при проверке ключей'));
+        foreach ($handler->getRecords() as $record) {
+            self::assertStringNotContainsString('live-key', $record->message);
+            self::assertStringNotContainsString('live-key', (string) json_encode($record->context));
+        }
     }
 
     public function testCabinetOfAnotherCompanyIsReportedAsAlreadyConnected(): void
@@ -95,6 +122,30 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
 
         self::assertSame(ConnectOzonAccountResult::AlreadyConnected, $outcome->result);
         self::assertSame(0, $this->accountCount($companyId));
+        // Постановка загрузки — только после успешного сохранения:
+        // занятый кабинет не должен ставить ничего в очередь.
+        self::assertSame([], $this->dispatchedMessages());
+    }
+
+    public function testUnexpectedDefectIsNotHiddenAsUnavailable(): void
+    {
+        [$companyId, $userId] = $this->companyWithOwner();
+        // TypeError, Error, LogicException и подобные наши дефекты — это
+        // не «Ozon недоступен», и OzonAuthorizationFailure::isAuthorizationFailure()
+        // возвращает false для всего, что не является исключением
+        // HTTP-клиента. Такой отказ обязан дойти до трекера, а не
+        // спрятаться под благополучным на вид исходом Unavailable.
+        static::getContainer()->set(OzonProductListClient::class, new class implements OzonCatalogFetcher {
+            public function fetchPage(string $clientId, string $apiKey, string $lastId, int $limit = 1000): string
+            {
+                throw new \RuntimeException('неожиданный дефект нашего кода');
+            }
+        });
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('неожиданный дефект нашего кода');
+
+        ($this->action())($companyId, 'Мой магазин', 'shop-1', 'live-key', $userId);
     }
 
     /** @return list<string> */
@@ -107,6 +158,33 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
             static fn (object $envelope): string => $envelope->getMessage()::class,
             $transport->getSent(),
         ));
+    }
+
+    /**
+     * Сами объекты сообщений заданного класса, а не только имена: чтобы
+     * проверить количество и содержимое (например, from/to у одного
+     * сообщения возвратов), одних имён классов недостаточно.
+     *
+     * @template T of object
+     *
+     * @param class-string<T> $class
+     *
+     * @return list<T>
+     */
+    private function dispatchedMessagesOf(string $class): array
+    {
+        $transport = static::getContainer()->get('messenger.transport.async_ingestion');
+        self::assertInstanceOf(InMemoryTransport::class, $transport);
+
+        $messages = [];
+        foreach ($transport->getSent() as $envelope) {
+            $message = $envelope->getMessage();
+            if ($message instanceof $class) {
+                $messages[] = $message;
+            }
+        }
+
+        return $messages;
     }
 
     private function accountCount(string $companyId): int
