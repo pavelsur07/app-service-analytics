@@ -98,7 +98,15 @@ final readonly class ConnectOzonAccountAction
             return ConnectOzonAccountOutcome::failed(ConnectOzonAccountResult::AlreadyConnected);
         }
 
-        \assert(null !== $connection->accountId);
+        if (null === $connection->accountId) {
+            // `assert()` не годится здесь: в боевой конфигурации
+            // `zend.assertions=-1` компилирует его прочь, и проверка
+            // не выполняется вовсе. Настоящая проверка нужна, чтобы
+            // нарушенный инвариант дошёл до трекера как наш дефект,
+            // а не привёл к TypeError чуть ниже на передаче null
+            // в scheduleInitialBackfill(string $accountId).
+            throw new \LogicException('Нарушен инвариант: исход подключения Connected обязан нести accountId (MarketplaceAccountConnection::connected()), а пришёл пустым.');
+        }
         $this->scheduleInitialBackfill($companyId, $connection->accountId);
 
         return ConnectOzonAccountOutcome::connected($connection->accountId);
