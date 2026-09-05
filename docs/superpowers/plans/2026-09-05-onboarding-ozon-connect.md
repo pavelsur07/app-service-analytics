@@ -207,7 +207,6 @@ final class MarketplaceAccountUniquenessTest extends KernelTestCase
 
 ```bash
 make db-test-create && make api-migrate-test
-make api-console CMD="" # не нужен; тесты запускаются строкой ниже
 make test-int
 ```
 
@@ -1023,7 +1022,7 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
     /** @return list<string> */
     private function dispatchedMessages(): array
     {
-        $transport = static::getContainer()->get('messenger.transport.async');
+        $transport = static::getContainer()->get('messenger.transport.async_ingestion');
         self::assertInstanceOf(InMemoryTransport::class, $transport);
 
         return array_map(
@@ -1116,19 +1115,11 @@ make test-int
 
 Ожидание: класса `ConnectOzonAccountAction` не существует.
 
-Если `messenger.transport.async` в тестовом окружении не `InMemoryTransport`,
-добавь в `api/config/packages/test/messenger.yaml` (создай файл, если его
-нет):
-
-```yaml
-framework:
-    messenger:
-        transports:
-            async: 'in-memory://'
-```
-
-Это подмена транспорта только в тестах — маршрутизация сообщений
-и боевая конфигурация очереди не меняются.
+Конфигурацию очереди **не трогай**: блок `when@test` в
+`api/config/packages/messenger.yaml` уже задаёт
+`async_ingestion: 'in-memory://'`, и второго файла не нужно. Изменение
+конфигурации транспортов вдобавок является условием остановки
+по CLAUDE.md.
 
 - [ ] **Step 3: Добавить исходы сценария**
 
@@ -1277,21 +1268,30 @@ final readonly class ConnectOzonAccountAction
     {
         $this->bus->dispatch(new FetchOzonCatalogMessage($companyId, $accountId));
 
-        foreach (InitialBackfillWindow::businessDates(new \DateTimeImmutable()) as $businessDate) {
+        $businessDates = InitialBackfillWindow::businessDates(new \DateTimeImmutable());
+        foreach ($businessDates as $businessDate) {
             $this->bus->dispatch(new FetchOzonPostingsMessage($companyId, $accountId, $businessDate));
             $this->bus->dispatch(new FetchOzonExpensesMessage($companyId, $accountId, $businessDate));
-            $this->bus->dispatch(new FetchOzonReturnsMessage($companyId, $accountId, $businessDate));
+        }
+
+        // Возвраты принимают диапазон, а не один день (FetchOzonReturnsMessage:
+        // from/to), поэтому уходят одним сообщением на весь месяц. Тридцать
+        // сообщений с диапазоном в один день отработали бы, но потратили бы
+        // квоту площадки тридцатикратно.
+        $first = $businessDates[0] ?? null;
+        $last = $businessDates[\count($businessDates) - 1] ?? null;
+        if (null !== $first && null !== $last) {
+            $this->bus->dispatch(new FetchOzonReturnsMessage($companyId, $accountId, $first, $last));
         }
     }
 }
 ```
 
-**Важно:** сверь конструкторы `FetchOzonCatalogMessage`,
-`FetchOzonExpensesMessage` и `FetchOzonReturnsMessage` с их файлами
-в `api/src/Ingestion/Application/Message/` — у `FetchOzonPostingsMessage`
-это `(string $companyId, string $marketplaceAccountId, string $businessDate)`.
-Если у каталога сигнатура без даты, вызов выше уже верен; если она
-отличается, приведи вызовы к фактическим сигнатурам, а не наоборот.
+**Сигнатуры сообщений сверены при подготовке, менять их не нужно:**
+`FetchOzonCatalogMessage(companyId, marketplaceAccountId)`;
+`FetchOzonPostingsMessage(companyId, marketplaceAccountId, businessDate)`;
+`FetchOzonExpensesMessage(companyId, marketplaceAccountId, accrualDate)`;
+`FetchOzonReturnsMessage(companyId, marketplaceAccountId, from, to)`.
 
 - [ ] **Step 5: Убедиться, что тесты проходят**
 
@@ -2051,7 +2051,7 @@ export function useConnectAccount(companyId: string) {
 ```tsx
 import { useState } from 'react'
 import { CircleCheck, CircleX } from 'lucide-react'
-import { Navigate } from 'react-router'
+import { Navigate, useSearchParams } from 'react-router'
 
 import { ApiError } from '../../../api/ApiError'
 import {
@@ -2069,21 +2069,39 @@ import { useCurrentUser } from '../model/useCurrentUser'
  * компания без активного подключения не имеет содержательного экрана,
  * и пустой дашборд с нулями не показывается никогда.
  *
- * companyId в адресе /onboarding нет, а company-scoped запрос без него
- * невозможен. Берём единственную компанию: после саморегистрации она
- * ровно одна. Компаний больше — это работа экрана выбора, не онбординга.
+ * companyId в пути /onboarding нет, а company-scoped запрос без него
+ * невозможен. Источников два, и порядок между ними важен:
+ *
+ * 1. параметр ?company= — его ставит гейт CompanyLayout, который уже
+ *    знает, какая именно компания осталась без подключения;
+ * 2. единственная компания пользователя — после саморегистрации она
+ *    ровно одна.
+ *
+ * Без первого источника участник двух компаний попадал бы в петлю:
+ * гейт уводит сюда, здесь компаний больше одной, значит на /companies,
+ * оттуда снова в ту же компанию и снова на гейт.
  */
 export function OnboardingStartPage() {
   const currentUser = useCurrentUser()
+  const [searchParams] = useSearchParams()
 
   if (currentUser.status !== 'success') {
     return null
   }
 
   const companies = currentUser.data.companies
-  const company = companies[0]
+  const requested = searchParams.get('company')
 
-  if (company === undefined || companies.length > 1) {
+  // Параметр проверяется по членству, а не берётся на веру: адрес
+  // правит кто угодно, а companyId из него уходит в запрос.
+  const company =
+    requested !== null
+      ? companies.find((candidate) => candidate.id === requested)
+      : companies.length === 1
+        ? companies[0]
+        : undefined
+
+  if (company === undefined) {
     return <Navigate to="/companies" replace />
   }
 
@@ -2231,7 +2249,7 @@ git commit -m "Заменяет заглушку онбординга формо
 
 **Interfaces:**
 - Consumes: `useConnections(companyId)` (существует), форма из Task 6.
-- Produces: редирект на `/onboarding` для компании без подключений.
+- Produces: редирект на `/onboarding?company=<companyId>` для компании без подключений.
 
 - [ ] **Step 1: Написать падающий тест гейта**
 
@@ -2277,8 +2295,11 @@ function ConnectionGate({ companyId }: { companyId: string }) {
   // (ADR-021). Гейт стоит здесь, а не на каждом экране: забыть его
   // в одном новом экране — вопрос времени, а последствие — ровно те
   // нули, ради отсутствия которых он написан.
+  // companyId уходит параметром: онбординг обязан знать, какую именно
+  // компанию подключают, иначе участник двух компаний ходит по кругу
+  // между гейтом и экраном выбора.
   if (connections.status === 'success' && connections.data.items.length === 0) {
-    return <Navigate to="/onboarding" replace />
+    return <Navigate to={`/onboarding?company=${encodeURIComponent(companyId)}`} replace />
   }
 
   return <CompanyShell companyId={companyId} />
