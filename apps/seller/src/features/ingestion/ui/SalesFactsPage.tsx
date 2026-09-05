@@ -95,8 +95,13 @@ export function SalesFactsPage() {
             кабинета фактов ещё нет, и SalesFactsTable на пустом списке
             говорит «нет данных за период» — верно после реальной
             синхронизации, но не в первые минуты после подключения,
-            когда данных ещё не завезли. Эта ветка идёт раньше таблицы
-            и подменяет её ровно тогда, когда список пуст. */}
+            когда данных ещё не завезли. Тот же пустой ответ бывает
+            и у периода, в котором продаж просто не было — текст честен
+            для обоих случаев, не обещает загрузку там, где её нет.
+            Эта ветка идёт раньше таблицы и подменяет её ровно тогда,
+            когда список пуст; пагинация ниже — общая для обоих случаев
+            и рендерится независимо, чтобы кнопка «назад» на пустой
+            странице всегда оставляла путь обратно. */}
         {query.status === 'success' && query.data.items.length === 0 && (
           <Card>
             <StatusPanel
@@ -107,47 +112,48 @@ export function SalesFactsPage() {
                   size={20}
                 />
               }
-              title="Данные загружаются"
-              description="Мы забираем историю за текущий месяц. Экран наполнится сам — обновлять страницу не нужно."
+              title="Нет данных за этот период"
+              description="Возможно, за это время продаж не было. Если кабинет подключён только что, история ещё загружается — экран наполнится сам, обновлять страницу не нужно."
               tone="accent"
             />
           </Card>
         )}
 
         {query.status === 'success' && query.data.items.length > 0 && (
-          <>
-            <SalesFactsTable items={query.data.items} />
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                size="compact"
-                disabled={cursorStack.length <= 1}
-                onClick={() => {
-                  setCursorStack((stack) =>
-                    stack.length > 1 ? stack.slice(0, -1) : stack,
-                  )
-                }}
-              >
-                <ChevronLeft aria-hidden="true" size={16} />
-                Назад
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="compact"
-                disabled={nextCursor === null}
-                onClick={() => {
-                  if (nextCursor !== null) {
-                    setCursorStack((stack) => [...stack, nextCursor])
-                  }
-                }}
-              >
-                Дальше
-                <ChevronRight aria-hidden="true" size={16} />
-              </Button>
-            </div>
-          </>
+          <SalesFactsTable items={query.data.items} />
+        )}
+
+        {query.status === 'success' && (
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="compact"
+              disabled={cursorStack.length <= 1}
+              onClick={() => {
+                setCursorStack((stack) =>
+                  stack.length > 1 ? stack.slice(0, -1) : stack,
+                )
+              }}
+            >
+              <ChevronLeft aria-hidden="true" size={16} />
+              Назад
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="compact"
+              disabled={nextCursor === null}
+              onClick={() => {
+                if (nextCursor !== null) {
+                  setCursorStack((stack) => [...stack, nextCursor])
+                }
+              }}
+            >
+              Дальше
+              <ChevronRight aria-hidden="true" size={16} />
+            </Button>
+          </div>
         )}
       </div>
     </div>
