@@ -11,6 +11,7 @@ import { MonthlyClicksTable } from './MonthlyClicksTable'
 
 export function LinksPage() {
   const [page, setPage] = useState(1)
+  const [creatingLink, setCreatingLink] = useState(false)
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null)
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null)
   const [month, setMonth] = useState(currentUtcMonth)
@@ -25,41 +26,47 @@ export function LinksPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-xl font-semibold">Ссылки</h1>
-        <p className="mt-1 text-sm text-text-muted">
-          Короткие адреса для рассылок и переходы по дням.
-        </p>
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold">Ссылки</h1>
+          <p className="mt-1 text-sm text-text-muted">
+            Короткие адреса для рассылок и переходы по дням.
+          </p>
+        </div>
+        <Button
+          onClick={() => {
+            setCreatingLink(true)
+          }}
+          type="button"
+        >
+          Новая ссылка
+        </Button>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {creatingLink && (
         <CreateLinkForm
+          onCancel={() => {
+            setCreatingLink(false)
+          }}
           onCreated={(linkId) => {
             setPage(1)
             setSelectedLinkId(linkId)
+            setCreatingLink(false)
           }}
         />
-        {editingLink === undefined ? (
-          <Card>
-            <StatusPanel
-              description="Нажмите «Изменить» в строке нужной ссылки."
-              icon={<Link2 aria-hidden="true" size={20} />}
-              title="Редактирование"
-            />
-          </Card>
-        ) : (
-          <EditLinkForm
-            key={editingLink.id}
-            link={editingLink}
-            onCancel={() => {
-              setEditingLinkId(null)
-            }}
-            onSaved={() => {
-              setEditingLinkId(null)
-            }}
-          />
-        )}
-      </div>
+      )}
+      {editingLink !== undefined && (
+        <EditLinkForm
+          key={editingLink.id}
+          link={editingLink}
+          onCancel={() => {
+            setEditingLinkId(null)
+          }}
+          onSaved={() => {
+            setEditingLinkId(null)
+          }}
+        />
+      )}
 
       <Card>
         <h2 className="mb-4 text-lg font-semibold">Короткие ссылки</h2>
@@ -96,7 +103,7 @@ export function LinksPage() {
 
         {links.status === 'success' && links.data.items.length === 0 && (
           <StatusPanel
-            description="Создайте первую ссылку формой выше."
+            description="Нажмите «Новая ссылка», чтобы создать первую ссылку."
             icon={<Link2 aria-hidden="true" size={20} />}
             title="Ссылок пока нет"
           />

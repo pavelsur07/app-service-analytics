@@ -1,10 +1,11 @@
 import { CircleAlert } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 
-import { Button, Card, Input } from '../../../../../../packages/ui/src'
+import { Button, Input } from '../../../../../../packages/ui/src'
 import { ApiError } from '../../../api/ApiError'
 import type { ShortLink } from '../model/useLinks'
 import { useUpdateLink } from '../model/useUpdateLink'
+import { LinkFormDialog } from './LinkFormDialog'
 
 interface EditLinkFormValues {
   name: string
@@ -37,7 +38,11 @@ export function EditLinkForm({
   })
 
   return (
-    <Card>
+    <LinkFormDialog
+      busy={updateLink.isPending}
+      onClose={onCancel}
+      title="Изменить ссылку"
+    >
       <form
         className="flex flex-col gap-4"
         noValidate
@@ -45,7 +50,6 @@ export function EditLinkForm({
           void onSubmit(event)
         }}
       >
-        <h2 className="text-lg font-semibold">Изменить ссылку</h2>
         <Input
           error={errors.name?.message}
           label="Название ссылки для изменения"
@@ -89,6 +93,6 @@ export function EditLinkForm({
           </Button>
         </div>
       </form>
-    </Card>
+    </LinkFormDialog>
   )
 }

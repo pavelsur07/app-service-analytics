@@ -479,7 +479,8 @@ apps/admin/src/
 │   ├── auth/           вход, выход
 │   ├── accounts/       список аккаунтов, регистрация, блокировка
 │   ├── administrators/ SuperAdmin заводит Admin
-│   └── links/          короткие ссылки и переходы по дням месяца
+│   └── links/          короткие ссылки и переходы по дням месяца;
+│                       формы создания и изменения в локальном LinkFormDialog
 ├── shared/
 │   ├── lib/            adminQueryKey, форматирование
 │   └── model/          useCurrentAdmin — «кто я», нужен и оболочке,

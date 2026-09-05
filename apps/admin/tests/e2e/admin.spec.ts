@@ -74,8 +74,32 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
 
   const campaignName = `E2E Campaign ${String(stamp)}`
   const campaignNameUpdated = `${campaignName} updated`
-  await page.getByLabel('Название ссылки').fill(campaignName)
-  await page
+  const newLinkButton = page.getByRole('button', { name: 'Новая ссылка' })
+  const createDialog = page.getByRole('dialog', { name: 'Новая ссылка' })
+  await expect(page.getByLabel('Название ссылки', { exact: true })).toHaveCount(
+    0,
+  )
+  await expect(page.getByText('Редактирование', { exact: true })).toHaveCount(0)
+  await newLinkButton.click()
+  await expect(createDialog).toBeVisible()
+  await expect(createDialog.getByLabel('Название ссылки')).toBeFocused()
+  await createDialog.getByLabel('Название ссылки').fill('Черновик')
+  await page.keyboard.press('Escape')
+  await expect(createDialog).toHaveCount(0)
+  await expect(newLinkButton).toBeFocused()
+  await newLinkButton.click()
+  await expect(createDialog.getByLabel('Название ссылки')).toHaveValue('')
+  await createDialog.getByRole('button', { name: 'Закрыть' }).click()
+  await expect(createDialog).toHaveCount(0)
+  await newLinkButton.click()
+  await createDialog.getByRole('button', { name: 'Отмена' }).click()
+  await expect(createDialog).toHaveCount(0)
+  await newLinkButton.click()
+  await createDialog.getByRole('button', { name: 'Создать ссылку' }).click()
+  await expect(createDialog.getByText('Введите название')).toBeVisible()
+  await expect(createDialog.getByText('Введите адрес назначения')).toBeVisible()
+  await createDialog.getByLabel('Название ссылки').fill(campaignName)
+  await createDialog
     .getByLabel('Адрес назначения')
     .fill('https://example.com/e2e-campaign')
   const createLinkResponse = page.waitForResponse(
@@ -91,6 +115,7 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
 
   const linkRow = page.getByRole('row').filter({ hasText: campaignName })
   await expect(linkRow).toBeVisible()
+  await expect(createDialog).toHaveCount(0)
 
   // Другая вкладка успела изменить ссылку: первый клик из
   // устаревшего UI получит 409, после чего строка сама подтянет
@@ -130,12 +155,40 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
   await page.reload()
   await expect(todayRow.getByRole('cell').last()).toHaveText('1')
 
-  await linkRow.getByRole('button', { name: 'Редактировать' }).click()
-  await page
+  const editButton = linkRow.getByRole('button', { name: 'Редактировать' })
+  const editDialog = page.getByRole('dialog', { name: 'Изменить ссылку' })
+  await expect(editDialog).toHaveCount(0)
+  await editButton.click()
+  await expect(editDialog).toBeVisible()
+  await expect(
+    editDialog.getByLabel('Название ссылки для изменения'),
+  ).toHaveValue(campaignName)
+  await expect(
+    editDialog.getByLabel('Адрес назначения для изменения'),
+  ).toHaveValue('https://example.com/e2e-campaign')
+  await editDialog
+    .getByLabel('Название ссылки для изменения')
+    .fill('Не сохранять')
+  await editDialog.getByRole('button', { name: 'Отмена' }).click()
+  await expect(editDialog).toHaveCount(0)
+  await expect(editButton).toBeFocused()
+  await expect(linkRow).toContainText(campaignName)
+  await editButton.click()
+  await expect(
+    editDialog.getByLabel('Название ссылки для изменения'),
+  ).toHaveValue(campaignName)
+  await page.keyboard.press('Escape')
+  await expect(editDialog).toHaveCount(0)
+  await editButton.click()
+  await editDialog.getByRole('button', { name: 'Закрыть' }).click()
+  await expect(editDialog).toHaveCount(0)
+  await editButton.click()
+  await editDialog
     .getByLabel('Название ссылки для изменения')
     .fill(campaignNameUpdated)
   await page.getByRole('button', { name: 'Сохранить изменения' }).click()
   await expect(linkRow).toContainText(campaignNameUpdated)
+  await expect(editDialog).toHaveCount(0)
 
   await linkRow.getByRole('button', { name: 'Отключить' }).click()
   await expect(linkRow).toContainText('отключена')
