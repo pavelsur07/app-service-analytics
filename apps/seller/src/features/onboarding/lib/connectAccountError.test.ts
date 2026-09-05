@@ -25,6 +25,20 @@ describe('connectAccountFailure', () => {
     )
   })
 
+  // Боевой инцидент: проба покрывала только товары, ключ без права
+  // на финансы прошёл проверку и подключение сломалось через секунды.
+  // У каждой из трёх новых областей — свой код и своё название права.
+  it.each([
+    ['credentials_rejected_sales', 'продажи'],
+    ['credentials_rejected_expenses', 'финансы'],
+    ['credentials_rejected_returns', 'возвраты'],
+  ] as const)('называет область для кода %s', (code, area) => {
+    const failure = connectAccountFailure(code)
+
+    expect(failure.title).toContain(area)
+    expect(failure.description).toContain('Подключение не создано')
+  })
+
   it('не обещает лишнего на незнакомом коде', () => {
     // Ответ без тела: упала сеть, прокси отдал HTML. Обещать, что ничего
     // не сохранилось, здесь нельзя — неизвестно, дошёл ли запрос.

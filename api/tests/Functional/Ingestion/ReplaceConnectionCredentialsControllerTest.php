@@ -13,7 +13,13 @@ use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Ingestion\Domain\OzonCatalogFetcher;
+use App\Ingestion\Domain\OzonExpensesFetcher;
+use App\Ingestion\Domain\OzonPostingsFetcher;
+use App\Ingestion\Domain\OzonReturnsFetcher;
+use App\Ingestion\Infrastructure\Connector\Ozon\OzonAccrualByDayClient;
+use App\Ingestion\Infrastructure\Connector\Ozon\OzonPostingFboListClient;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonProductListClient;
+use App\Ingestion\Infrastructure\Connector\Ozon\OzonReturnsListClient;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
@@ -38,7 +44,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         $client = static::createClient();
         $company = $this->loginAsCompanyMember($client);
         $account = $this->connection($company, MarketplaceAccountState::Broken);
-        $this->ozonAnswers(200);
+        $this->allScopesSucceed();
 
         $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'fresh-key', 'version' => 1]);
 
@@ -58,7 +64,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         // Площадка отвергла ключ. Сохранить его значило бы вернуть
         // подключение в работу, дать синхронизации упасть на первом
         // запросе и снова сломать его — клиент решил бы, что дело в нас.
-        $this->ozonAnswers(401);
+        $this->stubCatalog(401);
 
         $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'wrong-key', 'version' => 1]);
 
@@ -67,12 +73,70 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         self::assertSame($before, $this->ciphertext($account));
     }
 
+    /**
+     * Боевой инцидент: единственная проба каталога не отличала бы ключ
+     * без права на продажи от полностью рабочего — подключение оживилось
+     * бы на несколько секунд и сломалось на первом реальном запросе.
+     */
+    public function testSalesScopeRejectionReturnsItsOwnCodeAndKeepsConnectionBroken(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Broken);
+        $before = $this->ciphertext($account);
+        $this->stubCatalog(200);
+        $this->stubPostings(401);
+
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'sales-scope-missing', 'version' => 1]);
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        self::assertSame('broken', $this->state($account));
+        self::assertSame($before, $this->ciphertext($account));
+
+        $content = $client->getResponse()->getContent();
+        self::assertIsString($content);
+        /** @var array{code: string} $payload */
+        $payload = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('credentials_rejected_sales', $payload['code']);
+    }
+
+    public function testExpensesScopeRejectionDoesNotReviveTheConnection(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Broken);
+        $this->stubCatalog(200);
+        $this->stubPostings(200);
+        $this->stubExpenses(403);
+
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'expenses-scope-missing', 'version' => 1]);
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        self::assertSame('broken', $this->state($account));
+    }
+
+    public function testReturnsScopeRejectionDoesNotReviveTheConnection(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Broken);
+        $this->stubCatalog(200);
+        $this->stubPostings(200);
+        $this->stubExpenses(200);
+        $this->stubReturns(401);
+
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'returns-scope-missing', 'version' => 1]);
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        self::assertSame('broken', $this->state($account));
+    }
+
     public function testReplacementIsWrittenToTheAuditJournal(): void
     {
         $client = static::createClient();
         $company = $this->loginAsCompanyMember($client);
         $account = $this->connection($company, MarketplaceAccountState::Active);
-        $this->ozonAnswers(200);
+        $this->allScopesSucceed();
 
         $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'rotated-key', 'version' => 1]);
 
@@ -100,7 +164,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         $client = static::createClient();
         $company = $this->loginAsCompanyMember($client);
         $account = $this->connection($company, MarketplaceAccountState::Broken);
-        $this->ozonAnswers(200);
+        $this->allScopesSucceed();
 
         $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'SUPER-SECRET-KEY', 'version' => 1]);
 
@@ -122,7 +186,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
             CompanyBuilder::aCompany()->persistWith($this->companies()),
             MarketplaceAccountState::Broken,
         );
-        $this->ozonAnswers(200);
+        $this->allScopesSucceed();
 
         $this->put($client, $company, $foreign, ['clientId' => 'shop-1', 'apiKey' => 'fresh-key', 'version' => 1]);
 
@@ -150,7 +214,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         // Ключ другого кабинета живой и проверку у площадки прошёл бы.
         // Сохранив его, мы писали бы данные чужого магазина под это
         // подключение — аналитика испортилась бы молча.
-        $this->ozonAnswers(200);
+        $this->allScopesSucceed();
 
         $this->put($client, $company, $account, ['clientId' => 'another-shop', 'apiKey' => 'live-key', 'version' => 1]);
 
@@ -168,7 +232,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         $client->disableReboot();
         $company = $this->loginAsCompanyMember($client);
         $account = $this->connection($company, MarketplaceAccountState::Broken);
-        $this->ozonAnswers(200);
+        $this->allScopesSucceed();
 
         // ADR-008: двое открыли форму, первый сохранил. Второй обязан
         // получить конфликт, а не молча затереть чужую правку.
@@ -199,7 +263,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         $client = static::createClient();
         $company = $this->loginAsCompanyMember($client);
         $account = $this->connection($company, MarketplaceAccountState::Revoked);
-        $this->ozonAnswers(200);
+        $this->allScopesSucceed();
 
         // Отзыв необратим (ADR-011). Ответить успехом, оставив подключение
         // отключённым, — худший из исходов: клиент уверен, что починил.
@@ -222,12 +286,17 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         );
     }
 
-    private function ozonAnswers(int $status): void
+    private function allScopesSucceed(): void
     {
-        $body = 200 === $status
-            ? '{"result":{"items":[],"total":0,"last_id":""}}'
-            : '{"code":16,"message":"unauthenticated"}';
+        $this->stubCatalog(200);
+        $this->stubPostings(200);
+        $this->stubExpenses(200);
+        $this->stubReturns(200);
+    }
 
+    private function stubCatalog(int $status): void
+    {
+        $body = $this->bodyFor($status);
         static::getContainer()->set(OzonProductListClient::class, new class($body, $status) implements OzonCatalogFetcher {
             public function __construct(
                 private readonly string $body,
@@ -242,6 +311,76 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
                 return $client->request('POST', 'https://api-seller.ozon.ru/v3/product/list')->getContent();
             }
         });
+    }
+
+    private function stubPostings(int $status): void
+    {
+        $body = $this->bodyFor($status);
+        static::getContainer()->set(OzonPostingFboListClient::class, new class($body, $status) implements OzonPostingsFetcher {
+            public function __construct(
+                private readonly string $body,
+                private readonly int $status,
+            ) {
+            }
+
+            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            {
+                $client = new MockHttpClient(new MockResponse($this->body, ['http_code' => $this->status]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v2/posting/fbo/list')->getContent();
+            }
+        });
+    }
+
+    private function stubExpenses(int $status): void
+    {
+        $body = $this->bodyFor($status);
+        static::getContainer()->set(OzonAccrualByDayClient::class, new class($body, $status) implements OzonExpensesFetcher {
+            public function __construct(
+                private readonly string $body,
+                private readonly int $status,
+            ) {
+            }
+
+            public function fetchDay(string $clientId, string $apiKey, \DateTimeImmutable $day, string $lastId): string
+            {
+                $client = new MockHttpClient(new MockResponse($this->body, ['http_code' => $this->status]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v1/finance/accrual/by-day')->getContent();
+            }
+        });
+    }
+
+    private function stubReturns(int $status): void
+    {
+        $body = $this->bodyFor($status);
+        static::getContainer()->set(OzonReturnsListClient::class, new class($body, $status) implements OzonReturnsFetcher {
+            public function __construct(
+                private readonly string $body,
+                private readonly int $status,
+            ) {
+            }
+
+            public function fetchPage(
+                string $clientId,
+                string $apiKey,
+                \DateTimeImmutable $from,
+                \DateTimeImmutable $to,
+                int $lastId,
+                int $limit = self::MAX_LIMIT,
+            ): string {
+                $client = new MockHttpClient(new MockResponse($this->body, ['http_code' => $this->status]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v1/returns/list')->getContent();
+            }
+        });
+    }
+
+    private function bodyFor(int $status): string
+    {
+        return 200 === $status
+            ? '{"result":{"items":[],"total":0,"last_id":""}}'
+            : '{"code":16,"message":"unauthenticated"}';
     }
 
     private function connection(Company $company, MarketplaceAccountState $state): MarketplaceAccount

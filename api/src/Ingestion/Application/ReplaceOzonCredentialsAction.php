@@ -9,6 +9,9 @@ use App\Identity\Application\Facade\CredentialsReplacementOutcome;
 use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
+use App\Ingestion\Domain\OzonExpensesFetcher;
+use App\Ingestion\Domain\OzonPostingsFetcher;
+use App\Ingestion\Domain\OzonReturnsFetcher;
 
 /**
  * Замена ключей Ozon клиентом: убедиться, что ключ живой и от этого
@@ -22,13 +25,30 @@ use App\Ingestion\Domain\OzonCatalogFetcher;
  * Живёт в Ingestion, хотя меняет данные Identity: проверка требует похода
  * в площадку, а клиент площадки принадлежит Ingestion. Обратное
  * направление запрещено — зависимости строго вниз.
+ *
+ * **Проба покрывает все четыре области синхронизации, а не одну** —
+ * тот же приём и то же обоснование, что у ConnectOzonAccountAction:
+ * замена ключа, прошедшего только товарную область, оживила бы
+ * подключение на несколько секунд и сломала бы его снова на первом же
+ * реальном запросе продаж, расходов или возвратов. `/v3/product/info/list`
+ * отдельной пробой не идёт по той же причине — см. docblock
+ * ConnectOzonAccountAction.
+ *
+ * Отказы, отличные от 401/403, здесь не превращаются в отдельный исход
+ * `Unavailable`: этот контракт эндпоинта уже используется фронтендом,
+ * и его расширение — отдельное решение (CLAUDE.md, «Когда остановиться
+ * и спросить»). Лимит запросов, сбой площадки, обрыв сети остаются
+ * исключениями и пробрасываются, как и раньше.
  */
 final readonly class ReplaceOzonCredentialsAction
 {
     private const int PROBE_LIMIT = 1;
 
     public function __construct(
-        private OzonCatalogFetcher $client,
+        private OzonCatalogFetcher $catalogFetcher,
+        private OzonPostingsFetcher $postingsFetcher,
+        private OzonExpensesFetcher $expensesFetcher,
+        private OzonReturnsFetcher $returnsFetcher,
         private IdentityFacade $identityFacade,
     ) {
     }
@@ -54,18 +74,9 @@ final readonly class ReplaceOzonCredentialsAction
             return ReplaceCredentialsResult::WrongCabinet;
         }
 
-        try {
-            $this->client->fetchPage($clientId, $apiKey, '', self::PROBE_LIMIT);
-        } catch (\Throwable $failure) {
-            if (OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
-                return ReplaceCredentialsResult::Rejected;
-            }
-
-            // Остальные отказы — не «ключ неверен»: лимит запросов, сбой
-            // площадки, обрыв сети. Сказать клиенту «ключ не подошёл»
-            // в этот момент означало бы отправить его выпускать новый
-            // вместо того, чтобы подождать.
-            throw $failure;
+        $rejected = $this->probeAllScopes($clientId, $apiKey);
+        if (null !== $rejected) {
+            return $rejected;
         }
 
         return match ($this->identityFacade->replaceMarketplaceCredentials(
@@ -80,6 +91,56 @@ final readonly class ReplaceOzonCredentialsAction
             CredentialsReplacementOutcome::Revoked => ReplaceCredentialsResult::Revoked,
             CredentialsReplacementOutcome::VersionConflict => ReplaceCredentialsResult::VersionConflict,
         };
+    }
+
+    /**
+     * Последовательные пробы до первого отказа, тот же порядок и те же
+     * минимальные окна, что у ConnectOzonAccountAction. `null` означает,
+     * что все четыре области подтверждены.
+     */
+    private function probeAllScopes(string $clientId, string $apiKey): ?ReplaceCredentialsResult
+    {
+        $now = new \DateTimeImmutable();
+        $probeSince = $now->modify('-1 minute');
+
+        try {
+            $this->catalogFetcher->fetchPage($clientId, $apiKey, '', self::PROBE_LIMIT);
+        } catch (\Throwable $failure) {
+            return $this->rejectedOrRethrow($failure, ReplaceCredentialsResult::Rejected);
+        }
+
+        try {
+            $this->postingsFetcher->fetch($clientId, $apiKey, $probeSince, $now);
+        } catch (\Throwable $failure) {
+            return $this->rejectedOrRethrow($failure, ReplaceCredentialsResult::RejectedSales);
+        }
+
+        try {
+            $this->expensesFetcher->fetchDay($clientId, $apiKey, $now, '');
+        } catch (\Throwable $failure) {
+            return $this->rejectedOrRethrow($failure, ReplaceCredentialsResult::RejectedExpenses);
+        }
+
+        try {
+            $this->returnsFetcher->fetchPage($clientId, $apiKey, $probeSince, $now, 0, self::PROBE_LIMIT);
+        } catch (\Throwable $failure) {
+            return $this->rejectedOrRethrow($failure, ReplaceCredentialsResult::RejectedReturns);
+        }
+
+        return null;
+    }
+
+    private function rejectedOrRethrow(\Throwable $failure, ReplaceCredentialsResult $rejected): ReplaceCredentialsResult
+    {
+        if (OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
+            return $rejected;
+        }
+
+        // Остальные отказы — не «ключ неверен»: лимит запросов, сбой
+        // площадки, обрыв сети. Сказать клиенту «ключ не подошёл»
+        // в этот момент означало бы отправить его выпускать новый
+        // вместо того, чтобы подождать.
+        throw $failure;
     }
 
     private function connectionOf(string $companyId, string $marketplaceAccountId): ?CompanyConnection

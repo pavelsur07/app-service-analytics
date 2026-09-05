@@ -12,6 +12,9 @@ use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
+use App\Ingestion\Domain\OzonExpensesFetcher;
+use App\Ingestion\Domain\OzonPostingsFetcher;
+use App\Ingestion\Domain\OzonReturnsFetcher;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
@@ -27,12 +30,43 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  * в площадку, клиент площадки принадлежит Ingestion, а зависимости
  * строго вниз.
  *
- * Проба различает три ветви отказа, а не две, — по тому, кто должен
- * узнать об отказе и как:
+ * **Проба покрывает все четыре области синхронизации, а не одну.**
+ * Инцидент на проде: ключ прошёл `/v3/product/list`, подключение
+ * создалось активным, а первая же реальная синхронизация упала
+ * на финансовом эндпоинте — в Ozon права на финансы выдаются отдельно
+ * от товарных. Поэтому пробы идут последовательно, до первого отказа,
+ * по каждой нужной синхронизации области:
  *
- * 1. `OzonAuthorizationFailure` (401/403) — ключ отклонён самой площадкой.
- *    Клиенту нужно другое действие (перевыпустить ключ), поэтому это
- *    отдельный исход `Rejected`.
+ * 1. Товары — `/v3/product/list` (`OzonCatalogFetcher`).
+ * 2. Продажи — `/v2/posting/fbo/list` (`OzonPostingsFetcher`).
+ * 3. Расходы — `/v1/finance/accrual/by-day` (`OzonExpensesFetcher`).
+ * 4. Возвраты — `/v1/returns/list` (`OzonReturnsFetcher`).
+ *
+ * **`/v3/product/info/list` (карточки товаров) отдельной пробой не идёт.**
+ * В Ozon это та же товарная область доступа, что и `/v3/product/list` —
+ * оба эндпоинта читают карточки продавца, разделения прав между ними
+ * площадка не делает. Отдельная проба потребовала бы настоящих
+ * `product_id`, которых на этапе подключения ещё нет: пустой список
+ * идентификаторов эндпоинт отвергает с 400 (ошибка параметров, не
+ * авторизации), и различить эту ошибку от реального отказа права
+ * пришлось бы эвристикой по телу ответа — источник, которому в тестах
+ * ADR-005 нечего противопоставить, кроме зафиксированного текста ошибки
+ * площадки. Цена отдельной пробы больше её пользы: право на товары уже
+ * проверено первым запросом.
+ *
+ * Каждая проба идёт своим последовательным запросом (не параллельно):
+ * первый же отказ решает исход, и параллельные запросы тратили бы квоту
+ * подключения (ADR-006) на пробы, ответ которых уже не нужен.
+ * У проб продаж, расходов и возвратов — минимально возможное окно
+ * и лимит: это проверка права, а не загрузка данных.
+ *
+ * Проба различает три ветви отказа на каждом шаге, а не две, — по тому,
+ * кто должен узнать об отказе и как:
+ *
+ * 1. `OzonAuthorizationFailure` (401/403) — ключ отклонён самой площадкой
+ *    для конкретной области. Клиенту нужно другое действие (включить
+ *    право и перевыпустить ключ), поэтому это отдельный исход `Rejected*`
+ *    со своим текстом на каждую область.
  * 2. Любой другой отказ HTTP-клиента (сеть, таймаут, лимит запросов,
  *    прочие 4xx и 5xx) — площадка не ответила по причине, которая лечится
  *    повтором, а не новым ключом. `Unavailable` — ожидаемое доменное
@@ -51,7 +85,10 @@ final readonly class ConnectOzonAccountAction
     private const int PROBE_LIMIT = 1;
 
     public function __construct(
-        private OzonCatalogFetcher $client,
+        private OzonCatalogFetcher $catalogFetcher,
+        private OzonPostingsFetcher $postingsFetcher,
+        private OzonExpensesFetcher $expensesFetcher,
+        private OzonReturnsFetcher $returnsFetcher,
         private IdentityFacade $identityFacade,
         private MessageBusInterface $bus,
         private LoggerInterface $logger,
@@ -65,32 +102,9 @@ final readonly class ConnectOzonAccountAction
         string $apiKey,
         string $actorUserId,
     ): ConnectOzonAccountOutcome {
-        try {
-            $this->client->fetchPage($clientId, $apiKey, '', self::PROBE_LIMIT);
-        } catch (\Throwable $failure) {
-            if (OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
-                return ConnectOzonAccountOutcome::failed(ConnectOzonAccountResult::Rejected);
-            }
-
-            if (!$failure instanceof HttpClientExceptionInterface) {
-                // Не «площадка недоступна» — наш дефект (опечатка в коде,
-                // отсутствующий метод, нарушенный инвариант). Он обязан
-                // выглядеть как наш: дойти до трекера и стать 500,
-                // а не спрятаться под благополучным на вид исходом.
-                throw $failure;
-            }
-
-            // Лимит запросов, сбой площадки, обрыв сети, прочие отказы
-            // HTTP-клиента. В отличие от замены ключей, недоступность
-            // здесь не пробрасывается исключением: ADR-021 требует именно
-            // трёх различимых исходов, а 500 не может честно сказать
-            // «попробуйте позже». api_key в журнал не попадает ни в каком
-            // виде; request_id и company_id добавляет RequestContextProcessor.
-            $this->logger->warning('Ozon не ответил при проверке ключей подключения', [
-                'client_id' => $clientId,
-            ]);
-
-            return ConnectOzonAccountOutcome::failed(ConnectOzonAccountResult::Unavailable);
+        $failure = $this->probeAllScopes($clientId, $apiKey);
+        if (null !== $failure) {
+            return ConnectOzonAccountOutcome::failed($failure);
         }
 
         $connection = $this->identityFacade->connectOzonAccount($companyId, $name, $clientId, $apiKey, $actorUserId);
@@ -110,6 +124,82 @@ final readonly class ConnectOzonAccountAction
         $this->scheduleInitialBackfill($companyId, $connection->accountId);
 
         return ConnectOzonAccountOutcome::connected($connection->accountId);
+    }
+
+    /**
+     * Последовательные пробы до первого отказа. `null` означает, что все
+     * четыре области подтверждены и можно сохранять подключение.
+     */
+    private function probeAllScopes(string $clientId, string $apiKey): ?ConnectOzonAccountResult
+    {
+        $now = new \DateTimeImmutable();
+        // Минимально возможное окно — проверка права, а не загрузка данных
+        // (квота подключения не бесплатна, ADR-006).
+        $probeSince = $now->modify('-1 minute');
+        $probeDay = $now;
+
+        try {
+            $this->catalogFetcher->fetchPage($clientId, $apiKey, '', self::PROBE_LIMIT);
+        } catch (\Throwable $failure) {
+            return $this->classifyProbeFailure($failure, ConnectOzonAccountResult::Rejected, $clientId, 'products');
+        }
+
+        try {
+            $this->postingsFetcher->fetch($clientId, $apiKey, $probeSince, $now);
+        } catch (\Throwable $failure) {
+            return $this->classifyProbeFailure($failure, ConnectOzonAccountResult::RejectedSales, $clientId, 'sales');
+        }
+
+        try {
+            $this->expensesFetcher->fetchDay($clientId, $apiKey, $probeDay, '');
+        } catch (\Throwable $failure) {
+            return $this->classifyProbeFailure($failure, ConnectOzonAccountResult::RejectedExpenses, $clientId, 'expenses');
+        }
+
+        try {
+            $this->returnsFetcher->fetchPage($clientId, $apiKey, $probeSince, $now, 0, self::PROBE_LIMIT);
+        } catch (\Throwable $failure) {
+            return $this->classifyProbeFailure($failure, ConnectOzonAccountResult::RejectedReturns, $clientId, 'returns');
+        }
+
+        return null;
+    }
+
+    /**
+     * Общая ветвь для каждой из четырёх проб: которая из них не прошла
+     * решает вызывающий метод (передаёт свой `$rejectedResult` и имя
+     * области для журнала), а не эта функция.
+     */
+    private function classifyProbeFailure(
+        \Throwable $failure,
+        ConnectOzonAccountResult $rejectedResult,
+        string $clientId,
+        string $scope,
+    ): ConnectOzonAccountResult {
+        if (OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
+            return $rejectedResult;
+        }
+
+        if (!$failure instanceof HttpClientExceptionInterface) {
+            // Не «площадка недоступна» — наш дефект (опечатка в коде,
+            // отсутствующий метод, нарушенный инвариант). Он обязан
+            // выглядеть как наш: дойти до трекера и стать 500,
+            // а не спрятаться под благополучным на вид исходом.
+            throw $failure;
+        }
+
+        // Лимит запросов, сбой площадки, обрыв сети, прочие отказы
+        // HTTP-клиента. В отличие от замены ключей, недоступность
+        // здесь не пробрасывается исключением: ADR-021 требует именно
+        // различимых исходов, а 500 не может честно сказать
+        // «попробуйте позже». api_key в журнал не попадает ни в каком
+        // виде; request_id и company_id добавляет RequestContextProcessor.
+        $this->logger->warning('Ozon не ответил при проверке ключей подключения', [
+            'client_id' => $clientId,
+            'scope' => $scope,
+        ]);
+
+        return ConnectOzonAccountResult::Unavailable;
     }
 
     /**

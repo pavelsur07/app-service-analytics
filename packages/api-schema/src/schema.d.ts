@@ -1449,7 +1449,7 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
-            /** @description Площадка не приняла ключ либо тело запроса неполное */
+            /** @description Площадка не приняла ключ (целиком или на отдельной области — товары/продажи/расходы/возвраты, код называет какой: credentials_rejected, credentials_rejected_sales, credentials_rejected_expenses, credentials_rejected_returns) либо тело запроса неполное */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1829,7 +1829,7 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
-            /** @description Площадка не приняла ключ либо тело запроса неполное */
+            /** @description Площадка не приняла ключ (целиком или на отдельной области — товары/продажи/расходы/возвраты, код называет какой: credentials_rejected, credentials_rejected_sales, credentials_rejected_expenses, credentials_rejected_returns) либо тело запроса неполное */
             422: {
                 headers: {
                     [name: string]: unknown;
