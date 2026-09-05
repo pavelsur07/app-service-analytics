@@ -1,8 +1,9 @@
-import { CircleAlert, CircleCheck } from 'lucide-react'
+import { CircleAlert } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 
-import { Button, Card, Input } from '../../../../../../packages/ui/src'
+import { Button, Input } from '../../../../../../packages/ui/src'
 import { useCreateLink } from '../model/useCreateLink'
+import { LinkFormDialog } from './LinkFormDialog'
 
 interface CreateLinkFormValues {
   name: string
@@ -11,8 +12,10 @@ interface CreateLinkFormValues {
 
 export function CreateLinkForm({
   onCreated,
+  onCancel,
 }: {
   onCreated: (linkId: string) => void
+  onCancel: () => void
 }) {
   const createLink = useCreateLink()
   const {
@@ -32,7 +35,11 @@ export function CreateLinkForm({
   })
 
   return (
-    <Card>
+    <LinkFormDialog
+      busy={createLink.isPending}
+      onClose={onCancel}
+      title="Новая ссылка"
+    >
       <form
         className="flex flex-col gap-4"
         noValidate
@@ -40,12 +47,9 @@ export function CreateLinkForm({
           void onSubmit(event)
         }}
       >
-        <div>
-          <h2 className="text-lg font-semibold">Новая ссылка</h2>
-          <p className="mt-1 text-sm text-text-muted">
-            Короткий адрес создаётся на lin.conwix.com.
-          </p>
-        </div>
+        <p className="text-sm text-text-muted">
+          Короткий адрес создаётся на lin.conwix.com.
+        </p>
 
         <Input
           error={errors.name?.message}
@@ -74,20 +78,20 @@ export function CreateLinkForm({
           </div>
         )}
 
-        {createLink.isSuccess && (
-          <div
-            className="flex items-center gap-2 rounded-lg border border-positive-border bg-positive-bg p-3 text-xs text-positive-text"
-            role="status"
+        <div className="flex flex-wrap gap-2">
+          <Button loading={createLink.isPending} type="submit">
+            Создать ссылку
+          </Button>
+          <Button
+            disabled={createLink.isPending}
+            onClick={onCancel}
+            type="button"
+            variant="secondary"
           >
-            <CircleCheck aria-hidden="true" size={16} />
-            <span>Ссылка создана</span>
-          </div>
-        )}
-
-        <Button loading={createLink.isPending} type="submit">
-          Создать ссылку
-        </Button>
+            Отмена
+          </Button>
+        </div>
       </form>
-    </Card>
+    </LinkFormDialog>
   )
 }
