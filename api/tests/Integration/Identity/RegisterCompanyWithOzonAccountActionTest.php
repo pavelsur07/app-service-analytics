@@ -33,7 +33,7 @@ final class RegisterCompanyWithOzonAccountActionTest extends KernelTestCase
         /** @var CredentialsCipher $cipher */
         $cipher = $container->get(CredentialsCipher::class);
 
-        $account = ($action)('Sandbox LLC', 'shop-1', ['client_id' => 'shop-1', 'api_key' => 'k-1']);
+        $account = ($action)('Sandbox LLC', 'Sandbox Shop', 'shop-1', ['client_id' => 'shop-1', 'api_key' => 'k-1']);
 
         self::assertSame(MarketplaceAccountState::Active, $account->state());
 
@@ -69,6 +69,7 @@ final class RegisterCompanyWithOzonAccountActionTest extends KernelTestCase
             'id' => (string) Uuid::v7(),
             'company_id' => (string) $company->id(),
             'marketplace' => 'ozon',
+            'name' => 'Duplicate Shop',
             'external_shop_id' => 'shop-dup',
             'credentials_ciphertext' => 'stub',
             'credentials_key_version' => 1,
@@ -77,7 +78,7 @@ final class RegisterCompanyWithOzonAccountActionTest extends KernelTestCase
         ]);
     }
 
-    public function testSameExternalShopIdIsAllowedAcrossDifferentCompanies(): void
+    public function testDifferentExternalShopIdsAreAllowedAcrossDifferentCompanies(): void
     {
         self::bootKernel();
         $container = self::getContainer();
@@ -90,16 +91,20 @@ final class RegisterCompanyWithOzonAccountActionTest extends KernelTestCase
         $companyA = CompanyBuilder::aCompany()->withName('Company A')->persistWith($companies);
         $companyB = CompanyBuilder::aCompany()->withName('Company B')->persistWith($companies);
 
-        // Уникальность (company_id, marketplace, external_shop_id) скопирована
-        // по компании, не глобальна (ADR-002) — один и тот же external_shop_id
-        // у двух разных компаний обязан пройти без конфликта.
+        // Уникальность (company_id, marketplace, external_shop_id) держит дубль
+        // внутри одной компании. Один и тот же external_shop_id у двух разных
+        // компаний с этой миграции запрещён отдельным глобальным частичным
+        // индексом (uq_marketplace_account_marketplace_external_shop_active,
+        // ADR-021) — это покрыто MarketplaceAccountUniquenessTest. Здесь же
+        // проверяется, что разные кабинеты у разных компаний не мешают друг
+        // другу.
         $accountA = MarketplaceAccountBuilder::aMarketplaceAccount()
             ->withCompany($companyA)
-            ->withExternalShopId('shared-shop-id')
+            ->withExternalShopId('shop-company-a')
             ->persistWith($companies, $marketplaceAccounts);
         $accountB = MarketplaceAccountBuilder::aMarketplaceAccount()
             ->withCompany($companyB)
-            ->withExternalShopId('shared-shop-id')
+            ->withExternalShopId('shop-company-b')
             ->persistWith($companies, $marketplaceAccounts);
 
         self::assertNotSame((string) $accountA->id(), (string) $accountB->id());

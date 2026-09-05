@@ -23,6 +23,11 @@ use Symfony\Component\Uid\Uuid;
     name: 'uq_marketplace_account_company_marketplace_external_shop',
     columns: ['company_id', 'marketplace', 'external_shop_id'],
 )]
+#[ORM\UniqueConstraint(
+    name: 'uq_marketplace_account_marketplace_external_shop_active',
+    columns: ['marketplace', 'external_shop_id'],
+    options: ['where' => "((state)::text <> 'revoked'::text)"],
+)]
 #[ORM\Index(name: 'idx_marketplace_account_company_id', columns: ['company_id'])]
 class MarketplaceAccount
 {
@@ -38,6 +43,15 @@ class MarketplaceAccount
 
     #[ORM\Column(length: 255)]
     private readonly string $externalShopId;
+
+    /**
+     * Название магазина: пара Client-Id из цифр человеку ничего не говорит.
+     * Правки нет намеренно (ADR-021) — правимое имя переводит сущность
+     * во вторую строку таблиц ADR-011 и стоит версии и записи в журнал,
+     * и платить эту цену надо в задаче про переименование.
+     */
+    #[ORM\Column(length: 255)]
+    private readonly string $name;
 
     #[ORM\Column(type: 'text')]
     private string $credentialsCiphertext;
@@ -67,6 +81,7 @@ class MarketplaceAccount
         Uuid $id,
         Uuid $companyId,
         Marketplace $marketplace,
+        string $name,
         string $externalShopId,
         string $credentialsCiphertext,
         int $credentialsKeyVersion,
@@ -75,6 +90,7 @@ class MarketplaceAccount
         $this->id = $id;
         $this->companyId = $companyId;
         $this->marketplace = $marketplace;
+        $this->name = $name;
         $this->externalShopId = $externalShopId;
         $this->credentialsCiphertext = $credentialsCiphertext;
         $this->credentialsKeyVersion = $credentialsKeyVersion;
@@ -85,6 +101,7 @@ class MarketplaceAccount
     public static function connect(
         Uuid $companyId,
         Marketplace $marketplace,
+        string $name,
         string $externalShopId,
         string $credentialsCiphertext,
         int $credentialsKeyVersion,
@@ -93,6 +110,7 @@ class MarketplaceAccount
             Uuid::v7(),
             $companyId,
             $marketplace,
+            $name,
             $externalShopId,
             $credentialsCiphertext,
             $credentialsKeyVersion,
@@ -113,6 +131,11 @@ class MarketplaceAccount
     public function marketplace(): Marketplace
     {
         return $this->marketplace;
+    }
+
+    public function name(): string
+    {
+        return $this->name;
     }
 
     public function externalShopId(): string

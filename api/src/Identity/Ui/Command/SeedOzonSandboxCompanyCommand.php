@@ -50,6 +50,7 @@ final class SeedOzonSandboxCompanyCommand extends Command
 
         $account = ($this->registerCompanyWithOzonAccount)(
             companyName: $companyName,
+            name: $companyName,
             externalShopId: $externalShopId,
             credentials: ['client_id' => $externalShopId, 'api_key' => $apiKey],
         );

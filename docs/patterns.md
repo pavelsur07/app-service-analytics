@@ -910,6 +910,35 @@ npm 11 по умолчанию не запускает postinstall-скрипт�
 (см. `structure.md`), путь задан в
 `config/packages/doctrine_migrations.yaml`.
 
+### Частичный уникальный индекс: `where` в мэппинге — каноническая форма PostgreSQL
+
+`#[ORM\UniqueConstraint(..., options: ['where' => '...'])]` держит round-trip
+(`doctrine:schema:validate` зелёный, `doctrine:migrations:diff` не предлагает
+вечный `DROP INDEX` + пересоздание) только если строка `where` совпадает
+с тем, что PostgreSQL сам возвращает при интроспекции индекса — не с тем,
+что интуитивно пишется в условии.
+
+PostgreSQL хранит предикат частичного индекса не как переданный текст,
+а в разобранном и заново сериализованном виде. Сравнение `varchar`-колонки
+со строковым литералом (у enum-колонок через `enumType` — обычный случай)
+получает явные приведения: `state <> 'revoked'` на колонке
+`character varying` возвращается интроспекцией как
+`((state)::text <> 'revoked'::text)`. Мэппинг с наивной формулировкой
+не совпадает с этим текстом никогда, независимо от того, как написан SQL
+в самой миграции: PostgreSQL нормализует обе стороны одинаково, поэтому
+разница будет именно в тексте `where` мэппинга, не в мигарации.
+
+Проверка перед коммитом такого индекса:
+
+```sql
+SELECT indexdef FROM pg_indexes WHERE indexname = '<имя_индекса>';
+```
+
+Взять `WHERE (...)` из результата целиком и указать его как есть
+в `options.where`. Первый случай — `uq_marketplace_account_marketplace_external_shop_active`
+(Identity, задача онбординга Ozon, ADR-021): `state` — `character varying(16)`
+через `enumType`, каноническая форма — `((state)::text <> 'revoked'::text)`.
+
 ## Контракт API (OpenAPI)
 
 `nelmio/api-doc-bundle` был в `composer.json` с ранней стадии, но не
