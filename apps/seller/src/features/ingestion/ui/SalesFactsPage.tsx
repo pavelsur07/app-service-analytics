@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, CircleX } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CircleX, LoaderCircle } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../../api/ApiError'
 import { Button, Card, StatusPanel } from '../../../../../../packages/ui/src'
@@ -91,7 +91,30 @@ export function SalesFactsPage() {
           </Card>
         )}
 
-        {query.status === 'success' && (
+        {/* Нуль неотличим от посчитанного нуля: сразу после подключения
+            кабинета фактов ещё нет, и SalesFactsTable на пустом списке
+            говорит «нет данных за период» — верно после реальной
+            синхронизации, но не в первые минуты после подключения,
+            когда данных ещё не завезли. Эта ветка идёт раньше таблицы
+            и подменяет её ровно тогда, когда список пуст. */}
+        {query.status === 'success' && query.data.items.length === 0 && (
+          <Card>
+            <StatusPanel
+              icon={
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="animate-spin"
+                  size={20}
+                />
+              }
+              title="Данные загружаются"
+              description="Мы забираем историю за текущий месяц. Экран наполнится сам — обновлять страницу не нужно."
+              tone="accent"
+            />
+          </Card>
+        )}
+
+        {query.status === 'success' && query.data.items.length > 0 && (
           <>
             <SalesFactsTable items={query.data.items} />
             <div className="flex items-center justify-end gap-2">
