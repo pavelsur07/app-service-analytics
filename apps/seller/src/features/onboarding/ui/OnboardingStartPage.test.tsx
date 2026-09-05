@@ -6,18 +6,37 @@ import { describe, expect, it } from 'vitest'
 import { ApiError } from '../../../api/ApiError'
 import type { components } from '../../../api/schema'
 import { authQueryKey } from '../../../shared/lib/authQueryKey'
+import { connectionsQueryKey } from '../../../shared/lib/connectionsQueryKey'
 import {
   ConnectFormView,
   OnboardingStartPage,
   connectAccountFailureFromError,
+  resolveOnboardingDecision,
   selectOnboardingCompany,
 } from './OnboardingStartPage'
 
 type MeCompany = components['schemas']['MeCompanyResponse']
 type MeResponse = components['schemas']['MeResponse']
+type ConnectionResponse = components['schemas']['ConnectionResponse']
 
 const COMPANY_A: MeCompany = { id: 'company-a', name: 'Компания А' }
 const COMPANY_B: MeCompany = { id: 'company-b', name: 'Компания Б' }
+
+const ACTIVE_CONNECTION: ConnectionResponse = {
+  id: 'connection-a',
+  marketplace: 'ozon',
+  externalShopId: '12345',
+  state: 'active',
+  createdAt: '2026-08-01T00:00:00+00:00',
+  lastLoadedAt: {},
+  version: 1,
+}
+
+const BROKEN_CONNECTION: ConnectionResponse = {
+  ...ACTIVE_CONNECTION,
+  id: 'connection-b',
+  state: 'broken',
+}
 
 // Обязательное покрытие §10 — единственная содержательная логика этого
 // экрана: какая компания получает форму. Параметр из адресной строки
@@ -50,6 +69,77 @@ describe('selectOnboardingCompany', () => {
 
   it('без компаний возвращает undefined без обращения к массиву', () => {
     expect(selectOnboardingCompany([], null)).toBeUndefined()
+  })
+})
+
+// Обязательное покрытие §10 — единственная содержательная логика после
+// выбора компании: показывать форму только той, у которой подключений
+// нет вовсе. Симметрично resolveCompanyGate (CompanyLayout.test.tsx) —
+// тот же приём, вынесено из JSX в чистую функцию.
+describe('resolveOnboardingDecision', () => {
+  it('не решает, пока список подключений не прочитан', () => {
+    expect(
+      resolveOnboardingDecision(COMPANY_A.id, { status: 'pending' }),
+    ).toEqual({ kind: 'pending' })
+  })
+
+  it('показывает форму компании, у которой подключений нет вовсе', () => {
+    expect(
+      resolveOnboardingDecision(COMPANY_A.id, {
+        status: 'success',
+        data: { connections: [] },
+      }),
+    ).toEqual({ kind: 'form' })
+  })
+
+  it('ведёт на экран подключений, когда единственное подключение сломано', () => {
+    expect(
+      resolveOnboardingDecision(COMPANY_A.id, {
+        status: 'success',
+        data: { connections: [BROKEN_CONNECTION] },
+      }),
+    ).toEqual({
+      kind: 'connections',
+      to: `/companies/${COMPANY_A.id}/connections`,
+    })
+  })
+
+  it('ведёт на экран подключений и тогда, когда подключение уже активно', () => {
+    // На онбординге компании с активным подключением делать нечего —
+    // повторная заявка на тот же кабинет вернёт 409, а не второе
+    // подключение.
+    expect(
+      resolveOnboardingDecision(COMPANY_A.id, {
+        status: 'success',
+        data: { connections: [ACTIVE_CONNECTION] },
+      }),
+    ).toEqual({
+      kind: 'connections',
+      to: `/companies/${COMPANY_A.id}/connections`,
+    })
+  })
+
+  it('показывает форму, когда запрос списка подключений упал', () => {
+    // Отказ вспомогательного запроса не должен лишать клиента единственного
+    // пути подключиться: форма останется рабочей, а ошибочная повторная
+    // отправка вернёт понятный 409 от бэкенда, а не молчание на экране.
+    expect(
+      resolveOnboardingDecision(COMPANY_A.id, { status: 'error' }),
+    ).toEqual({ kind: 'form' })
+  })
+
+  it('кодирует companyId в адресе редиректа на экран подключений', () => {
+    const rawCompanyId = 'company a/b'
+
+    expect(
+      resolveOnboardingDecision(rawCompanyId, {
+        status: 'success',
+        data: { connections: [ACTIVE_CONNECTION] },
+      }),
+    ).toEqual({
+      kind: 'connections',
+      to: '/companies/company%20a%2Fb/connections',
+    })
   })
 })
 
@@ -145,7 +235,11 @@ describe('ConnectFormView', () => {
   })
 })
 
-function renderPage(companies: readonly MeCompany[], route: string) {
+function renderPage(
+  companies: readonly MeCompany[],
+  route: string,
+  connections?: Record<string, readonly ConnectionResponse[]>,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -154,6 +248,19 @@ function renderPage(companies: readonly MeCompany[], route: string) {
     companies: [...companies],
   }
   queryClient.setQueryData(authQueryKey(), me)
+
+  // Кэш подключений заполняется заранее, а не через сеть: без DOM-окружения
+  // (test.environment: 'node') useQuery не запускает queryFn во время
+  // синхронного renderToStaticMarkup — эффекты монтирования не выполняются.
+  // Не заполнить компанию совсем — способ получить статус 'pending', как
+  // и в реальном первом рендере до ответа сети.
+  if (connections !== undefined) {
+    for (const [companyId, companyConnections] of Object.entries(connections)) {
+      queryClient.setQueryData(connectionsQueryKey(companyId), {
+        connections: [...companyConnections],
+      })
+    }
+  }
 
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
@@ -166,7 +273,9 @@ function renderPage(companies: readonly MeCompany[], route: string) {
 
 describe('OnboardingStartPage', () => {
   it('показывает форму подключения единственной компании без параметра', () => {
-    const markup = renderPage([COMPANY_A], '/onboarding')
+    const markup = renderPage([COMPANY_A], '/onboarding', {
+      [COMPANY_A.id]: [],
+    })
 
     expect(markup).toContain('Подключите кабинет Ozon')
   })
@@ -184,8 +293,37 @@ describe('OnboardingStartPage', () => {
     const markup = renderPage(
       [COMPANY_A, COMPANY_B],
       `/onboarding?company=${COMPANY_B.id}`,
+      { [COMPANY_B.id]: [] },
     )
 
     expect(markup).toContain('Подключите кабинет Ozon')
+  })
+
+  it('показывает форму, когда у выбранной компании подключений нет вовсе', () => {
+    const markup = renderPage([COMPANY_A], '/onboarding', {
+      [COMPANY_A.id]: [],
+    })
+
+    expect(markup).toContain('Подключите кабинет Ozon')
+  })
+
+  it('не показывает форму компании с уже существующим подключением', () => {
+    // Форма ведёт к 409 cabinet_already_connected: кабинет занят
+    // сломанным подключением, повторная заявка на него онбординг
+    // не примет. Место клиента — экран подключений, не эта форма.
+    const markup = renderPage([COMPANY_A], '/onboarding', {
+      [COMPANY_A.id]: [BROKEN_CONNECTION],
+    })
+
+    expect(markup).not.toContain('Подключите кабинет Ozon')
+  })
+
+  it('не показывает форму, пока список подключений ещё не прочитан', () => {
+    // Кэш подключений не заполнен — тот же 'pending', что и при первом
+    // реальном запросе до ответа сети. Решения нет, значит и рисовать
+    // нечего — ни формы, ни редиректа.
+    const markup = renderPage([COMPANY_A], '/onboarding')
+
+    expect(markup).toBe('')
   })
 })
