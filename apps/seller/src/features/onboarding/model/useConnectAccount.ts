@@ -1,17 +1,21 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { createCompanyApiClient } from '../../../api/companyClient'
-import type { components } from '../../../api/schema'
+import type { components, paths } from '../../../api/schema'
 import { connectionsQueryKey } from '../../../shared/lib/connectionsQueryKey'
 
 type ConnectedAccountResponse =
   components['schemas']['ConnectedAccountResponse']
 
-export interface ConnectAccountInput {
-  name: string
-  clientId: string
-  apiKey: string
-}
+// Тип тела запроса — из сгенерированной схемы (CLAUDE.md §10), тот же
+// приём, что у ConfirmationRequest в useConfirmEmail.ts: путь берётся
+// целиком, а не собирается из company-scoped относительного адреса
+// (createCompanyApiClient подставляет companyId сам, схема описывает
+// путь с {companyId} в исходном виде).
+type ConnectOperation = paths['/api/companies/{companyId}/connections']['post']
+export type ConnectAccountInput = NonNullable<
+  ConnectOperation['requestBody']
+>['content']['application/json']
 
 const CONNECT_ENDPOINT = '/connections' as const
 
