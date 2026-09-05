@@ -17,6 +17,9 @@ final class AuditAction
 {
     public const string MarketplaceCredentialsReplaced = 'marketplace_account.credentials_replaced';
 
+    /** Подключение кабинета при онбординге (ADR-021). */
+    public const string MarketplaceAccountConnected = 'marketplace_account.connected';
+
     /** Заведён Admin. Компании у события нет (ADR-017). */
     public const string AdministratorCreated = 'administrator.created';
 

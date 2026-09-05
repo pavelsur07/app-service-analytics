@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Identity\Infrastructure\Repository;
 
+use App\Identity\Domain\AuditRecord;
 use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -63,5 +65,32 @@ final readonly class DoctrineMarketplaceAccountRepository implements Marketplace
         );
 
         return $affected > 0;
+    }
+
+    public function tryConnect(MarketplaceAccount $account, AuditRecord $trail): bool
+    {
+        try {
+            $this->entityManager->wrapInTransaction(function () use ($account, $trail): void {
+                $this->entityManager->persist($account);
+                $this->entityManager->persist($trail);
+            });
+        } catch (UniqueConstraintViolationException $exception) {
+            // PostgreSQL называет нарушенное ограничение в сообщении.
+            // Поглощаем только уникальность кабинета — глобальную и внутри
+            // компании: любое другое нарушение это наш дефект, и молча
+            // превращать его в «кабинет занят» значит спрятать его навсегда.
+            $message = $exception->getMessage();
+            $isCabinetTaken =
+                str_contains($message, 'uq_marketplace_account_marketplace_external_shop_active')
+                || str_contains($message, 'uq_marketplace_account_company_marketplace_external_shop');
+
+            if (!$isCabinetTaken) {
+                throw $exception;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 }

@@ -31,4 +31,16 @@ interface MarketplaceAccountRepository
      * (CLAUDE.md §4). Клиент получил бы два письма об одном событии.
      */
     public function markBrokenIfActive(string $companyId, Uuid $id): bool;
+
+    /**
+     * Подключение кабинета вместе с записью в журнал, одной транзакцией:
+     * строка подключения без аудит-записи — строка, о происхождении которой
+     * спросить будет не у кого (ADR-011).
+     *
+     * Возвращает false, когда кабинет уже занят. Проверки перед вставкой
+     * нет намеренно: между ней и вставкой два параллельных запроса прошли
+     * бы её оба (CLAUDE.md §4), поэтому уникальность держит индекс,
+     * а конфликт перехватывается здесь.
+     */
+    public function tryConnect(MarketplaceAccount $account, AuditRecord $trail): bool;
 }
