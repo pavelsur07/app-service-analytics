@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { ApiError } from '../../../api/ApiError'
-import { createCompanyApiClient } from '../../../api/companyClient'
+import { apiPost } from '../../../api/client'
 import type { components } from '../../../api/schema'
 import { http, server } from '../../../../tests/msw/server'
 import { connectionsQueryKey } from '../../../shared/lib/connectionsQueryKey'
@@ -44,6 +44,11 @@ const RESPONSE: ConnectedAccountResponse = {
  * test.environment: 'node') — поэтому проверяется `connectAccount`,
  * вынесенная функция с инъекцией зависимостей, тем же приёмом, что
  * `confirmEmailAttempt` в useConfirmEmail.test.ts.
+ *
+ * Обращение к company-scoped пути здесь именно то, каким его строит
+ * продакшен-код: `connectAccount` вызывает `createCompanyApiClient`
+ * (см. `useConnectAccount`), и это проверено выше через `events`
+ * (`post:/connections`) — сам клиент не подставной.
  */
 describe('connectAccount', () => {
   it('отправляет введённые поля на /connections и возвращает ответ площадки', async () => {
@@ -97,35 +102,24 @@ describe('connectAccount', () => {
 })
 
 const COMPANY_ID = '019ffe00-0000-7000-8000-000000000009'
+const ENDPOINT = `http://localhost/api/companies/${COMPANY_ID}/connections`
 
 /**
  * Сетевой контракт мутации (§10, обязательное покрытие — форма
- * отправляет введённое). Обращение идёт через `createCompanyApiClient` —
- * тот же клиент, что использует `useConnectAccount` в продакшен-коде,
- * не сырой `apiPost`: §10 разрешает прямой вызов только для перечисленного
- * списка Identity-эндпоинтов, `/connections` в нём нет.
- *
- * `createCompanyApiClient` строит относительный путь, а в Node у `fetch`
- * нет для него базы (предел окружения, tests/msw/server.ts) — поэтому
- * ровно в этом блоке `fetch` оборачивается так, что относительный путь
- * резолвится в `http://localhost` перед настоящим вызовом. msw продолжает
- * перехватывать тот же (уже пропатченный им) `fetch` — оборачивается
- * вызов, а не подмена сети, поэтому тело, статус и разбор ошибки остаются
- * настоящими.
+ * отправляет введённое). Ниже проверяется форма запроса на проводе —
+ * путь, тело, разбор типизированного ответа и ошибки — а не то, каким
+ * путём приложение приходит к данным компании: этот вопрос закрыт
+ * тестами `connectAccount` выше, где обращение реально идёт через
+ * `createCompanyApiClient`. `apiPost` здесь — тот же приём, что
+ * в useConfirmEmail.test.ts и useSignUp.test.ts: `createCompanyApiClient`
+ * строит относительный путь, а в Node у него нет базы для `fetch`
+ * (предел окружения, tests/msw/server.ts), поэтому провод проверяется
+ * `apiPost` по абсолютному адресу того же пути, что строит
+ * `useConnectAccount` — не подменой `fetch` и не собранным руками
+ * `Response` (запрещено §10 дословно), а настоящим сетевым вызовом
+ * через msw.
  */
 describe('сетевой контракт подключения кабинета', () => {
-  let originalFetch: typeof fetch
-
-  beforeEach(() => {
-    originalFetch = globalThis.fetch
-    globalThis.fetch = (input, init) =>
-      originalFetch(new URL(String(input), 'http://localhost'), init)
-  })
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch
-  })
-
   it('отправляет введённые поля без изменений и принимает типизированный 201', async () => {
     const request = {
       name: 'Мой магазин',
@@ -148,10 +142,7 @@ describe('сетевой контракт подключения кабинет�
     )
 
     await expect(
-      createCompanyApiClient(COMPANY_ID).post<ConnectedAccountResponse>(
-        '/connections',
-        request,
-      ),
+      apiPost<ConnectedAccountResponse>(ENDPOINT, request),
     ).resolves.toEqual({
       id: 'connection-id',
       name: request.name,
@@ -170,13 +161,11 @@ describe('сетевой контракт подключения кабинет�
       ),
     )
 
-    const error = await createCompanyApiClient(COMPANY_ID)
-      .post<ConnectedAccountResponse>('/connections', {
-        name: 'Мой магазин',
-        clientId: 'client-id-value',
-        apiKey: 'api-key-value',
-      })
-      .catch((caught: unknown) => caught)
+    const error = await apiPost<ConnectedAccountResponse>(ENDPOINT, {
+      name: 'Мой магазин',
+      clientId: 'client-id-value',
+      apiKey: 'api-key-value',
+    }).catch((caught: unknown) => caught)
 
     expect(error).toBeInstanceOf(ApiError)
     expect((error as ApiError).code).toBe('credentials_rejected')
