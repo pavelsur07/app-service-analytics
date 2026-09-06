@@ -25,6 +25,8 @@ use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\Fake\FakeOzonCatalogFetcher;
 use App\Tests\Support\Fake\FakeOzonProductInfoFetcher;
 use Doctrine\DBAL\Connection;
+use Monolog\Handler\TestHandler;
+use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -199,6 +201,110 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         $queued = $this->transport($container)->getSent();
         self::assertCount(1, $queued);
         self::assertInstanceOf(SendEmailMessage::class, $queued[0]->getMessage());
+
+        // Боевой инцидент: подключение сломалось без единого следа
+        // в журнале о том, чем ответила площадка. Запись — единственный
+        // способ ответить на вопрос «почему», не имея доступа к кабинету.
+        $handler = $this->logHandler($container);
+        self::assertTrue($handler->hasWarningThatContains('Ozon отклонил авторизацию'));
+        $record = $this->soleBrokenAccountLogRecord($handler);
+        self::assertSame('products', $record->context['scope']);
+        self::assertSame(401, $record->context['status_code']);
+        self::assertStringContainsString('"code":16', $this->responseBodyOf($record));
+        self::assertSame($account->companyId()->toRfc4122(), $record->context['company_id']);
+        self::assertSame($account->id()->toRfc4122(), $record->context['marketplace_account_id']);
+    }
+
+    /**
+     * api_key никогда не попадает в запись — ни в сообщение, ни в контекст,
+     * ни через тело ответа площадки, даже если оно (гипотетически, вопреки
+     * формату Ozon) содержит его буквально.
+     */
+    public function testAuthorizationFailureDoesNotLeakTheApiKeyThroughTheResponseBody(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+
+        $container->set(OzonProductListClient::class, new class implements OzonCatalogFetcher {
+            public function fetchPage(string $clientId, string $apiKey, string $lastId, int $limit = 1000): string
+            {
+                $client = new MockHttpClient(new MockResponse('{"code":16,"message":"api_key key-1 invalid"}', ['http_code' => 401]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v3/product/list')->getContent();
+            }
+        });
+
+        $this->syncCatalog($container, $account);
+
+        $handler = $this->logHandler($container);
+        $record = $this->soleBrokenAccountLogRecord($handler);
+        self::assertStringContainsString('[redacted]', $this->responseBodyOf($record));
+        foreach ($handler->getRecords() as $logged) {
+            self::assertStringNotContainsString('key-1', $logged->message);
+            self::assertStringNotContainsString('key-1', (string) json_encode($logged->context));
+        }
+    }
+
+    /**
+     * Отказ, не являющийся отказом авторизации, не должен ни ломать
+     * подключение, ни оставлять о себе запись «Ozon отклонил авторизацию» —
+     * это ветвь другого исхода (лимит запросов, сбой площадки), и она
+     * пробрасывается исключением дальше (см. testFailedNamesRequestLeavesTheCatalogAlone
+     * для той же гарантии на соседнем запросе).
+     */
+    public function testNonAuthorizationFailureDoesNotLogBrokenAccountReason(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+
+        $container->set(OzonProductListClient::class, new class implements OzonCatalogFetcher {
+            public function fetchPage(string $clientId, string $apiKey, string $lastId, int $limit = 1000): string
+            {
+                $client = new MockHttpClient(new MockResponse('{"code":1,"message":"internal"}', ['http_code' => 503]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v3/product/list')->getContent();
+            }
+        });
+
+        try {
+            $this->syncCatalog($container, $account);
+            self::fail('Недоступность площадки обязана пробрасываться исключением, а не тихо ломать подключение.');
+        } catch (\Throwable) {
+        }
+
+        $state = $this->connection($container)->fetchOne(
+            'SELECT state FROM marketplace_account WHERE id = ?',
+            [$account->id()->toRfc4122()],
+        );
+        self::assertNotSame('broken', $state);
+        self::assertFalse($this->logHandler($container)->hasWarningThatContains('Ozon отклонил авторизацию'));
+    }
+
+    private function logHandler(ContainerInterface $container): TestHandler
+    {
+        $handler = $container->get('monolog.handler.in_memory');
+        self::assertInstanceOf(TestHandler::class, $handler);
+
+        return $handler;
+    }
+
+    private function soleBrokenAccountLogRecord(TestHandler $handler): LogRecord
+    {
+        $matching = array_values(array_filter(
+            $handler->getRecords(),
+            static fn (LogRecord $record): bool => str_contains($record->message, 'Ozon отклонил авторизацию'),
+        ));
+        self::assertCount(1, $matching);
+
+        return $matching[0];
+    }
+
+    private function responseBodyOf(LogRecord $record): string
+    {
+        $body = $record->context['response_body'] ?? null;
+        self::assertIsString($body);
+
+        return $body;
     }
 
     public function testSellerArticleNameAndPhotoReachTheRow(): void

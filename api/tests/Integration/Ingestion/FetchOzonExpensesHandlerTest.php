@@ -19,6 +19,8 @@ use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
+use Monolog\Handler\TestHandler;
+use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -149,6 +151,94 @@ final class FetchOzonExpensesHandlerTest extends KernelTestCase
         );
         self::assertSame('broken', $state);
         self::assertSame(0, $this->expenseCount($container, $account));
+
+        $handler = $this->logHandler($container);
+        $record = $this->soleBrokenAccountLogRecord($handler);
+        self::assertSame('expenses', $record->context['scope']);
+        self::assertSame(401, $record->context['status_code']);
+        self::assertStringContainsString('"code":16', $this->responseBodyOf($record));
+        self::assertSame($account->companyId()->toRfc4122(), $record->context['company_id']);
+        self::assertSame($account->id()->toRfc4122(), $record->context['marketplace_account_id']);
+    }
+
+    public function testAuthorizationFailureDoesNotLeakTheApiKeyThroughTheResponseBody(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+
+        $container->set(OzonAccrualByDayClient::class, new class implements OzonExpensesFetcher {
+            public function fetchDay(string $clientId, string $apiKey, \DateTimeImmutable $day, string $lastId): string
+            {
+                $client = new MockHttpClient(new MockResponse('{"code":16,"message":"api_key key-1 invalid"}', ['http_code' => 401]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v1/finance/accrual/by-day')->getContent();
+            }
+        });
+
+        $this->sync($container, $account);
+
+        $handler = $this->logHandler($container);
+        $record = $this->soleBrokenAccountLogRecord($handler);
+        self::assertStringContainsString('[redacted]', $this->responseBodyOf($record));
+        foreach ($handler->getRecords() as $logged) {
+            self::assertStringNotContainsString('key-1', $logged->message);
+            self::assertStringNotContainsString('key-1', (string) json_encode($logged->context));
+        }
+    }
+
+    public function testNonAuthorizationFailureDoesNotLogBrokenAccountReason(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+
+        $container->set(OzonAccrualByDayClient::class, new class implements OzonExpensesFetcher {
+            public function fetchDay(string $clientId, string $apiKey, \DateTimeImmutable $day, string $lastId): string
+            {
+                $client = new MockHttpClient(new MockResponse('{"code":1,"message":"internal"}', ['http_code' => 503]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v1/finance/accrual/by-day')->getContent();
+            }
+        });
+
+        try {
+            $this->sync($container, $account);
+            self::fail('Недоступность площадки обязана пробрасываться исключением, а не тихо ломать подключение.');
+        } catch (\Throwable) {
+        }
+
+        $state = $this->connection($container)->fetchOne(
+            'SELECT state FROM marketplace_account WHERE id = ?',
+            [$account->id()->toRfc4122()],
+        );
+        self::assertNotSame('broken', $state);
+        self::assertFalse($this->logHandler($container)->hasWarningThatContains('Ozon отклонил авторизацию'));
+    }
+
+    private function logHandler(ContainerInterface $container): TestHandler
+    {
+        $handler = $container->get('monolog.handler.in_memory');
+        self::assertInstanceOf(TestHandler::class, $handler);
+
+        return $handler;
+    }
+
+    private function soleBrokenAccountLogRecord(TestHandler $handler): LogRecord
+    {
+        $matching = array_values(array_filter(
+            $handler->getRecords(),
+            static fn (LogRecord $record): bool => str_contains($record->message, 'Ozon отклонил авторизацию'),
+        ));
+        self::assertCount(1, $matching);
+
+        return $matching[0];
+    }
+
+    private function responseBodyOf(LogRecord $record): string
+    {
+        $body = $record->context['response_body'] ?? null;
+        self::assertIsString($body);
+
+        return $body;
     }
 
     /**
