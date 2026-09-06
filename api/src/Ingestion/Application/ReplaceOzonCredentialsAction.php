@@ -12,6 +12,8 @@ use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Domain\OzonExpensesFetcher;
 use App\Ingestion\Domain\OzonPostingsFetcher;
 use App\Ingestion\Domain\OzonReturnsFetcher;
+use Psr\Log\LoggerInterface;
+use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
 
 /**
  * Замена ключей Ozon клиентом: убедиться, что ключ живой и от этого
@@ -34,11 +36,15 @@ use App\Ingestion\Domain\OzonReturnsFetcher;
  * отдельной пробой не идёт по той же причине — см. docblock
  * ConnectOzonAccountAction.
  *
- * Отказы, отличные от 401/403, здесь не превращаются в отдельный исход
- * `Unavailable`: этот контракт эндпоинта уже используется фронтендом,
- * и его расширение — отдельное решение (CLAUDE.md, «Когда остановиться
- * и спросить»). Лимит запросов, сбой площадки, обрыв сети остаются
- * исключениями и пробрасываются, как и раньше.
+ * Отказ HTTP-клиента, отличный от 401/403 (сеть, таймаут, лимит запросов,
+ * прочие 4xx и 5xx), даёт исход `Unavailable` — то же поведение, что
+ * у `ConnectOzonAccountAction`, и оно распространено сюда сознательно
+ * (владелец решение принял): у клиента, меняющего ключ во время сбоя
+ * площадки, та же беда и то же следующее действие — подождать, а не
+ * выпускать новый ключ. Всё, что не является исключением HTTP-клиента
+ * (`TypeError`, `Error`, `LogicException` нашего кода), по-прежнему
+ * пробрасывается: это не отказ площадки, а наш дефект, и он обязан
+ * дойти до трекера.
  */
 final readonly class ReplaceOzonCredentialsAction
 {
@@ -50,6 +56,7 @@ final readonly class ReplaceOzonCredentialsAction
         private OzonExpensesFetcher $expensesFetcher,
         private OzonReturnsFetcher $returnsFetcher,
         private IdentityFacade $identityFacade,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -106,41 +113,65 @@ final readonly class ReplaceOzonCredentialsAction
         try {
             $this->catalogFetcher->fetchPage($clientId, $apiKey, '', self::PROBE_LIMIT);
         } catch (\Throwable $failure) {
-            return $this->rejectedOrRethrow($failure, ReplaceCredentialsResult::Rejected);
+            return $this->classifyProbeFailure($failure, ReplaceCredentialsResult::Rejected, $clientId, 'products');
         }
 
         try {
             $this->postingsFetcher->fetch($clientId, $apiKey, $probeSince, $now);
         } catch (\Throwable $failure) {
-            return $this->rejectedOrRethrow($failure, ReplaceCredentialsResult::RejectedSales);
+            return $this->classifyProbeFailure($failure, ReplaceCredentialsResult::RejectedSales, $clientId, 'sales');
         }
 
         try {
             $this->expensesFetcher->fetchDay($clientId, $apiKey, $now, '');
         } catch (\Throwable $failure) {
-            return $this->rejectedOrRethrow($failure, ReplaceCredentialsResult::RejectedExpenses);
+            return $this->classifyProbeFailure($failure, ReplaceCredentialsResult::RejectedExpenses, $clientId, 'expenses');
         }
 
         try {
             $this->returnsFetcher->fetchPage($clientId, $apiKey, $probeSince, $now, 0, self::PROBE_LIMIT);
         } catch (\Throwable $failure) {
-            return $this->rejectedOrRethrow($failure, ReplaceCredentialsResult::RejectedReturns);
+            return $this->classifyProbeFailure($failure, ReplaceCredentialsResult::RejectedReturns, $clientId, 'returns');
         }
 
         return null;
     }
 
-    private function rejectedOrRethrow(\Throwable $failure, ReplaceCredentialsResult $rejected): ReplaceCredentialsResult
-    {
+    /**
+     * Общая ветвь для каждой из четырёх проб, тот же приём, что
+     * у `ConnectOzonAccountAction::classifyProbeFailure` — которая проба
+     * не прошла решает вызывающий метод (передаёт свой `$rejectedResult`
+     * и имя области для журнала), а не эта функция.
+     */
+    private function classifyProbeFailure(
+        \Throwable $failure,
+        ReplaceCredentialsResult $rejectedResult,
+        string $clientId,
+        string $scope,
+    ): ReplaceCredentialsResult {
         if (OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
-            return $rejected;
+            return $rejectedResult;
         }
 
-        // Остальные отказы — не «ключ неверен»: лимит запросов, сбой
-        // площадки, обрыв сети. Сказать клиенту «ключ не подошёл»
-        // в этот момент означало бы отправить его выпускать новый
-        // вместо того, чтобы подождать.
-        throw $failure;
+        if (!$failure instanceof HttpClientExceptionInterface) {
+            // Не «площадка недоступна» — наш дефект (опечатка в коде,
+            // отсутствующий метод, нарушенный инвариант). Он обязан
+            // выглядеть как наш: дойти до трекера и стать 500,
+            // а не спрятаться под благополучным на вид исходом.
+            throw $failure;
+        }
+
+        // Лимит запросов, сбой площадки, обрыв сети, прочие отказы
+        // HTTP-клиента. Сказать клиенту «ключ не подошёл» в этот момент
+        // означало бы отправить его выпускать новый вместо того, чтобы
+        // подождать. api_key в журнал не попадает ни в каком виде;
+        // request_id и company_id добавляет RequestContextProcessor.
+        $this->logger->warning('Ozon не ответил при проверке ключей замены', [
+            'client_id' => $clientId,
+            'scope' => $scope,
+        ]);
+
+        return ReplaceCredentialsResult::Unavailable;
     }
 
     private function connectionOf(string $companyId, string $marketplaceAccountId): ?CompanyConnection

@@ -40,6 +40,17 @@ describe('replaceCredentialsFailure', () => {
     },
   )
 
+  it('на недоступность площадки не требует ни нового ключа, ни refetch', () => {
+    // Подключение не изменилось (сохранение даже не началось), поэтому
+    // список перечитывать незачем — в отличие от revoked/version_conflict.
+    // Текст не должен намекать, что дело в ключе.
+    const failure = replaceCredentialsFailure('marketplace_unavailable')
+
+    expect(failure.refetch).toBe(false)
+    expect(failure.description).toContain('Старый ключ остался на месте')
+    expect(failure.description).not.toContain('выпустите ключ заново')
+  })
+
   it('незнакомый код не обещает, что старый ключ на месте', () => {
     // Неизвестно, дошёл ли запрос: сеть могла упасть после сохранения.
     const failure = replaceCredentialsFailure('some_future_code')

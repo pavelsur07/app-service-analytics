@@ -26,7 +26,9 @@ use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\UserBuilder;
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Handler\TestHandler;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -96,21 +98,49 @@ final class ReplaceOzonCredentialsActionTest extends KernelTestCase
         self::assertSame(ReplaceCredentialsResult::Replaced, $result);
     }
 
-    public function testUnavailableProbeIsNotTreatedAsARejectedKey(): void
+    public function testUnavailableOnFirstProbeGivesUnavailableNotRejected(): void
     {
         [$company, $userId] = $this->companyWithOwner();
         $account = $this->brokenConnection($company);
-        // Лимит запросов на пробе продаж — не «ключ не подошёл». Контракт
-        // этого эндпоинта не расширяется исходом Unavailable (CLAUDE.md,
-        // «Когда остановиться и спросить» — изменение уже используемого
-        // фронтендом контракта), поэтому недоступность площадки остаётся
-        // исключением, как и раньше.
+        $before = $this->ciphertext($account);
+        // Лимит запросов на самой первой пробе — недоступность площадки,
+        // не отказ ключа. Ключ не сохраняется, подключение не оживает.
+        $this->stubCatalog(429);
+
+        $result = ($this->action())($company->id()->toRfc4122(), $account->id()->toRfc4122(), 'shop-1', 'live-key', 1, $userId);
+
+        self::assertSame(ReplaceCredentialsResult::Unavailable, $result);
+        self::assertSame($before, $this->ciphertext($account));
+        self::assertSame('broken', $this->state($account));
+    }
+
+    public function testUnavailableOnALaterProbeIsStillUnavailableNotRejected(): void
+    {
+        [$company, $userId] = $this->companyWithOwner();
+        $account = $this->brokenConnection($company);
+        $before = $this->ciphertext($account);
+        // Разбор одинаков независимо от того, какая по счёту это проба —
+        // сбой на четвёртой (возвраты) не должен вести к другому исходу.
         $this->stubCatalog(200);
-        $this->stubPostings(429);
+        $this->stubPostings(200);
+        $this->stubExpenses(200);
+        $this->stubReturns(503);
 
-        $this->expectException(\Throwable::class);
+        $result = ($this->action())($company->id()->toRfc4122(), $account->id()->toRfc4122(), 'shop-1', 'live-key', 1, $userId);
 
-        ($this->action())($company->id()->toRfc4122(), $account->id()->toRfc4122(), 'shop-1', 'live-key', 1, $userId);
+        self::assertSame(ReplaceCredentialsResult::Unavailable, $result);
+        self::assertSame($before, $this->ciphertext($account));
+        self::assertSame('broken', $this->state($account));
+
+        // Сигнал уровня warning остаётся в журнале, но секрет в него
+        // не попадает ни в каком виде.
+        $handler = static::getContainer()->get('monolog.handler.in_memory');
+        self::assertInstanceOf(TestHandler::class, $handler);
+        self::assertTrue($handler->hasWarningThatContains('не ответил при проверке ключей замены'));
+        foreach ($handler->getRecords() as $record) {
+            self::assertStringNotContainsString('live-key', $record->message);
+            self::assertStringNotContainsString('live-key', (string) json_encode($record->context));
+        }
     }
 
     public function testNonHttpClientExceptionOnALaterProbeStillPropagates(): void
@@ -280,5 +310,35 @@ final class ReplaceOzonCredentialsActionTest extends KernelTestCase
         self::assertInstanceOf(MarketplaceAccountRepository::class, $accounts);
 
         return $accounts;
+    }
+
+    private function ciphertext(MarketplaceAccount $account): string
+    {
+        $ciphertext = $this->connection()->fetchOne(
+            'SELECT credentials_ciphertext FROM marketplace_account WHERE id = ?',
+            [$account->id()->toRfc4122()],
+        );
+        self::assertIsString($ciphertext);
+
+        return $ciphertext;
+    }
+
+    private function state(MarketplaceAccount $account): string
+    {
+        $state = $this->connection()->fetchOne(
+            'SELECT state FROM marketplace_account WHERE id = ?',
+            [$account->id()->toRfc4122()],
+        );
+        self::assertIsString($state);
+
+        return $state;
+    }
+
+    private function connection(): Connection
+    {
+        $connection = static::getContainer()->get(Connection::class);
+        self::assertInstanceOf(Connection::class, $connection);
+
+        return $connection;
     }
 }

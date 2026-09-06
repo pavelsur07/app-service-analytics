@@ -21,6 +21,8 @@ enum ReplaceCredentialsResult
     case RejectedReturns;
     /** Ключ от другого кабинета — проверить, тот ли магазин. */
     case WrongCabinet;
+    /** Площадка не ответила (сеть, таймаут, лимит запросов, 5xx) — повторить позже, ключ выпускать не нужно. */
+    case Unavailable;
     case NotFound;
     /** Отзыв необратим (ADR-011). */
     case Revoked;
