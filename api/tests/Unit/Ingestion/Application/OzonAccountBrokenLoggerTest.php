@@ -10,6 +10,8 @@ use Monolog\Level;
 use Monolog\Logger;
 use Monolog\LogRecord;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\LoggerTrait;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface;
@@ -97,6 +99,35 @@ final class OzonAccountBrokenLoggerTest extends TestCase
         $record = $handler->getRecords()[0];
         self::assertNull($record->context['status_code']);
         self::assertSame('(тело ответа недоступно)', $record->context['response_body']);
+    }
+
+    /**
+     * Диагностика не имеет права ломать наблюдаемое поведение
+     * (докблок `OzonAccountBrokenLogger::log()`): вызывающий обработчик
+     * обязан дойти до `markOzonAccountBroken()` независимо от того,
+     * бросил ли сам обработчик журнала. Интеграционный сценарий на одном
+     * из четырёх обработчиков (`FetchOzonExpensesHandlerTest`) проверяет
+     * то же на реальном пути; здесь — минимальное доказательство того,
+     * что исключение не выходит из `log()` вообще, без БД и HTTP.
+     */
+    public function testExceptionFromTheUnderlyingLoggerDoesNotEscape(): void
+    {
+        // Проверяемое поведение — само завершение без исключения,
+        // поэтому здесь нет содержательного assert: expectNotToPerformAssertions()
+        // документирует критерий явно, а не оставляет тест без единой
+        // проверки незаметно.
+        self::expectNotToPerformAssertions();
+
+        $logger = new OzonAccountBrokenLogger(new class implements LoggerInterface {
+            use LoggerTrait;
+
+            public function log($level, string|\Stringable $message, array $context = []): void
+            {
+                throw new \RuntimeException('журнал недоступен');
+            }
+        });
+
+        $logger->log('company-1', 'account-1', 'sales', $this->httpFailure(401, '{"code":16}'), 'key');
     }
 
     private function responseBodyOf(LogRecord $record): string

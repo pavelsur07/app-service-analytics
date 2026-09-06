@@ -12,6 +12,7 @@ use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\UserRepository;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonExpensesHandler;
+use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Domain\OzonExpensesFetcher;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonAccrualByDayClient;
 use App\Tests\Support\Builder\CompanyBuilder;
@@ -21,6 +22,8 @@ use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
 use Monolog\Handler\TestHandler;
 use Monolog\LogRecord;
+use Psr\Log\LoggerInterface;
+use Psr\Log\LoggerTrait;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -212,6 +215,46 @@ final class FetchOzonExpensesHandlerTest extends KernelTestCase
         );
         self::assertNotSame('broken', $state);
         self::assertFalse($this->logHandler($container)->hasWarningThatContains('Ozon отклонил авторизацию'));
+    }
+
+    /**
+     * Диагностика не имеет права ломать наблюдаемое поведение
+     * (см. докблок `OzonAccountBrokenLogger::log()`): если сам журнал
+     * бросает при записи (второй обработчик, сеть, ротация файла —
+     * что угодно, кроме сегодняшнего безотказного `stream` в stderr),
+     * подключение обязано всё равно перейти в `broken`, а обработчик —
+     * завершиться без исключения, а не уйти в ретраи с активным
+     * сломанным ключом.
+     */
+    public function testLoggerFailureDoesNotPreventMarkingTheAccountBrokenOrEscapeTheHandler(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+
+        $container->set(OzonAccountBrokenLogger::class, new OzonAccountBrokenLogger(new class implements LoggerInterface {
+            use LoggerTrait;
+
+            public function log($level, string|\Stringable $message, array $context = []): void
+            {
+                throw new \RuntimeException('журнал недоступен');
+            }
+        }));
+        $container->set(OzonAccrualByDayClient::class, new class implements OzonExpensesFetcher {
+            public function fetchDay(string $clientId, string $apiKey, \DateTimeImmutable $day, string $lastId): string
+            {
+                $client = new MockHttpClient(new MockResponse('{"code":16}', ['http_code' => 401]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v1/finance/accrual/by-day')->getContent();
+            }
+        });
+
+        $this->sync($container, $account);
+
+        $state = $this->connection($container)->fetchOne(
+            'SELECT state FROM marketplace_account WHERE id = ?',
+            [$account->id()->toRfc4122()],
+        );
+        self::assertSame('broken', $state);
     }
 
     private function logHandler(ContainerInterface $container): TestHandler

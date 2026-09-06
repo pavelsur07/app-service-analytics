@@ -55,6 +55,31 @@ use Psr\Log\LoggerInterface;
  * ожидаемое доменное условие жизненного цикла подключения (ADR-007),
  * а не наш дефект, и порог журнала в prod — `warning` (`monolog.yaml`),
  * так что запись доходит без изменения порога.
+ *
+ * **Сам вызов `$logger->warning()` тоже обёрнут в `catch (\Throwable)`,
+ * той же причиной, что уже глушит её `statusCodeOf()` и `redactedBodyOf()`.**
+ * Порядок в обработчике — сначала эта запись, потом
+ * `IdentityFacade::markOzonAccountBroken()` — намеренный (запись должна
+ * помнить оригинальное исключение, а не то, что осталось после разбора
+ * ответа), и именно поэтому исключение из `warning()` не может остаться
+ * непойманным: не перехваченное здесь, оно ушло бы из обработчика
+ * наружу, сообщение отправилось бы в ретраи и осело в failed-очереди,
+ * а подключение осталось бы `active` со сломанным ключом — ровно то,
+ * что запрещает ADR-007 («молчаливая остановка синхронизации
+ * запрещена»), и клиент не получил бы письма. Запись — диагностика,
+ * перевод в `broken` — поведение; диагностика не имеет права ломать
+ * наблюдаемое поведение. Потерянная запись журнала дешевле, чем
+ * подключение, оставшееся `active` со сломанным ключом.
+ *
+ * Перехват стоит одним местом в `log()`, а не в каждом из четырёх
+ * обработчиков: тот же аргумент, что у самого класса, — одна точка
+ * не разойдётся при следующей правке, четыре — разойдутся.
+ *
+ * В боевой конфигурации сегодня единственный обработчик журнала —
+ * `stream` в `php://stderr` (`monolog.yaml`), и он почти никогда
+ * не бросает. Это свойство сегодняшней конфигурации, а не гарантия:
+ * появится второй обработчик (сетевой, файловый с ротацией) —
+ * и свойство исчезнет молча, если не защититься здесь заранее.
  */
 final readonly class OzonAccountBrokenLogger
 {
@@ -85,13 +110,20 @@ final readonly class OzonAccountBrokenLogger
         \Throwable $failure,
         string $apiKey,
     ): void {
-        $this->logger->warning('Ozon отклонил авторизацию — подключение переводится в broken', [
-            'scope' => $scope,
-            'status_code' => $this->statusCodeOf($failure),
-            'response_body' => $this->redactedBodyOf($failure, $apiKey),
-            'company_id' => $companyId,
-            'marketplace_account_id' => $marketplaceAccountId,
-        ]);
+        try {
+            $this->logger->warning('Ozon отклонил авторизацию — подключение переводится в broken', [
+                'scope' => $scope,
+                'status_code' => $this->statusCodeOf($failure),
+                'response_body' => $this->redactedBodyOf($failure, $apiKey),
+                'company_id' => $companyId,
+                'marketplace_account_id' => $marketplaceAccountId,
+            ]);
+        } catch (\Throwable) {
+            // Запись — диагностика, перевод подключения в broken —
+            // поведение (см. докблок класса): отказ самого журнала
+            // не имеет права остановить обработчик до того, как он
+            // дойдёт до markOzonAccountBroken().
+        }
     }
 
     private function statusCodeOf(\Throwable $failure): ?int
