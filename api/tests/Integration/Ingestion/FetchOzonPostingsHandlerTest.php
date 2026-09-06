@@ -4,21 +4,31 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Ingestion;
 
+use App\Identity\Domain\Company;
+use App\Identity\Domain\CompanyMemberRepository;
 use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
+use App\Identity\Domain\UserRepository;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonPostingsHandler;
+use App\Ingestion\Domain\OzonPostingsFetcher;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonPostingFboListClient;
 use App\Tests\Support\Builder\CompanyBuilder;
+use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
+use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\Fake\FakeOzonPostingsFetcher;
 use App\Tests\Support\Fake\FakeSequentialOzonPostingsFetcher;
 use Doctrine\DBAL\Connection;
+use Monolog\Handler\TestHandler;
+use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Lock\LockFactory;
 
 /**
@@ -185,6 +195,177 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
             );
             self::assertEquals(0, $rawCount, 'broken-подключение не должно доходить до HTTP-запроса');
         }
+    }
+
+    public function testAuthorizationFailureBreaksTheAccountAndLogsTheReason(): void
+    {
+        $container = $this->bootedContainer();
+        $companies = $this->companies($container);
+        $marketplaceAccounts = $this->marketplaceAccounts($container);
+        $account = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany($this->companyWithOwner($container))
+            ->withExternalShopId('shop-auth-failure')
+            ->withPlaintextCredentials(['client_id' => 'shop-auth-failure', 'api_key' => 'key-1'], $this->credentialsEncryptor($container))
+            ->persistWith($companies, $marketplaceAccounts);
+
+        $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
+            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            {
+                $client = new MockHttpClient(new MockResponse('{"code":16}', ['http_code' => 401]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v2/posting/fbo/list')->getContent();
+            }
+        });
+
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+        ($handler)(new FetchOzonPostingsMessage(
+            companyId: $account->companyId()->toRfc4122(),
+            marketplaceAccountId: $account->id()->toRfc4122(),
+            businessDate: '2026-07-01',
+        ));
+
+        $state = $this->connection($container)->fetchOne(
+            'SELECT state FROM marketplace_account WHERE id = ?',
+            [$account->id()->toRfc4122()],
+        );
+        self::assertSame('broken', $state);
+
+        $logHandler = $this->logHandler($container);
+        $record = $this->soleBrokenAccountLogRecord($logHandler);
+        self::assertSame('sales', $record->context['scope']);
+        self::assertSame(401, $record->context['status_code']);
+        self::assertStringContainsString('"code":16', $this->responseBodyOf($record));
+        self::assertSame($account->companyId()->toRfc4122(), $record->context['company_id']);
+        self::assertSame($account->id()->toRfc4122(), $record->context['marketplace_account_id']);
+    }
+
+    public function testAuthorizationFailureDoesNotLeakTheApiKeyThroughTheResponseBody(): void
+    {
+        $container = $this->bootedContainer();
+        $companies = $this->companies($container);
+        $marketplaceAccounts = $this->marketplaceAccounts($container);
+        $account = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany($this->companyWithOwner($container))
+            ->withExternalShopId('shop-auth-leak')
+            ->withPlaintextCredentials(['client_id' => 'shop-auth-leak', 'api_key' => 'key-1'], $this->credentialsEncryptor($container))
+            ->persistWith($companies, $marketplaceAccounts);
+
+        $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
+            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            {
+                $client = new MockHttpClient(new MockResponse('{"code":16,"message":"api_key key-1 invalid"}', ['http_code' => 401]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v2/posting/fbo/list')->getContent();
+            }
+        });
+
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+        ($handler)(new FetchOzonPostingsMessage(
+            companyId: $account->companyId()->toRfc4122(),
+            marketplaceAccountId: $account->id()->toRfc4122(),
+            businessDate: '2026-07-01',
+        ));
+
+        $logHandler = $this->logHandler($container);
+        $record = $this->soleBrokenAccountLogRecord($logHandler);
+        self::assertStringContainsString('[redacted]', $this->responseBodyOf($record));
+        foreach ($logHandler->getRecords() as $logged) {
+            self::assertStringNotContainsString('key-1', $logged->message);
+            self::assertStringNotContainsString('key-1', (string) json_encode($logged->context));
+        }
+    }
+
+    public function testNonAuthorizationFailureDoesNotLogBrokenAccountReason(): void
+    {
+        $container = $this->bootedContainer();
+        $companies = $this->companies($container);
+        $marketplaceAccounts = $this->marketplaceAccounts($container);
+        $account = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany(CompanyBuilder::aCompany()->persistWith($companies))
+            ->withExternalShopId('shop-not-auth')
+            ->withPlaintextCredentials(['client_id' => 'shop-not-auth', 'api_key' => 'key-1'], $this->credentialsEncryptor($container))
+            ->persistWith($companies, $marketplaceAccounts);
+
+        $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
+            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            {
+                $client = new MockHttpClient(new MockResponse('{"code":1,"message":"internal"}', ['http_code' => 503]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v2/posting/fbo/list')->getContent();
+            }
+        });
+
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+
+        try {
+            ($handler)(new FetchOzonPostingsMessage(
+                companyId: $account->companyId()->toRfc4122(),
+                marketplaceAccountId: $account->id()->toRfc4122(),
+                businessDate: '2026-07-01',
+            ));
+            self::fail('Недоступность площадки обязана пробрасываться исключением, а не тихо ломать подключение.');
+        } catch (\Throwable) {
+        }
+
+        $state = $this->connection($container)->fetchOne(
+            'SELECT state FROM marketplace_account WHERE id = ?',
+            [$account->id()->toRfc4122()],
+        );
+        self::assertNotSame('broken', $state);
+        self::assertFalse($this->logHandler($container)->hasWarningThatContains('Ozon отклонил авторизацию'));
+    }
+
+    /**
+     * Компания с участником: отказ авторизации порождает письмо клиенту
+     * (ADR-007), и компания без адресата — ошибка данных, а не сценарий
+     * (MarkMarketplaceAccountBrokenAction). Остальные тесты файла не ломают
+     * подключение и обходятся без участника.
+     */
+    private function companyWithOwner(ContainerInterface $container): Company
+    {
+        $companies = $this->companies($container);
+        /** @var UserRepository $users */
+        $users = $container->get(UserRepository::class);
+        /** @var CompanyMemberRepository $members */
+        $members = $container->get(CompanyMemberRepository::class);
+
+        $company = CompanyBuilder::aCompany()->persistWith($companies);
+        CompanyMemberBuilder::aCompanyMember()
+            ->withCompany($company)
+            ->withUser(UserBuilder::aUser()->withEmail('postings-owner-'.bin2hex(random_bytes(4)).'@example.test')->persistWith($users))
+            ->persistWith($companies, $users, $members);
+
+        return $company;
+    }
+
+    private function logHandler(ContainerInterface $container): TestHandler
+    {
+        $handler = $container->get('monolog.handler.in_memory');
+        self::assertInstanceOf(TestHandler::class, $handler);
+
+        return $handler;
+    }
+
+    private function soleBrokenAccountLogRecord(TestHandler $handler): LogRecord
+    {
+        $matching = array_values(array_filter(
+            $handler->getRecords(),
+            static fn (LogRecord $record): bool => str_contains($record->message, 'Ozon отклонил авторизацию'),
+        ));
+        self::assertCount(1, $matching);
+
+        return $matching[0];
+    }
+
+    private function responseBodyOf(LogRecord $record): string
+    {
+        $body = $record->context['response_body'] ?? null;
+        self::assertIsString($body);
+
+        return $body;
     }
 
     public function testSequentialSnapshotsRecordTransitionsAndUpdateSalesLinks(): void

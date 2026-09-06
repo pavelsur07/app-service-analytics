@@ -7,6 +7,7 @@ namespace App\Ingestion\Application\MessageHandler;
 use App\Identity\Application\Facade\IdentityFacade;
 use App\Identity\Application\Facade\OzonSyncTarget;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
+use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Domain\MarketplaceListing;
 use App\Ingestion\Domain\MarketplaceListingPrice;
 use App\Ingestion\Domain\MarketplaceListingPriceRepository;
@@ -95,6 +96,7 @@ final readonly class FetchOzonCatalogHandler
     public function __construct(
         private LockFactory $lockFactory,
         private IdentityFacade $identityFacade,
+        private OzonAccountBrokenLogger $brokenLogger,
         private OzonCatalogFetcher $client,
         private OzonProductInfoFetcher $infoClient,
         private OzonProductListParser $parser,
@@ -162,6 +164,7 @@ final readonly class FetchOzonCatalogHandler
                 // Прочитанные страницы не записываются: replaceForAccount
                 // удаляет всё, чего нет в списке, и половина каталога стёрла
                 // бы остальные товары продавца.
+                $this->brokenLogger->log($message->companyId, $message->marketplaceAccountId, 'products', $failure, $target->apiKey);
                 $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
 
                 return;

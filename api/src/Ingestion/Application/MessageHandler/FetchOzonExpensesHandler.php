@@ -6,6 +6,7 @@ namespace App\Ingestion\Application\MessageHandler;
 
 use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
+use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Domain\MarketplaceExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
@@ -44,6 +45,7 @@ final readonly class FetchOzonExpensesHandler
 
     public function __construct(
         private IdentityFacade $identityFacade,
+        private OzonAccountBrokenLogger $brokenLogger,
         private OzonExpensesFetcher $client,
         private OzonAccrualByDayParser $parser,
         private MarketplaceRawDocumentRepository $rawDocuments,
@@ -73,6 +75,7 @@ final readonly class FetchOzonExpensesHandler
                     throw $failure;
                 }
 
+                $this->brokenLogger->log($message->companyId, $message->marketplaceAccountId, 'expenses', $failure, $target->apiKey);
                 $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
 
                 return;

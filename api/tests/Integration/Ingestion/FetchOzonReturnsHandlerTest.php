@@ -22,6 +22,8 @@ use App\Tests\Support\Fake\ExpiringLockStore;
 use App\Tests\Support\Fake\FakeOzonReturnsFetcher;
 use App\Tests\Support\Fake\LeaseProbeOzonReturnsFetcher;
 use Doctrine\DBAL\Connection;
+use Monolog\Handler\TestHandler;
+use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -85,6 +87,80 @@ final class FetchOzonReturnsHandlerTest extends KernelTestCase
         ));
         self::assertSame(0, $this->rawCount($container, $account));
         self::assertSame(0, $this->returnCount($container, $account));
+
+        $handler = $this->logHandler($container);
+        $record = $this->soleBrokenAccountLogRecord($handler);
+        self::assertSame('returns', $record->context['scope']);
+        self::assertSame(401, $record->context['status_code']);
+        self::assertStringContainsString('"code":16', $this->responseBodyOf($record));
+        self::assertSame($account->companyId()->toRfc4122(), $record->context['company_id']);
+        self::assertSame($account->id()->toRfc4122(), $record->context['marketplace_account_id']);
+    }
+
+    public function testAuthorizationFailureDoesNotLeakTheApiKeyThroughTheResponseBody(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->accountWithApiKey($container, 'key-1');
+        $container->set(OzonReturnsListClient::class, new FakeOzonReturnsFetcher([
+            $this->authorizationFailure('{"code":16,"message":"api_key key-1 invalid"}'),
+        ]));
+
+        $this->sync($container, $account);
+
+        $handler = $this->logHandler($container);
+        $record = $this->soleBrokenAccountLogRecord($handler);
+        self::assertStringContainsString('[redacted]', $this->responseBodyOf($record));
+        foreach ($handler->getRecords() as $logged) {
+            self::assertStringNotContainsString('key-1', $logged->message);
+            self::assertStringNotContainsString('key-1', (string) json_encode($logged->context));
+        }
+    }
+
+    public function testNonAuthorizationFailureDoesNotLogBrokenAccountReason(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $container->set(OzonReturnsListClient::class, new FakeOzonReturnsFetcher([$this->unavailableFailure()]));
+
+        try {
+            $this->sync($container, $account);
+            self::fail('Недоступность площадки обязана пробрасываться исключением, а не тихо ломать подключение.');
+        } catch (\Throwable) {
+        }
+
+        $state = $this->connection($container)->fetchOne(
+            'SELECT state FROM marketplace_account WHERE id = ?',
+            [$account->id()->toRfc4122()],
+        );
+        self::assertNotSame('broken', $state);
+        self::assertFalse($this->logHandler($container)->hasWarningThatContains('Ozon отклонил авторизацию'));
+    }
+
+    private function logHandler(ContainerInterface $container): TestHandler
+    {
+        $handler = $container->get('monolog.handler.in_memory');
+        self::assertInstanceOf(TestHandler::class, $handler);
+
+        return $handler;
+    }
+
+    private function soleBrokenAccountLogRecord(TestHandler $handler): LogRecord
+    {
+        $matching = array_values(array_filter(
+            $handler->getRecords(),
+            static fn (LogRecord $record): bool => str_contains($record->message, 'Ozon отклонил авторизацию'),
+        ));
+        self::assertCount(1, $matching);
+
+        return $matching[0];
+    }
+
+    private function responseBodyOf(LogRecord $record): string
+    {
+        $body = $record->context['response_body'] ?? null;
+        self::assertIsString($body);
+
+        return $body;
     }
 
     public function testAccountLockRetriesOverlappingWindowInsteadOfLosingIt(): void
@@ -222,10 +298,10 @@ final class FetchOzonReturnsHandlerTest extends KernelTestCase
         ];
     }
 
-    private function authorizationFailure(): \Throwable
+    private function authorizationFailure(string $body = '{"code":16}'): \Throwable
     {
         try {
-            (new MockHttpClient(new MockResponse('{"code":16}', ['http_code' => 401])))
+            (new MockHttpClient(new MockResponse($body, ['http_code' => 401])))
                 ->request('POST', 'https://api-seller.ozon.ru/v1/returns/list')
                 ->getContent();
         } catch (\Throwable $failure) {
@@ -235,7 +311,30 @@ final class FetchOzonReturnsHandlerTest extends KernelTestCase
         throw new \LogicException('Mock HTTP 401 did not throw.');
     }
 
+    /**
+     * Лимит запросов и подобные отказы лечатся повтором, а не переводом
+     * подключения в broken (ADR-007) — исключение, отличное от
+     * `OzonAuthorizationFailure`, обязано пробрасываться дальше.
+     */
+    private function unavailableFailure(): \Throwable
+    {
+        try {
+            (new MockHttpClient(new MockResponse('{"code":1,"message":"internal"}', ['http_code' => 503])))
+                ->request('POST', 'https://api-seller.ozon.ru/v1/returns/list')
+                ->getContent();
+        } catch (\Throwable $failure) {
+            return $failure;
+        }
+
+        throw new \LogicException('Mock HTTP 503 did not throw.');
+    }
+
     private function account(ContainerInterface $container): MarketplaceAccount
+    {
+        return $this->accountWithApiKey($container, 'key');
+    }
+
+    private function accountWithApiKey(ContainerInterface $container, string $apiKey): MarketplaceAccount
     {
         /** @var CompanyRepository $companies */
         $companies = $container->get(CompanyRepository::class);
@@ -256,7 +355,7 @@ final class FetchOzonReturnsHandlerTest extends KernelTestCase
         return MarketplaceAccountBuilder::aMarketplaceAccount()
             ->withCompany($company)
             ->withExternalShopId('returns-'.bin2hex(random_bytes(4)))
-            ->withPlaintextCredentials(['client_id' => 'seller', 'api_key' => 'key'], $encryptor)
+            ->withPlaintextCredentials(['client_id' => 'seller', 'api_key' => $apiKey], $encryptor)
             ->persistWith($companies, $accounts);
     }
 
