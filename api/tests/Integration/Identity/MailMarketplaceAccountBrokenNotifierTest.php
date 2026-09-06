@@ -94,12 +94,7 @@ final class MailMarketplaceAccountBrokenNotifierTest extends KernelTestCase
         $container = $this->bootedContainer();
         $account = $this->accountWithMember($container, 'owner@example.test');
         [$logger, $handler] = $this->logger();
-        $failing = new class implements MailerInterface {
-            public function send(RawMessage $message, ?Envelope $envelope = null): void
-            {
-                throw new \RuntimeException('SMTP недоступен');
-            }
-        };
+        $failing = $this->failingMailer('SMTP недоступен');
 
         // Если исключение не перехвачено внутри accountBroken(), этот вызов
         // сам провалит тест — отдельного try/catch здесь не нужно.
@@ -111,6 +106,61 @@ final class MailMarketplaceAccountBrokenNotifierTest extends KernelTestCase
         self::assertSame(1, $record->context['recipients_count']);
         self::assertSame(\RuntimeException::class, $record->context['exception_class']);
         self::assertSame('SMTP недоступен', $record->context['exception_message']);
+    }
+
+    /**
+     * Ревью: синтетическое сообщение отказа («SMTP недоступен») не способно
+     * поймать регрессию, потому что в нём никогда не было адреса.
+     * `Symfony\Component\Mailer\Transport\Smtp\SmtpTransport` собирает
+     * `UnexpectedResponseException` из сырого ответа сервера, а типовой
+     * отказ SMTP эхом возвращает отклонённый адрес прямо в тексте —
+     * этот тест воспроизводит именно такую форму, с адресом в угловых
+     * скобках, и проверяет, что он не переживает запись.
+     */
+    public function testSendFailureWithARealisticSmtpMessageDoesNotLeakTheRejectedAddress(): void
+    {
+        $container = $this->bootedContainer();
+        $realEmail = 'owner@example.test';
+        $account = $this->accountWithMember($container, $realEmail);
+        [$logger, $handler] = $this->logger();
+        $failing = $this->failingMailer("550 5.1.1 <{$realEmail}>: Recipient address rejected: User unknown");
+
+        $this->notifier($container, $failing, $logger)
+            ->accountBroken($account->companyId()->toRfc4122(), $account);
+
+        $record = $this->soleRecord($handler);
+        self::assertSame(Level::Warning, $record->level);
+        self::assertStringNotContainsString($realEmail, $record->message);
+        self::assertStringNotContainsString($realEmail, (string) json_encode($record->context));
+        // Маскировка должна оставить след, а не превратить сообщение
+        // в пустую строку — иначе от записи ничего не остаётся.
+        self::assertStringContainsString('[redacted]', $this->exceptionMessageOf($record));
+    }
+
+    /**
+     * Типовой отказ рассылки перечисляет несколько отклонённых адресов
+     * в одном ответе сервера — маскировка обязана снять оба, а не только
+     * первое совпадение в строке (`preg_replace()` без лимита заменяет
+     * все совпадения, но синтетический тест с одним адресом этого
+     * не проверяет).
+     */
+    public function testSendFailureWithSeveralAddressesInOneMessageRedactsAllOfThem(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->accountWithMember($container, 'owner@example.test');
+        [$logger, $handler] = $this->logger();
+        $failing = $this->failingMailer(
+            '550 5.1.1 <first@example.test> and <second@example.test>: Recipient address rejected',
+        );
+
+        $this->notifier($container, $failing, $logger)
+            ->accountBroken($account->companyId()->toRfc4122(), $account);
+
+        $record = $this->soleRecord($handler);
+        $exceptionMessage = $this->exceptionMessageOf($record);
+        self::assertStringNotContainsString('first@example.test', $exceptionMessage);
+        self::assertStringNotContainsString('second@example.test', $exceptionMessage);
+        self::assertSame(2, substr_count($exceptionMessage, '[redacted]'));
     }
 
     public function testAccountWithoutAnyCompanyMemberLogsAWarningInsteadOfThrowing(): void
@@ -128,6 +178,20 @@ final class MailMarketplaceAccountBrokenNotifierTest extends KernelTestCase
         $record = $this->soleRecord($handler);
         self::assertSame(Level::Warning, $record->level);
         self::assertSame(0, $record->context['recipients_count']);
+    }
+
+    private function failingMailer(string $exceptionMessage): MailerInterface
+    {
+        return new class($exceptionMessage) implements MailerInterface {
+            public function __construct(private string $exceptionMessage)
+            {
+            }
+
+            public function send(RawMessage $message, ?Envelope $envelope = null): void
+            {
+                throw new \RuntimeException($this->exceptionMessage);
+            }
+        };
     }
 
     private function notifier(ContainerInterface $container, MailerInterface $mailer, ?Logger $logger = null): MailMarketplaceAccountBrokenNotifier
@@ -197,6 +261,14 @@ final class MailMarketplaceAccountBrokenNotifierTest extends KernelTestCase
         self::assertCount(1, $records);
 
         return $records[0];
+    }
+
+    private function exceptionMessageOf(LogRecord $record): string
+    {
+        $message = $record->context['exception_message'] ?? null;
+        self::assertIsString($message);
+
+        return $message;
     }
 
     /**
