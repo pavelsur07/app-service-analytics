@@ -152,7 +152,6 @@ final readonly class ConnectOzonAccountAction
         // Минимально возможное окно — проверка права, а не загрузка данных
         // (квота подключения не бесплатна, ADR-006).
         $probeSince = $now->modify('-1 minute');
-        $probeDay = $now;
 
         try {
             $catalogBody = $this->catalogFetcher->fetchPage($clientId, $apiKey, '', self::PROBE_LIMIT);
@@ -191,7 +190,7 @@ final readonly class ConnectOzonAccountAction
         }
 
         try {
-            $this->expensesFetcher->fetchDay($clientId, $apiKey, $probeDay, '');
+            $this->expensesFetcher->fetchDay($clientId, $apiKey, $now, '');
         } catch (\Throwable $failure) {
             return $this->classifyProbeFailure($failure, ConnectOzonAccountResult::RejectedExpenses, $clientId, 'expenses');
         }
