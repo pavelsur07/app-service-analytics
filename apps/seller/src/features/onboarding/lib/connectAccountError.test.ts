@@ -29,6 +29,7 @@ describe('connectAccountFailure', () => {
   // на финансы прошёл проверку и подключение сломалось через секунды.
   // У каждой из трёх новых областей — свой код и своё название права.
   it.each([
+    ['credentials_rejected_product_info', 'карточки товаров'],
     ['credentials_rejected_sales', 'продажи'],
     ['credentials_rejected_expenses', 'финансы'],
     ['credentials_rejected_returns', 'возвраты'],

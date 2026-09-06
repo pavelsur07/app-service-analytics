@@ -19,6 +19,12 @@ const BY_CODE: Record<string, ReplaceCredentialsFailure> = {
       'Проверьте, что Api-Key скопирован целиком и выпущен в том же кабинете. Старый ключ остался на месте — синхронизация не изменилась.',
     refetch: false,
   },
+  credentials_rejected_product_info: {
+    title: 'Ключу не хватает права на карточки товаров',
+    description:
+      'Включите доступ к карточкам товаров в кабинете продавца и выпустите ключ заново. Старый ключ остался на месте — синхронизация не изменилась.',
+    refetch: false,
+  },
   credentials_rejected_sales: {
     title: 'Ключу не хватает права на продажи',
     description:

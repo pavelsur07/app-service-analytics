@@ -14,6 +14,8 @@ use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Domain\OzonExpensesFetcher;
 use App\Ingestion\Domain\OzonPostingsFetcher;
+use App\Ingestion\Domain\OzonProductInfoFetcher;
+use App\Ingestion\Domain\OzonProductListParser;
 use App\Ingestion\Domain\OzonReturnsFetcher;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -30,7 +32,7 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  * в площадку, клиент площадки принадлежит Ingestion, а зависимости
  * строго вниз.
  *
- * **Проба покрывает все четыре области синхронизации, а не одну.**
+ * **Проба покрывает пять эндпоинтов синхронизации, а не один-четыре.**
  * Инцидент на проде: ключ прошёл `/v3/product/list`, подключение
  * создалось активным, а первая же реальная синхронизация упала
  * на финансовом эндпоинте — в Ozon права на финансы выдаются отдельно
@@ -38,21 +40,33 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  * по каждой нужной синхронизации области:
  *
  * 1. Товары — `/v3/product/list` (`OzonCatalogFetcher`).
- * 2. Продажи — `/v2/posting/fbo/list` (`OzonPostingsFetcher`).
- * 3. Расходы — `/v1/finance/accrual/by-day` (`OzonExpensesFetcher`).
- * 4. Возвраты — `/v1/returns/list` (`OzonReturnsFetcher`).
+ * 2. Карточки товаров — `/v3/product/info/list` (`OzonProductInfoFetcher`),
+ *    сразу после товаров, тем же product_id.
+ * 3. Продажи — `/v2/posting/fbo/list` (`OzonPostingsFetcher`).
+ * 4. Расходы — `/v1/finance/accrual/by-day` (`OzonExpensesFetcher`).
+ * 5. Возвраты — `/v1/returns/list` (`OzonReturnsFetcher`).
  *
- * **`/v3/product/info/list` (карточки товаров) отдельной пробой не идёт.**
- * В Ozon это та же товарная область доступа, что и `/v3/product/list` —
- * оба эндпоинта читают карточки продавца, разделения прав между ними
- * площадка не делает. Отдельная проба потребовала бы настоящих
- * `product_id`, которых на этапе подключения ещё нет: пустой список
- * идентификаторов эндпоинт отвергает с 400 (ошибка параметров, не
- * авторизации), и различить эту ошибку от реального отказа права
- * пришлось бы эвристикой по телу ответа — источник, которому в тестах
- * ADR-005 нечего противопоставить, кроме зафиксированного текста ошибки
- * площадки. Цена отдельной пробы больше её пользы: право на товары уже
- * проверено первым запросом.
+ * **Карточки товаров пробуются своим запросом, а не выводятся из товарной
+ * пробы.** Раньше здесь стояло допущение «это одна область прав с
+ * `/v3/product/list`, отдельная проба не нужна» — то самое допущение,
+ * которое уже подвело один раз на продажах и финансах (см. выше). Ни
+ * документация Ozon, ни опыт этого продукта его не подтверждали;
+ * единственная причина, по которой оно жило, — не путаница с product_id,
+ * а нежелание её решать. Решение: страница товаров запрашивается с
+ * `PROBE_LIMIT = 1`, и `OzonProductListParser::parse()` (тот же парсер,
+ * что у `FetchOzonCatalogHandler`) отдаёт не больше одного `product_id`
+ * с этой страницы — валидный непустой список для `/v3/product/info/list`
+ * без эвристик по телу ответа.
+ *
+ * **У продавца без единого товара проба карточек пропускается**, а не
+ * подставляет фиктивный `product_id`. Эндпоинт требует непустой список
+ * (интерфейс `OzonProductInfoFetcher::fetchNames()`), и пустой запрос
+ * получил бы 400 — ошибку параметров, а не авторизации, которую конструкция
+ * «найти отказ права» classifyProbeFailure отличить от настоящего отказа
+ * не может и не должна. Пропуск честен вдвойне: раз каталог пуст, нечему
+ * подтверждать право, и синхронизации нечего будет грузить этим тиком —
+ * тот же приём, которым `FetchOzonCatalogHandler::fetchProductInfo()`
+ * уже решает эту же задачу на каждом тике синхронизации.
  *
  * Каждая проба идёт своим последовательным запросом (не параллельно):
  * первый же отказ решает исход, и параллельные запросы тратили бы квоту
@@ -86,6 +100,8 @@ final readonly class ConnectOzonAccountAction
 
     public function __construct(
         private OzonCatalogFetcher $catalogFetcher,
+        private OzonProductListParser $catalogParser,
+        private OzonProductInfoFetcher $productInfoFetcher,
         private OzonPostingsFetcher $postingsFetcher,
         private OzonExpensesFetcher $expensesFetcher,
         private OzonReturnsFetcher $returnsFetcher,
@@ -128,7 +144,7 @@ final readonly class ConnectOzonAccountAction
 
     /**
      * Последовательные пробы до первого отказа. `null` означает, что все
-     * четыре области подтверждены и можно сохранять подключение.
+     * пять эндпоинтов подтверждены и можно сохранять подключение.
      */
     private function probeAllScopes(string $clientId, string $apiKey): ?ConnectOzonAccountResult
     {
@@ -139,10 +155,34 @@ final readonly class ConnectOzonAccountAction
         $probeDay = $now;
 
         try {
-            $this->catalogFetcher->fetchPage($clientId, $apiKey, '', self::PROBE_LIMIT);
+            $catalogBody = $this->catalogFetcher->fetchPage($clientId, $apiKey, '', self::PROBE_LIMIT);
         } catch (\Throwable $failure) {
             return $this->classifyProbeFailure($failure, ConnectOzonAccountResult::Rejected, $clientId, 'products');
         }
+
+        // Разбор — тем же парсером, что и настоящая синхронизация каталога
+        // (FetchOzonCatalogHandler). Ошибка разбора не отказ права и не
+        // недоступность площадки — она обязана пробрасываться неизменённой,
+        // и здесь ей ничто не мешает: catch выше уже закрыт, эта строка вне
+        // его блока.
+        $productIds = $this->catalogParser->parse($catalogBody)->productIds();
+        if ([] !== $productIds) {
+            // PROBE_LIMIT = 1 держит страницу максимум в один товар —
+            // список ниже никогда не превышает лимит пробы, который
+            // задача просила не увеличивать.
+            try {
+                $this->productInfoFetcher->fetchNames($clientId, $apiKey, $productIds);
+            } catch (\Throwable $failure) {
+                return $this->classifyProbeFailure($failure, ConnectOzonAccountResult::RejectedProductInfo, $clientId, 'product_info');
+            }
+        }
+        // [] === $productIds: у продавца нет ни одного товара — пробовать
+        // право на карточки нечем (эндпоинт отвергает пустой список 400,
+        // не авторизацией), и синхронизации самого каталога в этом случае
+        // тоже нечего будет грузить (FetchOzonCatalogHandler::fetchProductInfo
+        // пропускает запрос по той же причине). Пропуск — не дырка в пробе,
+        // а честный ответ: продавец без товаров не должен упереться
+        // в невозможность подключиться вовсе.
 
         try {
             $this->postingsFetcher->fetch($clientId, $apiKey, $probeSince, $now);
@@ -166,7 +206,7 @@ final readonly class ConnectOzonAccountAction
     }
 
     /**
-     * Общая ветвь для каждой из четырёх проб: которая из них не прошла
+     * Общая ветвь для каждой из пяти проб: которая из них не прошла
      * решает вызывающий метод (передаёт свой `$rejectedResult` и имя
      * области для журнала), а не эта функция.
      */
