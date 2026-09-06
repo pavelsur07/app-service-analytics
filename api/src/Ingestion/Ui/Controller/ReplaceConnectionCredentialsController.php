@@ -27,8 +27,9 @@ use Symfony\Component\Routing\Requirement\Requirement;
  * так», а причина, по которой сломанное подключение живёт днями.
  *
  * Ключ проверяется у площадки до сохранения (ReplaceOzonCredentialsAction),
- * поэтому 422 здесь означает именно «площадка не приняла ключ», а не
- * «сохранили, посмотрим позже».
+ * поэтому 422 здесь означает именно «площадка не приняла ключ»,
+ * а 503 — «площадка не ответила», и это разные следующие действия
+ * клиента (тот же контракт, что у ConnectOzonAccountController).
  *
  * companyId первым сегментом (§1); 403 для чужой компании отдаёт
  * CompanyAccessSubscriber, до контроллера запрос не доходит.
@@ -72,6 +73,11 @@ final class ReplaceConnectionCredentialsController
     #[OA\Response(
         response: 409,
         description: 'Подключение изменил кто-то ещё — перечитать и повторить (ADR-008)',
+        content: new Model(type: ValidationErrorResponse::class),
+    )]
+    #[OA\Response(
+        response: 503,
+        description: 'Площадка не ответила — повторить позже, ключ выпускать не нужно',
         content: new Model(type: ValidationErrorResponse::class),
     )]
     #[OA\Response(
@@ -135,6 +141,14 @@ final class ReplaceConnectionCredentialsController
                 Response::HTTP_UNPROCESSABLE_ENTITY,
                 'credentials_of_another_cabinet',
                 'Этот Client-Id принадлежит другому кабинету. Проверьте, что ключ выпущен в том магазине, который подключён здесь.',
+            ),
+            // Тот же код, что у подключения кабинета: у клиента это та же
+            // беда и то же следующее действие, а второй словарь для одного
+            // и того же означал бы два разных текста об одном.
+            ReplaceCredentialsResult::Unavailable => $this->error(
+                Response::HTTP_SERVICE_UNAVAILABLE,
+                'marketplace_unavailable',
+                'Ozon сейчас не отвечает. Ключ выпускать не нужно — повторите через несколько минут. Старый ключ остался на месте.',
             ),
             ReplaceCredentialsResult::Revoked => $this->error(
                 Response::HTTP_UNPROCESSABLE_ENTITY,

@@ -1902,6 +1902,15 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
+            /** @description Площадка не ответила — повторить позже, ключ выпускать не нужно */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
         };
     };
     get_ingestion_buyout_rate_daily: {

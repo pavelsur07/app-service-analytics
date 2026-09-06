@@ -175,6 +175,30 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         self::assertStringNotContainsString('SUPER-SECRET-KEY', $content);
     }
 
+    public function testMarketplaceUnavailableReturns503AndKeepsConnectionBroken(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Broken);
+        $before = $this->ciphertext($account);
+        // Сбой площадки на пробе — не отказ ключа: клиенту нужно
+        // «подождать», а не «выпустить новый ключ» (тот же контракт,
+        // что у подключения при онбординге).
+        $this->stubCatalog(429);
+
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'live-key', 'version' => 1]);
+
+        self::assertSame(503, $client->getResponse()->getStatusCode());
+        self::assertSame('broken', $this->state($account));
+        self::assertSame($before, $this->ciphertext($account));
+
+        $content = $client->getResponse()->getContent();
+        self::assertIsString($content);
+        /** @var array{code: string} $payload */
+        $payload = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('marketplace_unavailable', $payload['code']);
+    }
+
     public function testConnectionOfAnotherCompanyIsNotTouched(): void
     {
         $client = static::createClient();
