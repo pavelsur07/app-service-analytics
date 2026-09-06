@@ -15,9 +15,11 @@ use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Domain\OzonExpensesFetcher;
 use App\Ingestion\Domain\OzonPostingsFetcher;
+use App\Ingestion\Domain\OzonProductInfoFetcher;
 use App\Ingestion\Domain\OzonReturnsFetcher;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonAccrualByDayClient;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonPostingFboListClient;
+use App\Ingestion\Infrastructure\Connector\Ozon\OzonProductInfoListClient;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonProductListClient;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonReturnsListClient;
 use App\Tests\Support\Builder\CompanyBuilder;
@@ -98,6 +100,59 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
         /** @var array{code: string} $payload */
         $payload = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('credentials_rejected_sales', $payload['code']);
+    }
+
+    /**
+     * Пробуется своим запросом сразу после товаров, а не выведена из
+     * товарной пробы: та же причина, что у продаж/финансов/возвратов —
+     * допущение об общей области прав уже подводило один раз.
+     */
+    public function testProductInfoScopeRejectionReturnsItsOwnCodeAndKeepsConnectionBroken(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Broken);
+        $before = $this->ciphertext($account);
+        $this->stubCatalogWithProduct(200);
+        $this->stubProductInfo(401);
+
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'product-info-scope-missing', 'version' => 1]);
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        self::assertSame('broken', $this->state($account));
+        self::assertSame($before, $this->ciphertext($account));
+
+        $content = $client->getResponse()->getContent();
+        self::assertIsString($content);
+        /** @var array{code: string} $payload */
+        $payload = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame('credentials_rejected_product_info', $payload['code']);
+    }
+
+    /**
+     * Продавец без единого товара не должен упереться в невозможность
+     * заменить ключ вовсе: пробовать право на карточки нечем.
+     */
+    public function testSellerWithoutAnyProductsSkipsTheProductInfoProbe(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Broken);
+        $this->stubCatalog(200);
+        static::getContainer()->set(OzonProductInfoListClient::class, new class implements OzonProductInfoFetcher {
+            public function fetchNames(string $clientId, string $apiKey, array $productIds): string
+            {
+                throw new \LogicException('Проба карточек не должна вызываться без единого товара у продавца.');
+            }
+        });
+        $this->stubPostings(200);
+        $this->stubExpenses(200);
+        $this->stubReturns(200);
+
+        $this->put($client, $company, $account, ['clientId' => 'shop-1', 'apiKey' => 'live-key', 'version' => 1]);
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+        self::assertSame('active', $this->state($account));
     }
 
     public function testExpensesScopeRejectionDoesNotReviveTheConnection(): void
@@ -333,6 +388,51 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
                 $client = new MockHttpClient(new MockResponse($this->body, ['http_code' => $this->status]));
 
                 return $client->request('POST', 'https://api-seller.ozon.ru/v3/product/list')->getContent();
+            }
+        });
+    }
+
+    /**
+     * Каталог с одним товаром: PROBE_LIMIT = 1 у самой пробы держит
+     * страницу максимум в один элемент, и этого достаточно, чтобы
+     * `productIds()` вернул непустой список для пробы карточек.
+     */
+    private function stubCatalogWithProduct(int $status): void
+    {
+        $body = 200 === $status
+            ? '{"result":{"items":[{"sku":220280923,"offer_id":"offer-1","product_id":111}],"last_id":"","total":1}}'
+            : $this->bodyFor($status);
+        static::getContainer()->set(OzonProductListClient::class, new class($body, $status) implements OzonCatalogFetcher {
+            public function __construct(
+                private readonly string $body,
+                private readonly int $status,
+            ) {
+            }
+
+            public function fetchPage(string $clientId, string $apiKey, string $lastId, int $limit = 1000): string
+            {
+                $client = new MockHttpClient(new MockResponse($this->body, ['http_code' => $this->status]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v3/product/list')->getContent();
+            }
+        });
+    }
+
+    private function stubProductInfo(int $status): void
+    {
+        $body = 200 === $status ? '{"items":[]}' : $this->bodyFor($status);
+        static::getContainer()->set(OzonProductInfoListClient::class, new class($body, $status) implements OzonProductInfoFetcher {
+            public function __construct(
+                private readonly string $body,
+                private readonly int $status,
+            ) {
+            }
+
+            public function fetchNames(string $clientId, string $apiKey, array $productIds): string
+            {
+                $client = new MockHttpClient(new MockResponse($this->body, ['http_code' => $this->status]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v3/product/info/list')->getContent();
             }
         });
     }

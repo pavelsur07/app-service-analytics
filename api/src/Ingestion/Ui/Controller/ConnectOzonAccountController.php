@@ -60,7 +60,7 @@ final class ConnectOzonAccountController
     )]
     #[OA\Response(
         response: 422,
-        description: 'Площадка не приняла ключ (целиком или на отдельной области — товары/продажи/расходы/возвраты, код называет какой: credentials_rejected, credentials_rejected_sales, credentials_rejected_expenses, credentials_rejected_returns) либо тело запроса неполное',
+        description: 'Площадка не приняла ключ (целиком или на отдельной области — товары/карточки товаров/продажи/расходы/возвраты, код называет какой: credentials_rejected, credentials_rejected_product_info, credentials_rejected_sales, credentials_rejected_expenses, credentials_rejected_returns) либо тело запроса неполное',
         content: new Model(type: ValidationErrorResponse::class),
     )]
     #[OA\Response(
@@ -109,7 +109,12 @@ final class ConnectOzonAccountController
             // Ниже — тот же код 422, но своя область и свой текст: клиенту
             // нужно включить конкретное право в кабинете продавца, а не
             // гадать, какое (боевой инцидент, из-за которого проба
-            // расширена с одного эндпоинта на все четыре).
+            // расширена с одного эндпоинта до пяти).
+            ConnectOzonAccountResult::RejectedProductInfo => $this->error(
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                'credentials_rejected_product_info',
+                'У ключа нет права читать карточки товаров. Включите доступ к карточкам товаров в кабинете продавца и выпустите ключ заново.',
+            ),
             ConnectOzonAccountResult::RejectedSales => $this->error(
                 Response::HTTP_UNPROCESSABLE_ENTITY,
                 'credentials_rejected_sales',

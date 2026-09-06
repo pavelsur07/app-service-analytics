@@ -13,6 +13,11 @@ const BY_CODE: Record<string, ConnectAccountFailure> = {
     description:
       'Проверьте, что Client-Id и Api-Key скопированы целиком и выпущены в одном кабинете. Подключение не создано.',
   },
+  credentials_rejected_product_info: {
+    title: 'Ключу не хватает права на карточки товаров',
+    description:
+      'Включите доступ к карточкам товаров в кабинете продавца и выпустите ключ заново. Подключение не создано.',
+  },
   credentials_rejected_sales: {
     title: 'Ключу не хватает права на продажи',
     description:

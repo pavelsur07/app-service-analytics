@@ -11,6 +11,8 @@ use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Domain\OzonExpensesFetcher;
 use App\Ingestion\Domain\OzonPostingsFetcher;
+use App\Ingestion\Domain\OzonProductInfoFetcher;
+use App\Ingestion\Domain\OzonProductListParser;
 use App\Ingestion\Domain\OzonReturnsFetcher;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
@@ -28,13 +30,17 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  * в площадку, а клиент площадки принадлежит Ingestion. Обратное
  * направление запрещено — зависимости строго вниз.
  *
- * **Проба покрывает все четыре области синхронизации, а не одну** —
+ * **Проба покрывает пять эндпоинтов синхронизации, а не один-четыре** —
  * тот же приём и то же обоснование, что у ConnectOzonAccountAction:
  * замена ключа, прошедшего только товарную область, оживила бы
  * подключение на несколько секунд и сломала бы его снова на первом же
  * реальном запросе продаж, расходов или возвратов. `/v3/product/info/list`
- * отдельной пробой не идёт по той же причине — см. docblock
- * ConnectOzonAccountAction.
+ * (карточки товаров) пробуется отдельным запросом сразу после товаров,
+ * тем же product_id со страницы каталога, — то самое допущение «одна
+ * область прав с `/v3/product/list`» уже подводило один раз на продажах
+ * и финансах, повторять его здесь означало бы не выучить урок дважды.
+ * Полное обоснование и разбор случая без единого товара у продавца — см.
+ * docblock ConnectOzonAccountAction.
  *
  * Отказ HTTP-клиента, отличный от 401/403 (сеть, таймаут, лимит запросов,
  * прочие 4xx и 5xx), даёт исход `Unavailable` — то же поведение, что
@@ -52,6 +58,8 @@ final readonly class ReplaceOzonCredentialsAction
 
     public function __construct(
         private OzonCatalogFetcher $catalogFetcher,
+        private OzonProductListParser $catalogParser,
+        private OzonProductInfoFetcher $productInfoFetcher,
         private OzonPostingsFetcher $postingsFetcher,
         private OzonExpensesFetcher $expensesFetcher,
         private OzonReturnsFetcher $returnsFetcher,
@@ -103,7 +111,7 @@ final readonly class ReplaceOzonCredentialsAction
     /**
      * Последовательные пробы до первого отказа, тот же порядок и те же
      * минимальные окна, что у ConnectOzonAccountAction. `null` означает,
-     * что все четыре области подтверждены.
+     * что все пять эндпоинтов подтверждены.
      */
     private function probeAllScopes(string $clientId, string $apiKey): ?ReplaceCredentialsResult
     {
@@ -111,10 +119,24 @@ final readonly class ReplaceOzonCredentialsAction
         $probeSince = $now->modify('-1 minute');
 
         try {
-            $this->catalogFetcher->fetchPage($clientId, $apiKey, '', self::PROBE_LIMIT);
+            $catalogBody = $this->catalogFetcher->fetchPage($clientId, $apiKey, '', self::PROBE_LIMIT);
         } catch (\Throwable $failure) {
             return $this->classifyProbeFailure($failure, ReplaceCredentialsResult::Rejected, $clientId, 'products');
         }
+
+        // Тот же приём, что у ConnectOzonAccountAction::probeAllScopes:
+        // ошибка разбора каталога пробрасывается неизменённой, вне блока
+        // catch выше, — это не отказ права и не недоступность площадки.
+        $productIds = $this->catalogParser->parse($catalogBody)->productIds();
+        if ([] !== $productIds) {
+            try {
+                $this->productInfoFetcher->fetchNames($clientId, $apiKey, $productIds);
+            } catch (\Throwable $failure) {
+                return $this->classifyProbeFailure($failure, ReplaceCredentialsResult::RejectedProductInfo, $clientId, 'product_info');
+            }
+        }
+        // Пустой каталог — пропуск, а не отказ: см. docblock
+        // ConnectOzonAccountAction::probeAllScopes.
 
         try {
             $this->postingsFetcher->fetch($clientId, $apiKey, $probeSince, $now);
@@ -138,7 +160,7 @@ final readonly class ReplaceOzonCredentialsAction
     }
 
     /**
-     * Общая ветвь для каждой из четырёх проб, тот же приём, что
+     * Общая ветвь для каждой из пяти проб, тот же приём, что
      * у `ConnectOzonAccountAction::classifyProbeFailure` — которая проба
      * не прошла решает вызывающий метод (передаёт свой `$rejectedResult`
      * и имя области для журнала), а не эта функция.

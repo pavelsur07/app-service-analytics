@@ -27,6 +27,7 @@ describe('replaceCredentialsFailure', () => {
   // Та же расширенная проба, что у подключения: замена ключа, прошедшего
   // только товарную область, оживила бы сломанное подключение на секунды.
   it.each([
+    ['credentials_rejected_product_info', 'карточки товаров'],
     ['credentials_rejected_sales', 'продажи'],
     ['credentials_rejected_expenses', 'финансы'],
     ['credentials_rejected_returns', 'возвраты'],

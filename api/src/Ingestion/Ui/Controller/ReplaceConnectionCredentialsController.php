@@ -67,7 +67,7 @@ final class ReplaceConnectionCredentialsController
     )]
     #[OA\Response(
         response: 422,
-        description: 'Площадка не приняла ключ (целиком или на отдельной области — товары/продажи/расходы/возвраты, код называет какой: credentials_rejected, credentials_rejected_sales, credentials_rejected_expenses, credentials_rejected_returns) либо тело запроса неполное',
+        description: 'Площадка не приняла ключ (целиком или на отдельной области — товары/карточки товаров/продажи/расходы/возвраты, код называет какой: credentials_rejected, credentials_rejected_product_info, credentials_rejected_sales, credentials_rejected_expenses, credentials_rejected_returns) либо тело запроса неполное',
         content: new Model(type: ValidationErrorResponse::class),
     )]
     #[OA\Response(
@@ -122,6 +122,11 @@ final class ReplaceConnectionCredentialsController
             // Своя область и свой текст на каждый отказ: клиенту нужно
             // включить конкретное право, а не гадать, какое (тот же приём,
             // что у подключения кабинета).
+            ReplaceCredentialsResult::RejectedProductInfo => $this->error(
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+                'credentials_rejected_product_info',
+                'У этого ключа нет права читать карточки товаров. Включите доступ к карточкам товаров в кабинете продавца и выпустите ключ заново. Старый ключ остался на месте.',
+            ),
             ReplaceCredentialsResult::RejectedSales => $this->error(
                 Response::HTTP_UNPROCESSABLE_ENTITY,
                 'credentials_rejected_sales',
