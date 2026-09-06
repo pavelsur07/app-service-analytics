@@ -21,6 +21,8 @@ use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Mailer\Envelope;
@@ -52,17 +54,22 @@ final class MarkMarketplaceAccountBrokenActionTest extends KernelTestCase
         $container = $this->bootedContainer();
         $account = $this->activeAccount($container);
         $notifier = $this->recordingNotifier();
-        $action = $this->action($container, $notifier);
+        $handler = new TestHandler();
+        $action = $this->action($container, $notifier, new Logger('test', [$handler]));
 
         // У подключения две задачи в очереди — продажи и каталог, — и обе
         // получат отказ авторизации. Письмо клиент должен получить одно:
         // условие «было active» живёт внутри UPDATE, поэтому второй вызов
         // уходит ни с чем (CLAUDE.md §4).
         $action($account->companyId()->toRfc4122(), $account->id()->toRfc4122());
+        $handler->clear();
         $repeated = $action($account->companyId()->toRfc4122(), $account->id()->toRfc4122());
 
         self::assertFalse($repeated);
         self::assertCount(1, $notifier->notified);
+        // Путь «состояние не менялось» выходит из действия до всякого
+        // обращения к логгеру дефекта 3 — записи здесь быть не должно.
+        self::assertSame([], $handler->getRecords());
     }
 
     public function testAccountOfAnotherCompanyIsNotBroken(): void
@@ -114,7 +121,7 @@ final class MarkMarketplaceAccountBrokenActionTest extends KernelTestCase
         );
         /** @var MarketplaceAccountRepository $accounts */
         $accounts = $container->get(MarketplaceAccountRepository::class);
-        $action = new MarkMarketplaceAccountBrokenAction($accounts, $notifier);
+        $action = new MarkMarketplaceAccountBrokenAction($accounts, $notifier, new NullLogger());
 
         // Если отказ отправки уйдёт наружу, этот вызов сам провалит тест.
         $changed = $action($account->companyId()->toRfc4122(), $account->id()->toRfc4122());
@@ -122,6 +129,68 @@ final class MarkMarketplaceAccountBrokenActionTest extends KernelTestCase
         self::assertTrue($changed);
         self::assertSame('broken', $this->state($container, $account));
         self::assertTrue($handler->hasWarningThatContains('Не удалось отправить письмо о сломанном подключении'));
+    }
+
+    /**
+     * Дефект 3, третье и последнее место той же формы: между переводом
+     * в broken (уже закоммичен) и чтением для уведомления строка исчезает —
+     * сегодня это не только теоретическая гонка, а реальный путь через
+     * DiscardUnusedConnectionAction (удаление подключения клиентом).
+     * Исключение отсюда не должно уйти наружу (иначе — тот же сценарий
+     * ретраев и ложного «not found», что и у отказа письма выше),
+     * состояние обязано остаться broken, и пропажа обязана остаться
+     * видимой записью warning.
+     */
+    public function testAccountDisappearingBeforeNotificationDoesNotEscapeAndLeavesAWarning(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container);
+        $notifier = $this->recordingNotifier();
+        $handler = new TestHandler();
+        /** @var MarketplaceAccountRepository $realAccounts */
+        $realAccounts = $container->get(MarketplaceAccountRepository::class);
+        $accounts = new class($realAccounts) implements MarketplaceAccountRepository {
+            public function __construct(private readonly MarketplaceAccountRepository $inner)
+            {
+            }
+
+            public function add(MarketplaceAccount $account): void
+            {
+                $this->inner->add($account);
+            }
+
+            public function get(string $companyId, \Symfony\Component\Uid\Uuid $id): ?MarketplaceAccount
+            {
+                // Имитирует удаление строки другим запросом между переводом
+                // в broken и этим чтением (DiscardUnusedConnectionAction).
+                return null;
+            }
+
+            public function markBrokenIfActive(string $companyId, \Symfony\Component\Uid\Uuid $id): bool
+            {
+                return $this->inner->markBrokenIfActive($companyId, $id);
+            }
+
+            public function tryConnect(MarketplaceAccount $account, \App\Identity\Domain\AuditRecord $trail): bool
+            {
+                return $this->inner->tryConnect($account, $trail);
+            }
+
+            public function deleteIfNoHistory(string $companyId, \Symfony\Component\Uid\Uuid $id, \Closure $isEligibleForDeletion, \Symfony\Component\Uid\Uuid $actorUserId): \App\Identity\Domain\DiscardAccountOutcome
+            {
+                return $this->inner->deleteIfNoHistory($companyId, $id, $isEligibleForDeletion, $actorUserId);
+            }
+        };
+        $action = new MarkMarketplaceAccountBrokenAction($accounts, $notifier, new Logger('test', [$handler]));
+
+        // Если исчезновение строки уйдёт исключением наружу, этот вызов
+        // сам провалит тест.
+        $changed = $action($account->companyId()->toRfc4122(), $account->id()->toRfc4122());
+
+        self::assertTrue($changed);
+        self::assertSame('broken', $this->state($container, $account));
+        self::assertSame([], $notifier->notified);
+        self::assertTrue($handler->hasWarningThatContains('исчезло до отправки уведомления'));
     }
 
     private function activeAccountWithMember(ContainerInterface $container, string $email): MarketplaceAccount
@@ -155,12 +224,12 @@ final class MarkMarketplaceAccountBrokenActionTest extends KernelTestCase
         return $connection;
     }
 
-    private function action(ContainerInterface $container, MarketplaceAccountBrokenNotifier $notifier): MarkMarketplaceAccountBrokenAction
+    private function action(ContainerInterface $container, MarketplaceAccountBrokenNotifier $notifier, ?LoggerInterface $logger = null): MarkMarketplaceAccountBrokenAction
     {
         /** @var MarketplaceAccountRepository $accounts */
         $accounts = $container->get(MarketplaceAccountRepository::class);
 
-        return new MarkMarketplaceAccountBrokenAction($accounts, $notifier);
+        return new MarkMarketplaceAccountBrokenAction($accounts, $notifier, $logger ?? new NullLogger());
     }
 
     private function activeAccount(ContainerInterface $container): MarketplaceAccount
