@@ -126,6 +126,44 @@ test.describe('buyout rate', () => {
       hasMain: true,
       hasNestedVerticalScroll: false,
     })
+    const documentScrollState = await page.evaluate(() => {
+      const scrollingElement = document.scrollingElement
+      if (scrollingElement === null) {
+        throw new Error('Document scrolling element is missing')
+      }
+
+      const verticalScrollContainers = Array.from(
+        document.querySelectorAll<HTMLElement>('*'),
+      )
+        .filter((element) => {
+          const { overflowY } = window.getComputedStyle(element)
+          return (
+            (overflowY === 'auto' || overflowY === 'scroll') &&
+            element.scrollHeight - element.clientHeight > 1
+          )
+        })
+        .map(
+          (element) =>
+            `${element.tagName}.${element.getAttribute('class') ?? ''}`,
+        )
+
+      return {
+        documentClientHeight: scrollingElement.clientHeight,
+        documentScrollHeight: scrollingElement.scrollHeight,
+        verticalScrollContainers,
+      }
+    })
+    expect(documentScrollState.documentScrollHeight).toBeLessThanOrEqual(
+      documentScrollState.documentClientHeight,
+    )
+    expect(documentScrollState.verticalScrollContainers).toContainEqual(
+      expect.stringMatching(/^MAIN\./),
+    )
+    expect(
+      documentScrollState.verticalScrollContainers.filter(
+        (identifier) => !identifier.startsWith('MAIN.'),
+      ),
+    ).toEqual([])
     expect(dailyPayload).toEqual({
       marketplaceSku: '100002',
       series: [
