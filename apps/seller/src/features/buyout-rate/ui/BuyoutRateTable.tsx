@@ -37,57 +37,71 @@ export function BuyoutRateTable({
   onExpandedSkuChange: (marketplaceSku: string | null) => void
   onSort: (sort: BuyoutSort) => void
 }) {
+  // overflow-y-hidden не даёт горизонтальному wrapper-у создать второй
+  // пользовательский вертикальный scroll; график остаётся in-flow.
   return (
-    <table className="w-full min-w-200 text-sm">
-      <thead>
-        <tr className="bg-surface-sunken text-left text-xs font-semibold text-text-secondary">
-          <th className="border-b border-border-default px-4 py-2" scope="col">
-            Артикул
-          </th>
-          <SortableHeader
-            activeSort={sort}
-            direction={direction}
-            label="Заказано, шт."
-            onSort={onSort}
-            sort="ordered"
-          />
-          <SortableHeader
-            activeSort={sort}
-            direction={direction}
-            label="Фактический выкуп, %"
-            onSort={onSort}
-            sort="actual_buyout"
-          />
-          <th className="border-b border-border-default px-4 py-2" scope="col">
-            Статус
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((item) => {
-          const expanded = item.marketplaceSku === expandedSku
-          const maturity = maturityPresentation(
-            item.maturityStatus,
-            item.resolutionRateBps,
-          )
-
-          return (
-            <BuyoutRows
-              companyId={companyId}
-              days={days}
-              expanded={expanded}
-              item={item}
-              key={item.marketplaceSku}
-              maturity={maturity}
-              onToggle={() => {
-                onExpandedSkuChange(expanded ? null : item.marketplaceSku)
-              }}
+    <div className="overflow-x-auto overflow-y-hidden">
+      <table className="w-full min-w-200 text-sm">
+        <thead>
+          <tr className="bg-surface-sunken text-left text-xs font-semibold text-text-secondary">
+            <th
+              className="border-b border-border-default px-4 py-2"
+              scope="col"
+            >
+              Артикул
+            </th>
+            <SortableHeader
+              activeSort={sort}
+              direction={direction}
+              label="Заказано, шт."
+              onSort={onSort}
+              sort="ordered"
             />
-          )
-        })}
-      </tbody>
-    </table>
+            <SortableHeader
+              activeSort={sort}
+              direction={direction}
+              label="Фактический выкуп, %"
+              onSort={onSort}
+              sort="actual_buyout"
+            />
+            <th
+              className="border-b border-border-default px-4 py-2"
+              scope="col"
+            >
+              Статус
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => {
+            const expanded = item.marketplaceSku === expandedSku
+            const maturity = maturityPresentation(
+              item.maturityStatus,
+              item.resolutionRateBps,
+            )
+
+            return (
+              <BuyoutRows
+                companyId={companyId}
+                days={days}
+                expanded={expanded}
+                item={item}
+                key={item.marketplaceSku}
+                maturity={maturity}
+                onToggle={() => {
+                  onExpandedSkuChange(expanded ? null : item.marketplaceSku)
+                }}
+              />
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
+}
+
+function getDynamicsId(marketplaceSku: string): string {
+  return `buyout-dynamics-${encodeURIComponent(marketplaceSku)}`
 }
 
 function SortableHeader({
@@ -145,6 +159,8 @@ function BuyoutRows({
   maturity: ReturnType<typeof maturityPresentation>
   onToggle: () => void
 }) {
+  const dynamicsId = getDynamicsId(item.marketplaceSku)
+
   return (
     <>
       <tr className={expanded ? 'bg-surface-selected' : undefined}>
@@ -184,6 +200,7 @@ function BuyoutRows({
               {maturity.label}
             </Badge>
             <button
+              aria-controls={expanded ? dynamicsId : undefined}
               aria-expanded={expanded}
               aria-label={`${expanded ? 'Скрыть' : 'Показать'} динамику артикула ${item.marketplaceSku}`}
               className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-default"
@@ -208,11 +225,20 @@ function BuyoutRows({
       {expanded ? (
         <tr>
           <td className="border-b border-border-subtle p-4" colSpan={4}>
-            <SkuBuyoutDaily
-              companyId={companyId}
-              days={days}
-              marketplaceSku={item.marketplaceSku}
-            />
+            <div
+              aria-labelledby={`${dynamicsId}-title`}
+              id={dynamicsId}
+              role="region"
+            >
+              <span className="sr-only" id={`${dynamicsId}-title`}>
+                Динамика артикула {item.marketplaceSku}
+              </span>
+              <SkuBuyoutDaily
+                companyId={companyId}
+                days={days}
+                marketplaceSku={item.marketplaceSku}
+              />
+            </div>
           </td>
         </tr>
       ) : null}

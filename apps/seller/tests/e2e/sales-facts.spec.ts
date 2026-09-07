@@ -49,7 +49,7 @@ test.describe('sales facts', () => {
     await loginAndOpen(page, companyId ?? '')
 
     await expect(
-      page.getByRole('heading', { name: 'Продажи Ozon' }),
+      page.getByRole('heading', { name: 'Заказы Ozon' }),
     ).toBeVisible()
 
     // Первая запись реальной фикстуры пакета 0 (posting_number
@@ -84,7 +84,7 @@ test.describe('sales facts', () => {
     await nav.getByRole('link', { name: 'Расширение' }).click()
     await expect(page).toHaveURL(`/companies/${companyId}/extension`)
 
-    await nav.getByRole('link', { name: 'Продажи' }).click()
+    await nav.getByRole('link', { name: 'Заказы' }).click()
     await expect(page).toHaveURL(`/companies/${companyId}/sales`)
 
     // Выход доступен с любого экрана компании, а не только со списка:

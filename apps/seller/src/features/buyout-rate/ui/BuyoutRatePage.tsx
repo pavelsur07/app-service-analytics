@@ -219,28 +219,26 @@ export function BuyoutRatePage() {
                   {query.data.items.length} строк на странице
                 </span>
               </div>
-              <div className="overflow-x-auto">
-                <BuyoutRateTable
-                  companyId={companyId}
-                  days={days}
-                  expandedSku={expandedSku}
-                  items={query.data.items}
-                  sort={sort}
-                  direction={direction}
-                  onExpandedSkuChange={(marketplaceSku) => {
-                    setExpanded({ scope: pageScope, marketplaceSku })
-                  }}
-                  onSort={(clicked) => {
-                    const next = nextBuyoutSort(clicked, sort, direction)
-                    setSearch(
-                      buyoutSearchWithSort(search, next.sort, next.direction),
-                      { replace: true },
-                    )
-                    setStack({ key: '', cursors: [null] })
-                    setExpanded({ scope: '', marketplaceSku: null })
-                  }}
-                />
-              </div>
+              <BuyoutRateTable
+                companyId={companyId}
+                days={days}
+                expandedSku={expandedSku}
+                items={query.data.items}
+                sort={sort}
+                direction={direction}
+                onExpandedSkuChange={(marketplaceSku) => {
+                  setExpanded({ scope: pageScope, marketplaceSku })
+                }}
+                onSort={(clicked) => {
+                  const next = nextBuyoutSort(clicked, sort, direction)
+                  setSearch(
+                    buyoutSearchWithSort(search, next.sort, next.direction),
+                    { replace: true },
+                  )
+                  setStack({ key: '', cursors: [null] })
+                  setExpanded({ scope: '', marketplaceSku: null })
+                }}
+              />
               <div className="flex items-center justify-end gap-2 border-t border-border-default px-4 py-2">
                 <Button
                   disabled={cursors.length <= 1}
