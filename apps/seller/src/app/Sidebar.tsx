@@ -31,11 +31,11 @@ const ITEM_IDLE = 'text-text-secondary hover:bg-surface-hover'
  * функциональность, которой нет, и объясняться за неё придётся перед
  * клиентом. Появится юнит-экономика — появится и пункт.
  *
- * Маркетплейс пунктом не становится: «Продажи Ozon» и «Продажи WB»
+ * Маркетплейс пунктом не становится: «Заказы Ozon» и «Заказы WB»
  * умножили бы меню на число площадок. Площадка — фильтр внутри экрана.
  */
 const ITEMS = [
-  { to: 'sales', label: 'Продажи', icon: TrendingUp },
+  { to: 'sales', label: 'Заказы', icon: TrendingUp },
   {
     to: 'redemption?days=30&sort=ordered&direction=desc',
     label: 'Выкуп',

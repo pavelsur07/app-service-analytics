@@ -59,7 +59,7 @@ export function SalesFactsPage() {
   return (
     <div>
       <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-semibold">Продажи Ozon</h1>
+        <h1 className="text-xl font-semibold">Заказы Ozon</h1>
 
         {query.status === 'pending' && <SalesFactsTableSkeleton />}
 

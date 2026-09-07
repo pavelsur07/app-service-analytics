@@ -22,6 +22,7 @@ test.describe('buyout rate', () => {
     page,
   }) => {
     test.setTimeout(90_000)
+    await page.setViewportSize({ height: 800, width: 900 })
     await page.goto('/login')
     await page.getByLabel('Email').fill(userEmail ?? '')
     await page.getByLabel('Пароль').fill(userPassword ?? '')
@@ -34,9 +35,9 @@ test.describe('buyout rate', () => {
     // не прочитан, и появляется вместе с оболочкой одним кадром позже.
     // allTextContents() не ждёт этого сама, поэтому первый пункт ждём
     // явно; count()/toEqual ниже уже застают сайдбар отрисованным.
-    await expect(nav.getByRole('link', { name: 'Продажи' })).toBeVisible()
+    await expect(nav.getByRole('link', { name: 'Заказы' })).toBeVisible()
     const firstLinks = await nav.getByRole('link').allTextContents()
-    expect(firstLinks.slice(0, 2)).toEqual(['Продажи', 'Выкуп'])
+    expect(firstLinks.slice(0, 2)).toEqual(['Заказы', 'Выкуп'])
 
     await nav.getByRole('link', { name: 'Выкуп' }).click()
     await expect(page).toHaveURL(
@@ -71,12 +72,60 @@ test.describe('buyout rate', () => {
         response.url().includes('/buyout-rate/100002/daily?days=30') &&
         response.status() === 200,
     )
-    await deliveredSku
-      .getByRole('button', { name: 'Показать динамику артикула 100002' })
-      .click()
+    const dynamicsButton = deliveredSku.getByRole('button', {
+      name: /динамику артикула 100002/,
+    })
+    await dynamicsButton.click()
     const dailyPayload = (await (
       await dailyResponse
     ).json()) as BuyoutDailyResponse
+    const main = page.locator('main')
+    await expect(main).toHaveCount(1)
+    const chart = main.getByRole('img', {
+      name: 'Динамика фактического и прогнозного процента выкупа',
+    })
+    await expect(chart).toBeVisible()
+    await expect(dynamicsButton).toHaveAttribute(
+      'aria-controls',
+      'buyout-dynamics-100002',
+    )
+    const dynamicsPanel = page.locator('#buyout-dynamics-100002')
+    await expect(dynamicsPanel).toHaveAttribute('role', 'region')
+    await expect(dynamicsPanel).toHaveAttribute(
+      'aria-labelledby',
+      'buyout-dynamics-100002-title',
+    )
+    const tableScroll = main.locator('table').first().locator('..')
+    const tableScrollMetrics = await tableScroll.evaluate((element) => ({
+      hasHorizontalOverflow: element.scrollWidth > element.clientWidth,
+      overflowX: window.getComputedStyle(element).overflowX,
+    }))
+    expect(tableScrollMetrics).toEqual({
+      hasHorizontalOverflow: true,
+      overflowX: 'auto',
+    })
+    const verticalScrollState = await chart.evaluate((element) => {
+      let ancestor: HTMLElement | null = element
+
+      while (ancestor !== null && ancestor.tagName !== 'MAIN') {
+        const { overflowY } = window.getComputedStyle(ancestor)
+
+        if (overflowY === 'auto' || overflowY === 'scroll') {
+          return { hasMain: false, hasNestedVerticalScroll: true }
+        }
+
+        ancestor = ancestor.parentElement
+      }
+
+      return {
+        hasMain: ancestor !== null,
+        hasNestedVerticalScroll: false,
+      }
+    })
+    expect(verticalScrollState).toEqual({
+      hasMain: true,
+      hasNestedVerticalScroll: false,
+    })
     expect(dailyPayload).toEqual({
       marketplaceSku: '100002',
       series: [
@@ -100,10 +149,6 @@ test.describe('buyout rate', () => {
         },
       ],
     })
-    const chart = page.getByRole('img', {
-      name: 'Динамика фактического и прогнозного процента выкупа',
-    })
-    await expect(chart).toBeVisible()
     const visibleSeries = chart.locator('.recharts-line-curve')
     await expect(visibleSeries).toHaveCount(2)
     await expect(visibleSeries.nth(0)).toHaveAttribute('d', /L/)
