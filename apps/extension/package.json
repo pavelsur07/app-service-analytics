@@ -47,5 +47,8 @@
   },
   "engines": {
     "npm": ">=11.16.0"
+  },
+  "overrides": {
+    "js-yaml": "4.3.2"
   }
 }
