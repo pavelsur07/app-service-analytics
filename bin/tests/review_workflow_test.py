@@ -64,9 +64,14 @@ sha=re.search(r'PACKAGE_SHA256: ([0-9a-f]{64})', request).group(1)
 payload={'status':'complete','package_sha256':sha,'summary':'Reviewed all supplied changes.', 'findings':[]}
 if mode == 'partial': payload['status']='incomplete'
 if mode == 'wrong-hash': payload['package_sha256']='0'*64
-if mode == 'findings': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.'}]
+if mode == 'findings': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.','quote':'reviewed-change'}]
+if mode == 'hallucinated': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.','quote':'этой строки в пакете нет и не было'}]
+if mode == 'no-quote': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.'}]
 result=json.dumps(payload)
 if mode == 'prose': result='I will review it later.'
+if mode == 'flaky':
+    open(os.environ['REVIEW_TEST_ROOT']+'/var/attempts','a').write('x')
+    if len(open(os.environ['REVIEW_TEST_ROOT']+'/var/attempts').read()) == 1: result=''
 if '--print' in args:
     assert args[args.index('--tools')+1] == ''
     assert not os.getcwd().startswith(os.environ['REVIEW_TEST_ROOT'] + os.sep)
@@ -459,6 +464,61 @@ else:
         package = (self.package() / 'package.md').read_text()
         self.assertIn('oborvannyi-progon', package)
         self.assertIn('1 пробел: правила не описывают этот случай.', package)
+
+    def test_finding_without_an_anchor_in_the_package_is_marked(self):
+        """Ссылка на строку устаревает от первой правки; цитата проверяема."""
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='hallucinated')
+        meta = json.loads(self.runs()[-1].read_text())
+        self.assertEqual(meta['findings_count'], 1)
+        self.assertEqual(meta['unanchored_count'], 1)
+        self.assertIn('цитата в пакете не найдена', (self.runs()[-1].parent / 'review.md').read_text())
+        self.make('review-claude', MODEL_MODE='findings')
+        self.assertEqual(json.loads(self.runs()[-1].read_text())['unanchored_count'], 0)
+
+    def test_finding_without_a_quote_field_is_not_a_valid_conclusion(self):
+        self.make('review-prepare')
+        self.make('review-claude', success=False, MODEL_MODE='no-quote')
+        self.assertNotEqual(json.loads(self.runs()[-1].read_text())['status'], 'complete')
+
+    def test_unparsable_answer_is_retried_once_without_overwriting_the_first(self):
+        self.make('review-prepare')
+        before = len(self.runs())
+        self.make('review-claude', MODEL_MODE='flaky')
+        self.assertEqual(len(self.runs()), before + 2)  # неудачная попытка сохранена отдельно
+        self.assertNotEqual(json.loads(self.runs()[-2].read_text())['status'], 'complete')
+        self.assertEqual(json.loads(self.runs()[-1].read_text())['status'], 'complete')
+
+    def test_incomplete_answer_is_not_retried(self):
+        """Неполное заключение содержательно: повтор потратил бы платный вызов."""
+        self.make('review-prepare')
+        before = len(self.runs())
+        self.make('review-claude', success=False, MODEL_MODE='partial')
+        self.assertEqual(len(self.runs()), before + 1)
+
+    def test_risk_table_path_needs_a_reason_before_standard_is_accepted(self):
+        (self.root / 'api/migrations').mkdir(parents=True)
+        (self.root / 'api/migrations/Version1.php').write_text('<?php // schema change\n')
+        (self.root / 'var/paths').write_text('api/migrations/Version1.php\n')
+        result = self.make('review-prepare', success=False, REVIEW_RISK='standard')
+        self.assertIn('миграции и схема данных', result.stdout + result.stderr)
+        self.make('review-prepare', REVIEW_RISK='standard',
+                  REVIEW_RISK_OVERRIDE='Пустая заготовка, схему не меняет')
+        self.assertIn('Пустая заготовка', (self.package() / 'package.md').read_text())
+        self.make('review-prepare', REVIEW_RISK='high')
+        self.make('review-prepare', success=False, REVIEW_RISK='high',
+                  REVIEW_RISK_OVERRIDE='основание без нужды')
+
+    def test_every_run_is_recorded_in_the_ledger(self):
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        self.make('review-claude', success=False, MODEL_MODE='error')
+        lines = [json.loads(line) for line in
+                 (self.root / 'var/review/ledger.jsonl').read_text().splitlines()]
+        self.assertEqual([entry['status'] for entry in lines], ['complete', 'failed'])
+        self.assertEqual(lines[0]['findings'], 1)
+        self.assertEqual(lines[0]['models'], ['test-claude'])
+        self.assertEqual(lines[0]['role'], 'claude')
 
     def test_make_review_always_runs_claude_and_risk_adds_both_codex_roles(self):
         self.make('review', REVIEW_RISK='standard')

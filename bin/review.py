@@ -14,6 +14,34 @@ ROOT = Path(__file__).resolve().parent.parent
 REVIEW = ROOT / 'var/review'
 ROLES = {'claude': '5C', 'codex': '5A', 'defects': '5B'}
 NO_PREVIOUS = 'REVIEW_PREV не задан: замечания предыдущих проходов автором не приложены.'
+LEDGER = REVIEW / 'ledger.jsonl'
+# Уровень риска выбирает автор: по пути нельзя надёжно определить влияние
+# на деньги или изоляцию. Но путь из таблицы риска обязан быть замечен —
+# это трение там, где ошибка дорога, а не запрет.
+RISK_TRIGGERS = (
+    ('api/migrations/', 'миграции и схема данных'),
+    ('Money', 'денежная арифметика и округления'),
+    ('api/src/Ingestion/', 'идентификация фактов, идемпотентность, пересчёт'),
+    ('Security', 'аутентификация, секреты, изоляция арендаторов'),
+    ('Token', 'аутентификация, секреты, изоляция арендаторов'),
+    ('config/packages/security', 'аутентификация, секреты, изоляция арендаторов'),
+)
+
+
+class UnusableResponse(ValueError):
+    """Ответ CLI не разобрался: пустой или не JSON. Отличается от неполного
+    заключения и неверного хэша — те содержательны, повторять их незачем."""
+
+
+def normalized(text):
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def ledger(entry):
+    """Дозапись: без ряда прогонов «ревьюер полезен» остаётся ощущением."""
+    LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    with LEDGER.open('a', encoding='utf-8') as log:
+        log.write(json.dumps(entry, ensure_ascii=False) + '\n')
 
 
 def git(*args, env=None):
@@ -257,6 +285,7 @@ def build(inputs):
     info = {'base': base, 'head': head, 'paths': inputs['paths'], 'context': inputs['context'],
             'risk': inputs['risk'], 'adrs': adr_ids,
             'adr_source': 'diff' if inputs['adrs'] is None else 'explicit',
+            'risk_override': inputs.get('risk_override', ''),
             'full_text_max_bytes': inputs.get('full_text_max_bytes', 120000),
             'previous_runs': inputs.get('prev', []), 'triage': inputs.get('triage', '')}
     empty_adrs = ('В diff нет ссылок ADR; применимость решений должен проверить автор.'
@@ -303,6 +332,17 @@ def prepare():
     risk = os.environ.get('REVIEW_RISK', 'high')
     if risk not in ('standard', 'high'):
         raise ValueError('REVIEW_RISK: только standard или high')
+    override = os.environ.get('REVIEW_RISK_OVERRIDE', '').strip()
+    if risk == 'standard':
+        hits = sorted({f'{path} — {reason}' for path in paths
+                       for pattern, reason in RISK_TRIGGERS if pattern in path})
+        if hits and not override:
+            raise ValueError('REVIEW_RISK=standard на путях из таблицы риска:\n  '
+                             + '\n  '.join(hits)
+                             + '\nЛибо REVIEW_RISK=high, либо REVIEW_RISK_OVERRIDE с основанием —'
+                             ' оно попадёт в пакет и в отчёт.')
+    elif override:
+        raise ValueError('REVIEW_RISK_OVERRIDE осмыслен только при REVIEW_RISK=standard')
     prev = list(dict.fromkeys(os.environ.get('REVIEW_PREV', '').split()))
     triage = os.environ.get('REVIEW_TRIAGE_FILE', '').strip()
     if prev and not triage:
@@ -320,7 +360,7 @@ def prepare():
     inputs = {'base': base, 'paths': paths, 'context': paths_from_file('REVIEW_CONTEXT_FILE'),
               'task': required('TASK'), 'criteria': required('CRITERIA'), 'checks': required('CHECKS'),
               'risk': risk, 'adrs': os.environ['ADR'].split() if 'ADR' in os.environ else None,
-              'full_text_max_bytes': cap, 'prev': prev, 'triage': triage,
+              'full_text_max_bytes': cap, 'prev': prev, 'triage': triage, 'risk_override': override,
               'prev_block': previous_section(prev, triage, cap)}
     package, diff, info, template = build(inputs)
     sha = digest(package)
@@ -348,7 +388,12 @@ def parse_review(raw, sha):
     raw = raw.strip()
     if raw.startswith('```json\n') and raw.endswith('```'):
         raw = raw[8:-3].strip()
-    value = json.loads(raw)
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise UnusableResponse(f'ответ не разобран как JSON: {error}') from None
+    if not raw:
+        raise UnusableResponse('пустой ответ')
     if (not isinstance(value, dict) or value.get('status') != 'complete'
             or value.get('package_sha256') != sha
             or not isinstance(value.get('summary'), str) or not value['summary'].strip()
@@ -357,12 +402,23 @@ def parse_review(raw, sha):
     for item in value['findings']:
         if (not isinstance(item, dict) or item.get('kind') not in
                 ('дефект', 'нарушение', 'пробел в правилах', 'вкусовое')
-                or any(not isinstance(item.get(k), str) or not item[k].strip() for k in ('location', 'detail'))):
+                or any(not isinstance(item.get(k), str) or not item[k].strip()
+                       for k in ('location', 'detail', 'quote'))):
             raise ValueError('Некорректное замечание в ответе')
     return value
 
 
 def run(role, directory=None):
+    """Пустой или неразобранный ответ — самый частый сбой CLI и единственный,
+    который стоит повторить: неполное заключение и неверный хэш содержательны."""
+    try:
+        return run_once(role, directory)
+    except UnusableResponse as error:
+        print(f'Ответ не разобран ({error}); одна повторная попытка', flush=True)
+        return run_once(role, directory)
+
+
+def run_once(role, directory=None):
     if directory is None:
         explicit = os.environ.get('REVIEW_PACKAGE')
         directory = Path(explicit).resolve() if explicit else REVIEW / (REVIEW / 'current').read_text(encoding='utf-8').strip()
@@ -428,20 +484,33 @@ def run(role, directory=None):
         after, _, _, after_template = build(manifest['inputs'])
         if after != package or after_template != template:
             raise ValueError('Файлы изменились во время ревью; ответ сохранён, нужен новый пакет')
+        # Ссылка на строку устаревает от первой же правки; цитата проверяема.
+        haystack = normalized(package.decode('utf-8'))
+        unanchored = [f for f in review['findings'] if normalized(f['quote']) not in haystack]
         # Completion is not approval: accepted findings are resolved by the author.
-        meta.update(status='complete', findings_count=len(review['findings']))
+        meta.update(status='complete', findings_count=len(review['findings']),
+                    unanchored_count=len(unanchored))
         (out / 'review.json').write_text(json_text(review), encoding='utf-8')
         body = '# Ревью\n\n' + review['summary'] + '\n\n'
         for finding in review['findings']:
-            body += f"- [{finding['kind']}] {finding['location']}: {finding['detail']}\n"
+            mark = ' [цитата в пакете не найдена]' if finding in unanchored else ''
+            body += f"- [{finding['kind']}]{mark} {finding['location']}: {finding['detail']}\n"
         (out / 'review.md').write_text(body, encoding='utf-8')
-        print(f"Заключение получено; замечаний: {len(review['findings'])}. Требуется разбор автором.")
+        note = f", из них без якоря в пакете: {len(unanchored)}" if unanchored else ''
+        print(f"Заключение получено; замечаний: {len(review['findings'])}{note}."
+              ' Требуется разбор автором.')
     except BaseException as error:
         meta.update(status='failed', error=str(error))
         raise
     finally:
         meta['finished_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         (out / 'metadata.json').write_text(json_text(meta), encoding='utf-8')
+        ledger({'run': out.name, 'package': sha[:12], 'role': role, 'status': meta['status'],
+                'models': meta['models'], 'findings': meta.get('findings_count'),
+                'unanchored': meta.get('unanchored_count'),
+                'risk': manifest['inputs']['risk'],
+                'risk_override': bool(manifest['inputs'].get('risk_override')),
+                'started_at': meta['started_at'], 'finished_at': meta['finished_at']})
     return manifest['inputs']['risk']
 
 
