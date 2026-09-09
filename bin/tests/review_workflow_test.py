@@ -64,8 +64,9 @@ sha=re.search(r'PACKAGE_SHA256: ([0-9a-f]{64})', request).group(1)
 payload={'status':'complete','package_sha256':sha,'summary':'Reviewed all supplied changes.', 'findings':[]}
 if mode == 'partial': payload['status']='incomplete'
 if mode == 'wrong-hash': payload['package_sha256']='0'*64
-if mode == 'findings': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.','quote':'reviewed-change'}]
-if mode == 'hallucinated': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.','quote':'этой строки в пакете нет и не было'}]
+if mode == 'findings': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.','quote':'reviewed-change','failure':'На пустом вводе вернёт None вместо нуля.'}]
+if mode == 'nitpick': payload['findings']=[{'kind':'вкусовое','location':'feature.txt:1','detail':'Комментарий стоило бы переписать.','quote':'reviewed-change'},{'kind':'дефект','location':'feature.txt:1','detail':'Без сценария отказа.','quote':'reviewed-change'}]
+if mode == 'hallucinated': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.','quote':'этой строки в пакете нет и не было','failure':'Вход X даёт неверный Y.'}]
 if mode == 'no-quote': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.'}]
 result=json.dumps(payload)
 if mode == 'prose': result='I will review it later.'
@@ -519,6 +520,19 @@ else:
         self.assertEqual(lines[0]['findings'], 1)
         self.assertEqual(lines[0]['models'], ['test-claude'])
         self.assertEqual(lines[0]['role'], 'claude')
+
+    def test_nitpicks_do_not_reach_the_authors_triage(self):
+        """Вкусовое и замечание без сценария отказа разбора не требуют."""
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='nitpick')
+        meta = json.loads(self.runs()[-1].read_text())
+        self.assertEqual(meta['findings_count'], 0)
+        self.assertEqual(meta['nitpicks_count'], 2)  # вкусовое и дефект без failure
+        body = (self.runs()[-1].parent / 'review.md').read_text()
+        self.assertIn('Вкусовое — разбора не требует', body)
+        review = json.loads((self.runs()[-1].parent / 'review.json').read_text())
+        self.assertEqual(review['findings'], [])
+        self.assertEqual(len(review['nitpicks']), 2)
 
     def test_make_review_always_runs_claude_and_risk_adds_both_codex_roles(self):
         self.make('review', REVIEW_RISK='standard')
