@@ -57,6 +57,22 @@ def check_path(path, tracked=()):
         raise ValueError(f'Нужен точный файл, не каталог: {path}')
 
 
+def check_input_file(path):
+    """Файл автора попадает в пакет целиком и уходит наружу в CLI: тот же
+    запрет приватных env-файлов, что и для остальных источников пакета."""
+    p = PurePosixPath(path)
+    if (not path or p.is_absolute() or '..' in p.parts or str(p) != path
+            or p.parts[0] == '.git' or '.secrets' in p.parts):
+        raise ValueError(f'Недопустимый путь: {path!r}; нужен путь от корня репозитория')
+    if p.name.startswith('.env'):
+        raise ValueError(f'Приватный env-файл не включается в пакет: {path}')
+    for parent in (*p.parents, p):
+        if parent != PurePosixPath('.') and (ROOT / parent).is_symlink():
+            raise ValueError(f'Ссылка не разыменовывается: {path}')
+    if not (ROOT / path).is_file():
+        raise ValueError(f'Файл не найден: {path}')
+
+
 def fence(content, language=''):
     size = max([3] + [len(s) + 1 for s in re.findall(r'~+', content)])
     marker = '~' * size
@@ -103,7 +119,9 @@ def full_text(inputs):
     """Диф без файла целиком заставляет ревьюера достраивать контекст догадкой:
     так исторический абзац «требование снято» читается как действующее правило."""
     cap = inputs['full_text_max_bytes']
-    already = set(inputs['context'])
+    # AGENTS.md пакет и так вкладывает целиком; из CLAUDE.md — только раздел
+    # обязательных правил, поэтому его полный текст здесь не лишний.
+    already = set(inputs['context']) | {'AGENTS.md'}
     blocks = []
     for path in inputs['paths']:
         if not path.endswith('.md') or path in already:
@@ -124,8 +142,9 @@ def previous_run(name):
     directory = (runs / name).resolve()
     if directory.parent != runs or not directory.is_dir():
         raise ValueError(f'REVIEW_PREV: прогона нет в var/review/runs: {name}')
-    if not (directory / 'review.json').is_file():
-        raise ValueError(f'REVIEW_PREV: прогон {name} без review.json — заключение не получено')
+    for required_file in ('review.json', 'metadata.json'):
+        if not (directory / required_file).is_file():
+            raise ValueError(f'REVIEW_PREV: прогон {name} без {required_file} — заключение не получено')
     meta = json.loads((directory / 'metadata.json').read_text(encoding='utf-8'))
     value = json.loads((directory / 'review.json').read_text(encoding='utf-8'))
     return meta, value.get('findings', [])
@@ -136,19 +155,24 @@ def previous_section(inputs):
     отклонённое, а исправление принятого замечания никто не проверяет."""
     if not inputs['prev']:
         return 'Предыдущих проходов по этому предмету нет.'
-    meta, findings = previous_run(inputs['prev'])
-    lines = [f'Прогон: {inputs["prev"]}', f'Роль: {meta.get("role")}',
-             f'Пакет предыдущего прохода: {meta.get("package_sha256")}',
-             f'Замечаний: {len(findings)}', '']
-    for number, item in enumerate(findings, 1):
-        lines.append(f'{number}. [{item.get("kind")}] {item.get("location")}')
-        lines.append(f'   {item.get("detail")}')
-    triage = read(inputs['triage']) if not os.path.isabs(inputs['triage']) \
-        else Path(inputs['triage']).read_text(encoding='utf-8')
-    missing = [str(n) for n in range(1, len(findings) + 1)
-               if not re.search(r'^\s*%d\b' % n, triage, re.M)]
+    lines, number = [], 0
+    # Высокий риск — три роли на один пакет; разбор нужен по всем, а не по одной.
+    for name in inputs['prev']:
+        meta, findings = previous_run(name)
+        lines += [f'Прогон: {name}', f'Роль: {meta.get("role")}',
+                  f'Пакет предыдущего прохода: {meta.get("package_sha256")}',
+                  f'Замечаний: {len(findings)}', '']
+        for item in findings:
+            number += 1
+            lines.append(f'{number}. [{item.get("kind")}] {item.get("location")}')
+            lines.append(f'   {item.get("detail")}')
+        lines.append('')
+    triage = read(inputs['triage'])
+    missing = [str(n) for n in range(1, number + 1)
+               if not re.search(r'^\s*%d[.):]?\s+(принято|отклонено|пробел)' % n, triage, re.M | re.I)]
     if missing:
-        raise ValueError('REVIEW_TRIAGE_FILE: нет разбора замечаний ' + ', '.join(missing))
+        raise ValueError('REVIEW_TRIAGE_FILE: нет вердикта по замечаниям ' + ', '.join(missing)
+                         + '; каждая строка — номер и «принято», «отклонено» или «пробел»')
     return fence('\n'.join(lines)) + '\nРазбор автора:\n\n' + fence(triage, 'markdown')
 
 
@@ -178,7 +202,9 @@ def build(inputs):
         context.append(f'### {path}\n\n' + fence(read(path)))
     info = {'base': base, 'head': head, 'paths': inputs['paths'], 'context': inputs['context'],
             'risk': inputs['risk'], 'adrs': adr_ids,
-            'adr_source': 'diff' if inputs['adrs'] is None else 'explicit'}
+            'adr_source': 'diff' if inputs['adrs'] is None else 'explicit',
+            'full_text_max_bytes': inputs['full_text_max_bytes'],
+            'previous_runs': inputs['prev'], 'triage': inputs['triage']}
     empty_adrs = ('В diff нет ссылок ADR; применимость решений должен проверить автор.'
                   if inputs['adrs'] is None else 'ADR не выбраны явно; автор проверил применимость ADR.')
     sections = [
@@ -222,13 +248,18 @@ def prepare():
     risk = os.environ.get('REVIEW_RISK', 'high')
     if risk not in ('standard', 'high'):
         raise ValueError('REVIEW_RISK: только standard или high')
-    prev = os.environ.get('REVIEW_PREV', '').strip()
+    prev = os.environ.get('REVIEW_PREV', '').split()
     triage = os.environ.get('REVIEW_TRIAGE_FILE', '').strip()
     if prev and not triage:
         raise ValueError('REVIEW_PREV без REVIEW_TRIAGE_FILE: замечания без вердиктов ревьюер разберёт заново')
     if triage and not prev:
-        raise ValueError('REVIEW_TRIAGE_FILE без REVIEW_PREV: непонятно, к какому прогону относится разбор')
-    cap = int(os.environ.get('REVIEW_FULL_TEXT_MAX_BYTES', '120000'))
+        raise ValueError('REVIEW_TRIAGE_FILE без REVIEW_PREV: непонятно, к каким прогонам относится разбор')
+    if triage:
+        check_input_file(triage)
+    try:
+        cap = int(os.environ.get('REVIEW_FULL_TEXT_MAX_BYTES', '120000'))
+    except ValueError:
+        raise ValueError('REVIEW_FULL_TEXT_MAX_BYTES: нужно целое число байт')
     if cap < 1:
         raise ValueError('REVIEW_FULL_TEXT_MAX_BYTES должен быть положительным')
     inputs = {'base': base, 'paths': paths, 'context': paths_from_file('REVIEW_CONTEXT_FILE'),

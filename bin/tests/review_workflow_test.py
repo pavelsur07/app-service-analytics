@@ -315,14 +315,46 @@ else:
         self.make('review-prepare')
         self.make('review-claude', MODEL_MODE='findings')
         previous = self.runs()[-1].parent.name
-        (self.root / 'var/triage').write_text('Всё посмотрел, вопросов нет.\n')
+        (self.root / 'var/triage').write_text('1 — см. выше, там всё сказано.\n')
         result = self.make('review-prepare', success=False, REVIEW_PREV=previous,
                            REVIEW_TRIAGE_FILE='var/triage')
-        self.assertIn('нет разбора замечаний 1', result.stdout + result.stderr)
+        self.assertIn('нет вердикта по замечаниям 1', result.stdout + result.stderr)
         self.make('review-prepare', success=False, REVIEW_PREV=previous)
         self.make('review-prepare', success=False, REVIEW_TRIAGE_FILE='var/triage')
         self.make('review-prepare', success=False, REVIEW_PREV='нет-такого-прогона',
                   REVIEW_TRIAGE_FILE='var/triage')
+
+    def test_every_role_of_the_previous_pass_needs_a_verdict(self):
+        """REVIEW_RISK=high — три роли на пакет; разбор по одной давал ложную гарантию."""
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        first = self.runs()[-1].parent.name
+        self.make('review-claude', MODEL_MODE='findings')
+        second = self.runs()[-1].parent.name
+        both = f'{first} {second}'
+        (self.root / 'var/triage').write_text('1 принято: исправлено.\n')
+        self.make('review-prepare', success=False, REVIEW_PREV=both, REVIEW_TRIAGE_FILE='var/triage')
+        (self.root / 'var/triage').write_text('1 принято: исправлено.\n2 отклонено: вкусовое.\n')
+        self.make('review-prepare', REVIEW_PREV=both, REVIEW_TRIAGE_FILE='var/triage')
+        self.assertEqual((self.package() / 'package.md').read_text().count('Concrete defect'), 2)
+
+    def test_triage_path_cannot_smuggle_a_private_file_into_the_package(self):
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        previous = self.runs()[-1].parent.name
+        (self.root / 'api').mkdir()
+        (self.root / 'api/.env.local').write_text('1 принято: APP_SECRET=real-secret\n')
+        self.make('review-prepare', success=False, REVIEW_PREV=previous,
+                  REVIEW_TRIAGE_FILE='api/.env.local')
+        self.make('review-prepare', success=False, REVIEW_PREV=previous,
+                  REVIEW_TRIAGE_FILE='../outside.md')
+
+    def test_agents_rules_are_not_attached_twice(self):
+        (self.root / 'var/paths').write_text('feature.txt\nAGENTS.md\n')
+        (self.root / 'AGENTS.md').write_text('Always independent Claude review. Edited.\n')
+        self.make('review-prepare')
+        package = (self.package() / 'package.md').read_text()
+        self.assertEqual(package.count('Always independent Claude review. Edited.'), 2)  # диф и раздел правил
 
     def test_make_review_always_runs_claude_and_risk_adds_both_codex_roles(self):
         self.make('review', REVIEW_RISK='standard')
