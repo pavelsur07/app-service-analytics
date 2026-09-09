@@ -318,7 +318,7 @@ else:
         (self.root / 'var/triage').write_text('1 — см. выше, там всё сказано.\n')
         result = self.make('review-prepare', success=False, REVIEW_PREV=previous,
                            REVIEW_TRIAGE_FILE='var/triage')
-        self.assertIn('нет вердикта по замечаниям 1', result.stdout + result.stderr)
+        self.assertIn('нет разбора: 1', result.stdout + result.stderr)
         self.make('review-prepare', success=False, REVIEW_PREV=previous)
         self.make('review-prepare', success=False, REVIEW_TRIAGE_FILE='var/triage')
         self.make('review-prepare', success=False, REVIEW_PREV='нет-такого-прогона',
@@ -423,6 +423,37 @@ else:
         result = self.make('review-prepare', success=False, REVIEW_PREV=previous,
                            REVIEW_TRIAGE_FILE='.')
         self.assertIn('Недопустимый путь', result.stdout + result.stderr)
+
+    def test_verdict_for_a_finding_that_does_not_exist_is_refused(self):
+        """Разбор, скопированный из прошлого прохода, не должен закрывать новый."""
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        previous = self.runs()[-1].parent.name
+        (self.root / 'var/triage').write_text('1 принято: да.\n2 отклонено: вкусовое.\n')
+        result = self.make('review-prepare', success=False, REVIEW_PREV=previous,
+                           REVIEW_TRIAGE_FILE='var/triage')
+        self.assertIn('лишние номера: 2', result.stdout + result.stderr)
+
+    def test_oversized_triage_is_refused_instead_of_bloating_the_package(self):
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        previous = self.runs()[-1].parent.name
+        (self.root / 'var/triage').write_text('1 принято: ' + 'ц' * 400 + '\n')
+        self.make('review-prepare', success=False, REVIEW_PREV=previous,
+                  REVIEW_TRIAGE_FILE='var/triage', REVIEW_FULL_TEXT_MAX_BYTES='100')
+
+    def test_unreadable_sibling_run_is_named_in_the_package(self):
+        """Молчаливый пропуск делал бы проверку полноты недостоверной."""
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        previous = self.runs()[-1].parent.name
+        broken = self.runs()[-1].parent.parent / 'oborvannyi-progon'
+        broken.mkdir()
+        (broken / 'metadata.json').write_text('{"role": "claude", "status": "run')
+        (self.root / 'var/triage').write_text('1 принято: исправлено.\n')
+        self.make('review-prepare', REVIEW_PREV=previous, REVIEW_TRIAGE_FILE='var/triage')
+        package = (self.package() / 'package.md').read_text()
+        self.assertIn('oborvannyi-progon', package)
 
     def test_make_review_always_runs_claude_and_risk_adds_both_codex_roles(self):
         self.make('review', REVIEW_RISK='standard')
