@@ -282,6 +282,48 @@ else:
         self.assertEqual(meta['findings_count'], 1)
         self.assertIn('Concrete defect', (self.runs()[-1].parent / 'review.md').read_text())
 
+    def test_markdown_rules_are_attached_whole_not_only_as_diff(self):
+        """Урезанный контекст однажды выдал исторический абзац за действующее правило."""
+        (self.root / 'rules.md').write_text('# Rules\n\nТребование снято владельцем.\n')
+        (self.root / 'var/paths').write_text('rules.md\n')
+        self.make('review-prepare')
+        package = (self.package() / 'package.md').read_text()
+        self.assertIn('Полный текст изменённых markdown-файлов', package)
+        self.assertIn('Требование снято владельцем.', package)
+
+    def test_oversized_markdown_says_so_instead_of_silently_staying_a_diff(self):
+        (self.root / 'rules.md').write_text('# Rules\n' + 'x' * 500 + '\n')
+        (self.root / 'var/paths').write_text('rules.md\n')
+        self.make('review-prepare', REVIEW_FULL_TEXT_MAX_BYTES='100')
+        package = (self.package() / 'package.md').read_text()
+        self.assertIn('больше порога 100', package)
+        # Ровно один раз: в дифе. Целиком сверх порога файл не прикладывается.
+        self.assertEqual(package.count('x' * 500), 1)
+        self.make('review-prepare', success=False, REVIEW_FULL_TEXT_MAX_BYTES='0')
+
+    def test_previous_findings_and_author_triage_reach_the_next_pass(self):
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        previous = self.runs()[-1].parent.name
+        (self.root / 'var/triage').write_text('1 принято: исправлено в этом же дифе.\n')
+        self.make('review-prepare', REVIEW_PREV=previous, REVIEW_TRIAGE_FILE='var/triage')
+        package = (self.package() / 'package.md').read_text()
+        self.assertIn('Concrete defect', package)
+        self.assertIn('1 принято: исправлено в этом же дифе.', package)
+
+    def test_findings_without_verdicts_are_refused_before_the_model_is_called(self):
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        previous = self.runs()[-1].parent.name
+        (self.root / 'var/triage').write_text('Всё посмотрел, вопросов нет.\n')
+        result = self.make('review-prepare', success=False, REVIEW_PREV=previous,
+                           REVIEW_TRIAGE_FILE='var/triage')
+        self.assertIn('нет разбора замечаний 1', result.stdout + result.stderr)
+        self.make('review-prepare', success=False, REVIEW_PREV=previous)
+        self.make('review-prepare', success=False, REVIEW_TRIAGE_FILE='var/triage')
+        self.make('review-prepare', success=False, REVIEW_PREV='нет-такого-прогона',
+                  REVIEW_TRIAGE_FILE='var/triage')
+
     def test_make_review_always_runs_claude_and_risk_adds_both_codex_roles(self):
         self.make('review', REVIEW_RISK='standard')
         self.assertEqual([json.loads(p.read_text())['role'] for p in self.runs()], ['claude'])

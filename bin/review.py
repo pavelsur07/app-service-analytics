@@ -99,6 +99,59 @@ def snapshot(inputs):
     return base, head, diff, names
 
 
+def full_text(inputs):
+    """Диф без файла целиком заставляет ревьюера достраивать контекст догадкой:
+    так исторический абзац «требование снято» читается как действующее правило."""
+    cap = inputs['full_text_max_bytes']
+    already = set(inputs['context'])
+    blocks = []
+    for path in inputs['paths']:
+        if not path.endswith('.md') or path in already:
+            continue
+        file = ROOT / path
+        if not file.is_file():  # удалённый файл виден только дифом
+            continue
+        size = file.stat().st_size
+        if size > cap:
+            blocks.append(f'### {path}\n\nПриложен только дифом: {size} байт больше порога {cap}.\n')
+        else:
+            blocks.append(f'### {path}\n\n' + fence(read(path), 'markdown'))
+    return blocks
+
+
+def previous_run(name):
+    runs = (REVIEW / 'runs').resolve()
+    directory = (runs / name).resolve()
+    if directory.parent != runs or not directory.is_dir():
+        raise ValueError(f'REVIEW_PREV: прогона нет в var/review/runs: {name}')
+    if not (directory / 'review.json').is_file():
+        raise ValueError(f'REVIEW_PREV: прогон {name} без review.json — заключение не получено')
+    meta = json.loads((directory / 'metadata.json').read_text(encoding='utf-8'))
+    value = json.loads((directory / 'review.json').read_text(encoding='utf-8'))
+    return meta, value.get('findings', [])
+
+
+def previous_section(inputs):
+    """Разбор предыдущего прохода: без него ревьюер заново разбирает уже
+    отклонённое, а исправление принятого замечания никто не проверяет."""
+    if not inputs['prev']:
+        return 'Предыдущих проходов по этому предмету нет.'
+    meta, findings = previous_run(inputs['prev'])
+    lines = [f'Прогон: {inputs["prev"]}', f'Роль: {meta.get("role")}',
+             f'Пакет предыдущего прохода: {meta.get("package_sha256")}',
+             f'Замечаний: {len(findings)}', '']
+    for number, item in enumerate(findings, 1):
+        lines.append(f'{number}. [{item.get("kind")}] {item.get("location")}')
+        lines.append(f'   {item.get("detail")}')
+    triage = read(inputs['triage']) if not os.path.isabs(inputs['triage']) \
+        else Path(inputs['triage']).read_text(encoding='utf-8')
+    missing = [str(n) for n in range(1, len(findings) + 1)
+               if not re.search(r'^\s*%d\b' % n, triage, re.M)]
+    if missing:
+        raise ValueError('REVIEW_TRIAGE_FILE: нет разбора замечаний ' + ', '.join(missing))
+    return fence('\n'.join(lines)) + '\nРазбор автора:\n\n' + fence(triage, 'markdown')
+
+
 def build(inputs):
     base, head, diff, names = snapshot(inputs)
     claude = read('CLAUDE.md')
@@ -133,9 +186,12 @@ def build(inputs):
         '## 1. Задача\n\n' + inputs['task'],
         'Критерии приёмки:\n' + inputs['criteria'],
         'Выполненные проверки и ограничения:\n' + inputs['checks'],
+        'Предыдущий проход и разбор замечаний:\n\n' + previous_section(inputs),
         'Метаданные снимка:\n' + fence(json_text(info), 'json'),
         'Изменённые файлы (включая новые и удалённые):\n' + fence(names),
         '## 2. Диф\n\n' + fence(diff, 'diff'),
+        'Полный текст изменённых markdown-файлов:\n\n'
+        + ('\n'.join(full_text(inputs)) or 'Markdown-файлов в пакете нет.'),
         '## 3. Обязательные правила\n\n' + fence(match.group(1), 'markdown'),
         'Правила работы агента (AGENTS.md):\n\n' + fence(read('AGENTS.md'), 'markdown'),
         '## 4. Релевантные ADR\n\n' + ('\n\n'.join(fence(adr, 'markdown') for adr in adrs) or empty_adrs),
@@ -166,9 +222,19 @@ def prepare():
     risk = os.environ.get('REVIEW_RISK', 'high')
     if risk not in ('standard', 'high'):
         raise ValueError('REVIEW_RISK: только standard или high')
+    prev = os.environ.get('REVIEW_PREV', '').strip()
+    triage = os.environ.get('REVIEW_TRIAGE_FILE', '').strip()
+    if prev and not triage:
+        raise ValueError('REVIEW_PREV без REVIEW_TRIAGE_FILE: замечания без вердиктов ревьюер разберёт заново')
+    if triage and not prev:
+        raise ValueError('REVIEW_TRIAGE_FILE без REVIEW_PREV: непонятно, к какому прогону относится разбор')
+    cap = int(os.environ.get('REVIEW_FULL_TEXT_MAX_BYTES', '120000'))
+    if cap < 1:
+        raise ValueError('REVIEW_FULL_TEXT_MAX_BYTES должен быть положительным')
     inputs = {'base': base, 'paths': paths, 'context': paths_from_file('REVIEW_CONTEXT_FILE'),
               'task': required('TASK'), 'criteria': required('CRITERIA'), 'checks': required('CHECKS'),
-              'risk': risk, 'adrs': os.environ['ADR'].split() if 'ADR' in os.environ else None}
+              'risk': risk, 'adrs': os.environ['ADR'].split() if 'ADR' in os.environ else None,
+              'full_text_max_bytes': cap, 'prev': prev, 'triage': triage}
     package, diff, info, template = build(inputs)
     sha = digest(package)
     # A new directory per preparation avoids overwriting even an identical earlier snapshot.
