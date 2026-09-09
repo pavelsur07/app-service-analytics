@@ -23,6 +23,8 @@ RISK_TRIGGERS = (
     ('Money', 'денежная арифметика и округления'),
     ('api/src/Ingestion/', 'идентификация фактов, идемпотентность, пересчёт'),
     ('Security', 'аутентификация, секреты, изоляция арендаторов'),
+    ('/Repository/', 'изоляция арендаторов: companyId в чтениях компании'),
+    ('/Query/', 'изоляция арендаторов: companyId в чтениях компании'),
     ('Token', 'аутентификация, секреты, изоляция арендаторов'),
     ('config/packages/security', 'аутентификация, секреты, изоляция арендаторов'),
 )
@@ -388,12 +390,12 @@ def parse_review(raw, sha):
     raw = raw.strip()
     if raw.startswith('```json\n') and raw.endswith('```'):
         raw = raw[8:-3].strip()
+    if not raw:
+        raise UnusableResponse('пустой ответ')
     try:
         value = json.loads(raw)
     except json.JSONDecodeError as error:
         raise UnusableResponse(f'ответ не разобран как JSON: {error}') from None
-    if not raw:
-        raise UnusableResponse('пустой ответ')
     if (not isinstance(value, dict) or value.get('status') != 'complete'
             or value.get('package_sha256') != sha
             or not isinstance(value.get('summary'), str) or not value['summary'].strip()
@@ -403,16 +405,22 @@ def parse_review(raw, sha):
         if (not isinstance(item, dict) or item.get('kind') not in
                 ('дефект', 'нарушение', 'пробел в правилах', 'вкусовое')
                 or any(not isinstance(item.get(k), str) or not item[k].strip()
-                       for k in ('location', 'detail', 'quote'))):
+                       for k in ('location', 'detail'))):
             raise ValueError('Некорректное замечание в ответе')
-        if item['kind'] in ('дефект', 'нарушение') and not str(item.get('failure', '')).strip():
-            # Замечание без сценария отказа вкусовое по построению, как бы
-            # оно ни было помечено: разбирать его наравне с дефектом — потеря времени.
+        # Замечание без сценария отказа или без якоря вкусовое по построению,
+        # как бы оно ни было помечено. Понижаем, а не роняем весь проход:
+        # одно неоформленное замечание не должно стоить четырёх содержательных.
+        if item['kind'] in ('дефект', 'нарушение') and not all(
+                str(item.get(k, '')).strip() for k in ('failure', 'quote')):
             item['kind'] = 'вкусовое'
+    # Пробел в правилах указывает на отсутствующее: цитировать нечего, сценария
+    # отказа нет, правки кода он не требует — отдельный список, не разбор.
+    value['rule_gaps'] = [i for i in value['findings'] if i['kind'] == 'пробел в правилах']
     # Модель периодически возвращает вкусовое вопреки инструкции; фильтр здесь,
     # а не в промпте, потому что послушание не гарантировано.
-    value['nitpicks'] = [item for item in value['findings'] if item['kind'] == 'вкусовое']
-    value['findings'] = [item for item in value['findings'] if item['kind'] != 'вкусовое']
+    value['nitpicks'] = [i for i in value['findings'] if i['kind'] == 'вкусовое']
+    value['findings'] = [i for i in value['findings']
+                         if i['kind'] not in ('вкусовое', 'пробел в правилах')]
     return value
 
 
@@ -494,21 +502,26 @@ def run_once(role, directory=None):
             raise ValueError('Файлы изменились во время ревью; ответ сохранён, нужен новый пакет')
         # Ссылка на строку устаревает от первой же правки; цитата проверяема.
         haystack = normalized(package.decode('utf-8'))
-        unanchored = [f for f in review['findings'] if normalized(f['quote']) not in haystack]
+        unanchored = [f for f in review['findings']
+                      if normalized(str(f.get('quote', ''))) not in haystack]
         # Completion is not approval: accepted findings are resolved by the author.
         meta.update(status='complete', findings_count=len(review['findings']),
-                    unanchored_count=len(unanchored), nitpicks_count=len(review['nitpicks']))
+                    unanchored_count=len(unanchored), nitpicks_count=len(review['nitpicks']),
+                    rule_gaps_count=len(review['rule_gaps']))
         (out / 'review.json').write_text(json_text(review), encoding='utf-8')
         body = '# Ревью\n\n' + review['summary'] + '\n\n'
         for finding in review['findings']:
             mark = ' [цитата в пакете не найдена]' if finding in unanchored else ''
             body += f"- [{finding['kind']}]{mark} {finding['location']}: {finding['detail']}\n"
-        (out / 'review.md').write_text(body, encoding='utf-8')
+        if review['rule_gaps']:
+            body += '\n## Пробел в правилах — выносится отдельно\n\n'
+            for finding in review['rule_gaps']:
+                body += f"- {finding['location']}: {finding['detail']}\n"
         if review['nitpicks']:
             body += '\n## Вкусовое — разбора не требует\n\n'
             for finding in review['nitpicks']:
                 body += f"- {finding['location']}: {finding['detail']}\n"
-            (out / 'review.md').write_text(body, encoding='utf-8')
+        (out / 'review.md').write_text(body, encoding='utf-8')
         note = f", из них без якоря в пакете: {len(unanchored)}" if unanchored else ''
         skipped = f"; вкусовых отброшено: {len(review['nitpicks'])}" if review['nitpicks'] else ''
         print(f"Заключение получено; замечаний: {len(review['findings'])}{note}{skipped}."
@@ -523,8 +536,9 @@ def run_once(role, directory=None):
                 'models': meta['models'], 'findings': meta.get('findings_count'),
                 'unanchored': meta.get('unanchored_count'),
                 'nitpicks': meta.get('nitpicks_count'),
+                'rule_gaps': meta.get('rule_gaps_count'),
                 'risk': manifest['inputs']['risk'],
-                'risk_override': bool(manifest['inputs'].get('risk_override')),
+                'risk_override': manifest['inputs'].get('risk_override', ''),
                 'started_at': meta['started_at'], 'finished_at': meta['finished_at']})
     return manifest['inputs']['risk']
 

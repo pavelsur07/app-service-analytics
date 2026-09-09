@@ -67,7 +67,8 @@ if mode == 'wrong-hash': payload['package_sha256']='0'*64
 if mode == 'findings': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.','quote':'reviewed-change','failure':'На пустом вводе вернёт None вместо нуля.'}]
 if mode == 'nitpick': payload['findings']=[{'kind':'вкусовое','location':'feature.txt:1','detail':'Комментарий стоило бы переписать.','quote':'reviewed-change'},{'kind':'дефект','location':'feature.txt:1','detail':'Без сценария отказа.','quote':'reviewed-change'}]
 if mode == 'hallucinated': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.','quote':'этой строки в пакете нет и не было','failure':'Вход X даёт неверный Y.'}]
-if mode == 'no-quote': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.'}]
+if mode == 'no-quote': payload['findings']=[{'kind':'дефект','location':'feature.txt:1','detail':'Concrete defect and failure scenario.','failure':'Вход X даёт неверный Y.'}]
+if mode == 'rule-gap': payload['findings']=[{'kind':'пробел в правилах','location':'CLAUDE.md','detail':'Правила не описывают этот случай.'}]
 result=json.dumps(payload)
 if mode == 'prose': result='I will review it later.'
 if mode == 'flaky':
@@ -477,10 +478,26 @@ else:
         self.make('review-claude', MODEL_MODE='findings')
         self.assertEqual(json.loads(self.runs()[-1].read_text())['unanchored_count'], 0)
 
-    def test_finding_without_a_quote_field_is_not_a_valid_conclusion(self):
+    def test_defect_without_a_quote_is_downgraded_not_fatal(self):
+        """Одно неоформленное замечание не должно стоить остальных в том же ответе."""
         self.make('review-prepare')
-        self.make('review-claude', success=False, MODEL_MODE='no-quote')
-        self.assertNotEqual(json.loads(self.runs()[-1].read_text())['status'], 'complete')
+        self.make('review-claude', MODEL_MODE='no-quote')
+        meta = json.loads(self.runs()[-1].read_text())
+        self.assertEqual(meta['status'], 'complete')
+        self.assertEqual(meta['findings_count'], 0)
+        self.assertEqual(meta['nitpicks_count'], 1)
+
+    def test_rule_gap_needs_no_quote_and_is_listed_apart(self):
+        """Пробел в правилах указывает на отсутствующее: цитировать нечего."""
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='rule-gap')
+        meta = json.loads(self.runs()[-1].read_text())
+        self.assertEqual(meta['status'], 'complete')
+        self.assertEqual(meta['findings_count'], 0)
+        self.assertEqual(meta['rule_gaps_count'], 1)
+        self.assertEqual(meta['nitpicks_count'], 0)
+        self.assertIn('Пробел в правилах — выносится отдельно',
+                      (self.runs()[-1].parent / 'review.md').read_text())
 
     def test_unparsable_answer_is_retried_once_without_overwriting_the_first(self):
         self.make('review-prepare')
