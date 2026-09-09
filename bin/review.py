@@ -61,7 +61,7 @@ def check_input_file(path):
     """Файл автора попадает в пакет целиком и уходит наружу в CLI: тот же
     запрет приватных env-файлов, что и для остальных источников пакета."""
     p = PurePosixPath(path)
-    if (not path or p.is_absolute() or '..' in p.parts or str(p) != path
+    if (not path or not p.parts or p.is_absolute() or '..' in p.parts or str(p) != path
             or p.parts[0] == '.git' or '.secrets' in p.parts):
         raise ValueError(f'Недопустимый путь: {path!r}; нужен путь от корня репозитория')
     if p.name.startswith('.env'):
@@ -157,12 +157,20 @@ def sibling_runs(names):
     """Высокий риск — три роли на один пакет. Разбор по одной роли давал
     механическое «всё разобрано» при неразобранных замечаниях остальных."""
     listed = {(REVIEW / 'runs' / name).resolve() for name in names}
-    covered = {previous_run(name)[0].get('package_sha256') for name in names}
+    covered = set()
+    for name in names:
+        sha = previous_run(name)[0].get('package_sha256')
+        if not sha:
+            raise ValueError(f'REVIEW_PREV: прогон {name} без package_sha256; пакет не опознать')
+        covered.add(sha)
     forgotten = []
     for meta_file in sorted((REVIEW / 'runs').glob('*/metadata.json')):
         if meta_file.parent.resolve() in listed:
             continue
-        meta = json.loads(meta_file.read_text(encoding='utf-8'))
+        try:
+            meta = json.loads(meta_file.read_text(encoding='utf-8'))
+        except (json.JSONDecodeError, OSError):
+            continue  # прерванный прогон заключением не является
         if meta.get('package_sha256') in covered and meta.get('status') == 'complete':
             forgotten.append(f'{meta_file.parent.name} ({meta.get("role")})')
     if forgotten:
@@ -175,7 +183,8 @@ def previous_section(prev, triage_path):
     Резолвится один раз при сборке: пакет обязан остаться снимком, иначе
     правка разбора между ролями рассыпает проверку свежести."""
     if not prev:
-        return 'Предыдущих проходов по этому предмету нет.'
+        # Не «проходов не было», а «автор их не указал»: проверить это нечем.
+        return 'REVIEW_PREV не задан: замечания предыдущих проходов автором не приложены.'
     sibling_runs(prev)
     lines, number = [], 0
     for name in prev:
@@ -186,7 +195,7 @@ def previous_section(prev, triage_path):
         for item in findings:
             number += 1
             lines.append(f'{number}. [{item.get("kind")}] {item.get("location")}')
-            lines.append(f'   {item.get("detail")}')
+            lines += ['   ' + line for line in str(item.get('detail')).splitlines()]
         lines.append('')
     triage = read(triage_path)
     missing = [str(n) for n in range(1, number + 1)
@@ -238,7 +247,8 @@ def build(inputs):
         'Критерии приёмки:\n' + inputs['criteria'],
         'Выполненные проверки и ограничения:\n' + inputs['checks'],
         'Предыдущий проход и разбор замечаний:\n\n'
-        + inputs.get('prev_block', 'Предыдущих проходов по этому предмету нет.'),
+        + inputs.get('prev_block',
+                     'REVIEW_PREV не задан: замечания предыдущих проходов автором не приложены.'),
         'Метаданные снимка:\n' + fence(json_text(info), 'json'),
         'Изменённые файлы (включая новые и удалённые):\n' + fence(names),
         '## 2. Диф\n\n' + fence(diff, 'diff'),
@@ -274,7 +284,7 @@ def prepare():
     risk = os.environ.get('REVIEW_RISK', 'high')
     if risk not in ('standard', 'high'):
         raise ValueError('REVIEW_RISK: только standard или high')
-    prev = os.environ.get('REVIEW_PREV', '').split()
+    prev = list(dict.fromkeys(os.environ.get('REVIEW_PREV', '').split()))
     triage = os.environ.get('REVIEW_TRIAGE_FILE', '').strip()
     if prev and not triage:
         raise ValueError('REVIEW_PREV без REVIEW_TRIAGE_FILE: замечания без вердиктов ревьюер разберёт заново')

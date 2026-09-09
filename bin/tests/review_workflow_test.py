@@ -391,6 +391,39 @@ else:
         result = self.make('review-claude')
         self.assertNotIn('KeyError', result.stdout + result.stderr)
 
+    def test_interrupted_run_does_not_block_the_next_package(self):
+        """Прогон, убитый на середине, заключением не является."""
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        previous = self.runs()[-1].parent.name
+        broken = self.runs()[-1].parent.parent / 'oborvannyi-progon'
+        broken.mkdir()
+        (broken / 'metadata.json').write_text('{"role": "claude", "status": "run')
+        (self.root / 'var/triage').write_text('1 принято: исправлено.\n')
+        self.make('review-prepare', REVIEW_PREV=previous, REVIEW_TRIAGE_FILE='var/triage')
+
+    def test_missing_previous_pass_is_stated_as_author_choice_not_as_fact(self):
+        self.make('review-prepare')
+        package = (self.package() / 'package.md').read_text()
+        self.assertIn('REVIEW_PREV не задан', package)
+        self.assertNotIn('Предыдущих проходов по этому предмету нет', package)
+
+    def test_repeated_run_name_does_not_double_the_numbering(self):
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        previous = self.runs()[-1].parent.name
+        (self.root / 'var/triage').write_text('1 принято: исправлено.\n')
+        self.make('review-prepare', REVIEW_PREV=f'{previous} {previous}',
+                  REVIEW_TRIAGE_FILE='var/triage')
+
+    def test_directory_as_triage_path_is_refused_with_a_message(self):
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        previous = self.runs()[-1].parent.name
+        result = self.make('review-prepare', success=False, REVIEW_PREV=previous,
+                           REVIEW_TRIAGE_FILE='.')
+        self.assertIn('Недопустимый путь', result.stdout + result.stderr)
+
     def test_make_review_always_runs_claude_and_risk_adds_both_codex_roles(self):
         self.make('review', REVIEW_RISK='standard')
         self.assertEqual([json.loads(p.read_text())['role'] for p in self.runs()], ['claude'])
