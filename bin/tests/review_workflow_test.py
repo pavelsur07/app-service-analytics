@@ -319,10 +319,13 @@ else:
         result = self.make('review-prepare', success=False, REVIEW_PREV=previous,
                            REVIEW_TRIAGE_FILE='var/triage')
         self.assertIn('нет разбора: 1', result.stdout + result.stderr)
-        self.make('review-prepare', success=False, REVIEW_PREV=previous)
-        self.make('review-prepare', success=False, REVIEW_TRIAGE_FILE='var/triage')
-        self.make('review-prepare', success=False, REVIEW_PREV='нет-такого-прогона',
-                  REVIEW_TRIAGE_FILE='var/triage')
+        no_triage = self.make('review-prepare', success=False, REVIEW_PREV=previous)
+        self.assertIn('REVIEW_PREV без REVIEW_TRIAGE_FILE', no_triage.stdout + no_triage.stderr)
+        no_prev = self.make('review-prepare', success=False, REVIEW_TRIAGE_FILE='var/triage')
+        self.assertIn('REVIEW_TRIAGE_FILE без REVIEW_PREV', no_prev.stdout + no_prev.stderr)
+        absent = self.make('review-prepare', success=False, REVIEW_PREV='нет-такого-прогона',
+                           REVIEW_TRIAGE_FILE='var/triage')
+        self.assertIn('прогона нет в var/review/runs', absent.stdout + absent.stderr)
 
     def test_every_listed_run_needs_a_verdict(self):
         """REVIEW_RISK=high — три роли на пакет; разбор по одной давал ложную гарантию."""
@@ -344,16 +347,25 @@ else:
         previous = self.runs()[-1].parent.name
         (self.root / 'api').mkdir()
         (self.root / 'api/.env.local').write_text('1 принято: APP_SECRET=real-secret\n')
-        self.make('review-prepare', success=False, REVIEW_PREV=previous,
-                  REVIEW_TRIAGE_FILE='api/.env.local')
-        self.make('review-prepare', success=False, REVIEW_PREV=previous,
-                  REVIEW_TRIAGE_FILE='../outside.md')
+        result = self.make('review-prepare', success=False, REVIEW_PREV=previous,
+                           REVIEW_TRIAGE_FILE='api/.env.local')
+        self.assertIn('Приватный env-файл', result.stdout + result.stderr)
+        artifacts = '\n'.join(p.read_text(encoding='utf-8', errors='replace')
+                              for p in self.root.glob('var/review/**/*')
+                              if p.is_file())
+        self.assertNotIn('real-secret', artifacts + result.stdout + result.stderr)
+        outside = self.make('review-prepare', success=False, REVIEW_PREV=previous,
+                            REVIEW_TRIAGE_FILE='../outside.md')
+        self.assertIn('Недопустимый путь', outside.stdout + outside.stderr)
 
-    def test_agents_rules_are_not_attached_twice(self):
+    def test_agents_rules_are_not_repeated_in_the_full_text_block(self):
+        """Пакет и так вкладывает AGENTS.md целиком: копия читалась бы как вторая редакция."""
         (self.root / 'var/paths').write_text('feature.txt\nAGENTS.md\n')
         (self.root / 'AGENTS.md').write_text('Always independent Claude review. Edited.\n')
         self.make('review-prepare')
         package = (self.package() / 'package.md').read_text()
+        self.assertIn('Полный текст изменённых markdown-файлов', package)
+        self.assertNotIn('### AGENTS.md', package)
         self.assertEqual(package.count('Always independent Claude review. Edited.'), 2)  # диф и раздел правил
 
     def test_unlisted_run_of_the_same_package_blocks_the_next_pass(self):
@@ -384,23 +396,14 @@ else:
         manifest = self.package() / 'manifest.json'
         data = json.loads(manifest.read_text())
         for key in ('full_text_max_bytes', 'prev', 'triage', 'prev_block'):
-            data['inputs'].pop(key, None)
-            data.pop(key.replace('prev', 'previous_runs'), None)
+            self.assertIn(key, data['inputs'])
+            del data['inputs'][key]
+        for key in ('full_text_max_bytes', 'previous_runs', 'triage'):
+            data.pop(key, None)
         manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
         # Умолчания дают тот же пакет: старый снимок проходит проверку свежести.
         result = self.make('review-claude')
         self.assertNotIn('KeyError', result.stdout + result.stderr)
-
-    def test_interrupted_run_does_not_block_the_next_package(self):
-        """Прогон, убитый на середине, заключением не является."""
-        self.make('review-prepare')
-        self.make('review-claude', MODEL_MODE='findings')
-        previous = self.runs()[-1].parent.name
-        broken = self.runs()[-1].parent.parent / 'oborvannyi-progon'
-        broken.mkdir()
-        (broken / 'metadata.json').write_text('{"role": "claude", "status": "run')
-        (self.root / 'var/triage').write_text('1 принято: исправлено.\n')
-        self.make('review-prepare', REVIEW_PREV=previous, REVIEW_TRIAGE_FILE='var/triage')
 
     def test_missing_previous_pass_is_stated_as_author_choice_not_as_fact(self):
         self.make('review-prepare')
@@ -439,21 +442,23 @@ else:
         self.make('review-claude', MODEL_MODE='findings')
         previous = self.runs()[-1].parent.name
         (self.root / 'var/triage').write_text('1 принято: ' + 'ц' * 400 + '\n')
-        self.make('review-prepare', success=False, REVIEW_PREV=previous,
-                  REVIEW_TRIAGE_FILE='var/triage', REVIEW_FULL_TEXT_MAX_BYTES='100')
+        result = self.make('review-prepare', success=False, REVIEW_PREV=previous,
+                           REVIEW_TRIAGE_FILE='var/triage', REVIEW_FULL_TEXT_MAX_BYTES='100')
+        self.assertIn('REVIEW_TRIAGE_FILE больше порога 100', result.stdout + result.stderr)
 
-    def test_unreadable_sibling_run_is_named_in_the_package(self):
-        """Молчаливый пропуск делал бы проверку полноты недостоверной."""
+    def test_interrupted_run_is_skipped_and_named_instead_of_blocking(self):
+        """Прогон, убитый на середине, заключением не является — но пропуск не молчит."""
         self.make('review-prepare')
         self.make('review-claude', MODEL_MODE='findings')
         previous = self.runs()[-1].parent.name
         broken = self.runs()[-1].parent.parent / 'oborvannyi-progon'
         broken.mkdir()
         (broken / 'metadata.json').write_text('{"role": "claude", "status": "run')
-        (self.root / 'var/triage').write_text('1 принято: исправлено.\n')
+        (self.root / 'var/triage').write_text('1 пробел: правила не описывают этот случай.\n')
         self.make('review-prepare', REVIEW_PREV=previous, REVIEW_TRIAGE_FILE='var/triage')
         package = (self.package() / 'package.md').read_text()
         self.assertIn('oborvannyi-progon', package)
+        self.assertIn('1 пробел: правила не описывают этот случай.', package)
 
     def test_make_review_always_runs_claude_and_risk_adds_both_codex_roles(self):
         self.make('review', REVIEW_RISK='standard')
