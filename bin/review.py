@@ -183,7 +183,9 @@ def previous_run(name):
         raise ValueError(f'REVIEW_PREV: прогон {name} нечитаем: {error}') from None
     if not isinstance(meta, dict) or not isinstance(value, dict):
         raise ValueError(f'REVIEW_PREV: прогон {name} испорчен: ожидались объекты JSON')
-    return meta, value.get('findings', [])
+    # Пробел в правилах разбора требует наравне с дефектом — он лишь не чинится
+    # кодом. Вкусовое разбора не требует и в нумерацию не идёт.
+    return meta, value.get('findings', []) + value.get('rule_gaps', [])
 
 
 def sibling_runs(names):

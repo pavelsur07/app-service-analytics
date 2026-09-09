@@ -551,6 +551,20 @@ else:
         self.assertEqual(review['findings'], [])
         self.assertEqual(len(review['nitpicks']), 2)
 
+    def test_rule_gap_of_the_previous_pass_still_needs_a_verdict(self):
+        """Пробел в правилах чинится не кодом, но разбора требует наравне с дефектом."""
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='rule-gap')
+        previous = self.runs()[-1].parent.name
+        (self.root / 'var/triage').write_text('Разобрал, вопросов нет.\n')
+        result = self.make('review-prepare', success=False, REVIEW_PREV=previous,
+                           REVIEW_TRIAGE_FILE='var/triage')
+        self.assertIn('нет разбора: 1', result.stdout + result.stderr)
+        (self.root / 'var/triage').write_text('1 пробел: вынесен отдельной задачей.\n')
+        self.make('review-prepare', REVIEW_PREV=previous, REVIEW_TRIAGE_FILE='var/triage')
+        self.assertIn('Правила не описывают этот случай.',
+                      (self.package() / 'package.md').read_text())
+
     def test_make_review_always_runs_claude_and_risk_adds_both_codex_roles(self):
         self.make('review', REVIEW_RISK='standard')
         self.assertEqual([json.loads(p.read_text())['role'] for p in self.runs()], ['claude'])
