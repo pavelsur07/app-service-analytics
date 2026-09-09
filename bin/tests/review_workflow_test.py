@@ -324,7 +324,7 @@ else:
         self.make('review-prepare', success=False, REVIEW_PREV='нет-такого-прогона',
                   REVIEW_TRIAGE_FILE='var/triage')
 
-    def test_every_role_of_the_previous_pass_needs_a_verdict(self):
+    def test_every_listed_run_needs_a_verdict(self):
         """REVIEW_RISK=high — три роли на пакет; разбор по одной давал ложную гарантию."""
         self.make('review-prepare')
         self.make('review-claude', MODEL_MODE='findings')
@@ -355,6 +355,41 @@ else:
         self.make('review-prepare')
         package = (self.package() / 'package.md').read_text()
         self.assertEqual(package.count('Always independent Claude review. Edited.'), 2)  # диф и раздел правил
+
+    def test_unlisted_run_of_the_same_package_blocks_the_next_pass(self):
+        """Разбор по одной роли давал механическое «всё разобрано»."""
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        claude_run = self.runs()[-1].parent.name
+        self.make('review-codex', MODEL_MODE='findings')
+        (self.root / 'var/triage').write_text('1 принято: исправлено.\n2 принято: исправлено.\n')
+        result = self.make('review-prepare', success=False, REVIEW_PREV=claude_run,
+                           REVIEW_TRIAGE_FILE='var/triage')
+        self.assertIn('не покрывает прогоны того же пакета', result.stdout + result.stderr)
+
+    def test_package_stays_a_snapshot_when_triage_changes_between_roles(self):
+        """Пакет пересобирается для проверки свежести: чтение файла на лету ломало бы роли."""
+        self.make('review-prepare')
+        self.make('review-claude', MODEL_MODE='findings')
+        previous = self.runs()[-1].parent.name
+        (self.root / 'var/triage').write_text('1 принято: исправлено.\n')
+        self.make('review-prepare', REVIEW_PREV=previous, REVIEW_TRIAGE_FILE='var/triage')
+        (self.root / 'var/triage').write_text('1 отклонено: передумал.\n')
+        self.make('review-claude')
+        self.assertIn('1 принято: исправлено.', Path(self.env['REQUEST_CAPTURE']).read_text())
+
+    def test_package_of_a_previous_version_still_runs(self):
+        """Манифест без новых ключей не должен падать по KeyError."""
+        self.make('review-prepare')
+        manifest = self.package() / 'manifest.json'
+        data = json.loads(manifest.read_text())
+        for key in ('full_text_max_bytes', 'prev', 'triage', 'prev_block'):
+            data['inputs'].pop(key, None)
+            data.pop(key.replace('prev', 'previous_runs'), None)
+        manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
+        # Умолчания дают тот же пакет: старый снимок проходит проверку свежести.
+        result = self.make('review-claude')
+        self.assertNotIn('KeyError', result.stdout + result.stderr)
 
     def test_make_review_always_runs_claude_and_risk_adds_both_codex_roles(self):
         self.make('review', REVIEW_RISK='standard')
