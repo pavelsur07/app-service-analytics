@@ -405,6 +405,14 @@ def parse_review(raw, sha):
                 or any(not isinstance(item.get(k), str) or not item[k].strip()
                        for k in ('location', 'detail', 'quote'))):
             raise ValueError('Некорректное замечание в ответе')
+        if item['kind'] in ('дефект', 'нарушение') and not str(item.get('failure', '')).strip():
+            # Замечание без сценария отказа вкусовое по построению, как бы
+            # оно ни было помечено: разбирать его наравне с дефектом — потеря времени.
+            item['kind'] = 'вкусовое'
+    # Модель периодически возвращает вкусовое вопреки инструкции; фильтр здесь,
+    # а не в промпте, потому что послушание не гарантировано.
+    value['nitpicks'] = [item for item in value['findings'] if item['kind'] == 'вкусовое']
+    value['findings'] = [item for item in value['findings'] if item['kind'] != 'вкусовое']
     return value
 
 
@@ -489,15 +497,21 @@ def run_once(role, directory=None):
         unanchored = [f for f in review['findings'] if normalized(f['quote']) not in haystack]
         # Completion is not approval: accepted findings are resolved by the author.
         meta.update(status='complete', findings_count=len(review['findings']),
-                    unanchored_count=len(unanchored))
+                    unanchored_count=len(unanchored), nitpicks_count=len(review['nitpicks']))
         (out / 'review.json').write_text(json_text(review), encoding='utf-8')
         body = '# Ревью\n\n' + review['summary'] + '\n\n'
         for finding in review['findings']:
             mark = ' [цитата в пакете не найдена]' if finding in unanchored else ''
             body += f"- [{finding['kind']}]{mark} {finding['location']}: {finding['detail']}\n"
         (out / 'review.md').write_text(body, encoding='utf-8')
+        if review['nitpicks']:
+            body += '\n## Вкусовое — разбора не требует\n\n'
+            for finding in review['nitpicks']:
+                body += f"- {finding['location']}: {finding['detail']}\n"
+            (out / 'review.md').write_text(body, encoding='utf-8')
         note = f", из них без якоря в пакете: {len(unanchored)}" if unanchored else ''
-        print(f"Заключение получено; замечаний: {len(review['findings'])}{note}."
+        skipped = f"; вкусовых отброшено: {len(review['nitpicks'])}" if review['nitpicks'] else ''
+        print(f"Заключение получено; замечаний: {len(review['findings'])}{note}{skipped}."
               ' Требуется разбор автором.')
     except BaseException as error:
         meta.update(status='failed', error=str(error))
@@ -508,6 +522,7 @@ def run_once(role, directory=None):
         ledger({'run': out.name, 'package': sha[:12], 'role': role, 'status': meta['status'],
                 'models': meta['models'], 'findings': meta.get('findings_count'),
                 'unanchored': meta.get('unanchored_count'),
+                'nitpicks': meta.get('nitpicks_count'),
                 'risk': manifest['inputs']['risk'],
                 'risk_override': bool(manifest['inputs'].get('risk_override')),
                 'started_at': meta['started_at'], 'finished_at': meta['finished_at']})
