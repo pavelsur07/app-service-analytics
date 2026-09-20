@@ -44,7 +44,18 @@ IngestionPlanningFacade::planningOrderCohorts(
     array $marketplaceSkus,
     DateTimeImmutable $from,
     DateTimeImmutable $to,
-): PlanningOrderCohortSet;
+    int $limit,
+    ?string $cursor,
+): PlanningOrderCohortPage;
+
+IngestionPlanningFacade::planningResolutionTotals(
+    string $companyId,
+    string $marketplaceAccountId,
+    array $marketplaceSkus,
+    DateTimeImmutable $from,
+    DateTimeImmutable $to,
+    PlanningObservationDateAxis $dateAxis,
+): PlanningResolutionTotals;
 
 IngestionPlanningFacade::planningResolutionObservations(
     string $companyId,
@@ -81,7 +92,17 @@ IngestionStockSourceFacade::fboStockSourceAt(
     string $marketplaceAccountId,
     array $marketplaceSkus,
     DateTimeImmutable $at,
-): FboStockSourceSet;
+    int $limit,
+    ?string $cursor,
+): FboStockSourcePage;
+
+IngestionStockSourceFacade::stockRelevantSkusAt(
+    string $companyId,
+    string $marketplaceAccountId,
+    DateTimeImmutable $at,
+    int $limit,
+    ?string $cursor,
+): FboStockSkuPage;
 
 InventoryFacade::availableStocksAt(
     string $companyId,
@@ -91,7 +112,7 @@ InventoryFacade::availableStocksAt(
 ): AvailableStockSet;
 ```
 
-`PlanningOrderCohortSet` содержит строки `(sku, orderBusinessDate, ordered, bought, terminalNoBuy, openEligible, unknown)` с целыми количествами, признаком полноты периода, временем последнего полного опроса, ссылками на источники и версией выборки. Для `PlanningResolutionObservationPage` ось `PlanningObservationDateAxis::FIRST_KNOWN_OUTCOME` фильтрует по `firstKnownOutcomeAt` для процента выкупа, ось `FIRST_REGULAR_OBSERVATION` — по `firstRegularlyObservedAt` для скорости; неизвестные даты не попадают в окно. Каждая страница содержит не более `limit` строк, максимум 500, непрозрачный keyset `nextCursor`, ось и признаки полноты выбранных дней. Строка количественной аллокации содержит `(sku, sourceRowId, allocationKey, outcome, quantity, firstKnownOutcomeAt?, firstRegularlyObservedAt?, sourceEventAt?, backfill)`; `outcome` различает D/R/T1/T2/P, а стабильный `allocationKey` не даёт задвоить частичный исход между страницами. Для одной выборки Planning дочитывает все страницы с теми же параметрами и версией источника; изменение версии во время обхода запускает его заново. Заказы с неизвестным первым регулярным подтверждением не превращаются в сегодняшнюю скорость. `MarketplaceSkuPage` содержит SKU, артикул продавца, подпись и следующий курсор. `FboStockSourceSet` содержит идентификатор и время последнего **полного** среза не позже `at`, raw-ссылки и выбранные SKU; при отсутствии такого среза возвращает `missing`, а не сегодняшний остаток. `AvailableStockSet` также выбирает последний доступный снимок не позже `at`; точные поля количества источника и складской разрез определит I-2. Он различает `known_zero`, `known_positive`, `missing`, `incomplete`, `stale` и не подставляет ноль при отсутствии строки.
+`PlanningOrderCohortPage` содержит строки `(sku, orderBusinessDate, ordered, bought, terminalNoBuy, openEligible, unknown)` с целыми количествами, признаком полноты периода, временем последнего полного опроса, ссылками на источники и версией выборки. Дневные строки читает keyset-страницами по SKU и дате. Для обоих контрактов наблюдений ось `PlanningObservationDateAxis::FIRST_KNOWN_OUTCOME` фильтрует по `firstKnownOutcomeAt` для процента выкупа, ось `FIRST_REGULAR_OBSERVATION` — по `firstRegularlyObservedAt` для скорости; неизвестные даты не попадают в окно. `PlanningResolutionTotals` вычисляет `SUM(quantity)` по исходам D/R/T1/T2/P **в PostgreSQL** и отдаёт не более одной агрегированной строки на SKU, полноту календарных дней и версию источника; запрос принимает не более 200 SKU. Planning использует этот агрегат для коэффициента и скорости, не суммирует построчные аллокации в PHP. `PlanningResolutionObservationPage` служит проверке происхождения: непрозрачный keyset `nextCursor` закрепляет ось и версию выборки. Строка количественной аллокации содержит `(sku, sourceRowId, allocationKey, outcome, quantity, firstKnownOutcomeAt?, firstRegularlyObservedAt?, sourceEventAt?, backfill)`; `outcome` различает D/R/T1/T2/P, а стабильный `allocationKey` не даёт задвоить частичный исход между страницами. Заказы с неизвестным первым регулярным подтверждением не превращаются в сегодняшнюю скорость. `MarketplaceSkuPage` содержит SKU, артикул продавца, подпись и следующий курсор. `FboStockSkuPage` перечисляет **сохранённый на момент полного среза** состав SKU кабинета для обработки Inventory вместе с ключом среза, признаками охвата и keyset-курсором, закреплённым за этим срезом. Этот состав фиксируется при загрузке из карточек и строк источника, поэтому сегодняшний каталог не подменяет исторический. Отсутствие SKU в срезе означает подтверждённый ноль только при доказанной семантике источника, иначе `missing`. `FboStockSourcePage` читает нормализованные строки того же полного среза keyset-страницами с закреплённым ключом, временем, raw-ссылками и `nextCursor`; при отсутствии такого среза возвращает `missing`, а не сегодняшний остаток. Для всех четырёх страниц (`PlanningOrderCohortPage`, `PlanningResolutionObservationPage`, `FboStockSkuPage`, `FboStockSourcePage`) лимит по умолчанию 50, максимум 200, превышение — `422`. Пакетные методы без постраничного списка также принимают не более 200 SKU. `AvailableStockSet` выбирает последний доступный снимок не позже `at`; точные поля количества источника и складской разрез определит I-2. Он различает `known_zero`, `known_positive`, `missing`, `incomplete`, `stale` и не подставляет ноль при отсутствии строки.
 
 Метод `fboStockSourceAt` появляется **после** выбора метода Ozon по I-2. Реальная фикстура нового метода доказала `warehouse_id` и курсорную пагинацию **только для этого кандидата**; `/v3/product/info/list` не содержит `warehouse_id`. Выбор метода, конкретный DTO строки, ключ и формула доступного количества фиксируются новым ADR, уточняющим ADR-024, после сверки с кабинетом и до миграции.
 
@@ -109,7 +130,7 @@ InventoryFacade::availableStocksAt(
 | Ingestion | полный источниковый снимок FBO | компания/кабинет, завершение загрузки, время, raw-ссылки; форма строк и ключ фиксируются после выбора метода новым ADR | I-2 |
 | Inventory | `inventory_available_stock_snapshot` | естественный PK `(company_id, marketplace_account_id, marketplace_sku, source_snapshot_key, formula_version)`; количество, время и качество; повтор полного наблюдения идемпотентен | INV-1 |
 
-Во всех растущих таблицах `company_id` первый в ключах доступа. `input_fingerprint` — детерминированный отпечаток всех значимых входных версий; `source_snapshot_key` — стабильный ключ полного наблюдения источника, а не новый UUID каждой строки. Его конкретную форму фиксирует новый ADR по I-2 до миграций. Нативный PostgreSQL `uuid` для прочих записей создаётся в приложении. Редактируемые планы пишутся ORM, факты через DBAL с естественным PK и upsert. Миграция отсутствует в 0.1; следующие задачи создают по одной итоговой миграции при изменении схемы. Конкретные колонки `Ingestion` и `Inventory` по остаткам уточняются только после выбора источника.
+Во всех растущих таблицах `company_id` первый в ключах доступа. `input_fingerprint` — детерминированный отпечаток входных версий, даты оценки `asOfBusinessDate` в `Europe/Moscow` (отдельной от даты заказа) и точных границ окон коэффициента и скорости; выходы расчёта в него не входят. Поэтому смена дня создаёт новый снимок и без нового заказа. `source_snapshot_key` — стабильный ключ полного наблюдения источника, а не новый UUID каждой строки. Его конкретную форму фиксирует новый ADR по I-2 до миграций. Нативный PostgreSQL `uuid` для прочих записей создаётся в приложении. Редактируемые планы пишутся ORM, факты через DBAL с естественным PK и upsert. Миграция отсутствует в 0.1; следующие задачи создают по одной итоговой миграции при изменении схемы. Конкретные колонки `Ingestion` и `Inventory` по остаткам уточняются только после выбора источника.
 
 ## Seller API и состояния качества
 
