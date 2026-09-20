@@ -29,16 +29,16 @@
 - [x] Зафиксировать таблицы, естественные ключи и владельцев из раздела ниже. Для I-2 учесть доказанный `warehouse_id` одного кандидата, но оставить ключ строки, состав DTO и формулу доступного остатка зависимыми от сверки источника и отдельного ADR. Для каждого человеческого изменения сохранить версию либо append-only след с актором и временем согласно ADR-008/011.
 - [x] Зафиксировать seller API и коды состояний из раздела ниже. Включить `companyId` и `accountId` в ключ кэша; один SKU в разных кабинетах остаётся двумя независимыми рядами.
 - [x] В ADR описать публикацию согласованного расчётного снимка: входной отпечаток, версии источников, версии настроек и алгоритма, полный/неполный срез; при ошибке не смешивать новые исходные строки со старым сигналом.
-- [x] Добавить новые направленные связи в **план** `api/deptrac.php`: `Planning → IngestionFacade`, `Planning → InventoryFacade`, `Inventory → IngestionFacade`, `Planning → IdentityAccountScopeFacade`. Последние два Facade получают отдельные узкие слои Deptrac, а `IdentityAccountScopeFacade` не открывает ключи API. Фактический Deptrac меняется вместе с первым кодом нового модуля. Обратные связи и импорт Entity запрещены.
+- [x] Добавить новые направленные связи в **план** `api/deptrac.php`: `Planning → IngestionPlanningFacade`, `Planning → InventoryFacade`, `Inventory → IngestionStockSourceFacade`, `Planning → IdentityAccountScopeFacade`. Новые Facade получают отдельные узкие слои Deptrac и исключаются из широких слоёв; `IdentityAccountScopeFacade` не открывает ключи API, а Planning не получает исходный снимок остатков. Фактический Deptrac меняется вместе с первым кодом нового модуля. Обратные связи и импорт Entity запрещены.
 - [x] Сверить ADR с Этапом 0 и Этапом 00 по всем основным показателям и состояниям. Исправить противоречия в документах 0.1, а новый предметный выбор вынести в список согласования по правилам `CLAUDE.md`.
 - [x] Выполнить документальные проверки: `git diff --check`, проверить только свои файлы через `git status --short`, найти все ссылки на ADR и термины через `rg`. Зафиксировать проверку и коммит документации в ветке задачи.
 
 ## Межмодульные интерфейсы, которые должен закрепить ADR
 
-Это сигнатуры **будущего** кода, с которыми согласуются I-1, I-2, INV-1 и Planning. Типы readonly DTO создаются в модуле владельца данных. `DateTimeImmutable` для `from`/`to` означает включительный календарный период после приведения к `Europe/Moscow`, не произвольный UTC-интервал. Выборка SKU пакетная; `[]` не означает все SKU кабинета.
+Это сигнатуры **будущего** кода, с которыми согласуются I-1, I-2, INV-1 и Planning. Типы readonly DTO создаются в модуле владельца данных. `DateTimeImmutable` для `from`/`to` означает включительный календарный период после приведения к `Europe/Moscow`, не произвольный UTC-интервал. Выборка SKU пакетная; `[]` не означает все SKU кабинета. Классы `IngestionPlanningFacade` и `IngestionStockSourceFacade` получают разные узкие слои Deptrac; существующий `IngestionFacade` остаётся для PriceMonitoring.
 
 ```php
-IngestionFacade::planningOrderCohorts(
+IngestionPlanningFacade::planningOrderCohorts(
     string $companyId,
     string $marketplaceAccountId,
     array $marketplaceSkus,
@@ -46,21 +46,24 @@ IngestionFacade::planningOrderCohorts(
     DateTimeImmutable $to,
 ): PlanningOrderCohortSet;
 
-IngestionFacade::planningResolutionObservations(
+IngestionPlanningFacade::planningResolutionObservations(
     string $companyId,
     string $marketplaceAccountId,
     array $marketplaceSkus,
     DateTimeImmutable $from,
     DateTimeImmutable $to,
-): PlanningResolutionObservationSet;
+    PlanningObservationDateAxis $dateAxis,
+    int $limit,
+    ?string $cursor,
+): PlanningResolutionObservationPage;
 
-IngestionFacade::knownMarketplaceSkus(
+IngestionPlanningFacade::knownMarketplaceSkus(
     string $companyId,
     string $marketplaceAccountId,
     array $marketplaceSkus,
 ): array; // list<string>, только существующие SKU этого кабинета
 
-IngestionFacade::searchMarketplaceSkus(
+IngestionPlanningFacade::searchMarketplaceSkus(
     string $companyId,
     string $marketplaceAccountId,
     string $search,
@@ -73,7 +76,7 @@ IdentityAccountScopeFacade::ownsMarketplaceAccount(
     string $marketplaceAccountId,
 ): bool; // отдельный узкий класс без учётных данных; проверка пустого плана
 
-IngestionFacade::fboStockSourceAt(
+IngestionStockSourceFacade::fboStockSourceAt(
     string $companyId,
     string $marketplaceAccountId,
     array $marketplaceSkus,
@@ -88,7 +91,7 @@ InventoryFacade::availableStocksAt(
 ): AvailableStockSet;
 ```
 
-`PlanningOrderCohortSet` содержит строки `(sku, orderBusinessDate, ordered, bought, terminalNoBuy, openEligible, unknown)` с целыми количествами, признаком полноты периода, временем последнего полного опроса, ссылками на источники и версией выборки. `PlanningResolutionObservationSet` содержит для каждой количественной аллокации `(sku, sourceRowId, allocationKey, outcome, quantity, firstKnownOutcomeAt?, firstRegularlyObservedAt?, sourceEventAt?, backfill)` и полноту календарных дней. `outcome` различает D/R/T1/T2/P; стабильный `allocationKey` не даёт задвоить частичный исход. Заказы с неизвестным первым регулярным подтверждением не превращаются в сегодняшнюю скорость. `MarketplaceSkuPage` содержит SKU, артикул продавца, подпись и следующий курсор. `FboStockSourceSet` содержит идентификатор и время полного среза, raw-ссылки и выбранные SKU; точные поля количеств и складской разрез определит I-2. `AvailableStockSet` различает `known_zero`, `known_positive`, `missing`, `incomplete`, `stale` и не подставляет ноль при отсутствии строки.
+`PlanningOrderCohortSet` содержит строки `(sku, orderBusinessDate, ordered, bought, terminalNoBuy, openEligible, unknown)` с целыми количествами, признаком полноты периода, временем последнего полного опроса, ссылками на источники и версией выборки. Для `PlanningResolutionObservationPage` ось `PlanningObservationDateAxis::FIRST_KNOWN_OUTCOME` фильтрует по `firstKnownOutcomeAt` для процента выкупа, ось `FIRST_REGULAR_OBSERVATION` — по `firstRegularlyObservedAt` для скорости; неизвестные даты не попадают в окно. Каждая страница содержит не более `limit` строк, максимум 500, непрозрачный keyset `nextCursor`, ось и признаки полноты выбранных дней. Строка количественной аллокации содержит `(sku, sourceRowId, allocationKey, outcome, quantity, firstKnownOutcomeAt?, firstRegularlyObservedAt?, sourceEventAt?, backfill)`; `outcome` различает D/R/T1/T2/P, а стабильный `allocationKey` не даёт задвоить частичный исход между страницами. Для одной выборки Planning дочитывает все страницы с теми же параметрами и версией источника; изменение версии во время обхода запускает его заново. Заказы с неизвестным первым регулярным подтверждением не превращаются в сегодняшнюю скорость. `MarketplaceSkuPage` содержит SKU, артикул продавца, подпись и следующий курсор. `FboStockSourceSet` содержит идентификатор и время последнего **полного** среза не позже `at`, raw-ссылки и выбранные SKU; при отсутствии такого среза возвращает `missing`, а не сегодняшний остаток. `AvailableStockSet` также выбирает последний доступный снимок не позже `at`; точные поля количества источника и складской разрез определит I-2. Он различает `known_zero`, `known_positive`, `missing`, `incomplete`, `stale` и не подставляет ноль при отсутствии строки.
 
 Метод `fboStockSourceAt` появляется **после** выбора метода Ozon по I-2. Реальная фикстура нового метода доказала `warehouse_id` и курсорную пагинацию **только для этого кандидата**; `/v3/product/info/list` не содержит `warehouse_id`. Выбор метода, конкретный DTO строки, ключ и формула доступного количества фиксируются новым ADR, уточняющим ADR-024, после сверки с кабинетом и до миграции.
 
@@ -100,13 +103,13 @@ InventoryFacade::availableStocksAt(
 | Planning | `planning_plan_change` | append-only ID; ключ плана, старое/новое количество, версия, автор, время | 0.2 |
 | Planning | `planning_import_preview` | ID, компания/кабинет, автор, срок жизни, отпечаток файла и версии плана; уникальный токен подтверждения | 0.3 |
 | Planning | `planning_settings_version` | уникальны компания/кабинет/версия; действующие с момента параметры, предшествующая версия, актор и время; строки не правятся и не удаляются | 0.4 |
-| Planning | `planning_calculation_snapshot` | ID, компания/кабинет/SKU/дата заказа, версия алгоритма, отпечаток входов, параметры, все количества, качество, ссылки на источники и время | 0.5 |
-| Planning | `planning_calculation_current` | единственный указатель на опубликованный снимок компании/кабинета/SKU/даты; обновляется атомарно со снимком | 0.5 |
+| Planning | `planning_calculation_snapshot` | естественный PK `(company_id, marketplace_account_id, marketplace_sku, business_date, algorithm_version, input_fingerprint)`; параметры, все количества, качество, ссылки на источники и время | 0.5 |
+| Planning | `planning_calculation_current` | PK компании/кабинета/SKU/даты; указывает на составной ключ опубликованного снимка, обновляется атомарно со снимком | 0.5 |
 | Ingestion | источник заказов и исходов | существующие `sales_fact`, статусы и `buyout_outcome`; новые таблицы только при доказанном пробеле полноты | I-1 |
 | Ingestion | полный источниковый снимок FBO | компания/кабинет, завершение загрузки, время, raw-ссылки; форма строк и ключ фиксируются после выбора метода новым ADR | I-2 |
-| Inventory | `inventory_available_stock_snapshot` | append-only ID, компания/кабинет/SKU, доступное количество, источник, время и качество; повтор источника идемпотентен | INV-1 |
+| Inventory | `inventory_available_stock_snapshot` | естественный PK `(company_id, marketplace_account_id, marketplace_sku, source_snapshot_key, formula_version)`; количество, время и качество; повтор полного наблюдения идемпотентен | INV-1 |
 
-Во всех растущих таблицах `company_id` первый в ключах доступа. Нативный PostgreSQL `uuid` создаётся в приложении. Редактируемые планы пишутся ORM, факты через DBAL с ограничением БД и upsert. Миграция отсутствует в 0.1; следующие задачи создают по одной итоговой миграции при изменении схемы. Конкретные колонки `Ingestion` и `Inventory` по остаткам уточняются только после реального JSON.
+Во всех растущих таблицах `company_id` первый в ключах доступа. `input_fingerprint` — детерминированный отпечаток всех значимых входных версий; `source_snapshot_key` — стабильный ключ полного наблюдения источника, а не новый UUID каждой строки. Его конкретную форму фиксирует новый ADR по I-2 до миграций. Нативный PostgreSQL `uuid` для прочих записей создаётся в приложении. Редактируемые планы пишутся ORM, факты через DBAL с естественным PK и upsert. Миграция отсутствует в 0.1; следующие задачи создают по одной итоговой миграции при изменении схемы. Конкретные колонки `Ingestion` и `Inventory` по остаткам уточняются только после выбора источника.
 
 ## Seller API и состояния качества
 
