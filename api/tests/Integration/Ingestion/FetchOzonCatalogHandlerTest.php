@@ -66,6 +66,7 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         $this->syncCatalog($container, $account);
         $afterFirst = $this->rows($container, $account);
         $rawAfterFirst = $this->rawDocumentCount($container, $account);
+        $generationAfterFirst = $this->planningGeneration($container, $account);
 
         // Идемпотентность (CLAUDE.md §4, §9): повторная синхронизация
         // не заводит ни второй строки каталога, ни второго raw-документа
@@ -76,6 +77,7 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
 
         self::assertSame($afterFirst, $this->rows($container, $account));
         self::assertSame($rawAfterFirst, $this->rawDocumentCount($container, $account));
+        self::assertSame($generationAfterFirst, $this->planningGeneration($container, $account));
         self::assertCount(62, $afterFirst);
     }
 
@@ -107,12 +109,14 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         $this->fetcher($container, [$this->pageOf([111, 222], ''), $this->pageOf([111], '')]);
 
         $this->syncCatalog($container, $account);
+        $generationBeforeRemoval = $this->planningGeneration($container, $account);
         // Товар снят с продажи и из выгрузки пропал: он перестаёт быть
         // «своей карточкой», иначе оверлей отвечал бы по нему вечно.
         $this->syncCatalog($container, $account);
 
         self::assertTrue($this->hasSku($container, $account, '111'));
         self::assertFalse($this->hasSku($container, $account, '222'));
+        self::assertGreaterThan($generationBeforeRemoval, $this->planningGeneration($container, $account));
     }
 
     public function testCatalogOfAnotherCompanyIsNotTouched(): void
@@ -550,6 +554,20 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
         $connection = $container->get(Connection::class);
 
         return $connection;
+    }
+
+    private function planningGeneration(ContainerInterface $container, MarketplaceAccount $account): int
+    {
+        $value = $this->connection($container)->fetchOne(
+            'SELECT generation FROM planning_ingestion_account_state WHERE company_id = ? AND marketplace_account_id = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
+        );
+        self::assertNotFalse($value);
+        if (!\is_int($value) && !\is_string($value)) {
+            self::fail('Planning generation must be an integer.');
+        }
+
+        return (int) $value;
     }
 
     private function bootedContainer(): ContainerInterface

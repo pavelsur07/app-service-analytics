@@ -44,7 +44,7 @@ cd "$(dirname "$0")/.."
 # существуют, но возникли случайно, из-за несовпадения окружений. На них
 # нельзя опираться как на защиту: они нигде не заявлены, поэтому никто
 # не заметит, когда очередная правка инфраструктуры их снимет.
-target_db=$(docker compose exec -T postgres psql -U app -d app -tAc \
+target_db=$(docker compose exec -T postgres psql -U app -d app -v ON_ERROR_STOP=1 -tAc \
     'SELECT current_database()' 2>/dev/null | tr -d '[:space:]')
 if [ "$target_db" != "app" ]; then
     echo "e2e-seed.sh: целевая база '$target_db', ожидается app — отказ" >&2
@@ -64,7 +64,7 @@ fi
 # поэтому порядок удаления ниже продиктован не ограничениями БД,
 # а тем, что company_id и user_id нужно прочитать во временные таблицы,
 # пока данные, на которые они ссылаются, ещё не удалены.
-docker compose exec -T postgres psql -U app -d app -q \
+docker compose exec -T postgres psql -U app -d app -v ON_ERROR_STOP=1 -q \
     -c "CREATE TEMP TABLE e2e_target_companies AS SELECT DISTINCT company_id FROM marketplace_account WHERE marketplace = 'ozon' AND external_shop_id IN ('e2e-shop', 'e2e-shop-2')" \
     -c "CREATE TEMP TABLE e2e_target_users AS SELECT DISTINCT user_id FROM company_member WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM price_observation WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
@@ -73,7 +73,11 @@ docker compose exec -T postgres psql -U app -d app -q \
     -c "DELETE FROM marketplace_return_fact WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM marketplace_expense_fact WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM marketplace_posting_status WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
-    -c "DELETE FROM buyout_outcome WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM planning_ingestion_resolution_observation WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM planning_ingestion_day_coverage WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM planning_ingestion_source_raw_document WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM planning_ingestion_source_state WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM planning_ingestion_account_state WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM marketplace_listing_cost WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM marketplace_listing_price WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM marketplace_listing WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
@@ -222,7 +226,7 @@ docker compose exec -T php-cli php bin/console app:identity:add-company-member \
 admin_email="e2e-admin@example.com"
 admin_password="e2e-admin-password"
 
-docker compose exec -T postgres psql -U app -d app -q \
+docker compose exec -T postgres psql -U app -d app -v ON_ERROR_STOP=1 -q \
     -c "DELETE FROM short_link_click" \
     -c "DELETE FROM short_link" \
     -c "DELETE FROM audit_record WHERE actor_admin_id IS NOT NULL" \

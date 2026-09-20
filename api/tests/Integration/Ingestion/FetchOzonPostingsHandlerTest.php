@@ -14,11 +14,15 @@ use App\Identity\Domain\UserRepository;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonPostingsHandler;
+use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use App\Ingestion\Domain\OzonPostingsFetcher;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonPostingFboListClient;
+use App\Ingestion\Infrastructure\Query\PlanningOutcomeQueryGuard;
+use App\Ingestion\Infrastructure\Repository\PlanningSourceStateWriter;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
+use App\Tests\Support\Builder\MarketplaceReturnFactBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\Fake\FakeOzonPostingsFetcher;
 use App\Tests\Support\Fake\FakeSequentialOzonPostingsFetcher;
@@ -40,6 +44,52 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
     private const string FIXTURE = __DIR__.'/../../Fixtures/Marketplace/ozon/posting-fbo-list-2026-07-01.json';
     private const string BUYOUT_BEFORE = __DIR__.'/../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-before.json';
     private const string BUYOUT_AFTER = __DIR__.'/../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-after.json';
+
+    public function testLegacyQueuedMessageCannotChangeFactsOrCoverage(): void
+    {
+        $container = $this->bootedContainer();
+        $account = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany(CompanyBuilder::aCompany()->persistWith($this->companies($container)))
+            ->withExternalShopId('legacy-postings')
+            ->withPlaintextCredentials(['client_id' => 'legacy-postings', 'api_key' => 'key'], $this->credentialsEncryptor($container))
+            ->persistWith($this->companies($container), $this->marketplaceAccounts($container));
+        $container->set(OzonPostingFboListClient::class, new FakeOzonPostingsFetcher($this->fixtureBody()));
+
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+        ($handler)(new FetchOzonPostingsMessage(
+            $account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-07-01', 'legacy',
+        ));
+
+        $connection = $this->connection($container);
+        self::assertEquals(0, $connection->fetchOne('SELECT COUNT(*) FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ?', [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()]));
+        self::assertEquals(0, $connection->fetchOne('SELECT COUNT(*) FROM planning_ingestion_source_state WHERE company_id = ? AND marketplace_account_id = ?', [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()]));
+    }
+
+    public function testPostingStatusObservationUsesOzonLocalClock(): void
+    {
+        $container = $this->bootedContainer();
+        $account = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany(CompanyBuilder::aCompany()->persistWith($this->companies($container)))
+            ->withExternalShopId('moscow-observation')
+            ->withPlaintextCredentials(['client_id' => 'moscow-observation', 'api_key' => 'key'], $this->credentialsEncryptor($container))
+            ->persistWith($this->companies($container), $this->marketplaceAccounts($container));
+        $container->set(OzonPostingFboListClient::class, new FakeOzonPostingsFetcher($this->fixtureBody()));
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+        $moscow = new \DateTimeZone('Europe/Moscow');
+        $before = (new \DateTimeImmutable('now', $moscow))->modify('-1 second')->format('Y-m-d H:i:s');
+        ($handler)(new FetchOzonPostingsMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-07-01'));
+        $after = (new \DateTimeImmutable('now', $moscow))->modify('+1 second')->format('Y-m-d H:i:s');
+
+        $observedAt = $this->connection($container)->fetchOne(
+            'SELECT MIN(observed_at)::text FROM marketplace_posting_status WHERE company_id = ? AND marketplace_account_id = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
+        );
+        self::assertIsString($observedAt);
+        self::assertGreaterThanOrEqual($before, $observedAt);
+        self::assertLessThanOrEqual($after, $observedAt);
+    }
 
     public function testHandlingTheSameMessageTwiceLeavesFactsAndRawDocumentUntouched(): void
     {
@@ -69,6 +119,14 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
         $rawRowAfterFirst = $this->soleRawDocumentRow($connection, $account);
         $factRowAfterFirst = $this->oneFactRow($connection, $account, '40705738-0407-1|4404411581');
         $factCountAfterFirst = $this->factCount($connection, $account);
+        $sourceAfterFirst = $connection->fetchAssociative(
+            'SELECT content_hash, last_complete_at FROM planning_ingestion_source_state WHERE company_id = ? AND marketplace_account_id = ? AND source_kind = ? AND from_date = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), 'postings', '2026-07-01'],
+        );
+        $generationAfterFirst = $connection->fetchOne(
+            'SELECT generation FROM planning_ingestion_account_state WHERE company_id = ? AND marketplace_account_id = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
+        );
 
         // Повторный запуск на тех же входных данных — идемпотентен
         // (ADR-006, CLAUDE.md §9): не только число строк совпадает,
@@ -80,12 +138,25 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
         $rawRowAfterSecond = $this->soleRawDocumentRow($connection, $account);
         $factRowAfterSecond = $this->oneFactRow($connection, $account, '40705738-0407-1|4404411581');
         $factCountAfterSecond = $this->factCount($connection, $account);
+        $sourceAfterSecond = $connection->fetchAssociative(
+            'SELECT content_hash, last_complete_at FROM planning_ingestion_source_state WHERE company_id = ? AND marketplace_account_id = ? AND source_kind = ? AND from_date = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), 'postings', '2026-07-01'],
+        );
+        $generationAfterSecond = $connection->fetchOne(
+            'SELECT generation FROM planning_ingestion_account_state WHERE company_id = ? AND marketplace_account_id = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
+        );
 
         self::assertSame(86, $factCountAfterFirst);
         self::assertSame($factCountAfterFirst, $factCountAfterSecond);
         self::assertSame($rawRowAfterFirst, $rawRowAfterSecond);
         self::assertSame($factRowAfterFirst, $factRowAfterSecond);
         self::assertSame(86, $this->statusCount($connection, $account));
+        self::assertNotFalse($sourceAfterFirst);
+        self::assertNotFalse($sourceAfterSecond);
+        self::assertSame($sourceAfterFirst['content_hash'], $sourceAfterSecond['content_hash']);
+        self::assertGreaterThanOrEqual($sourceAfterFirst['last_complete_at'], $sourceAfterSecond['last_complete_at']);
+        self::assertSame($generationAfterFirst, $generationAfterSecond);
     }
 
     public function testFactsReferenceThePersistedRawDocument(): void
@@ -412,6 +483,59 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
         self::assertSame('TEST-MIX-1-2', $links['posting_number']);
         self::assertSame('TEST-MIX-1', $links['order_number']);
         self::assertEquals(2, $links['quantity']);
+    }
+
+    public function testCorrectedSalesOrderRefreshesThePreviousOrderSiblings(): void
+    {
+        $container = $this->bootedContainer();
+        $companies = $this->companies($container);
+        $marketplaceAccounts = $this->marketplaceAccounts($container);
+        $account = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany(CompanyBuilder::aCompany()->persistWith($companies))
+            ->withExternalShopId('shop-order-correction')
+            ->withPlaintextCredentials(['client_id' => 'shop-order-correction', 'api_key' => 'key'], $this->credentialsEncryptor($container))
+            ->persistWith($companies, $marketplaceAccounts);
+        $company = $account->companyId()->toRfc4122();
+        $accountId = $account->id()->toRfc4122();
+        $first = $this->fixture(self::BUYOUT_AFTER);
+        $changed = json_decode($first, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($changed);
+        $postings = $changed['result'] ?? null;
+        self::assertIsArray($postings);
+        $posting = $postings[1] ?? null;
+        self::assertIsArray($posting);
+        $posting['order_number'] = 'CORRECTED-ORDER';
+        $second = json_encode(['result' => [$posting]], \JSON_THROW_ON_ERROR);
+        $container->set(OzonPostingFboListClient::class, new FakeSequentialOzonPostingsFetcher([$first, $second]));
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+        $message = new FetchOzonPostingsMessage($company, $accountId, '2026-08-01');
+        ($handler)($message);
+
+        /** @var MarketplaceReturnFactRepository $returns */
+        $returns = $container->get(MarketplaceReturnFactRepository::class);
+        $returns->upsertAll([MarketplaceReturnFactBuilder::aMarketplaceReturnFact()
+            ->withCompanyId($account->companyId())->withMarketplaceAccountId($account->id())
+            ->withSourceRowId('OLD-ORDER-RETURN')->withSourceId(991205)
+            ->withOrderNumber('TEST-MIX-1')->withMarketplaceSku('100001')
+            ->withPostingNumber('TEST-MIX-1-1')
+            ->withReturnReasonName('Покупатель отказался при вручении: товар не подошел')->build()]);
+        $connection = $this->connection($container);
+        (new PlanningSourceStateWriter($connection, new PlanningOutcomeQueryGuard($connection)))->recordCompleted(
+            $company, $accountId, 'returns', '2026-08-01', '2026-08-01', hash('sha256', 'old-order-return'),
+            'rescan', [], returnKeys: [['orderNumber' => 'TEST-MIX-1', 'marketplaceSku' => '100001']],
+        );
+        $oldOutcome = $connection->fetchOne('SELECT outcome FROM buyout_outcome WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?', [$company, $accountId, 'TEST-MIX-1-1|100001']);
+        self::assertIsString($oldOutcome);
+
+        ($handler)($message);
+        $newOutcome = $connection->fetchOne('SELECT outcome FROM buyout_outcome WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?', [$company, $accountId, 'TEST-MIX-1-1|100001']);
+        self::assertIsString($newOutcome);
+        self::assertNotSame($oldOutcome, $newOutcome);
+        self::assertEquals(1, $connection->fetchOne(
+            'SELECT COUNT(*) FROM planning_ingestion_resolution_observation WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ? AND outcome = ?',
+            [$company, $accountId, 'TEST-MIX-1-1|100001', $newOutcome],
+        ));
     }
 
     public function testLockSerializesSameAccountAndBusinessDate(): void

@@ -12,11 +12,15 @@ use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\UserRepository;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonReturnsHandler;
+use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Domain\SalesFactRepository;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonReturnsListClient;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
+use App\Tests\Support\Builder\MarketplacePostingStatusBuilder;
+use App\Tests\Support\Builder\SalesFactBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\Fake\ExpiringLockStore;
 use App\Tests\Support\Fake\FakeOzonReturnsFetcher;
@@ -34,6 +38,24 @@ use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 final class FetchOzonReturnsHandlerTest extends KernelTestCase
 {
     private const string FIXTURE = __DIR__.'/../../Fixtures/Marketplace/ozon/ozon-buyout-returns.json';
+
+    public function testLegacyQueuedMessageCannotChangeFactsOrCoverage(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = new FakeOzonReturnsFetcher([$this->fixturePage(0, 6, false)]);
+        $container->set(OzonReturnsListClient::class, $fetcher);
+
+        /** @var FetchOzonReturnsHandler $handler */
+        $handler = $container->get(FetchOzonReturnsHandler::class);
+        ($handler)(new FetchOzonReturnsMessage(
+            $account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-01', '2026-08-03', 'legacy',
+        ));
+
+        self::assertSame([], $fetcher->requests);
+        self::assertSame(0, $this->rawCount($container, $account));
+        self::assertSame(0, $this->returnCount($container, $account));
+    }
 
     public function testReadsAllPagesPersistsEachRawPageAndUpsertsFacts(): void
     {
@@ -71,6 +93,54 @@ final class FetchOzonReturnsHandlerTest extends KernelTestCase
 
         self::assertSame(1, $this->rawCount($container, $account));
         self::assertSame($rows, $this->returnRows($container, $account));
+    }
+
+    public function testCorrectedReturnRefreshesThePreviousOrderOutcome(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $company = $account->companyId()->toRfc4122();
+        $accountId = $account->id()->toRfc4122();
+        /** @var SalesFactRepository $sales */
+        $sales = $container->get(SalesFactRepository::class);
+        $sales->upsertAll([SalesFactBuilder::aSalesFact()->withCompanyId($account->companyId())
+            ->withMarketplaceAccountId($account->id())->withSourceRowId('TEST-R-1-1|100005')
+            ->withPostingNumber('TEST-R-1-1')->withOrderNumber('TEST-R-1')
+            ->withMarketplaceSku('100005')->build()]);
+        /** @var MarketplacePostingStatusRepository $statuses */
+        $statuses = $container->get(MarketplacePostingStatusRepository::class);
+        $statuses->recordChanged($company, [MarketplacePostingStatusBuilder::aMarketplacePostingStatus()
+            ->withCompanyId($account->companyId())->withMarketplaceAccountId($account->id())
+            ->withPostingNumber('TEST-R-1-1')->withOrderNumber('TEST-R-1')
+            ->withStatus('delivered')->build()]);
+
+        $first = $this->fixturePage(3, 1, false);
+        $corrected = json_decode($first, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($corrected);
+        $rows = $corrected['returns'] ?? null;
+        self::assertIsArray($rows);
+        $row = $rows[0] ?? null;
+        self::assertIsArray($row);
+        $row['order_number'] = 'CORRECTED-ORDER';
+        $corrected['returns'] = [$row];
+        $second = json_encode($corrected, \JSON_THROW_ON_ERROR);
+        $container->set(OzonReturnsListClient::class, new FakeOzonReturnsFetcher([$first, $second]));
+        $this->sync($container, $account);
+        $connection = $this->connection($container);
+        self::assertSame('R', $connection->fetchOne(
+            'SELECT outcome FROM buyout_outcome WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$company, $accountId, 'TEST-R-1-1|100005'],
+        ));
+
+        $this->sync($container, $account);
+        self::assertSame('D', $connection->fetchOne(
+            'SELECT outcome FROM buyout_outcome WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$company, $accountId, 'TEST-R-1-1|100005'],
+        ));
+        self::assertEquals(1, $connection->fetchOne(
+            'SELECT COUNT(*) FROM planning_ingestion_resolution_observation WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ? AND outcome = ?',
+            [$company, $accountId, 'TEST-R-1-1|100005', 'D'],
+        ));
     }
 
     public function testAuthorizationFailureMarksAccountBrokenWithoutWritingFacts(): void
@@ -229,6 +299,7 @@ final class FetchOzonReturnsHandlerTest extends KernelTestCase
 
         self::assertSame(100, $this->rawCount($container, $account));
         self::assertSame(0, $this->returnCount($container, $account));
+        self::assertSame(0, $this->completedPlanningWindowCount($container, $account));
     }
 
     public function testPublishingPagesRollsBackIfALaterPageCannotBeWritten(): void
@@ -250,6 +321,20 @@ final class FetchOzonReturnsHandlerTest extends KernelTestCase
 
         self::assertSame(2, $this->rawCount($container, $account));
         self::assertSame(0, $this->returnCount($container, $account));
+        self::assertSame(0, $this->completedPlanningWindowCount($container, $account));
+    }
+
+    private function completedPlanningWindowCount(ContainerInterface $container, MarketplaceAccount $account): int
+    {
+        $value = $this->connection($container)->fetchOne(
+            'SELECT COUNT(*) FROM planning_ingestion_source_state WHERE company_id = ? AND marketplace_account_id = ? AND source_kind = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), 'returns'],
+        );
+        if (!\is_int($value) && !\is_string($value)) {
+            self::fail('Planning source count must be an integer.');
+        }
+
+        return (int) $value;
     }
 
     private function sync(ContainerInterface $container, MarketplaceAccount $account): void

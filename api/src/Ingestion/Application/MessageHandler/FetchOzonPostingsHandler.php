@@ -16,6 +16,8 @@ use App\Ingestion\Domain\OzonPostingFboListParser;
 use App\Ingestion\Domain\OzonPostingsFetcher;
 use App\Ingestion\Domain\OzonPostingStatusParser;
 use App\Ingestion\Domain\SalesFactRepository;
+use App\Ingestion\Infrastructure\Repository\PlanningSourceStateWriter;
+use Doctrine\DBAL\Connection;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Uid\Uuid;
@@ -47,6 +49,8 @@ final readonly class FetchOzonPostingsHandler
         private MarketplaceRawDocumentRepository $rawDocuments,
         private MarketplacePostingStatusRepository $postingStatuses,
         private SalesFactRepository $salesFacts,
+        private Connection $connection,
+        private PlanningSourceStateWriter $planningSourceState,
     ) {
     }
 
@@ -64,6 +68,12 @@ final readonly class FetchOzonPostingsHandler
      */
     public function __invoke(FetchOzonPostingsMessage $message): void
     {
+        // Old queued messages have no polling origin. A fresh scheduler run will
+        // fetch the window with explicit provenance before publishing facts.
+        if ('legacy' === $message->origin) {
+            return;
+        }
+
         $lock = $this->lockFactory->createLock(
             'ozon-postings-'.$message->marketplaceAccountId.'-'.$message->businessDate,
             self::LOCK_TTL_SECONDS,
@@ -128,7 +138,7 @@ final readonly class FetchOzonPostingsHandler
 
         $this->refuseSilentTruncation($rawBody, $message->businessDate);
 
-        $observedAt = new \DateTimeImmutable();
+        $observedAt = new \DateTimeImmutable('now', $timezone);
         $statuses = $this->statusParser->parse(
             $rawBody,
             $companyId,
@@ -137,8 +147,29 @@ final readonly class FetchOzonPostingsHandler
             $observedAt,
         );
         $facts = $this->parser->parse($rawBody, $companyId, $marketplaceAccountId, $rawDocumentId);
-        $this->postingStatuses->recordChanged($target->companyId, $statuses);
-        $this->salesFacts->upsertAll($facts);
+        $this->connection->transactional(function () use ($target, $statuses, $facts, $message, $rawBody, $rawDocumentId): void {
+            $this->planningSourceState->lockAccount($target->companyId, $target->marketplaceAccountId);
+            $sourceRowIds = array_map(static fn ($fact): string => $fact->sourceRowId(), $facts);
+            $previousOrders = $this->planningSourceState->previousSalesOrderNumbers(
+                $target->companyId, $target->marketplaceAccountId, $sourceRowIds,
+            );
+            $this->postingStatuses->recordChanged($target->companyId, $statuses);
+            $this->salesFacts->upsertAll($facts);
+            $this->planningSourceState->recordCompleted(
+                $target->companyId,
+                $target->marketplaceAccountId,
+                'postings',
+                $message->businessDate,
+                $message->businessDate,
+                hash('sha256', $rawBody),
+                $message->origin,
+                [$rawDocumentId->toRfc4122()],
+                $sourceRowIds,
+                regularWindowFrom: $message->regularWindowFrom,
+                regularWindowTo: $message->regularWindowTo,
+                affectedOrderNumbers: array_merge($previousOrders, array_map(static fn ($fact): ?string => $fact->orderNumber(), $facts)),
+            );
+        });
     }
 
     /**

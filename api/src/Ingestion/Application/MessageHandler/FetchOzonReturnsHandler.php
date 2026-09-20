@@ -14,6 +14,7 @@ use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonReturnsFetcher;
 use App\Ingestion\Domain\OzonReturnsListParser;
+use App\Ingestion\Infrastructure\Repository\PlanningSourceStateWriter;
 use Doctrine\DBAL\Connection;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\SharedLockInterface;
@@ -40,11 +41,17 @@ final readonly class FetchOzonReturnsHandler
         private MarketplaceReturnFactRepository $returns,
         private Connection $connection,
         private LockFactory $lockFactory,
+        private PlanningSourceStateWriter $planningSourceState,
     ) {
     }
 
     public function __invoke(FetchOzonReturnsMessage $message): void
     {
+        // Legacy queue payloads do not prove whether this was a regular pass.
+        if ('legacy' === $message->origin) {
+            return;
+        }
+
         $lock = $this->lockFactory->createLock(
             'ozon-returns-'.$message->marketplaceAccountId,
             self::LOCK_TTL_SECONDS,
@@ -82,7 +89,7 @@ final readonly class FetchOzonReturnsHandler
         $lastId = 0;
         /** @var array<int, true> $seenCursors */
         $seenCursors = [];
-        /** @var list<array{rawDocumentId: Uuid, requestLastId: int}> $pages */
+        /** @var list<array{rawDocumentId: Uuid, requestLastId: int, contentHash: string}> $pages */
         $pages = [];
 
         for ($pageNumber = 1; $pageNumber <= self::MAX_PAGES; ++$pageNumber) {
@@ -115,7 +122,7 @@ final readonly class FetchOzonReturnsHandler
                 rawBody: $rawBody,
             ));
             $parsed = $this->parser->parse($rawBody, $companyId, $accountId, $rawDocumentId, $lastId);
-            $pages[] = ['rawDocumentId' => $rawDocumentId, 'requestLastId' => $lastId];
+            $pages[] = ['rawDocumentId' => $rawDocumentId, 'requestLastId' => $lastId, 'contentHash' => hash('sha256', $rawBody)];
             $lock->refresh();
 
             if (!$parsed->hasNext) {
@@ -123,7 +130,9 @@ final readonly class FetchOzonReturnsHandler
                 // Raw pages remain available for diagnosing schema or cursor failures.
                 // Re-read and parse one raw page at a time so a maximum-size
                 // export does not retain tens of thousands of fact objects.
-                $this->connection->transactional(function () use ($pages, $companyId, $accountId, $target): void {
+                $this->connection->transactional(function () use ($pages, $companyId, $accountId, $target, $message, $lock): void {
+                    $this->planningSourceState->lockAccount($target->companyId, $target->marketplaceAccountId);
+                    $this->planningSourceState->beginReturnedOrders();
                     foreach ($pages as $page) {
                         $rawBody = $this->rawDocuments->body($target->companyId, $accountId, $page['rawDocumentId']);
                         $facts = $this->parser->parse(
@@ -133,8 +142,33 @@ final readonly class FetchOzonReturnsHandler
                             $page['rawDocumentId'],
                             $page['requestLastId'],
                         )->facts;
+                        $this->planningSourceState->stagePreviousReturnedOrders(
+                            $target->companyId,
+                            $target->marketplaceAccountId,
+                            array_map(static fn ($fact): string => $fact->sourceRowId(), $facts),
+                        );
                         $this->returns->upsertAll($facts);
+                        $returnKeys = [];
+                        foreach ($facts as $fact) {
+                            $key = json_encode([$fact->orderNumber(), $fact->marketplaceSku()], \JSON_THROW_ON_ERROR);
+                            $returnKeys[$key] = ['orderNumber' => $fact->orderNumber(), 'marketplaceSku' => $fact->marketplaceSku()];
+                        }
+                        $this->planningSourceState->stageReturnedOrders(array_values($returnKeys));
+                        $lock->refresh();
                     }
+                    $this->planningSourceState->observeStagedReturns($target->companyId, $target->marketplaceAccountId, $message->origin);
+                    $this->planningSourceState->recordCompleted(
+                        $target->companyId,
+                        $target->marketplaceAccountId,
+                        'returns',
+                        $message->from,
+                        $message->to,
+                        hash('sha256', implode('|', array_column($pages, 'contentHash'))),
+                        $message->origin,
+                        array_map(static fn (array $page): string => $page['rawDocumentId']->toRfc4122(), $pages),
+                        regularWindowFrom: $message->regularWindowFrom,
+                        regularWindowTo: $message->regularWindowTo,
+                    );
                 });
 
                 return;

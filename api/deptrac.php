@@ -212,7 +212,13 @@ return static function (DeptracConfig $config): void {
                 ClassLikeConfig::create('^App\\Ingestion\\Application\\NotifyStaleAccountsAction$'),
             ),
             $ingestionFacade = Layer::withName('IngestionFacade')->collectors(
-                DirectoryConfig::create('src/Ingestion/Application/Facade/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Ingestion/Application/Facade/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Ingestion\\Application\\Facade\\(IngestionPlanningFacade|Planning.*|MarketplaceSku(?:Page)?)$')],
+                ),
+            ),
+            $ingestionPlanningFacade = Layer::withName('IngestionPlanningFacade')->collectors(
+                ClassLikeConfig::create('^App\\Ingestion\\Application\\Facade\\(IngestionPlanningFacade|Planning.*|MarketplaceSku(?:Page)?)$'),
             ),
             // RecentlyIngestedAccountsQuery вынесен из IngestionInfrastructure
             // тем же приёмом, что ActiveOzonAccountsQuery из IdentityInfrastructure:
@@ -413,6 +419,7 @@ return static function (DeptracConfig $config): void {
             // превращается в межмодульный DTO. Тот же грант и по той же
             // причине есть у identityFacade.
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $ingestionInfrastructure, $identityFacade, $sharedApplication, $sharedDomain),
+            Ruleset::forLayer($ingestionPlanningFacade)->accesses($ingestionInfrastructure, $symfonyComponent),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),
 

@@ -23,6 +23,8 @@ use App\Ingestion\Domain\OzonProductInfoFetcher;
 use App\Ingestion\Domain\OzonProductInfoListParser;
 use App\Ingestion\Domain\OzonProductListPage;
 use App\Ingestion\Domain\OzonProductListParser;
+use App\Ingestion\Infrastructure\Repository\PlanningSourceStateWriter;
+use Doctrine\DBAL\Connection;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Uid\Uuid;
@@ -105,6 +107,8 @@ final readonly class FetchOzonCatalogHandler
         private MarketplaceListingRepository $listings,
         private MarketplaceListingPriceRepository $listingPrices,
         private MarketplaceRawDocumentRepository $rawDocuments,
+        private Connection $connection,
+        private PlanningSourceStateWriter $planningSourceState,
     ) {
     }
 
@@ -150,6 +154,7 @@ final readonly class FetchOzonCatalogHandler
         $period = (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))->setTime(0, 0);
 
         $listings = [];
+        $rawDocumentIds = [];
         $lastId = '';
         $seenCursors = [];
 
@@ -173,16 +178,20 @@ final readonly class FetchOzonCatalogHandler
             // Каждая страница — отдельный документ: тела разные, и общий
             // ключ raw-слоя (company, account, тип, период, хэш тела)
             // разводит их сам, без номера страницы в ключе.
-            $this->rawDocuments->add(MarketplaceRawDocument::capture(
+            $rawDocumentId = $this->rawDocuments->add(MarketplaceRawDocument::capture(
                 companyId: $companyId,
                 marketplaceAccountId: $marketplaceAccountId,
                 reportType: MarketplaceReportType::OzonProductList,
                 period: $period,
                 rawBody: $rawBody,
             ));
+            $rawDocumentIds[] = $rawDocumentId->toRfc4122();
 
             $parsed = $this->parser->parse($rawBody);
             [$infoBody, $infoDocumentId] = $this->fetchProductInfo($target, $companyId, $marketplaceAccountId, $period, $parsed);
+            if (null !== $infoDocumentId) {
+                $rawDocumentIds[] = $infoDocumentId->toRfc4122();
+            }
             $cards = null === $infoBody ? [] : $this->infoParser->parse($infoBody);
 
             // Цены пишутся страницей, а не копятся до конца цикла
@@ -222,7 +231,26 @@ final readonly class FetchOzonCatalogHandler
             // синхронизация делала бы лишний запрос, а на ровно кратном
             // числе товаров — уходила бы на пустую страницу.
             if ('' === $parsed->lastId || $parsed->itemsOnPage < self::PAGE_SIZE) {
-                $this->listings->replaceForAccount($target->companyId, $marketplaceAccountId, $listings);
+                usort($listings, static fn (MarketplaceListing $left, MarketplaceListing $right): int => strcmp($left->marketplaceSku(), $right->marketplaceSku()));
+                $hash = hash_init('sha256');
+                foreach ($listings as $listing) {
+                    hash_update($hash, json_encode([$listing->marketplaceSku(), $listing->offerId(), $listing->name()], \JSON_THROW_ON_ERROR));
+                }
+                $contentHash = hash_final($hash);
+                $this->connection->transactional(function () use ($target, $marketplaceAccountId, $listings, $contentHash, $rawDocumentIds, $period): void {
+                    $this->planningSourceState->lockAccount($target->companyId, $target->marketplaceAccountId);
+                    $this->listings->replaceForAccount($target->companyId, $marketplaceAccountId, $listings);
+                    $this->planningSourceState->recordCompleted(
+                        $target->companyId,
+                        $target->marketplaceAccountId,
+                        'catalog',
+                        $period->format('Y-m-d'),
+                        $period->format('Y-m-d'),
+                        $contentHash,
+                        'regular',
+                        $rawDocumentIds,
+                    );
+                });
 
                 return;
             }

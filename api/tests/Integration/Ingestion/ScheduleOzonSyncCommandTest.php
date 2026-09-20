@@ -49,19 +49,23 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
         $sent = $this->transport($container)->getSent();
 
         $postingDates = [];
+        $postingOrigins = [];
         $catalogTargets = [];
         $expenseDates = [];
         $returnRanges = [];
+        $returnCoverage = [];
         foreach ($sent as $envelope) {
             $message = $envelope->getMessage();
             if ($message instanceof FetchOzonPostingsMessage) {
                 $postingDates[$message->marketplaceAccountId][] = $message->businessDate;
+                $postingOrigins[$message->marketplaceAccountId][] = [$message->origin, $message->regularWindowFrom, $message->regularWindowTo];
             } elseif ($message instanceof FetchOzonCatalogMessage) {
                 $catalogTargets[$message->marketplaceAccountId][] = $message->marketplaceAccountId;
             } elseif ($message instanceof FetchOzonExpensesMessage) {
                 $expenseDates[$message->marketplaceAccountId][] = $message->accrualDate;
             } elseif ($message instanceof FetchOzonReturnsMessage) {
                 $returnRanges[$message->marketplaceAccountId][] = [$message->from, $message->to];
+                $returnCoverage[$message->marketplaceAccountId][] = [$message->origin, $message->regularWindowFrom, $message->regularWindowTo];
             } else {
                 self::fail('Планировщик поставил задачу неизвестного типа.');
             }
@@ -78,11 +82,15 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
             $id = $account->id()->toRfc4122();
             self::assertSame([$id], array_values(array_unique($catalogTargets[$id] ?? [])));
             self::assertSame($window, $expenseDates[$id] ?? []);
-            $returnDays = 3 === (int) $today->format('G') ? 90 : 3;
-            self::assertSame([[
-                $today->modify('-'.($returnDays - 1).' day')->format('Y-m-d'),
-                $today->format('Y-m-d'),
-            ]], $returnRanges[$id] ?? []);
+            $expectedReturnRanges = [[
+                $today->modify('-2 day')->format('Y-m-d'), $today->format('Y-m-d'),
+            ]];
+            if (3 === (int) $today->format('G')) {
+                $expectedReturnRanges[] = [
+                    $today->modify('-89 day')->format('Y-m-d'), $today->modify('-3 day')->format('Y-m-d'),
+                ];
+            }
+            self::assertSame($expectedReturnRanges, $returnRanges[$id] ?? []);
 
             // Окно продаж — не «сегодня»: заказ меняет статус после
             // загрузки, и день, спрошенный один раз, застывает
@@ -91,6 +99,11 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
             // другое, и жёсткое равенство сделало бы тест зависящим
             // от времени суток.
             self::assertSame($window, \array_slice($postingDates[$id] ?? [], 0, 3));
+            $deepTick = 3 === (int) $today->format('G');
+            $postingCoverage = $deepTick ? ['regular', $today->modify('-29 day')->format('Y-m-d'), $window[0]] : ['regular', null, null];
+            self::assertSame(array_fill(0, \count($postingDates[$id] ?? []), $postingCoverage), $postingOrigins[$id] ?? []);
+            $expectedReturnCoverage = $deepTick ? ['regular', $today->modify('-89 day')->format('Y-m-d'), $window[0]] : ['regular', null, null];
+            self::assertSame(array_fill(0, \count($returnRanges[$id]), $expectedReturnCoverage), $returnCoverage[$id] ?? []);
         }
     }
 

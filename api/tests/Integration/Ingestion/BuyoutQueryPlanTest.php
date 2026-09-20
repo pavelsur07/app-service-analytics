@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Ingestion;
 
+use App\Ingestion\Application\Facade\PlanningObservationDateAxis;
+use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use App\Ingestion\Domain\SalesFactRepository;
@@ -12,8 +14,16 @@ use App\Ingestion\Infrastructure\Query\BuyoutForecastQuery;
 use App\Ingestion\Infrastructure\Query\BuyoutRateDirection;
 use App\Ingestion\Infrastructure\Query\BuyoutRateQuery;
 use App\Ingestion\Infrastructure\Query\BuyoutRateSort;
+use App\Ingestion\Infrastructure\Query\PlanningMarketplaceSkusQuery;
+use App\Ingestion\Infrastructure\Query\PlanningOrderCohortsQuery;
+use App\Ingestion\Infrastructure\Query\PlanningOutcomeQueryGuard;
+use App\Ingestion\Infrastructure\Query\PlanningResolutionsQuery;
+use App\Ingestion\Infrastructure\Query\PlanningUnitOutcomeSql;
+use App\Ingestion\Infrastructure\Repository\PlanningSourceStateWriter;
+use App\Tests\Support\Builder\MarketplaceListingBuilder;
 use App\Tests\Support\Builder\MarketplacePostingStatusBuilder;
 use App\Tests\Support\Builder\MarketplaceReturnFactBuilder;
+use App\Tests\Support\Builder\PlanningIngestionAccountStateBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
@@ -38,6 +48,24 @@ final class BuyoutQueryPlanTest extends KernelTestCase
         $this->seedProductionShapedCohort();
     }
 
+    public function testPlanningWriteDoesNotApplyReadOnlyPlannerLimits(): void
+    {
+        $connection = $this->connection();
+        $connection->beginTransaction();
+        try {
+            $connection->executeStatement("SET LOCAL statement_timeout = '30s'");
+            $connection->executeStatement('SET LOCAL enable_nestloop = on');
+            $connection->executeStatement('SET LOCAL jit = on');
+            $seen = [];
+            (new PlanningOutcomeQueryGuard($connection))->write(static function () use ($connection, &$seen): void {
+                $seen = $connection->fetchAssociative("SELECT current_setting('statement_timeout') AS timeout, current_setting('enable_nestloop') AS nested, current_setting('jit') AS jit");
+            });
+            self::assertSame(['timeout' => '30s', 'nested' => 'on', 'jit' => 'on'], $seen);
+        } finally {
+            $connection->rollBack();
+        }
+    }
+
     public function testOutcomeViewDoesNotRescanFactTablesForEverySale(): void
     {
         $plan = $this->explainSql(
@@ -56,6 +84,264 @@ final class BuyoutQueryPlanTest extends KernelTestCase
 
         self::assertSame([], $this->repeatedBaseTableScans($plan), self::planMessage($plan));
         $this->assertTenantPredicateIsPushedIntoBaseScans($plan, expectAccountPredicate: true);
+    }
+
+    public function testPlanningCohortKeepsTenantPredicateInBaseScans(): void
+    {
+        $query = (new PlanningOrderCohortsQuery($this->connection()))->build(
+            $this->companyId->toRfc4122(), $this->accountId->toRfc4122(), ['PLAN-SKU-0'],
+            new \DateTimeImmutable('2026-08-01'), new \DateTimeImmutable('2026-08-30'), 50, null, null,
+        );
+        $plan = $this->explainQuery($query);
+
+        self::assertSame([], $this->repeatedBaseTableScans($plan), self::planMessage($plan));
+        $this->assertTenantPredicateIsPushedIntoBaseScans($plan, expectAccountPredicate: true);
+    }
+
+    public function testPlanningCohortMaterializesOnlyRequestedSkuAndDate(): void
+    {
+        $sales = [];
+        $statuses = [];
+        for ($index = 0; $index < 12; ++$index) {
+            $posting = 'COHORT-OLD-'.$index;
+            $sales[] = SalesFactBuilder::aSalesFact()->withCompanyId($this->companyId)
+                ->withMarketplaceAccountId($this->accountId)->withSourceRowId($posting.'|PLAN-SKU-0')
+                ->withPostingNumber($posting)->withOrderNumber($posting)
+                ->withMarketplaceSku('PLAN-SKU-0')->withBusinessDate(new \DateTimeImmutable('2026-07-01'))->build();
+            $statuses[] = MarketplacePostingStatusBuilder::aMarketplacePostingStatus()
+                ->withCompanyId($this->companyId)->withMarketplaceAccountId($this->accountId)
+                ->withPostingNumber($posting)->withOrderNumber($posting)->withStatus('delivered')->build();
+        }
+        $this->sales()->upsertAll($sales);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), $statuses);
+
+        $query = (new PlanningOrderCohortsQuery($this->connection()))->build(
+            $this->companyId->toRfc4122(), $this->accountId->toRfc4122(), ['PLAN-SKU-0'],
+            new \DateTimeImmutable('2026-08-01'), new \DateTimeImmutable('2026-08-01'), 50, null, null,
+        );
+        $result = $query->executeQuery()->fetchAllAssociative();
+        self::assertCount(1, $result);
+        self::assertEquals(6, $result[0]['ordered']);
+        $plan = $this->explainQuery($query);
+        $scans = $this->subplanScans($plan, 'CTE tenant_outcome');
+        self::assertNotSame([], $scans, self::planMessage($plan));
+        foreach ($scans as $scan) {
+            self::assertLessThanOrEqual(6, $scan['Actual Rows'] ?? null);
+        }
+    }
+
+    public function testPlanningResolutionQueriesKeepTenantPredicateInBaseScans(): void
+    {
+        $connection = $this->connection();
+        $baseline = new \DateTimeImmutable('2026-06-30 10:00:00');
+        $connection->insert('planning_ingestion_account_state', PlanningIngestionAccountStateBuilder::anAccountState()
+            ->withCompanyId($this->companyId)->withMarketplaceAccountId($this->accountId)
+            ->withUpdatedAt($baseline)->withBaselineCompletedAt($baseline)->row());
+        (new PlanningSourceStateWriter($connection, new PlanningOutcomeQueryGuard($connection)))->recordCompleted(
+            $this->companyId->toRfc4122(), $this->accountId->toRfc4122(), 'postings',
+            '2026-08-01', '2026-08-01', hash('sha256', 'query-plan-postings'), 'regular', [],
+            array_map(static fn (int $index): string => 'PLAN-POSTING-'.$index.'|PLAN-SKU-'.intdiv($index, 6), range(0, 23)),
+        );
+        $query = new PlanningResolutionsQuery($connection);
+        $company = $this->companyId->toRfc4122();
+        $account = $this->accountId->toRfc4122();
+        $today = new \DateTimeImmutable('today', new \DateTimeZone('Europe/Moscow'));
+        $from = $today->modify('-1 day');
+        $to = $today->modify('+1 day');
+        foreach ([
+            $query->totals($company, $account, ['PLAN-SKU-0'], $from, $to, PlanningObservationDateAxis::FIRST_KNOWN_OUTCOME->value),
+            $query->observations($company, $account, ['PLAN-SKU-0'], $from, $to, PlanningObservationDateAxis::FIRST_KNOWN_OUTCOME->value, 50, null, null, null),
+        ] as $statement) {
+            $plan = $this->explainQuery($statement);
+            self::assertSame([], $this->repeatedBaseTableScans($plan), self::planMessage($plan));
+            $this->assertTenantPredicateIsPushedIntoBaseScans($plan, expectAccountPredicate: true);
+        }
+    }
+
+    public function testUndatedQualityQueryScopesCandidatesBeforeExpandingUnits(): void
+    {
+        $connection = $this->connection();
+        $company = $this->companyId->toRfc4122();
+        $account = $this->accountId->toRfc4122();
+        $baseline = new \DateTimeImmutable('2026-06-30 10:00:00');
+        $connection->insert('planning_ingestion_account_state', PlanningIngestionAccountStateBuilder::anAccountState()
+            ->withCompanyId($this->companyId)->withMarketplaceAccountId($this->accountId)
+            ->withUpdatedAt($baseline)->withBaselineCompletedAt($baseline)->row());
+        (new PlanningSourceStateWriter($connection, new PlanningOutcomeQueryGuard($connection)))->recordCompleted(
+            $company, $account, 'postings', '2026-08-01', '2026-08-01', hash('sha256', 'undated-plan'), 'rescan', [],
+            ['PLAN-POSTING-0|PLAN-SKU-0'],
+        );
+        $today = new \DateTimeImmutable('today', new \DateTimeZone('Europe/Moscow'));
+        $query = (new PlanningResolutionsQuery($connection))->undatedCurrentOutcomeQuery(
+            $company, $account, ['PLAN-SKU-0'], $today, $today,
+            PlanningObservationDateAxis::FIRST_REGULAR_OBSERVATION->value,
+        );
+        $plan = $this->explainQuery($query);
+
+        self::assertSame([], $this->repeatedBaseTableScans($plan), self::planMessage($plan));
+        $this->assertTenantPredicateIsPushedIntoBaseScans($plan, expectAccountPredicate: true);
+        $unitScans = $this->functionScans($plan, 'unit');
+        self::assertNotSame([], $unitScans, self::planMessage($plan));
+        foreach ($unitScans as $scan) {
+            self::assertLessThanOrEqual(10, $scan['Actual Loops'] ?? null, self::planMessage($plan));
+        }
+    }
+
+    public function testPlanningObservationCalculationLimitsSalesBeforeUnitExpansion(): void
+    {
+        $unitCte = PlanningUnitOutcomeSql::cte('order_number IN (:affectedOrders)');
+        $plan = $this->explainSql("WITH {$unitCte} SELECT COUNT(*) FROM unit_outcome", [
+            'company' => $this->companyId->toRfc4122(),
+            'account' => $this->accountId->toRfc4122(),
+            'affectedOrders' => ['PLAN-ORDER-0'],
+        ], ['affectedOrders' => ArrayParameterType::STRING]);
+
+        $salesScans = $this->relationScans($plan, 'sales_fact');
+        self::assertNotSame([], $salesScans, self::planMessage($plan));
+        foreach ($salesScans as $scan) {
+            self::assertLessThanOrEqual(3, $scan['Actual Rows'] ?? null, self::planMessage($plan));
+        }
+        self::assertSame([], $this->repeatedBaseTableScans($plan), self::planMessage($plan));
+    }
+
+    public function testResolutionWindowExpandsOnlyOrdersWithRelevantObservations(): void
+    {
+        $sales = [];
+        $statuses = [];
+        for ($index = 0; $index < 24; ++$index) {
+            $posting = 'HISTORY-POSTING-'.$index;
+            $sales[] = SalesFactBuilder::aSalesFact()->withCompanyId($this->companyId)
+                ->withMarketplaceAccountId($this->accountId)->withSourceRowId($posting.'|PLAN-SKU-0')
+                ->withPostingNumber($posting)->withOrderNumber($posting)
+                ->withMarketplaceSku('PLAN-SKU-0')->withStatus('delivered')->build();
+            $statuses[] = MarketplacePostingStatusBuilder::aMarketplacePostingStatus()
+                ->withCompanyId($this->companyId)->withMarketplaceAccountId($this->accountId)
+                ->withPostingNumber($posting)->withOrderNumber($posting)
+                ->withStatus('delivered')->build();
+        }
+        $this->sales()->upsertAll($sales);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), $statuses);
+        $connection = $this->connection();
+        $baseline = new \DateTimeImmutable('2026-06-30 10:00:00');
+        $connection->insert('planning_ingestion_account_state', PlanningIngestionAccountStateBuilder::anAccountState()
+            ->withCompanyId($this->companyId)->withMarketplaceAccountId($this->accountId)
+            ->withUpdatedAt($baseline)->withBaselineCompletedAt($baseline)->row());
+        (new PlanningSourceStateWriter($connection, new PlanningOutcomeQueryGuard($connection)))->recordCompleted(
+            $this->companyId->toRfc4122(), $this->accountId->toRfc4122(), 'postings',
+            '2026-08-01', '2026-08-01', hash('sha256', 'one relevant outcome'), 'regular', [],
+            ['HISTORY-POSTING-23|PLAN-SKU-0'],
+        );
+        $today = new \DateTimeImmutable('today', new \DateTimeZone('Europe/Moscow'));
+        $query = (new PlanningResolutionsQuery($connection))->totals(
+            $this->companyId->toRfc4122(), $this->accountId->toRfc4122(), ['PLAN-SKU-0'],
+            $today, $today, PlanningObservationDateAxis::FIRST_KNOWN_OUTCOME->value,
+        );
+        $result = $query->executeQuery()->fetchAssociative();
+        self::assertNotFalse($result);
+        self::assertEquals(1, $result['delivered']);
+        $plan = $this->explainQuery($query);
+        $unitScans = $this->functionScans($plan, 'unit');
+        self::assertNotSame([], $unitScans, self::planMessage($plan));
+        foreach ($unitScans as $scan) {
+            self::assertLessThanOrEqual(10, $scan['Actual Loops'] ?? null);
+        }
+    }
+
+    public function testPlanningSkuSearchUsesTenantIndexOnHistory(): void
+    {
+        $query = (new PlanningMarketplaceSkusQuery($this->connection()))->search(
+            $this->companyId->toRfc4122(), $this->accountId->toRfc4122(), 'PLAN-SKU', 50, null,
+        );
+        $plan = $this->explainQuery($query);
+        $salesScans = $this->relationScans($plan, 'sales_fact');
+        self::assertNotSame([], $salesScans, self::planMessage($plan));
+        foreach ($salesScans as $scan) {
+            self::assertNotSame('Seq Scan', $scan['Node Type'] ?? null, self::planMessage($plan));
+            self::assertSame(1, $scan['Actual Loops'] ?? null, self::planMessage($plan));
+            $predicate = $scan['Index Cond'] ?? $scan['Recheck Cond'] ?? null;
+            self::assertIsString($predicate, self::planMessage($plan));
+            self::assertStringContainsString('company_id', $predicate, self::planMessage($plan));
+        }
+    }
+
+    public function testCaseInsensitiveHistoricalPrefixHasTenantTrigramIndex(): void
+    {
+        $this->connection()->executeStatement('ANALYZE sales_fact');
+        $this->connection()->executeStatement('SET LOCAL enable_seqscan = off');
+        $this->connection()->executeStatement('SET LOCAL enable_indexscan = off');
+        $plan = $this->explainSql('SELECT source_row_id FROM sales_fact WHERE marketplace_sku ILIKE :prefix LIMIT 50', [
+            'prefix' => 'plan-sku-0%',
+        ]);
+        self::assertNotSame([], $this->indexScans($plan, 'idx_sales_fact_planning_sku_trgm'), self::planMessage($plan));
+        $definition = $this->connection()->fetchOne('SELECT pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = ?', ['idx_sales_fact_planning_sku_trgm']);
+        self::assertIsString($definition);
+        self::assertStringContainsString('(company_id, marketplace_account_id, marketplace_sku gin_trgm_ops)', $definition);
+    }
+
+    public function testPlanningSkuSearchScopesOfferAndNameToTenant(): void
+    {
+        /** @var MarketplaceListingRepository $listings */
+        $listings = self::getContainer()->get(MarketplaceListingRepository::class);
+        $foreignCompany = Uuid::v7();
+        $foreignAccount = Uuid::v7();
+        $foreign = [];
+        $own = [];
+        for ($index = 0; $index < 2400; ++$index) {
+            $foreign[] = MarketplaceListingBuilder::aMarketplaceListing()
+                ->withCompanyId($foreignCompany)->withMarketplaceAccountId($foreignAccount)
+                ->withMarketplaceSku('FOREIGN-LISTING-'.$index)->withOfferId('MATCH-OFFER-'.$index)
+                ->withName('MATCH-NAME-'.$index)->build();
+            if ($index < 24) {
+                $own[] = MarketplaceListingBuilder::aMarketplaceListing()
+                    ->withCompanyId($this->companyId)->withMarketplaceAccountId($this->accountId)
+                    ->withMarketplaceSku('OWN-LISTING-'.$index)->withOfferId('MATCH-OFFER-'.$index)
+                    ->withName('MATCH-NAME-'.$index)->build();
+            }
+        }
+        $listings->replaceForAccount($foreignCompany->toRfc4122(), $foreignAccount, $foreign);
+        $listings->replaceForAccount($this->companyId->toRfc4122(), $this->accountId, $own);
+
+        foreach (['MATCH-OFFER', 'MATCH-NAME'] as $search) {
+            $query = (new PlanningMarketplaceSkusQuery($this->connection()))->search(
+                $this->companyId->toRfc4122(), $this->accountId->toRfc4122(), $search, 50, null,
+            );
+            $plan = $this->explainQuery($query);
+            $listingScans = $this->relationScans($plan, 'marketplace_listing');
+            self::assertNotSame([], $listingScans, self::planMessage($plan));
+            foreach ($listingScans as $scan) {
+                self::assertContains($scan['Actual Loops'] ?? null, [0, 1], self::planMessage($plan));
+                $predicate = implode(' ', array_filter([$scan['Index Cond'] ?? null, $scan['Recheck Cond'] ?? null, $scan['Filter'] ?? null], 'is_string'));
+                self::assertStringContainsString('company_id', $predicate, self::planMessage($plan));
+                self::assertStringContainsString('marketplace_account_id', $predicate, self::planMessage($plan));
+            }
+        }
+    }
+
+    public function testRareSubstringPredicatesCanUseTrigramIndexes(): void
+    {
+        /** @var MarketplaceListingRepository $listings */
+        $listings = self::getContainer()->get(MarketplaceListingRepository::class);
+        $own = [];
+        for ($index = 0; $index < 3600; ++$index) {
+            $own[] = MarketplaceListingBuilder::aMarketplaceListing()
+                ->withCompanyId($this->companyId)->withMarketplaceAccountId($this->accountId)
+                ->withMarketplaceSku('OWN-LARGE-'.$index)
+                ->withOfferId(1 === $index ? 'RAREOFFERNEEDLE' : 'COMMON-OFFER-'.$index)
+                ->withName(2 === $index ? 'RARENAMEFIND' : 'Common name '.$index)->build();
+        }
+        $listings->replaceForAccount($this->companyId->toRfc4122(), $this->accountId, $own);
+        $this->connection()->executeStatement('ANALYZE marketplace_listing');
+
+        $this->connection()->executeStatement('SET LOCAL enable_seqscan = off');
+        $this->connection()->executeStatement('SET LOCAL enable_indexscan = off');
+        foreach (['offer_id' => ['RAREOFFERNEEDLE', 'idx_planning_listing_offer_trgm'], 'name' => ['RARENAMEFIND', 'idx_planning_listing_name_trgm']] as $column => [$search, $expectedIndex]) {
+            $plan = $this->explainSql("SELECT marketplace_sku FROM marketplace_listing WHERE {$column} ILIKE :search LIMIT 50", ['search' => '%'.$search.'%']);
+            $scans = $this->indexScans($plan, $expectedIndex);
+            self::assertNotSame([], $scans, self::planMessage($plan));
+            $definition = $this->connection()->fetchOne('SELECT pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = ?', [$expectedIndex]);
+            self::assertIsString($definition);
+            self::assertStringContainsString("(company_id, marketplace_account_id, {$column} gin_trgm_ops)", $definition);
+        }
     }
 
     /** @return iterable<string, array{string}> */
@@ -287,6 +573,66 @@ final class BuyoutQueryPlanTest extends KernelTestCase
             if (\is_array($child)) {
                 /** @var array<string, mixed> $child */
                 $scans = [...$scans, ...$this->relationScans($child, $relation)];
+            }
+        }
+
+        return $scans;
+    }
+
+    /** @param array<string, mixed> $plan
+     * @return list<array<string, mixed>>
+     */
+    private function indexScans(array $plan, string $indexName): array
+    {
+        $scans = ($plan['Index Name'] ?? null) === $indexName ? [$plan] : [];
+        $children = $plan['Plans'] ?? [];
+        if (!\is_array($children)) {
+            return $scans;
+        }
+        foreach ($children as $child) {
+            if (\is_array($child)) {
+                /** @var array<string, mixed> $child */
+                $scans = [...$scans, ...$this->indexScans($child, $indexName)];
+            }
+        }
+
+        return $scans;
+    }
+
+    /** @param array<string, mixed> $plan
+     * @return list<array<string, mixed>>
+     */
+    private function functionScans(array $plan, string $alias): array
+    {
+        $scans = ('Function Scan' === ($plan['Node Type'] ?? null) && $alias === ($plan['Alias'] ?? null)) ? [$plan] : [];
+        $children = $plan['Plans'] ?? [];
+        if (!\is_array($children)) {
+            return $scans;
+        }
+        foreach ($children as $child) {
+            if (\is_array($child)) {
+                /** @var array<string, mixed> $child */
+                $scans = [...$scans, ...$this->functionScans($child, $alias)];
+            }
+        }
+
+        return $scans;
+    }
+
+    /** @param array<string, mixed> $plan
+     * @return list<array<string, mixed>>
+     */
+    private function subplanScans(array $plan, string $subplanName): array
+    {
+        $scans = ($plan['Subplan Name'] ?? null) === $subplanName ? [$plan] : [];
+        $children = $plan['Plans'] ?? [];
+        if (!\is_array($children)) {
+            return $scans;
+        }
+        foreach ($children as $child) {
+            if (\is_array($child)) {
+                /** @var array<string, mixed> $child */
+                $scans = [...$scans, ...$this->subplanScans($child, $subplanName)];
             }
         }
 

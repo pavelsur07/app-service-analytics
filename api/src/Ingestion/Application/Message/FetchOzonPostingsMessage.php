@@ -16,6 +16,23 @@ final readonly class FetchOzonPostingsMessage
         public string $companyId,
         public string $marketplaceAccountId,
         public string $businessDate,
+        public string $origin = 'rescan',
+        public ?string $regularWindowFrom = null,
+        public ?string $regularWindowTo = null,
     ) {
+    }
+
+    /** @param array<string, mixed> $data */
+    public function __unserialize(array $data): void
+    {
+        if (!\is_string($data['companyId'] ?? null) || !\is_string($data['marketplaceAccountId'] ?? null) || !\is_string($data['businessDate'] ?? null)) {
+            throw new \UnexpectedValueException('Invalid postings message payload.');
+        }
+        $this->companyId = $data['companyId'];
+        $this->marketplaceAccountId = $data['marketplaceAccountId'];
+        $this->businessDate = $data['businessDate'];
+        $this->origin = \is_string($data['origin'] ?? null) ? $data['origin'] : 'legacy';
+        $this->regularWindowFrom = \is_string($data['regularWindowFrom'] ?? null) ? $data['regularWindowFrom'] : null;
+        $this->regularWindowTo = \is_string($data['regularWindowTo'] ?? null) ? $data['regularWindowTo'] : null;
     }
 }

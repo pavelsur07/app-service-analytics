@@ -104,6 +104,7 @@ final readonly class DispatchActiveOzonSyncsAction
 
         $postingDays = $this->isRescanTick($today) ? $this->postingRescanDays : $this->postingWindowDays;
         $returnDays = $this->isRescanTick($today) ? $this->returnRescanDays : $this->returnWindowDays;
+        $dailyCoverageTick = $this->isRescanTick($today);
 
         foreach ($targets as $target) {
             // Окно, а не только сегодня: заказ, загруженный в день
@@ -115,6 +116,9 @@ final readonly class DispatchActiveOzonSyncsAction
                     companyId: $target->companyId,
                     marketplaceAccountId: $target->marketplaceAccountId,
                     businessDate: $today->modify("-{$daysAgo} day")->format('Y-m-d'),
+                    origin: 'regular',
+                    regularWindowFrom: $dailyCoverageTick ? $today->modify('-'.($postingDays - 1).' day')->format('Y-m-d') : null,
+                    regularWindowTo: $dailyCoverageTick ? $today->format('Y-m-d') : null,
                 ));
             }
             $this->bus->dispatch(new FetchOzonCatalogMessage(
@@ -133,9 +137,23 @@ final readonly class DispatchActiveOzonSyncsAction
             $this->bus->dispatch(new FetchOzonReturnsMessage(
                 companyId: $target->companyId,
                 marketplaceAccountId: $target->marketplaceAccountId,
-                from: $today->modify('-'.($returnDays - 1).' day')->format('Y-m-d'),
+                from: $today->modify('-'.($this->returnWindowDays - 1).' day')->format('Y-m-d'),
                 to: $today->format('Y-m-d'),
+                origin: 'regular',
+                regularWindowFrom: $dailyCoverageTick ? $today->modify('-'.($returnDays - 1).' day')->format('Y-m-d') : null,
+                regularWindowTo: $dailyCoverageTick ? $today->format('Y-m-d') : null,
             ));
+            if ($returnDays > $this->returnWindowDays) {
+                $this->bus->dispatch(new FetchOzonReturnsMessage(
+                    companyId: $target->companyId,
+                    marketplaceAccountId: $target->marketplaceAccountId,
+                    from: $today->modify('-'.($returnDays - 1).' day')->format('Y-m-d'),
+                    to: $today->modify('-'.$this->returnWindowDays.' day')->format('Y-m-d'),
+                    origin: 'regular',
+                    regularWindowFrom: $today->modify('-'.($returnDays - 1).' day')->format('Y-m-d'),
+                    regularWindowTo: $today->format('Y-m-d'),
+                ));
+            }
         }
 
         // Число подключений, а не сообщений: тик планировщика меряется

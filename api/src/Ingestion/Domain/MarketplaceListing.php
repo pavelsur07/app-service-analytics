@@ -49,6 +49,9 @@ use Symfony\Component\Uid\Uuid;
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'marketplace_listing')]
+#[ORM\Index(name: 'idx_planning_listing_sku_trgm', columns: ['company_id', 'marketplace_account_id', 'marketplace_sku'])]
+#[ORM\Index(name: 'idx_planning_listing_offer_trgm', columns: ['company_id', 'marketplace_account_id', 'offer_id'])]
+#[ORM\Index(name: 'idx_planning_listing_name_trgm', columns: ['company_id', 'marketplace_account_id', 'name'])]
 class MarketplaceListing
 {
     #[ORM\Id]

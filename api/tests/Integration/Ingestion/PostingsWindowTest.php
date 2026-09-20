@@ -95,14 +95,17 @@ final class PostingsWindowTest extends KernelTestCase
     {
         $ranges = $this->returnRanges($this->actionWithRescanAt($this->hourThatIsNotNow()));
 
-        self::assertSame([[$this->days(3)[2], $this->days(3)[0]]], $ranges);
+        self::assertSame([[$this->days(3)[2], $this->days(3)[0], 'regular']], $ranges);
     }
 
-    public function testRescanTickDispatchesOneNinetyDayReturnsWindow(): void
+    public function testRescanTickPreservesRegularReturnsWindowAndScansOlderDaysSeparately(): void
     {
         $ranges = $this->returnRanges($this->actionWithRescanAt($this->hourNow()));
 
-        self::assertSame([[$this->days(90)[89], $this->days(90)[0]]], $ranges);
+        self::assertSame([
+            [$this->days(3)[2], $this->days(3)[0], 'regular'],
+            [$this->days(90)[89], $this->days(90)[3], 'regular'],
+        ], $ranges);
     }
 
     /**
@@ -124,7 +127,7 @@ final class PostingsWindowTest extends KernelTestCase
     }
 
     /**
-     * @return list<array{string, string}>
+     * @return list<array{string, string, string}>
      */
     private function returnRanges(DispatchActiveOzonSyncsAction $action): array
     {
@@ -134,7 +137,7 @@ final class PostingsWindowTest extends KernelTestCase
         foreach ($this->transport()->getSent() as $envelope) {
             $message = $envelope->getMessage();
             if ($message instanceof FetchOzonReturnsMessage) {
-                $ranges[] = [$message->from, $message->to];
+                $ranges[] = [$message->from, $message->to, $message->origin];
             }
         }
 
