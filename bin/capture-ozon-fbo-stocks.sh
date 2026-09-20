@@ -20,7 +20,23 @@ status=$(printf 'header = "Client-Id: %s"\nheader = "Api-Key: %s"\nheader = "Con
     curl --config - -sS -X POST \
         'https://api-seller.ozon.ru/v1/product/info/stocks-by-warehouse/fbo' \
         --data-binary '{"limit":1000}' -o "$tmp" -w '%{http_code}')
-[[ "$status" == 200 ]] || { printf 'Ozon HTTP %s; файл не сохранён.\n' "$status" >&2; exit 1; }
+if [[ "$status" != 200 ]]; then
+    printf 'Ozon HTTP %s; файл не сохранён.\n' "$status" >&2
+    python3 - "$tmp" <<'PY' >&2
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding='utf-8') as response:
+        error = json.load(response)
+except (OSError, ValueError):
+    error = {}
+if isinstance(error, dict):
+    print('Код Ozon:', error.get('code', '—'))
+    print('Сообщение:', error.get('message', 'нет текста ошибки'))
+PY
+    exit 1
+fi
 
 python3 - "$tmp" <<'PY'
 import json
