@@ -18,7 +18,7 @@
 | `CLAUDE.md` | добавить ADR в перечень решений | Навигация для следующих задач |
 | `docs/task/ozon-fbo-stock-source-research.md` | использовать как вход | Учесть подтверждённый разрез по складам и не объявлять непроверенную формулу остатка фактом |
 
-Файлы будущих изменений, чьи **контракты** фиксирует 0.1: `api/src/Ingestion/Application/Facade/IngestionFacade.php`, DTO рядом с ним, узкий метод проверки кабинета в `IdentityFacade`, `api/src/Inventory/Application/Facade/InventoryFacade.php`, `api/src/Planning/`, `api/deptrac.php`, миграции в `api/migrations/`, seller API и `apps/seller/src/features/planning/`. Физически эти файлы сейчас не меняются.
+Файлы будущих изменений, чьи **контракты** фиксирует 0.1: `api/src/Ingestion/Application/Facade/IngestionFacade.php`, DTO рядом с ним, отдельный `IdentityAccountScopeFacade` без доступа к ключам API, `api/src/Inventory/Application/Facade/InventoryFacade.php`, `api/src/Planning/`, `api/deptrac.php`, миграции в `api/migrations/`, seller API и `apps/seller/src/features/planning/`. Физически эти файлы сейчас не меняются.
 
 ## Шаги документационного изменения
 
@@ -26,10 +26,10 @@
 - [x] Записать таблицу состояний единицы: `D` и `R` — подтверждённый выкуп; `T1`, `T2`, `P` — известный невыкуп; `NULL` — неизвестный исход. При частичном заказе сумма количеств всех состояний равна заказанному. Исход `R` остаётся выкупом и никогда повторно не попадает в открытый прогноз.
 - [x] Записать три разные даты: дата создания заказа в `Europe/Moscow` для строки плана; дата события Ozon, если доказана источником; дата первого регулярного наблюдения подтверждения для оценки скорости. Backfill старого исхода не переносит его в день импортирования. В ADR привести пример заказа 10 сентября и подтверждения 14 сентября.
 - [x] Зафиксировать интерфейсы из раздела ниже как **проектируемые сигнатуры**. Читать данные другого модуля только через Facade; запретить прямой SQL cross-module. Каждое предметное чтение принимает `companyId` первым аргументом, затем обязательный `marketplaceAccountId` и ограничение набора SKU/периода.
-- [x] Зафиксировать таблицы, естественные ключи и владельцев из раздела ниже. Для I-2 учесть доказанный `warehouse_id`, но оставить ключ строки и формулу доступного остатка зависимыми от сверки с источником. Для каждой изменяемой человеком сущности — версия и аудит согласно ADR-008/011.
+- [x] Зафиксировать таблицы, естественные ключи и владельцев из раздела ниже. Для I-2 учесть доказанный `warehouse_id` одного кандидата, но оставить ключ строки, состав DTO и формулу доступного остатка зависимыми от сверки источника и отдельного ADR. Для каждого человеческого изменения сохранить версию либо append-only след с актором и временем согласно ADR-008/011.
 - [x] Зафиксировать seller API и коды состояний из раздела ниже. Включить `companyId` и `accountId` в ключ кэша; один SKU в разных кабинетах остаётся двумя независимыми рядами.
 - [x] В ADR описать публикацию согласованного расчётного снимка: входной отпечаток, версии источников, версии настроек и алгоритма, полный/неполный срез; при ошибке не смешивать новые исходные строки со старым сигналом.
-- [x] Добавить новые направленные связи в **план** `api/deptrac.php`: `Planning → Ingestion Application Facade`, `Planning → Inventory Application Facade`, `Inventory → Ingestion Application Facade`, а также `Planning → IdentityFacade` для проверки кабинета без выдачи секретов. Фактический Deptrac меняется вместе с первым кодом нового модуля. Обратные связи и импорт Entity запрещены.
+- [x] Добавить новые направленные связи в **план** `api/deptrac.php`: `Planning → IngestionFacade`, `Planning → InventoryFacade`, `Inventory → IngestionFacade`, `Planning → IdentityAccountScopeFacade`. Последние два Facade получают отдельные узкие слои Deptrac, а `IdentityAccountScopeFacade` не открывает ключи API. Фактический Deptrac меняется вместе с первым кодом нового модуля. Обратные связи и импорт Entity запрещены.
 - [x] Сверить ADR с Этапом 0 и Этапом 00 по всем основным показателям и состояниям. Исправить противоречия в документах 0.1, а новый предметный выбор вынести в список согласования по правилам `CLAUDE.md`.
 - [x] Выполнить документальные проверки: `git diff --check`, проверить только свои файлы через `git status --short`, найти все ссылки на ADR и термины через `rg`. Зафиксировать проверку и коммит документации в ветке задачи.
 
@@ -60,10 +60,18 @@ IngestionFacade::knownMarketplaceSkus(
     array $marketplaceSkus,
 ): array; // list<string>, только существующие SKU этого кабинета
 
-IdentityFacade::ownsMarketplaceAccount(
+IngestionFacade::searchMarketplaceSkus(
     string $companyId,
     string $marketplaceAccountId,
-): bool; // без учётных данных; проверка даже для ещё пустого плана
+    string $search,
+    int $limit,
+    ?string $cursor,
+): MarketplaceSkuPage; // SKU, артикул, подпись, nextCursor; keyset и лимит
+
+IdentityAccountScopeFacade::ownsMarketplaceAccount(
+    string $companyId,
+    string $marketplaceAccountId,
+): bool; // отдельный узкий класс без учётных данных; проверка пустого плана
 
 IngestionFacade::fboStockSourceAt(
     string $companyId,
@@ -80,22 +88,22 @@ InventoryFacade::availableStocksAt(
 ): AvailableStockSet;
 ```
 
-`PlanningOrderCohortSet` содержит строки `(sku, orderBusinessDate, ordered, bought, terminalNoBuy, openEligible, unknown)` с целыми количествами, признаком полноты периода, временем последнего полного опроса, ссылками на источники и версией выборки. `PlanningResolutionObservationSet` содержит `(sku, quantity, firstKnownOutcomeAt, firstRegularlyObservedAt, sourceEventAt?, backfill)` и полноту календарных дней; заказы с неизвестным первым регулярным наблюдением не превращаются в сегодняшнюю скорость. `FboStockSourceSet` содержит выбранные SKU только полностью загруженного среза одного кабинета, время опроса, raw-ссылки и строки метода FBO с `warehouse_id`, `present`, `reserved`. `AvailableStockSet` различает `known_zero`, `known_positive`, `missing`, `incomplete`, `stale` и не подставляет ноль при отсутствии строки.
+`PlanningOrderCohortSet` содержит строки `(sku, orderBusinessDate, ordered, bought, terminalNoBuy, openEligible, unknown)` с целыми количествами, признаком полноты периода, временем последнего полного опроса, ссылками на источники и версией выборки. `PlanningResolutionObservationSet` содержит для каждой количественной аллокации `(sku, sourceRowId, allocationKey, outcome, quantity, firstKnownOutcomeAt?, firstRegularlyObservedAt?, sourceEventAt?, backfill)` и полноту календарных дней. `outcome` различает D/R/T1/T2/P; стабильный `allocationKey` не даёт задвоить частичный исход. Заказы с неизвестным первым регулярным подтверждением не превращаются в сегодняшнюю скорость. `MarketplaceSkuPage` содержит SKU, артикул продавца, подпись и следующий курсор. `FboStockSourceSet` содержит идентификатор и время полного среза, raw-ссылки и выбранные SKU; точные поля количеств и складской разрез определит I-2. `AvailableStockSet` различает `known_zero`, `known_positive`, `missing`, `incomplete`, `stale` и не подставляет ноль при отсутствии строки.
 
-Метод `fboStockSourceAt` появляется **после** выбора метода Ozon по I-2. Реальная фикстура нового метода уже доказала `warehouse_id` и курсорную пагинацию, но не доказала смысл `present` и `reserved`. Ключ строки и формула доступного количества фиксируются отдельным приложением к ADR после сверки с кабинетом.
+Метод `fboStockSourceAt` появляется **после** выбора метода Ozon по I-2. Реальная фикстура нового метода доказала `warehouse_id` и курсорную пагинацию **только для этого кандидата**; `/v3/product/info/list` не содержит `warehouse_id`. Выбор метода, конкретный DTO строки, ключ и формула доступного количества фиксируются новым ADR, уточняющим ADR-024, после сверки с кабинетом и до миграции.
 
 ## Владение данными и ключи
 
 | Владелец | Будущая таблица | Ключ и обязательные свойства | Задача миграции |
 | --- | --- | --- | --- |
-| Planning | `planning_daily_plan` | `(company_id, marketplace_account_id, marketplace_sku, business_date)` уникален; `quantity >= 0`, `version`, автор и время | 0.2 |
+| Planning | `planning_daily_plan` | `(company_id, marketplace_account_id, marketplace_sku, business_date)` уникален; строка не удаляется, `quantity >= 0` или `NULL` после снятия, версия монотонна, автор и время | 0.2 |
 | Planning | `planning_plan_change` | append-only ID; ключ плана, старое/новое количество, версия, автор, время | 0.2 |
 | Planning | `planning_import_preview` | ID, компания/кабинет, автор, срок жизни, отпечаток файла и версии плана; уникальный токен подтверждения | 0.3 |
-| Planning | `planning_settings_version` | компания/кабинет, версия, действующие с момента параметры окон, минимальной выборки, резерва, зон и свежести; неизменяемая история | 0.4 |
+| Planning | `planning_settings_version` | уникальны компания/кабинет/версия; действующие с момента параметры, предшествующая версия, актор и время; строки не правятся и не удаляются | 0.4 |
 | Planning | `planning_calculation_snapshot` | ID, компания/кабинет/SKU/дата заказа, версия алгоритма, отпечаток входов, параметры, все количества, качество, ссылки на источники и время | 0.5 |
 | Planning | `planning_calculation_current` | единственный указатель на опубликованный снимок компании/кабинета/SKU/даты; обновляется атомарно со снимком | 0.5 |
 | Ingestion | источник заказов и исходов | существующие `sales_fact`, статусы и `buyout_outcome`; новые таблицы только при доказанном пробеле полноты | I-1 |
-| Ingestion | полный источниковый снимок FBO | компания/кабинет, завершение загрузки, время, raw-ссылки; разрез по складам доказан, ключ строки уточняется после сверки источника | I-2 |
+| Ingestion | полный источниковый снимок FBO | компания/кабинет, завершение загрузки, время, raw-ссылки; форма строк и ключ фиксируются после выбора метода новым ADR | I-2 |
 | Inventory | `inventory_available_stock_snapshot` | append-only ID, компания/кабинет/SKU, доступное количество, источник, время и качество; повтор источника идемпотентен | INV-1 |
 
 Во всех растущих таблицах `company_id` первый в ключах доступа. Нативный PostgreSQL `uuid` создаётся в приложении. Редактируемые планы пишутся ORM, факты через DBAL с ограничением БД и upsert. Миграция отсутствует в 0.1; следующие задачи создают по одной итоговой миграции при изменении схемы. Конкретные колонки `Ingestion` и `Inventory` по остаткам уточняются только после реального JSON.
@@ -106,10 +114,10 @@ InventoryFacade::availableStocksAt(
 
 | Метод и путь после префикса | Назначение |
 | --- | --- |
-| `GET /accounts/{accountId}/skus?search&limit&cursor` | Ограниченный список SKU кабинета |
-| `GET /accounts/{accountId}/skus/{sku}/plan?from&to` | Дневной план и версии |
-| `PUT /accounts/{accountId}/skus/{sku}/plan/{date}` | `{quantity, expectedVersion}`; создание с версией `0` |
-| `DELETE /accounts/{accountId}/skus/{sku}/plan/{date}` | `{expectedVersion}`; снятие с записью в журнал |
+| `GET /accounts/{accountId}/skus?search&limit&cursor` | Ограниченный поиск SKU кабинета через `searchMarketplaceSkus` |
+| `GET /accounts/{accountId}/skus/{sku}/plan?from&to` | Дневной план и версии; у никогда не заданного дня версия `0`, у снятого — последняя версия |
+| `PUT /accounts/{accountId}/skus/{sku}/plan/{date}` | `{quantity, expectedVersion}`; `0` только для ещё не созданного дня, после снятия требуется версия tombstone |
+| `DELETE /accounts/{accountId}/skus/{sku}/plan/{date}` | `{expectedVersion}`; `quantity = NULL`, версия увеличена, запись в журнал |
 | `POST /accounts/{accountId}/imports/preview` | Проверка XLSX без сохранения плана |
 | `POST /accounts/{accountId}/imports/{previewId}/apply` | Атомарное подтверждение просмотренного импорта |
 | `GET /accounts/{accountId}/skus/{sku}/daily?from&to` | Текущий дневной ряд и качество |
@@ -128,5 +136,6 @@ InventoryFacade::availableStocksAt(
 3. Возврат после D переводит исход в R для диагностики, сохраняет 1 в состоявшемся выкупе и 0 в открытом прогнозе.
 4. Подтверждение старого заказа после backfill не увеличивает скорость за сегодняшний день.
 5. Ошибка последней страницы остатков сохраняет прежний снимок с отметкой просрочки; отсутствие SKU не превращается в подтверждённый ноль.
+6. План версии 1 снят и восстановлен: старый `expectedVersion: 1` получает `409`; устаревший preview импорта также не применяется.
 
 **Готовность 0.1:** ADR принят, термины и сигнатуры согласованы с Этапом 0/00, в документах нет необоснованного определения доступного остатка, `git diff --check` успешен. Хотя изменение состоит только из `.md`, принятие архитектурного ADR проходит ревью по его предмету согласно `CLAUDE.md` → «Порог внешнего ревью».
