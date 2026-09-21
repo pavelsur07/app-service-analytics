@@ -21,9 +21,7 @@ final class PlanImportPreviewRepositoryTest extends KernelTestCase
         $companyId = Uuid::v7();
         $accountId = Uuid::v7();
         $preview = PlanImportPreviewBuilder::aPlanImportPreview()
-            ->withCompanyId($companyId)->withMarketplaceAccountId($accountId)->build();
-        $entityManager->persist($preview);
-        $entityManager->flush();
+            ->withCompanyId($companyId)->withMarketplaceAccountId($accountId)->persistWith($entityManager);
         $id = $preview->id()->toRfc4122();
         $entityManager->clear();
 

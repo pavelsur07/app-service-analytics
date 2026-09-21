@@ -20,15 +20,11 @@ final class CleanupExpiredPlanImportsActionTest extends KernelTestCase
         /** @var EntityManagerInterface $entityManager */
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
         $now = new \DateTimeImmutable('2026-09-21 12:00:00 UTC');
-        $expired = PlanImportPreviewBuilder::aPlanImportPreview()->withCreatedAt($now->modify('-25 hours'))->build();
-        $oldApplied = PlanImportPreviewBuilder::aPlanImportPreview()->withCreatedAt($now->modify('-40 days'))->build();
-        $oldApplied->markApplied(['created' => 1, 'updated' => 0, 'unchanged' => 0], $now->modify('-35 days'));
-        $recentApplied = PlanImportPreviewBuilder::aPlanImportPreview()->withCreatedAt($now->modify('-2 days'))->build();
-        $recentApplied->markApplied(['created' => 1, 'updated' => 0, 'unchanged' => 0], $now->modify('-1 day'));
-        foreach ([$expired, $oldApplied, $recentApplied] as $preview) {
-            $entityManager->persist($preview);
-        }
-        $entityManager->flush();
+        $expired = PlanImportPreviewBuilder::aPlanImportPreview()->withCreatedAt($now->modify('-25 hours'))->persistWith($entityManager);
+        $oldApplied = PlanImportPreviewBuilder::aPlanImportPreview()->withCreatedAt($now->modify('-40 days'))
+            ->asApplied(['created' => 1, 'updated' => 0, 'unchanged' => 0], $now->modify('-35 days'))->persistWith($entityManager);
+        $recentApplied = PlanImportPreviewBuilder::aPlanImportPreview()->withCreatedAt($now->modify('-2 days'))
+            ->asApplied(['created' => 1, 'updated' => 0, 'unchanged' => 0], $now->modify('-1 day'))->persistWith($entityManager);
 
         /** @var CleanupExpiredPlanImportsAcrossCompaniesAction $cleanup */
         $cleanup = self::getContainer()->get(CleanupExpiredPlanImportsAcrossCompaniesAction::class);

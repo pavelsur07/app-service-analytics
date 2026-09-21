@@ -110,9 +110,7 @@ final class PlanImportConcurrencyTest extends KernelTestCase
             ->withMarketplaceAccountId($account->id())->withActorId($actor->id())
             ->withCreatedAt(new \DateTimeImmutable())->withRows([
                 new PlanImportPreviewRow(2, 'SKU-1', null, '2026-09-22', 12, 0, null, 'new'),
-            ])->build();
-        $this->entityManager()->persist($preview);
-        $this->entityManager()->flush();
+            ])->persistWith($this->entityManager());
         $this->entityManager()->clear();
 
         return [$company, $account, $actor, $preview];

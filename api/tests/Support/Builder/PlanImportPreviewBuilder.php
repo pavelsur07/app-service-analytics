@@ -6,6 +6,7 @@ namespace App\Tests\Support\Builder;
 
 use App\Planning\Domain\PlanImportPreview;
 use App\Planning\Domain\PlanImportPreviewRow;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Uid\Uuid;
 
 final class PlanImportPreviewBuilder
@@ -17,6 +18,9 @@ final class PlanImportPreviewBuilder
     /** @var list<PlanImportPreviewRow> */
     private array $rows;
     private \DateTimeImmutable $createdAt;
+    /** @var array{created: int, updated: int, unchanged: int}|null */
+    private ?array $applyResult = null;
+    private ?\DateTimeImmutable $appliedAt = null;
 
     private function __construct()
     {
@@ -82,8 +86,32 @@ final class PlanImportPreviewBuilder
         return $clone;
     }
 
+    /** @param array{created: int, updated: int, unchanged: int} $result */
+    public function asApplied(array $result, \DateTimeImmutable $appliedAt): self
+    {
+        $clone = clone $this;
+        $clone->applyResult = $result;
+        $clone->appliedAt = $appliedAt;
+
+        return $clone;
+    }
+
     public function build(): PlanImportPreview
     {
-        return PlanImportPreview::create($this->companyId, $this->marketplaceAccountId, $this->actorId, $this->fingerprint, $this->rows, $this->createdAt);
+        $preview = PlanImportPreview::create($this->companyId, $this->marketplaceAccountId, $this->actorId, $this->fingerprint, $this->rows, $this->createdAt);
+        if (null !== $this->applyResult && null !== $this->appliedAt) {
+            $preview->markApplied($this->applyResult, $this->appliedAt);
+        }
+
+        return $preview;
+    }
+
+    public function persistWith(EntityManagerInterface $entityManager): PlanImportPreview
+    {
+        $preview = $this->build();
+        $entityManager->persist($preview);
+        $entityManager->flush();
+
+        return $preview;
     }
 }
