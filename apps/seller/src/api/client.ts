@@ -32,9 +32,13 @@ export async function apiPost<T = unknown>(
 
 // FormData сам формирует multipart boundary. Задавать Content-Type
 // вручную нельзя: браузер и тело разойдутся по границе.
-export async function apiPostForm<T>(path: string, body: FormData): Promise<T> {
+export async function apiPostForm<T>(
+  path: string,
+  body: FormData,
+  acceptedStatuses: readonly number[] = [],
+): Promise<T> {
   const response = await fetch(path, { method: 'POST', body })
-  if (!response.ok) {
+  if (!response.ok && !acceptedStatuses.includes(response.status)) {
     throw await parseApiError(response)
   }
 

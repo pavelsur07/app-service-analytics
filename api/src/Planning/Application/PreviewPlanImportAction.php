@@ -34,7 +34,7 @@ final readonly class PreviewPlanImportAction
         $read = $this->reader->read($path);
         $issues = $read->issues;
         $details = [];
-        $uniqueSkus = array_values(array_unique(array_map(static fn ($row): string => $row->marketplaceSku, $read->rows)));
+        $uniqueSkus = array_values(array_unique(array_map(static fn ($reference): string => $reference->marketplaceSku, $read->skuReferences)));
         foreach (array_chunk($uniqueSkus, 200) as $chunk) {
             array_push($details, ...$this->ingestion->knownMarketplaceSkuDetails($companyId, $marketplaceAccountId, $chunk));
         }
@@ -42,9 +42,9 @@ final readonly class PreviewPlanImportAction
         foreach ($details as $detail) {
             $known[$detail->marketplaceSku] = $detail->offerId;
         }
-        foreach ($read->rows as $row) {
-            if (!\array_key_exists($row->marketplaceSku, $known)) {
-                $issues[] = new PlanImportIssue($row->rowNumber, 'marketplace_sku_unknown', 'SKU не найден в выбранном кабинете.');
+        foreach ($read->skuReferences as $reference) {
+            if (!\array_key_exists($reference->marketplaceSku, $known)) {
+                $issues[] = new PlanImportIssue($reference->rowNumber, 'marketplace_sku_unknown', 'SKU не найден в выбранном кабинете.');
             }
         }
         usort($issues, static fn (PlanImportIssue $left, PlanImportIssue $right): int => ($left->rowNumber ?? 0) <=> ($right->rowNumber ?? 0));
@@ -52,7 +52,15 @@ final readonly class PreviewPlanImportAction
             return new PreviewPlanImportResult(PlanImportPreviewOutcome::Invalid, null, $issues);
         }
 
-        $versions = $this->versions->forRows($companyId, $marketplaceAccountId, $read->rows);
+        /** @var list<array{marketplace_sku: string, business_date: string, quantity: int|string|null, version: int|string}> $versionRows */
+        $versionRows = $this->versions->build($companyId, $marketplaceAccountId, $read->rows)->executeQuery()->fetchAllAssociative();
+        $versions = [];
+        foreach ($versionRows as $versionRow) {
+            $versions[DailyPlanVersionsQuery::key($versionRow['marketplace_sku'], $versionRow['business_date'])] = [
+                'quantity' => null === $versionRow['quantity'] ? null : (int) $versionRow['quantity'],
+                'version' => (int) $versionRow['version'],
+            ];
+        }
         $previewRows = [];
         foreach ($read->rows as $row) {
             $current = $versions[DailyPlanVersionsQuery::key($row->marketplaceSku, $row->businessDate)] ?? ['quantity' => null, 'version' => 0];

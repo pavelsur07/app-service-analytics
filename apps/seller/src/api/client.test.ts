@@ -4,6 +4,7 @@ import { apiDelete, apiPostForm } from './client'
 import { http, server } from '../../tests/msw/server'
 
 type DailyPlanItem = components['schemas']['DailyPlanItemResponse']
+type PlanImportPreview = components['schemas']['PlanImportPreviewResponse']
 
 const COMPANY_ID = '019ffe00-0000-7000-8000-000000000001'
 const ACCOUNT_ID = '019ffe00-0000-7000-8000-000000000002'
@@ -85,7 +86,7 @@ describe('apiPostForm', () => {
     )
 
     await expect(
-      apiPostForm<{ previewId: string }>(
+      apiPostForm<PlanImportPreview>(
         `http://localhost/api/companies/${COMPANY_ID}/planning/accounts/${ACCOUNT_ID}/imports/preview`,
         form,
       ),
@@ -95,6 +96,37 @@ describe('apiPostForm', () => {
       summary: { total: 0, new: 0, changed: 0, unchanged: 0 },
       items: [],
       issues: [],
+    })
+  })
+
+  it('возвращает типизированные ошибки строк для ожидаемого 422', async () => {
+    server.use(
+      http.post(
+        '/api/companies/{companyId}/planning/accounts/{accountId}/imports/preview',
+        ({ response }) =>
+          response(422).json({
+            previewId: null,
+            expiresAt: null,
+            summary: { total: 0, new: 0, changed: 0, unchanged: 0 },
+            items: [],
+            issues: [
+              { rowNumber: 3, code: 'date_invalid', message: 'Ошибка даты' },
+            ],
+          }),
+      ),
+    )
+    const form = new FormData()
+    form.append('file', new File(['xlsx'], 'plan.xlsx'))
+
+    await expect(
+      apiPostForm<PlanImportPreview>(
+        `http://localhost/api/companies/${COMPANY_ID}/planning/accounts/${ACCOUNT_ID}/imports/preview`,
+        form,
+        [422],
+      ),
+    ).resolves.toMatchObject({
+      previewId: null,
+      issues: [{ rowNumber: 3, code: 'date_invalid' }],
     })
   })
 })

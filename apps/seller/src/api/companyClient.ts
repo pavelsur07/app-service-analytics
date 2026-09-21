@@ -16,10 +16,15 @@ export function createCompanyApiClient(companyId: string) {
         `/api/companies/${encodeURIComponent(companyId)}${path}`,
         body,
       ),
-    postForm: <T>(path: string, body: FormData): Promise<T> =>
+    postForm: <T>(
+      path: string,
+      body: FormData,
+      acceptedStatuses: readonly number[] = [],
+    ): Promise<T> =>
       apiPostForm<T>(
         `/api/companies/${encodeURIComponent(companyId)}${path}`,
         body,
+        acceptedStatuses,
       ),
     put: <T>(path: string, body: unknown): Promise<T> =>
       apiPut<T>(`/api/companies/${encodeURIComponent(companyId)}${path}`, body),

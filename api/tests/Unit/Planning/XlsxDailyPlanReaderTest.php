@@ -82,6 +82,20 @@ final class XlsxDailyPlanReaderTest extends TestCase
         self::assertSame('headers_invalid', (new XlsxDailyPlanReader())->read($file)->issues[0]->code);
     }
 
+    public function testIssueUsesWorksheetRowNumberAfterEmptyRow(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues([]),
+            Row::fromValues(['SKU-1', 'invalid-date', 1]),
+        ]);
+
+        $issue = (new XlsxDailyPlanReader())->read($file)->issues[0];
+
+        self::assertSame('date_invalid', $issue->code);
+        self::assertSame(3, $issue->rowNumber);
+    }
+
     public function testRejectsNoDataTooManyRowsAndUnsafeArchives(): void
     {
         $headerOnly = $this->xlsx([Row::fromValues(['SKU', 'Дата', 'План, шт.'])]);

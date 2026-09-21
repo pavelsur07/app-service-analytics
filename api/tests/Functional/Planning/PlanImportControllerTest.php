@@ -69,7 +69,7 @@ final class PlanImportControllerTest extends WebTestCase
         $file = $this->xlsx([
             ['SKU', 'Дата', 'План, шт.'],
             ['SKU-1', '2026-02-30', -1],
-            ['UNKNOWN', '2026-09-23', 2],
+            ['UNKNOWN', 'invalid-date', -2],
         ]);
 
         $payload = $this->upload($client, $company, $account, $file, 422);
@@ -84,7 +84,10 @@ final class PlanImportControllerTest extends WebTestCase
             self::assertIsString($issue['code'] ?? null);
             $actual[] = [$issue['rowNumber'], $issue['code']];
         }
-        self::assertSame([[2, 'date_invalid'], [2, 'quantity_invalid'], [3, 'marketplace_sku_unknown']], $actual);
+        self::assertSame([
+            [2, 'date_invalid'], [2, 'quantity_invalid'],
+            [3, 'date_invalid'], [3, 'quantity_invalid'], [3, 'marketplace_sku_unknown'],
+        ], $actual);
     }
 
     public function testHistoricalSkuWithoutCurrentListingRemainsAvailableForImport(): void

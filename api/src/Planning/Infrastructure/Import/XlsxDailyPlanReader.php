@@ -8,6 +8,7 @@ use App\Planning\Domain\DailyPlan;
 use App\Planning\Domain\PlanImportIssue;
 use OpenSpout\Common\Entity\Cell\FormulaCell;
 use OpenSpout\Common\Entity\Row;
+use OpenSpout\Reader\XLSX\Options;
 use OpenSpout\Reader\XLSX\Reader;
 
 final class XlsxDailyPlanReader
@@ -25,7 +26,7 @@ final class XlsxDailyPlanReader
             return new XlsxDailyPlanReadResult([], [$archiveIssue]);
         }
 
-        $reader = new Reader();
+        $reader = new Reader(new Options(SHOULD_PRESERVE_EMPTY_ROWS: true));
         try {
             $reader->open($path);
             $sheets = iterator_to_array($reader->getSheetIterator(), false);
@@ -46,11 +47,16 @@ final class XlsxDailyPlanReader
     {
         $rows = [];
         $issues = [];
+        $skuReferences = [];
         $seen = [];
         $dataRows = 0;
         $rowNumber = 0;
         foreach ($sourceRows as $sourceRow) {
             ++$rowNumber;
+            if ($rowNumber > self::MAX_ROWS + 1) {
+                $issues[] = new PlanImportIssue($rowNumber, 'row_limit_exceeded', 'В файле больше 10 000 строк.');
+                break;
+            }
             if (1 === $rowNumber) {
                 if (['SKU', 'Дата', 'План, шт.'] !== array_values($sourceRow->toArray())) {
                     return new XlsxDailyPlanReadResult([], [new PlanImportIssue(1, 'headers_invalid', 'Ожидаются колонки SKU, Дата, План, шт.')]);
@@ -79,6 +85,8 @@ final class XlsxDailyPlanReader
 
             if (!\is_string($sku) || !DailyPlan::isMarketplaceSkuValid($sku)) {
                 $rowIssues[] = new PlanImportIssue($rowNumber, 'sku_invalid', 'SKU не задан или некорректен.');
+            } else {
+                $skuReferences[] = new PlanImportSkuReference($rowNumber, $sku);
             }
             $businessDate = $this->date($date);
             if (null === $businessDate) {
@@ -111,7 +119,7 @@ final class XlsxDailyPlanReader
             $issues[] = new PlanImportIssue(null, 'data_rows_required', 'Файл не содержит строк плана.');
         }
 
-        return new XlsxDailyPlanReadResult($rows, $issues);
+        return new XlsxDailyPlanReadResult($rows, $issues, $skuReferences);
     }
 
     private function containsFormula(Row $row): bool
