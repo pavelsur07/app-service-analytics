@@ -39,6 +39,7 @@ final class PlanImportPreviewTest extends TestCase
 
         self::assertSame('applied', $preview->status());
         self::assertSame(['created' => 1, 'updated' => 2, 'unchanged' => 3], $preview->result());
+        self::assertSame([], $preview->rows());
         $this->expectException(\LogicException::class);
         $preview->markApplied(['created' => 0, 'updated' => 0, 'unchanged' => 1], $createdAt->modify('+2 minutes'));
     }

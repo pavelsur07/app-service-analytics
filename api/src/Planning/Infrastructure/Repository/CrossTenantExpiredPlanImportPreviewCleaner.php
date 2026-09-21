@@ -27,14 +27,28 @@ final readonly class CrossTenantExpiredPlanImportPreviewCleaner
         }
 
         $deleted = $this->connection->executeStatement(<<<'SQL'
-            WITH doomed AS (
-              SELECT id
+            WITH ready AS (
+              SELECT id, expires_at AS sort_at
               FROM planning_import_preview
-              WHERE (status = 'ready' AND expires_at <= :now)
-                 OR (status = 'applied' AND applied_at <= :appliedCutoff)
+              WHERE status = 'ready' AND expires_at <= :now
               ORDER BY expires_at, id
               LIMIT :limit
               FOR UPDATE SKIP LOCKED
+            ), applied AS (
+              SELECT id, applied_at AS sort_at
+              FROM planning_import_preview
+              WHERE status = 'applied' AND applied_at <= :appliedCutoff
+              ORDER BY applied_at, id
+              LIMIT :limit
+              FOR UPDATE SKIP LOCKED
+            ), doomed AS (
+              SELECT id FROM (
+                SELECT id, sort_at FROM ready
+                UNION ALL
+                SELECT id, sort_at FROM applied
+              ) candidates
+              ORDER BY sort_at, id
+              LIMIT :limit
             )
             DELETE FROM planning_import_preview preview
             USING doomed

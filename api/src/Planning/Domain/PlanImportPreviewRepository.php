@@ -8,5 +8,7 @@ interface PlanImportPreviewRepository
 {
     public function add(PlanImportPreview $preview): void;
 
+    public function addOrGetReady(PlanImportPreview $preview, \DateTimeImmutable $now): PlanImportPreview;
+
     public function get(string $companyId, string $marketplaceAccountId, string $previewId): ?PlanImportPreview;
 }

@@ -36,7 +36,7 @@ class PlanImportPreview
 
     /** @var list<array{rowNumber: int, marketplaceSku: string, sellerArticle: ?string, businessDate: string, quantity: int, expectedVersion: int, currentQuantity: ?int, change: string}> */
     #[ORM\Column(type: 'json', options: ['jsonb' => true])]
-    private readonly array $normalizedRows;
+    private array $normalizedRows;
 
     #[ORM\Column(length: 16)]
     private string $status = self::STATUS_READY;
@@ -141,6 +141,7 @@ class PlanImportPreview
         $this->status = self::STATUS_APPLIED;
         $this->applyResult = $result;
         $this->appliedAt = $appliedAt;
+        $this->normalizedRows = [];
     }
 
     /** @return array{created: int, updated: int, unchanged: int}|null */

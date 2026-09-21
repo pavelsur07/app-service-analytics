@@ -55,9 +55,12 @@ final class PlanImportControllerTest extends WebTestCase
         self::assertIsArray($items[0]);
         self::assertSame('article-SKU-1', $items[0]['sellerArticle']);
         self::assertSame([], $payload['issues']);
+        $duplicate = $this->upload($client, $company, $account, $file, 200);
+        self::assertSame($payload['previewId'], $duplicate['previewId']);
         /** @var EntityManagerInterface $entityManager */
         $entityManager = static::getContainer()->get(EntityManagerInterface::class);
         self::assertSame(0, $this->dbCount($entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM planning_daily_plan WHERE company_id = ?', [$company->id()->toRfc4122()])));
+        self::assertSame(1, $this->dbCount($entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM planning_import_preview WHERE company_id = ?', [$company->id()->toRfc4122()])));
     }
 
     public function testInvalidAndUnknownRowsReturnAllErrorsWithoutPreview(): void

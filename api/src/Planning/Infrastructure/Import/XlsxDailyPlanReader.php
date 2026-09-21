@@ -233,6 +233,9 @@ final class XlsxDailyPlanReader
         }
 
         $worksheetEntries = $this->worksheetEntries($path, $archiveEntries);
+        if (false === $worksheetEntries) {
+            return new PlanImportIssue(null, 'sheet_count_invalid', 'Файл должен содержать один лист.');
+        }
         if (null === $worksheetEntries) {
             return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
         }
@@ -243,9 +246,9 @@ final class XlsxDailyPlanReader
     /**
      * @param array<string, true> $archiveEntries
      *
-     * @return list<string>|null
+     * @return list<string>|false|null
      */
-    private function worksheetEntries(string $path, array $archiveEntries): ?array
+    private function worksheetEntries(string $path, array $archiveEntries): array|false|null
     {
         $sheetIds = [];
         $previousErrors = libxml_use_internal_errors(true);
@@ -265,10 +268,14 @@ final class XlsxDailyPlanReader
                     // Reject its unsupported variant here instead of letting
                     // the vendor assertion escape as HTTP 500.
                     $id = $workbook->getAttribute('r:id');
-                    if (null === $id || '' === $id) {
+                    $name = $workbook->getAttribute('name');
+                    if (null === $id || '' === $id || null === $name) {
                         return null;
                     }
                     $sheetIds[] = $id;
+                    if (\count($sheetIds) > 1) {
+                        return false;
+                    }
                 }
             }
             if ([] !== libxml_get_errors()) {

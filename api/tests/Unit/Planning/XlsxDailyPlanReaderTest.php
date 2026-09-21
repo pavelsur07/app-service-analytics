@@ -202,6 +202,24 @@ final class XlsxDailyPlanReaderTest extends TestCase
         self::assertSame('xlsx_invalid', (new XlsxDailyPlanReader())->read($file)->issues[0]->code);
     }
 
+    public function testReturnsControlledIssueWhenSheetNameRequiredByOpenSpoutIsMissing(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 12]),
+        ]);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($file));
+        $workbook = $zip->getFromName('xl/workbook.xml');
+        self::assertIsString($workbook);
+        $workbook = preg_replace('/ name="[^"]*"/', '', $workbook, 1);
+        self::assertIsString($workbook);
+        self::assertTrue($zip->addFromString('xl/workbook.xml', $workbook));
+        $zip->close();
+
+        self::assertSame('xlsx_invalid', (new XlsxDailyPlanReader())->read($file)->issues[0]->code);
+    }
+
     public function testRejectsUnsafeWorksheetRowBeforeOpenSpoutExpandsTheGap(): void
     {
         $file = $this->xlsx([

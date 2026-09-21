@@ -56,7 +56,7 @@ final class CleanupExpiredPlanImportsAcrossCompaniesCommand extends Command
 
     private function tick(): int
     {
-        $lock = $this->lockFactory->createLock(self::LOCK_KEY);
+        $lock = $this->lockFactory->createLock(self::LOCK_KEY, 300.0);
         if (!$lock->acquire()) {
             return 0;
         }
@@ -66,6 +66,7 @@ final class CleanupExpiredPlanImportsAcrossCompaniesCommand extends Command
             do {
                 $deleted = ($this->cleanup)();
                 $total += $deleted;
+                $lock->refresh(300.0);
             } while (CleanupExpiredPlanImportsAcrossCompaniesAction::BATCH_SIZE === $deleted);
 
             return $total;

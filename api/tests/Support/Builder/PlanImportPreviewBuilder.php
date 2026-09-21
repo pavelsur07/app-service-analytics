@@ -57,6 +57,14 @@ final class PlanImportPreviewBuilder
         return $clone;
     }
 
+    public function withFingerprint(string $value): self
+    {
+        $clone = clone $this;
+        $clone->fingerprint = $value;
+
+        return $clone;
+    }
+
     /** @param list<PlanImportPreviewRow> $value */
     public function withRows(array $value): self
     {

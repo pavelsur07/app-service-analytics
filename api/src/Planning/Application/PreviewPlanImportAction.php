@@ -71,11 +71,13 @@ final readonly class PreviewPlanImportAction
         if (false === $fileHash) {
             throw new \RuntimeException('Не удалось рассчитать fingerprint файла.');
         }
+        $now = new \DateTimeImmutable();
+        $serializedRows = json_encode(array_map(static fn (PlanImportPreviewRow $row): array => $row->toArray(), $previewRows), \JSON_THROW_ON_ERROR);
         $preview = PlanImportPreview::create(
             Uuid::fromString($companyId), Uuid::fromString($marketplaceAccountId), Uuid::fromString($actorId),
-            hash('sha256', $companyId."\0".$marketplaceAccountId."\0".$fileHash), $previewRows, new \DateTimeImmutable(),
+            hash('sha256', $companyId."\0".$marketplaceAccountId."\0".$fileHash."\0".$serializedRows), $previewRows, $now,
         );
-        $this->previews->add($preview);
+        $preview = $this->previews->addOrGetReady($preview, $now);
 
         return new PreviewPlanImportResult(PlanImportPreviewOutcome::Ready, $preview, []);
     }
