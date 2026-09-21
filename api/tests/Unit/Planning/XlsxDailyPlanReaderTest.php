@@ -287,6 +287,33 @@ final class XlsxDailyPlanReaderTest extends TestCase
         self::assertSame(2, $issue->rowNumber);
     }
 
+    public function testPreScanUsesTheSameAbsoluteRelationshipTargetAsOpenSpout(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 12]),
+        ]);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($file));
+        $safeSheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $relationships = $zip->getFromName('xl/_rels/workbook.xml.rels');
+        self::assertIsString($safeSheet);
+        self::assertIsString($relationships);
+        $unsafeSheet = str_replace('r="A2"', 'r="Q2"', $safeSheet);
+        self::assertNotSame($safeSheet, $unsafeSheet);
+        self::assertTrue($zip->addFromString('xl//worksheets/sheet1.xml', $unsafeSheet));
+        self::assertTrue($zip->addFromString(
+            'xl/_rels/workbook.xml.rels',
+            str_replace('Target="worksheets/sheet1.xml"', 'Target="/worksheets/sheet1.xml"', $relationships),
+        ));
+        $zip->close();
+
+        $issue = (new XlsxDailyPlanReader())->read($file)->issues[0];
+
+        self::assertSame('worksheet_column_limit_exceeded', $issue->code);
+        self::assertSame(2, $issue->rowNumber);
+    }
+
     public function testRejectsWorksheetOutsideSpreadsheetNamespace(): void
     {
         $file = $this->xlsx([

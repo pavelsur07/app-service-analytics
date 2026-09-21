@@ -311,6 +311,9 @@ final class XlsxDailyPlanReader
                 $id = $relationships->getAttribute('Id');
                 $target = $relationships->getAttribute('Target');
                 if (null !== $id && null !== $target) {
+                    if (isset($targets[$id])) {
+                        return null;
+                    }
                     $targets[$id] = $target;
                 }
             }
@@ -329,7 +332,11 @@ final class XlsxDailyPlanReader
             if (null === $target || '' === $target || str_contains($target, '\\')) {
                 return null;
             }
-            $entry = str_starts_with($target, '/xl/') ? ltrim($target, '/') : 'xl/'.ltrim($target, '/');
+            // Keep this byte-for-byte equivalent to OpenSpout 5.11.3:
+            // SheetManager prefixes every target except /xl/* with /xl/,
+            // then RowIterator strips leading slashes. In particular,
+            // /worksheets/a.xml becomes xl//worksheets/a.xml.
+            $entry = ltrim(str_starts_with($target, '/xl/') ? $target : '/xl/'.$target, '/');
             if (1 === preg_match('#(?:^|/)\.\.?(/|$)#', $entry) || !isset($archiveEntries[$entry])) {
                 return null;
             }
