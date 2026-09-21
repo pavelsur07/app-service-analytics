@@ -77,7 +77,7 @@ final readonly class PreviewPlanImportAction
             Uuid::fromString($companyId), Uuid::fromString($marketplaceAccountId), Uuid::fromString($actorId),
             hash('sha256', $companyId."\0".$marketplaceAccountId."\0".$fileHash."\0".$serializedRows), $previewRows, $now,
         );
-        $preview = $this->previews->addOrGetReady($preview, $now);
+        $preview = $this->previews->addOrGetReady($companyId, $preview, $now);
 
         return new PreviewPlanImportResult(PlanImportPreviewOutcome::Ready, $preview, []);
     }

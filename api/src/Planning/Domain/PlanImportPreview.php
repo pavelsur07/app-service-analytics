@@ -9,6 +9,11 @@ use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'planning_import_preview')]
+#[ORM\UniqueConstraint(
+    name: 'uq_planning_import_preview_ready_fingerprint',
+    columns: ['company_id', 'marketplace_account_id', 'actor_id', 'fingerprint'],
+    options: ['where' => "((status)::text = 'ready'::text)"],
+)]
 #[ORM\Index(name: 'idx_planning_import_preview_scope', columns: ['company_id', 'marketplace_account_id', 'id'])]
 #[ORM\Index(name: 'idx_planning_import_preview_actor', columns: ['company_id', 'actor_id'])]
 #[ORM\Index(name: 'idx_planning_import_preview_ready_expiry', columns: ['expires_at', 'id'], options: ['where' => "((status)::text = 'ready'::text)"])]

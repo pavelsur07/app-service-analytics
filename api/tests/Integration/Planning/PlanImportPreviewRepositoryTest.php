@@ -22,7 +22,8 @@ final class PlanImportPreviewRepositoryTest extends KernelTestCase
         $accountId = Uuid::v7();
         $preview = PlanImportPreviewBuilder::aPlanImportPreview()
             ->withCompanyId($companyId)->withMarketplaceAccountId($accountId)->build();
-        $repository->add($preview);
+        $entityManager->persist($preview);
+        $entityManager->flush();
         $id = $preview->id()->toRfc4122();
         $entityManager->clear();
 
@@ -49,7 +50,7 @@ final class PlanImportPreviewRepositoryTest extends KernelTestCase
             $preview = PlanImportPreviewBuilder::aPlanImportPreview()->withCompanyId($companyId)
                 ->withMarketplaceAccountId($accountId)->withActorId($actorId)
                 ->withFingerprint(hash('sha256', 'preview-'.$index))->withCreatedAt($now->modify('+'.$index.' seconds'))->build();
-            $stored = $repository->addOrGetReady($preview, $now);
+            $stored = $repository->addOrGetReady($companyId->toRfc4122(), $preview, $now);
             $first ??= $stored;
         }
         self::assertNotNull($first);
@@ -58,7 +59,7 @@ final class PlanImportPreviewRepositoryTest extends KernelTestCase
             ->withFingerprint(hash('sha256', 'preview-10'))->withCreatedAt($now->modify('+1 minute'))->build();
 
         self::assertNull($repository->get($companyId->toRfc4122(), $accountId->toRfc4122(), $duplicate->id()->toRfc4122()));
-        self::assertNotSame($duplicate->id()->toRfc4122(), $repository->addOrGetReady($duplicate, $now)->id()->toRfc4122());
+        self::assertNotSame($duplicate->id()->toRfc4122(), $repository->addOrGetReady($companyId->toRfc4122(), $duplicate, $now)->id()->toRfc4122());
         $count = $entityManager->getConnection()->fetchOne(
             'SELECT COUNT(*) FROM planning_import_preview WHERE company_id = ? AND marketplace_account_id = ? AND actor_id = ? AND status = ?',
             [$companyId->toRfc4122(), $accountId->toRfc4122(), $actorId->toRfc4122(), 'ready'],

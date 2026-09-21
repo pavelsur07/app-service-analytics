@@ -17,7 +17,6 @@ use App\Planning\Application\SaveDailyPlanAction;
 use App\Planning\Domain\DailyPlanRepository;
 use App\Planning\Domain\PlanChange;
 use App\Planning\Domain\PlanImportPreview;
-use App\Planning\Domain\PlanImportPreviewRepository;
 use App\Planning\Domain\PlanImportPreviewRow;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
@@ -112,7 +111,8 @@ final class PlanImportConcurrencyTest extends KernelTestCase
             ->withCreatedAt(new \DateTimeImmutable())->withRows([
                 new PlanImportPreviewRow(2, 'SKU-1', null, '2026-09-22', 12, 0, null, 'new'),
             ])->build();
-        $this->previews()->add($preview);
+        $this->entityManager()->persist($preview);
+        $this->entityManager()->flush();
         $this->entityManager()->clear();
 
         return [$company, $account, $actor, $preview];
@@ -182,14 +182,6 @@ final class PlanImportConcurrencyTest extends KernelTestCase
     {
         /** @var MarketplaceListingRepository $repository */
         $repository = self::getContainer()->get(MarketplaceListingRepository::class);
-
-        return $repository;
-    }
-
-    private function previews(): PlanImportPreviewRepository
-    {
-        /** @var PlanImportPreviewRepository $repository */
-        $repository = self::getContainer()->get(PlanImportPreviewRepository::class);
 
         return $repository;
     }

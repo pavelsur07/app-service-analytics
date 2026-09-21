@@ -16,28 +16,26 @@ final readonly class DoctrinePlanImportPreviewRepository implements PlanImportPr
     {
     }
 
-    public function add(PlanImportPreview $preview): void
+    public function addOrGetReady(string $companyId, PlanImportPreview $preview, \DateTimeImmutable $now): PlanImportPreview
     {
-        $this->entityManager->persist($preview);
-        $this->entityManager->flush();
-    }
+        if ($companyId !== $preview->companyId()->toRfc4122()) {
+            throw new \InvalidArgumentException('Компания preview не совпадает с областью репозитория.');
+        }
 
-    public function addOrGetReady(PlanImportPreview $preview, \DateTimeImmutable $now): PlanImportPreview
-    {
         /** @var PlanImportPreview $stored */
-        $stored = $this->entityManager->wrapInTransaction(function () use ($preview, $now): PlanImportPreview {
+        $stored = $this->entityManager->wrapInTransaction(function () use ($companyId, $preview, $now): PlanImportPreview {
             $this->entityManager->getConnection()->executeStatement(
                 'SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))',
                 ['scope' => implode('|', [
                     'planning-import-preview',
-                    $preview->companyId()->toRfc4122(),
+                    $companyId,
                     $preview->marketplaceAccountId()->toRfc4122(),
                     $preview->actorId()->toRfc4122(),
                 ])],
             );
             $repository = $this->entityManager->getRepository(PlanImportPreview::class);
             $existing = $repository->findOneBy([
-                'companyId' => $preview->companyId(),
+                'companyId' => $companyId,
                 'marketplaceAccountId' => $preview->marketplaceAccountId(),
                 'actorId' => $preview->actorId(),
                 'fingerprint' => $preview->fingerprint(),
@@ -48,6 +46,10 @@ final readonly class DoctrinePlanImportPreviewRepository implements PlanImportPr
             }
             if ($existing instanceof PlanImportPreview) {
                 $this->entityManager->remove($existing);
+                // Doctrine выполняет INSERT раньше DELETE. Освобождаем
+                // частичный уникальный ключ истёкшего ready preview до
+                // сохранения его замены в той же транзакции.
+                $this->entityManager->flush();
             }
 
             /** @var list<PlanImportPreview> $ready */
@@ -55,7 +57,7 @@ final readonly class DoctrinePlanImportPreviewRepository implements PlanImportPr
                 ->where('preview.companyId = :company')->andWhere('preview.marketplaceAccountId = :account')
                 ->andWhere('preview.actorId = :actor')->andWhere('preview.status = :status')
                 ->orderBy('preview.createdAt', 'DESC')->addOrderBy('preview.id', 'DESC')->setMaxResults(self::MAX_READY_PER_ACTOR)
-                ->setParameter('company', $preview->companyId(), 'uuid')->setParameter('account', $preview->marketplaceAccountId(), 'uuid')
+                ->setParameter('company', $companyId, 'uuid')->setParameter('account', $preview->marketplaceAccountId(), 'uuid')
                 ->setParameter('actor', $preview->actorId(), 'uuid')->setParameter('status', PlanImportPreview::STATUS_READY)
                 ->getQuery()->getResult();
             if (\count($ready) >= self::MAX_READY_PER_ACTOR) {

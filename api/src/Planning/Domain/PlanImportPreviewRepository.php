@@ -6,9 +6,7 @@ namespace App\Planning\Domain;
 
 interface PlanImportPreviewRepository
 {
-    public function add(PlanImportPreview $preview): void;
-
-    public function addOrGetReady(PlanImportPreview $preview, \DateTimeImmutable $now): PlanImportPreview;
+    public function addOrGetReady(string $companyId, PlanImportPreview $preview, \DateTimeImmutable $now): PlanImportPreview;
 
     public function get(string $companyId, string $marketplaceAccountId, string $previewId): ?PlanImportPreview;
 }

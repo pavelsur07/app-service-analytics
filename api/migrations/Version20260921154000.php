@@ -35,6 +35,7 @@ final class Version20260921154000 extends AbstractMigration
         SQL);
         $this->addSql('CREATE INDEX idx_planning_import_preview_scope ON planning_import_preview (company_id, marketplace_account_id, id)');
         $this->addSql('CREATE INDEX idx_planning_import_preview_actor ON planning_import_preview (company_id, actor_id)');
+        $this->addSql("CREATE UNIQUE INDEX uq_planning_import_preview_ready_fingerprint ON planning_import_preview (company_id, marketplace_account_id, actor_id, fingerprint) WHERE ((status)::text = 'ready'::text)");
         $this->addSql("CREATE INDEX idx_planning_import_preview_ready_expiry ON planning_import_preview (expires_at, id) WHERE ((status)::text = 'ready'::text)");
         $this->addSql("CREATE INDEX idx_planning_import_preview_applied_cleanup ON planning_import_preview (applied_at, id) WHERE ((status)::text = 'applied'::text)");
     }

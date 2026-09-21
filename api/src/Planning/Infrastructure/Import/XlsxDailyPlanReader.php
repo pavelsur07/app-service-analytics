@@ -59,6 +59,9 @@ final class XlsxDailyPlanReader
             if ($rowNumber > self::MAX_WORKSHEET_ROW) {
                 return new XlsxDailyPlanReadResult([], [new PlanImportIssue($rowNumber, 'worksheet_row_limit_exceeded', 'Номер строки листа превышает безопасный лимит 50 000.')]);
             }
+            if (\count($sourceRow->cells) > self::MAX_WORKSHEET_COLUMN) {
+                return new XlsxDailyPlanReadResult([], [new PlanImportIssue($rowNumber, 'worksheet_column_limit_exceeded', 'Номер колонки листа превышает безопасный лимит 16.')]);
+            }
             if (1 === $rowNumber) {
                 $header = array_values($sourceRow->toArray());
                 if (['SKU', 'Дата', 'План, шт.'] !== \array_slice($header, 0, 3)
