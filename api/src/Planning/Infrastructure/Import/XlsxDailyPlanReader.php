@@ -8,6 +8,7 @@ use App\Planning\Domain\DailyPlan;
 use App\Planning\Domain\PlanImportIssue;
 use OpenSpout\Common\Entity\Cell\FormulaCell;
 use OpenSpout\Common\Entity\Row;
+use OpenSpout\Common\Exception\OpenSpoutException;
 use OpenSpout\Reader\XLSX\Options;
 use OpenSpout\Reader\XLSX\Reader;
 
@@ -16,9 +17,9 @@ final class XlsxDailyPlanReader
     public const int MAX_FILE_BYTES = 10_000_000;
     public const int MAX_ROWS = 10_000;
     public const int MAX_WORKSHEET_ROW = 50_000;
+    private const int MAX_WORKSHEET_COLUMN = 16_384;
     private const int MAX_UNCOMPRESSED_BYTES = 50_000_000;
     private const int MAX_ARCHIVE_ENTRIES = 10_000;
-    private const int MAX_COMPRESSION_RATIO = 200;
 
     public function read(string $path): XlsxDailyPlanReadResult
     {
@@ -36,7 +37,7 @@ final class XlsxDailyPlanReader
             }
 
             return $this->normalize($sheets[0]->getRowIterator());
-        } catch (\Throwable) {
+        } catch (OpenSpoutException) {
             return new XlsxDailyPlanReadResult([], [new PlanImportIssue(null, 'xlsx_invalid', 'Файл XLSX не удалось прочитать.')]);
         } finally {
             $reader->close();
@@ -185,7 +186,7 @@ final class XlsxDailyPlanReader
         if (true !== $zip->open($path)) {
             return new PlanImportIssue(null, 'xlsx_invalid', 'Файл не является корректным XLSX.');
         }
-        $worksheetEntries = [];
+        $archiveEntries = [];
         try {
             if ($zip->numFiles > self::MAX_ARCHIVE_ENTRIES) {
                 return new PlanImportIssue(null, 'archive_limit_exceeded', 'Архив XLSX слишком велик.');
@@ -196,12 +197,12 @@ final class XlsxDailyPlanReader
                 if (false === $stat) {
                     return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
                 }
-                $compressed = (int) ($stat['comp_size'] ?? 0);
                 $entryName = $stat['name'] ?? null;
-                if (\is_string($entryName) && str_starts_with($entryName, 'xl/worksheets/') && str_ends_with($entryName, '.xml')) {
-                    $worksheetEntries[] = $entryName;
+                if (!\is_string($entryName)) {
+                    return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
                 }
-                if (\is_string($entryName) && str_ends_with($entryName, '/')) {
+                $archiveEntries[$entryName] = true;
+                if (str_ends_with($entryName, '/')) {
                     continue;
                 }
                 $stream = $zip->getStreamIndex($index);
@@ -225,15 +226,82 @@ final class XlsxDailyPlanReader
                 } finally {
                     fclose($stream);
                 }
-                if ($entrySize > 1_000_000 && $entrySize > max(1, $compressed) * self::MAX_COMPRESSION_RATIO) {
-                    return new PlanImportIssue(null, 'archive_limit_exceeded', 'Распакованный XLSX превышает безопасный лимит.');
-                }
             }
         } finally {
             $zip->close();
         }
 
+        $worksheetEntries = $this->worksheetEntries($path, $archiveEntries);
+        if (null === $worksheetEntries) {
+            return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
+        }
+
         return $this->validateWorksheetRows($path, $worksheetEntries);
+    }
+
+    /**
+     * @param array<string, true> $archiveEntries
+     *
+     * @return list<string>|null
+     */
+    private function worksheetEntries(string $path, array $archiveEntries): ?array
+    {
+        $sheetIds = [];
+        $workbook = \XMLReader::open('zip://'.$path.'#xl/workbook.xml', null, \LIBXML_NONET | \LIBXML_COMPACT);
+        if (false === $workbook) {
+            return null;
+        }
+        try {
+            while ($workbook->read()) {
+                if (\XMLReader::ELEMENT === $workbook->nodeType && 'sheet' === $workbook->localName) {
+                    $id = $workbook->getAttribute('r:id');
+                    if (null === $id || '' === $id) {
+                        return null;
+                    }
+                    $sheetIds[] = $id;
+                }
+            }
+        } finally {
+            $workbook->close();
+        }
+        if ([] === $sheetIds) {
+            return null;
+        }
+
+        $targets = [];
+        $relationships = \XMLReader::open('zip://'.$path.'#xl/_rels/workbook.xml.rels', null, \LIBXML_NONET | \LIBXML_COMPACT);
+        if (false === $relationships) {
+            return null;
+        }
+        try {
+            while ($relationships->read()) {
+                if (\XMLReader::ELEMENT !== $relationships->nodeType || 'Relationship' !== $relationships->localName) {
+                    continue;
+                }
+                $id = $relationships->getAttribute('Id');
+                $target = $relationships->getAttribute('Target');
+                if (null !== $id && null !== $target) {
+                    $targets[$id] = $target;
+                }
+            }
+        } finally {
+            $relationships->close();
+        }
+
+        $entries = [];
+        foreach ($sheetIds as $sheetId) {
+            $target = $targets[$sheetId] ?? null;
+            if (null === $target || '' === $target || str_contains($target, '\\')) {
+                return null;
+            }
+            $entry = str_starts_with($target, '/xl/') ? ltrim($target, '/') : 'xl/'.ltrim($target, '/');
+            if (1 === preg_match('#(?:^|/)\.\.?(/|$)#', $entry) || !isset($archiveEntries[$entry])) {
+                return null;
+            }
+            $entries[] = $entry;
+        }
+
+        return $entries;
     }
 
     /** @param list<string> $worksheetEntries */
@@ -246,22 +314,62 @@ final class XlsxDailyPlanReader
             }
             try {
                 while ($reader->read()) {
-                    if (\XMLReader::ELEMENT !== $reader->nodeType || 'row' !== $reader->localName) {
+                    if (\XMLReader::ELEMENT !== $reader->nodeType) {
                         continue;
                     }
-                    $row = $reader->getAttribute('r');
-                    if (null === $row || 1 !== preg_match('/^[1-9][0-9]*$/', $row)) {
-                        return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
+                    if ('row' === $reader->localName) {
+                        $rowIssue = $this->validateWorksheetRow($reader->getAttribute('r'));
+                        if (null !== $rowIssue) {
+                            return $rowIssue;
+                        }
                     }
-                    if (\strlen($row) > 5 || (int) $row > self::MAX_WORKSHEET_ROW) {
-                        $rowNumber = \strlen($row) < 19 ? (int) $row : null;
-
-                        return new PlanImportIssue($rowNumber, 'worksheet_row_limit_exceeded', 'Номер строки листа превышает безопасный лимит 50 000.');
+                    if ('c' === $reader->localName) {
+                        $cellIssue = $this->validateWorksheetCell($reader->getAttribute('r'));
+                        if (null !== $cellIssue) {
+                            return $cellIssue;
+                        }
                     }
                 }
             } finally {
                 $reader->close();
             }
+        }
+
+        return null;
+    }
+
+    private function validateWorksheetRow(?string $row): ?PlanImportIssue
+    {
+        if (null === $row || 1 !== preg_match('/^[1-9][0-9]*$/', $row)) {
+            return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
+        }
+        if (\strlen($row) > 5 || (int) $row > self::MAX_WORKSHEET_ROW) {
+            $rowNumber = \strlen($row) < 19 ? (int) $row : null;
+
+            return new PlanImportIssue($rowNumber, 'worksheet_row_limit_exceeded', 'Номер строки листа превышает безопасный лимит 50 000.');
+        }
+
+        return null;
+    }
+
+    private function validateWorksheetCell(?string $reference): ?PlanImportIssue
+    {
+        if (null === $reference || 1 !== preg_match('/^([A-Z]+)([1-9][0-9]*)$/', $reference, $matches)) {
+            return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
+        }
+        $rowIssue = $this->validateWorksheetRow($matches[2]);
+        if (null !== $rowIssue) {
+            return $rowIssue;
+        }
+        if (\strlen($matches[1]) > 3) {
+            return new PlanImportIssue((int) $matches[2], 'worksheet_column_limit_exceeded', 'Номер колонки листа превышает предел XLSX.');
+        }
+        $column = 0;
+        foreach (str_split($matches[1]) as $letter) {
+            $column = $column * 26 + \ord($letter) - 64;
+        }
+        if ($column > self::MAX_WORKSHEET_COLUMN) {
+            return new PlanImportIssue((int) $matches[2], 'worksheet_column_limit_exceeded', 'Номер колонки листа превышает предел XLSX.');
         }
 
         return null;

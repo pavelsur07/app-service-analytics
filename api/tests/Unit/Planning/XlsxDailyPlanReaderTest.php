@@ -151,6 +151,53 @@ final class XlsxDailyPlanReaderTest extends TestCase
         self::assertSame(XlsxDailyPlanReader::MAX_WORKSHEET_ROW + 1, $issue->rowNumber);
     }
 
+    public function testRejectsUnsafeRowAtWorksheetPathSelectedByRelationship(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 12]),
+        ]);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($file));
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $relationships = $zip->getFromName('xl/_rels/workbook.xml.rels');
+        $contentTypes = $zip->getFromName('[Content_Types].xml');
+        self::assertIsString($sheet);
+        self::assertIsString($relationships);
+        self::assertIsString($contentTypes);
+        $sheet = str_replace('<row r="2"', '<row r="'.(XlsxDailyPlanReader::MAX_WORKSHEET_ROW + 1).'"', $sheet);
+        self::assertTrue($zip->addFromString('xl/custom-sheet.xml', $sheet));
+        self::assertTrue($zip->addFromString('xl/_rels/workbook.xml.rels', str_replace('worksheets/sheet1.xml', 'custom-sheet.xml', $relationships)));
+        self::assertTrue($zip->addFromString('[Content_Types].xml', str_replace('/xl/worksheets/sheet1.xml', '/xl/custom-sheet.xml', $contentTypes)));
+        self::assertTrue($zip->deleteName('xl/worksheets/sheet1.xml'));
+        $zip->close();
+
+        $issue = (new XlsxDailyPlanReader())->read($file)->issues[0];
+
+        self::assertSame('worksheet_row_limit_exceeded', $issue->code);
+        self::assertSame(XlsxDailyPlanReader::MAX_WORKSHEET_ROW + 1, $issue->rowNumber);
+    }
+
+    public function testRejectsCellBeyondMaximumXlsxColumnBeforeOpenSpoutAllocatesIt(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 12]),
+        ]);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($file));
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        self::assertIsString($sheet);
+        self::assertStringContainsString('r="A2"', $sheet);
+        self::assertTrue($zip->addFromString('xl/worksheets/sheet1.xml', str_replace('r="A2"', 'r="ZZZZZ2"', $sheet)));
+        $zip->close();
+
+        $issue = (new XlsxDailyPlanReader())->read($file)->issues[0];
+
+        self::assertSame('worksheet_column_limit_exceeded', $issue->code);
+        self::assertSame(2, $issue->rowNumber);
+    }
+
     public function testIssueUsesWorksheetRowNumberAfterEmptyRow(): void
     {
         $file = $this->xlsx([
@@ -188,12 +235,22 @@ final class XlsxDailyPlanReaderTest extends TestCase
         file_put_contents($oversized, str_repeat('x', XlsxDailyPlanReader::MAX_FILE_BYTES + 1));
         self::assertSame('file_size_invalid', (new XlsxDailyPlanReader())->read($oversized)->issues[0]->code);
 
+        $bombSource = tempnam(sys_get_temp_dir(), 'planning-bomb-source-');
+        self::assertIsString($bombSource);
+        $this->files[] = $bombSource;
+        $handle = fopen($bombSource, 'w');
+        self::assertIsResource($handle);
+        for ($chunk = 0; $chunk < 51; ++$chunk) {
+            self::assertSame(1_000_000, fwrite($handle, str_repeat('A', 1_000_000)));
+        }
+        fclose($handle);
+
         $bomb = tempnam(sys_get_temp_dir(), 'planning-bomb-');
         self::assertIsString($bomb);
         $this->files[] = $bomb;
         $zip = new \ZipArchive();
         self::assertTrue($zip->open($bomb, \ZipArchive::OVERWRITE));
-        $zip->addFromString('xl/bomb.xml', str_repeat('A', 2_000_000));
+        self::assertTrue($zip->addFile($bombSource, 'xl/bomb.xml'));
         $zip->close();
         self::assertSame('archive_limit_exceeded', (new XlsxDailyPlanReader())->read($bomb)->issues[0]->code);
     }

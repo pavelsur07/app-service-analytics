@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Ingestion;
 
+use App\Ingestion\Domain\MarketplaceListingRepository;
+use App\Ingestion\Domain\SalesFactRepository;
 use App\Ingestion\Infrastructure\Query\PlanningMarketplaceSkusQuery;
+use App\Tests\Support\Builder\MarketplaceListingBuilder;
+use App\Tests\Support\Builder\SalesFactBuilder;
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\ParameterType;
 use Doctrine\DBAL\Query\QueryBuilder;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -14,8 +17,8 @@ use Symfony\Component\Uid\Uuid;
 final class PlanningMarketplaceSkusQueryPlanTest extends KernelTestCase
 {
     private Connection $connection;
-    private string $companyId;
-    private string $accountId;
+    private Uuid $companyId;
+    private Uuid $accountId;
 
     protected function setUp(): void
     {
@@ -23,10 +26,10 @@ final class PlanningMarketplaceSkusQueryPlanTest extends KernelTestCase
         /** @var Connection $connection */
         $connection = self::getContainer()->get(Connection::class);
         $this->connection = $connection;
-        $this->companyId = Uuid::v7()->toRfc4122();
-        $this->accountId = Uuid::v7()->toRfc4122();
-        $foreignCompanyId = Uuid::v7()->toRfc4122();
-        $foreignAccountId = Uuid::v7()->toRfc4122();
+        $this->companyId = Uuid::v7();
+        $this->accountId = Uuid::v7();
+        $foreignCompanyId = Uuid::v7();
+        $foreignAccountId = Uuid::v7();
 
         $this->insertListings($this->companyId, $this->accountId, 10_000, 'IMPORT-SKU-');
         $this->insertListings($foreignCompanyId, $foreignAccountId, 50_000, 'FOREIGN-SKU-');
@@ -40,7 +43,7 @@ final class PlanningMarketplaceSkusQueryPlanTest extends KernelTestCase
         $skus = array_map(static fn (int $index): string => 'IMPORT-SKU-'.$index, range(1, 10_000));
         $query = new PlanningMarketplaceSkusQuery($this->connection);
 
-        foreach ([$query->known($this->companyId, $this->accountId, $skus), $query->knownDetails($this->companyId, $this->accountId, $skus)] as $statement) {
+        foreach ([$query->known($this->companyId->toRfc4122(), $this->accountId->toRfc4122(), $skus), $query->knownDetails($this->companyId->toRfc4122(), $this->accountId->toRfc4122(), $skus)] as $statement) {
             $plan = $this->explain($statement);
             foreach (['marketplace_listing', 'sales_fact'] as $relation) {
                 $scans = $this->relationScans($plan, $relation);
@@ -60,34 +63,47 @@ final class PlanningMarketplaceSkusQueryPlanTest extends KernelTestCase
         }
     }
 
-    private function insertListings(string $companyId, string $accountId, int $count, string $prefix): void
+    private function insertListings(Uuid $companyId, Uuid $accountId, int $count, string $prefix): void
     {
-        $this->connection->executeStatement(<<<'SQL'
-            INSERT INTO marketplace_listing (
-                company_id, marketplace_account_id, marketplace_sku, offer_id, name, photo_url, first_seen_at
-            )
-            SELECT :company, :account, :prefix || value::text, :prefix || value::text, NULL, NULL, NOW()
-            FROM generate_series(1, :count) AS value
-            SQL, ['company' => $companyId, 'account' => $accountId, 'prefix' => $prefix, 'count' => $count], [
-            'count' => ParameterType::INTEGER,
-        ]);
+        $listings = [];
+        for ($index = 1; $index <= $count; ++$index) {
+            $sku = $prefix.$index;
+            $listings[] = MarketplaceListingBuilder::aMarketplaceListing()
+                ->withCompanyId($companyId)->withMarketplaceAccountId($accountId)
+                ->withMarketplaceSku($sku)->withOfferId($sku)->withName(null)->withPhotoUrl(null)->build();
+        }
+        $this->listings()->replaceForAccount($companyId->toRfc4122(), $accountId, $listings);
     }
 
-    private function insertSales(string $companyId, string $accountId, int $count): void
+    private function insertSales(Uuid $companyId, Uuid $accountId, int $count): void
     {
-        $this->connection->executeStatement(<<<'SQL'
-            INSERT INTO sales_fact (
-                company_id, marketplace_account_id, source_row_id, business_date, status, marketplace_sku,
-                quantity, amount_minor, commission_amount_minor, currency, raw_document_id, row_hash,
-                first_loaded_at, last_updated_at, posting_number, order_number
-            )
-            SELECT :company, :account, 'FOREIGN-ROW-' || value::text, DATE '2026-09-01', 'delivered',
-                   'FOREIGN-SKU-' || value::text, 1, 0, 0, 'RUB', md5('foreign-raw-' || value::text)::uuid,
-                   repeat('a', 64), NOW(), NOW(), 'FOREIGN-POSTING-' || value::text, 'FOREIGN-ORDER-' || value::text
-            FROM generate_series(1, :count) AS value
-            SQL, ['company' => $companyId, 'account' => $accountId, 'count' => $count], [
-            'count' => ParameterType::INTEGER,
-        ]);
+        for ($start = 1; $start <= $count; $start += 500) {
+            $facts = [];
+            $last = min($start + 499, $count);
+            for ($index = $start; $index <= $last; ++$index) {
+                $facts[] = SalesFactBuilder::aSalesFact()->withCompanyId($companyId)
+                    ->withMarketplaceAccountId($accountId)->withSourceRowId('FOREIGN-ROW-'.$index)
+                    ->withMarketplaceSku('FOREIGN-SKU-'.$index)->withPostingNumber('FOREIGN-POSTING-'.$index)
+                    ->withOrderNumber('FOREIGN-ORDER-'.$index)->withBusinessDate(new \DateTimeImmutable('2026-09-01'))->build();
+            }
+            $this->sales()->upsertAll($facts);
+        }
+    }
+
+    private function listings(): MarketplaceListingRepository
+    {
+        /** @var MarketplaceListingRepository $repository */
+        $repository = self::getContainer()->get(MarketplaceListingRepository::class);
+
+        return $repository;
+    }
+
+    private function sales(): SalesFactRepository
+    {
+        /** @var SalesFactRepository $repository */
+        $repository = self::getContainer()->get(SalesFactRepository::class);
+
+        return $repository;
     }
 
     /** @return array<string, mixed> */
