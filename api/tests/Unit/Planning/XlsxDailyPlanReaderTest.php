@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Planning;
 
+use App\Planning\Domain\DailyPlan;
 use App\Planning\Infrastructure\Import\XlsxDailyPlanReader;
 use OpenSpout\Common\Entity\Cell;
 use OpenSpout\Common\Entity\Cell\FormulaCell;
@@ -74,6 +75,23 @@ final class XlsxDailyPlanReaderTest extends TestCase
         self::assertSame([], $result->rows);
         self::assertSame(
             [[2, 'date_invalid'], [2, 'quantity_invalid'], [3, 'quantity_invalid'], [4, 'duplicate_key']],
+            array_map(static fn ($issue): array => [$issue->rowNumber, $issue->code], $result->issues),
+        );
+    }
+
+    public function testRejectsQuantityOutsideIntegerRangeBeforeCasting(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 1.0E+35]),
+            Row::fromValues(['SKU-2', '2026-09-22', (float) DailyPlan::MAX_QUANTITY + 1]),
+        ]);
+
+        $result = (new XlsxDailyPlanReader())->read($file);
+
+        self::assertSame([], $result->rows);
+        self::assertSame(
+            [[2, 'quantity_invalid'], [3, 'quantity_invalid']],
             array_map(static fn ($issue): array => [$issue->rowNumber, $issue->code], $result->issues),
         );
     }

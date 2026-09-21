@@ -152,7 +152,11 @@ final class XlsxDailyPlanReader
 
     private function quantity(mixed $value): ?int
     {
-        if (\is_float($value) && floor($value) === $value) {
+        if (\is_float($value)
+            && is_finite($value)
+            && $value >= 0
+            && $value <= DailyPlan::MAX_QUANTITY
+            && floor($value) === $value) {
             $value = (int) $value;
         }
 
@@ -192,14 +196,36 @@ final class XlsxDailyPlanReader
                 if (false === $stat) {
                     return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
                 }
-                $entrySize = (int) ($stat['size'] ?? 0);
                 $compressed = (int) ($stat['comp_size'] ?? 0);
                 $entryName = $stat['name'] ?? null;
                 if (\is_string($entryName) && str_starts_with($entryName, 'xl/worksheets/') && str_ends_with($entryName, '.xml')) {
                     $worksheetEntries[] = $entryName;
                 }
-                $total += $entrySize;
-                if ($total > self::MAX_UNCOMPRESSED_BYTES || ($entrySize > 1_000_000 && $entrySize > max(1, $compressed) * self::MAX_COMPRESSION_RATIO)) {
+                if (\is_string($entryName) && str_ends_with($entryName, '/')) {
+                    continue;
+                }
+                $stream = $zip->getStreamIndex($index);
+                if (false === $stream) {
+                    return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
+                }
+                $entrySize = 0;
+                try {
+                    while (!feof($stream)) {
+                        $chunk = fread($stream, 8192);
+                        if (false === $chunk || ('' === $chunk && !feof($stream))) {
+                            return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
+                        }
+                        $bytes = \strlen($chunk);
+                        $entrySize += $bytes;
+                        $total += $bytes;
+                        if ($total > self::MAX_UNCOMPRESSED_BYTES) {
+                            return new PlanImportIssue(null, 'archive_limit_exceeded', 'Распакованный XLSX превышает безопасный лимит.');
+                        }
+                    }
+                } finally {
+                    fclose($stream);
+                }
+                if ($entrySize > 1_000_000 && $entrySize > max(1, $compressed) * self::MAX_COMPRESSION_RATIO) {
                     return new PlanImportIssue(null, 'archive_limit_exceeded', 'Распакованный XLSX превышает безопасный лимит.');
                 }
             }
