@@ -14,7 +14,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 final readonly class IngestionPlanningFacade
 {
-    private const int MAX_KNOWN_MARKETPLACE_SKUS = 10_000;
+    private const int MAX_KNOWN_MARKETPLACE_SKUS = 200;
+    private const int MAX_PLAN_IMPORT_SKUS = 10_000;
 
     public function __construct(
         private PlanningOrderCohortsQuery $cohorts,
@@ -248,14 +249,39 @@ final readonly class IngestionPlanningFacade
     }
 
     /**
+     * Bounded command validation for Planning XLSX import; see ADR-024.
+     *
+     * @param list<string> $marketplaceSkus
+     *
+     * @return list<string>
+     */
+    public function knownMarketplaceSkusForPlanImport(string $companyId, string $marketplaceAccountId, array $marketplaceSkus): array
+    {
+        if (\count($marketplaceSkus) > self::MAX_PLAN_IMPORT_SKUS) {
+            throw new \InvalidArgumentException('Too many marketplace SKUs for plan import.');
+        }
+        if ([] === $marketplaceSkus) {
+            return [];
+        }
+        $rows = $this->skus->known($companyId, $marketplaceAccountId, $marketplaceSkus)->executeQuery()->fetchFirstColumn();
+        foreach ($rows as $row) {
+            if (!\is_string($row)) {
+                throw new \UnexpectedValueException('Marketplace SKU query returned a non-string value.');
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
      * @param list<string> $marketplaceSkus
      *
      * @return list<MarketplaceSku>
      */
-    public function knownMarketplaceSkuDetails(string $companyId, string $marketplaceAccountId, array $marketplaceSkus): array
+    public function knownMarketplaceSkuDetailsForPlanImport(string $companyId, string $marketplaceAccountId, array $marketplaceSkus): array
     {
-        if (\count($marketplaceSkus) > self::MAX_KNOWN_MARKETPLACE_SKUS) {
-            throw new \InvalidArgumentException('Too many marketplace SKUs.');
+        if (\count($marketplaceSkus) > self::MAX_PLAN_IMPORT_SKUS) {
+            throw new \InvalidArgumentException('Too many marketplace SKUs for plan import.');
         }
         if ([] === $marketplaceSkus) {
             return [];

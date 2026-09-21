@@ -80,7 +80,37 @@ final class XlsxDailyPlanReaderTest extends TestCase
             Row::fromValues(['SKU-1', '2026-09-22', 12, 'unexpected']),
         ]);
 
-        self::assertSame('headers_invalid', (new XlsxDailyPlanReader())->read($file)->issues[0]->code);
+        self::assertSame('columns_invalid', (new XlsxDailyPlanReader())->read($file)->issues[0]->code);
+    }
+
+    public function testAllowsEmptyTrailingHeaderCell(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.', null]),
+            Row::fromValues(['SKU-1', '2026-09-22', 12]),
+        ]);
+
+        self::assertSame([], (new XlsxDailyPlanReader())->read($file)->issues);
+    }
+
+    public function testRejectsUnsafeWorksheetRowBeforeOpenSpoutExpandsTheGap(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 12]),
+        ]);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($file));
+        $xml = $zip->getFromName('xl/worksheets/sheet1.xml');
+        self::assertIsString($xml);
+        $xml = str_replace('<row r="2"', '<row r="'.(XlsxDailyPlanReader::MAX_WORKSHEET_ROW + 1).'"', $xml);
+        self::assertTrue($zip->addFromString('xl/worksheets/sheet1.xml', $xml));
+        $zip->close();
+
+        $issue = (new XlsxDailyPlanReader())->read($file)->issues[0];
+
+        self::assertSame('worksheet_row_limit_exceeded', $issue->code);
+        self::assertSame(XlsxDailyPlanReader::MAX_WORKSHEET_ROW + 1, $issue->rowNumber);
     }
 
     public function testIssueUsesWorksheetRowNumberAfterEmptyRow(): void

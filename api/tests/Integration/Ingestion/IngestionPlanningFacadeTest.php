@@ -1711,6 +1711,28 @@ final class IngestionPlanningFacadeTest extends KernelTestCase
         $planning->planningOrderCohorts(Uuid::v7()->toRfc4122(), Uuid::v7()->toRfc4122(), ['SKU'], $day, $day, 201);
     }
 
+    public function testOrdinaryKnownSkuCheckKeepsTheTwoHundredItemLimit(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $planning = new IngestionPlanningFacade(new PlanningOrderCohortsQuery($connection), new PlanningCohortProvenanceQuery($connection), new PlanningSourceStateQuery($connection), new PlanningResolutionsQuery($connection), new PlanningMarketplaceSkusQuery($connection), new PlanningOutcomeQueryGuard($connection), 'test-secret');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $planning->knownMarketplaceSkus(Uuid::v7()->toRfc4122(), Uuid::v7()->toRfc4122(), array_map(static fn (int $index): string => 'SKU-'.$index, range(1, 201)));
+    }
+
+    public function testPlanImportKnownSkuCheckRejectsMoreThanTenThousandItems(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $planning = new IngestionPlanningFacade(new PlanningOrderCohortsQuery($connection), new PlanningCohortProvenanceQuery($connection), new PlanningSourceStateQuery($connection), new PlanningResolutionsQuery($connection), new PlanningMarketplaceSkusQuery($connection), new PlanningOutcomeQueryGuard($connection), 'test-secret');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $planning->knownMarketplaceSkusForPlanImport(Uuid::v7()->toRfc4122(), Uuid::v7()->toRfc4122(), array_map(static fn (int $index): string => 'SKU-'.$index, range(1, 10_001)));
+    }
+
     public function testResolutionCursorKeepsRowsWithTheSameTimestampAndAllocationKey(): void
     {
         self::bootKernel();

@@ -180,6 +180,24 @@ final class PlanImportControllerTest extends WebTestCase
         self::assertSame(3, $this->dbCount($connection->fetchOne('SELECT COUNT(*) FROM planning_plan_change WHERE company_id = ?', [$company->id()->toRfc4122()])));
     }
 
+    public function testApplyComparesNumericMarketplaceSkusAsStrings(): void
+    {
+        $client = static::createClient();
+        [$company, $account] = $this->scope($client, ['0123', '123']);
+        $file = $this->xlsx([
+            ['SKU', 'Дата', 'План, шт.'],
+            ['123', '2026-09-22', 1],
+            ['0123', '2026-09-22', 2],
+        ]);
+
+        $preview = $this->upload($client, $company, $account, $file, 200);
+        self::assertIsString($preview['previewId']);
+
+        $applied = $this->apply($client, $company, $account, $preview['previewId'], 200);
+
+        self::assertSame(['created' => 2, 'updated' => 0, 'unchanged' => 0], $applied['summary']);
+    }
+
     /**
      * @param list<string> $skus
      *
