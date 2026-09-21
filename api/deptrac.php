@@ -63,6 +63,7 @@ return static function (DeptracConfig $config): void {
                     mustNot: [
                         ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityScheduleFacade$'),
                         ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityAdminFacade$'),
+                        ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityAccountScopeFacade$'),
                     ],
                 ),
             ),
@@ -71,6 +72,9 @@ return static function (DeptracConfig $config): void {
             ),
             $identityAdminFacade = Layer::withName('IdentityAdminFacade')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityAdminFacade$'),
+            ),
+            $identityAccountScopeFacade = Layer::withName('IdentityAccountScopeFacade')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Application\\Facade\\IdentityAccountScopeFacade$'),
             ),
             // ActiveOzonAccountsQuery вынесен из IdentityInfrastructure тем же
             // приёмом: IdentityUi уже имеет широкий доступ к IdentityInfrastructure
@@ -266,6 +270,22 @@ return static function (DeptracConfig $config): void {
                 DirectoryConfig::create('src/PriceMonitoring/Ui/.*'),
             ),
 
+            // Planning (ADR-024) читает соседние модули только через два
+            // узких Facade. Доступ к инфраструктуре Identity/Ingestion ему
+            // не выдаётся: кабинет и SKU проверяются до чтения пустого плана.
+            $planningDomain = Layer::withName('PlanningDomain')->collectors(
+                DirectoryConfig::create('src/Planning/Domain/.*'),
+            ),
+            $planningApplication = Layer::withName('PlanningApplication')->collectors(
+                DirectoryConfig::create('src/Planning/Application/.*'),
+            ),
+            $planningInfrastructure = Layer::withName('PlanningInfrastructure')->collectors(
+                DirectoryConfig::create('src/Planning/Infrastructure/.*'),
+            ),
+            $planningUi = Layer::withName('PlanningUi')->collectors(
+                DirectoryConfig::create('src/Planning/Ui/.*'),
+            ),
+
             // Внешние библиотеки — не наши модули, но зависимость на них
             // реальна и должна быть покрыта правилом, а не висеть Uncovered.
             $brickMoney = Layer::withName('BrickMoney')->collectors(
@@ -347,6 +367,7 @@ return static function (DeptracConfig $config): void {
             // и по той же причине есть у identityScheduleFacade.
             Ruleset::forLayer($identityFacade)->accesses($identityDomain, $identityApplication, $identityInfrastructure, $sharedApplication, $sharedDomain, $symfonyUid),
             Ruleset::forLayer($identityAdminFacade)->accesses($identityDomain, $symfonyUid),
+            Ruleset::forLayer($identityAccountScopeFacade)->accesses($identityDomain, $symfonyUid),
             // identityOperationalQuery/identityInfrastructure (ради
             // ActiveOzonAccountRow) — только у IdentityScheduleFacade,
             // не у IdentityFacade выше: это и есть граница CLAUDE.md §1.
@@ -443,6 +464,14 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($priceMonitoringApplication)->accesses($priceMonitoringDomain, $priceMonitoringInfrastructure, $identityFacade, $ingestionFacade, $sharedApplication, $sharedDomain, $symfonyUid),
             Ruleset::forLayer($priceMonitoringInfrastructure)->accesses($priceMonitoringDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($priceMonitoringDomain)->accesses($sharedDomain, $symfonyUid),
+
+            // Planning владеет планом и аудитом. Межмодульные проверки
+            // сосредоточены в Application; Ui и Infrastructure границы
+            // соседних модулей не пересекают.
+            Ruleset::forLayer($planningUi)->accesses($planningApplication, $planningDomain, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($planningApplication)->accesses($planningDomain, $planningInfrastructure, $identityAccountScopeFacade, $ingestionPlanningFacade, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($planningInfrastructure)->accesses($planningDomain, $symfonyComponent),
+            Ruleset::forLayer($planningDomain)->accesses($symfonyUid),
         )
     ;
 };

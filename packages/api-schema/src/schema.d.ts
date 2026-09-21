@@ -452,6 +452,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/planning/accounts/{accountId}/skus/{sku}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_planning_daily_plan_read"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/planning/accounts/{accountId}/skus/{sku}/plan/{date}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_planning_daily_plan_save"];
+        post?: never;
+        delete: operations["delete_planning_daily_plan_remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/prices": {
         parameters: {
             query?: never;
@@ -830,6 +862,20 @@ export interface components {
             linkId: string;
             month: string;
             items: components["schemas"]["DailyClicksResponse"][];
+        };
+        DailyPlanItemResponse: {
+            date: string;
+            quantity: number | null;
+            version: number;
+        };
+        DailyPlanListResponse: {
+            items: components["schemas"]["DailyPlanItemResponse"][];
+        };
+        DailyPlanConflictResponse: {
+            status: number;
+            code: string;
+            message: string;
+            current: components["schemas"]["DailyPlanItemResponse"];
         };
         PriceOverviewItemResponse: {
             marketplaceSku: string;
@@ -2276,6 +2322,195 @@ export interface operations {
                 };
             };
             /** @description Название, URL или версия некорректны */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_planning_daily_plan_read: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+                accountId: string;
+                sku: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Дневной план за период */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyPlanListResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Кабинет не принадлежит компании */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректный SKU или период */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    put_planning_daily_plan_save: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                accountId: string;
+                sku: string;
+                date: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    quantity: number;
+                    expectedVersion: number;
+                };
+            };
+        };
+        responses: {
+            /** @description План сохранён */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyPlanItemResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Кабинет не принадлежит компании */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Версия устарела */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyPlanConflictResponse"];
+                };
+            };
+            /** @description Некорректные данные или неизвестный SKU */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_planning_daily_plan_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                accountId: string;
+                sku: string;
+                date: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expectedVersion: number;
+                };
+            };
+        };
+        responses: {
+            /** @description План удалён; версия сохранена */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyPlanItemResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Кабинет не принадлежит компании */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Версия устарела */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyPlanConflictResponse"];
+                };
+            };
+            /** @description Некорректные данные или неизвестный SKU */
             422: {
                 headers: {
                     [name: string]: unknown;

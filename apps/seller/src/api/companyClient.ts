@@ -18,7 +18,10 @@ export function createCompanyApiClient(companyId: string) {
       ),
     put: <T>(path: string, body: unknown): Promise<T> =>
       apiPut<T>(`/api/companies/${encodeURIComponent(companyId)}${path}`, body),
-    delete: (path: string): Promise<void> =>
-      apiDelete(`/api/companies/${encodeURIComponent(companyId)}${path}`),
+    delete: <T = void>(path: string, body?: unknown): Promise<T> =>
+      apiDelete<T>(
+        `/api/companies/${encodeURIComponent(companyId)}${path}`,
+        body,
+      ),
   }
 }
