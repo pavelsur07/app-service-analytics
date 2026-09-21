@@ -6,6 +6,7 @@ namespace App\Planning\Infrastructure\Repository;
 
 use App\Planning\Domain\PlanImportPreview;
 use App\Planning\Domain\PlanImportPreviewRepository;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 
 final readonly class DoctrinePlanImportPreviewRepository implements PlanImportPreviewRepository
@@ -45,23 +46,27 @@ final readonly class DoctrinePlanImportPreviewRepository implements PlanImportPr
                 return $existing;
             }
             if ($existing instanceof PlanImportPreview) {
-                $this->entityManager->remove($existing);
-                // Doctrine выполняет INSERT раньше DELETE. Освобождаем
-                // частичный уникальный ключ истёкшего ready preview до
-                // сохранения его замены в той же транзакции.
-                $this->entityManager->flush();
+                $this->deleteIfStillReady($companyId, $existing->id()->toRfc4122(), $now);
+                $this->entityManager->detach($existing);
             }
 
-            /** @var list<PlanImportPreview> $ready */
-            $ready = $this->entityManager->createQueryBuilder()->select('preview')->from(PlanImportPreview::class, 'preview')
-                ->where('preview.companyId = :company')->andWhere('preview.marketplaceAccountId = :account')
-                ->andWhere('preview.actorId = :actor')->andWhere('preview.status = :status')
-                ->orderBy('preview.createdAt', 'DESC')->addOrderBy('preview.id', 'DESC')->setMaxResults(self::MAX_READY_PER_ACTOR)
-                ->setParameter('company', $companyId, 'uuid')->setParameter('account', $preview->marketplaceAccountId(), 'uuid')
-                ->setParameter('actor', $preview->actorId(), 'uuid')->setParameter('status', PlanImportPreview::STATUS_READY)
-                ->getQuery()->getResult();
-            if (\count($ready) >= self::MAX_READY_PER_ACTOR) {
-                $this->entityManager->remove($ready[array_key_last($ready)]);
+            $readyIds = $this->entityManager->getConnection()->fetchFirstColumn(<<<'SQL'
+                SELECT id::text
+                FROM planning_import_preview
+                WHERE company_id = :company AND marketplace_account_id = :account
+                  AND actor_id = :actor AND status = :status
+                ORDER BY created_at DESC, id DESC
+                LIMIT 10
+                SQL, [
+                'company' => $companyId,
+                'account' => $preview->marketplaceAccountId()->toRfc4122(),
+                'actor' => $preview->actorId()->toRfc4122(),
+                'status' => PlanImportPreview::STATUS_READY,
+            ]);
+            if (\count($readyIds) >= self::MAX_READY_PER_ACTOR) {
+                $oldestId = $readyIds[array_key_last($readyIds)];
+                \assert(\is_string($oldestId));
+                $this->deleteIfStillReady($companyId, $oldestId);
             }
             $this->entityManager->persist($preview);
             $this->entityManager->flush();
@@ -70,6 +75,19 @@ final readonly class DoctrinePlanImportPreviewRepository implements PlanImportPr
         });
 
         return $stored;
+    }
+
+    private function deleteIfStillReady(string $companyId, string $previewId, ?\DateTimeImmutable $expiredAt = null): void
+    {
+        $sql = 'DELETE FROM planning_import_preview WHERE company_id = :company AND id = :id AND status = :status';
+        $parameters = ['company' => $companyId, 'id' => $previewId, 'status' => PlanImportPreview::STATUS_READY];
+        $types = [];
+        if (null !== $expiredAt) {
+            $sql .= ' AND expires_at <= :expiredAt';
+            $parameters['expiredAt'] = $expiredAt;
+            $types['expiredAt'] = Types::DATETIME_IMMUTABLE;
+        }
+        $this->entityManager->getConnection()->executeStatement($sql, $parameters, $types);
     }
 
     public function get(string $companyId, string $marketplaceAccountId, string $previewId): ?PlanImportPreview
