@@ -103,10 +103,6 @@ final class XlsxDailyPlanReader
             }
         }
 
-        if ([] !== $issues) {
-            $rows = [];
-        }
-
         return new XlsxDailyPlanReadResult($rows, $issues);
     }
 

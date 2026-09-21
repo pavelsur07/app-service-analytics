@@ -86,6 +86,7 @@ final class PlanImportPreview
     public function fingerprint(): string { return $this->fingerprint; }
     public function status(): string { return $this->status; }
     public function expiresAt(): \DateTimeImmutable { return $this->expiresAt; }
+    public function appliedAt(): ?\DateTimeImmutable { return $this->appliedAt; }
     public function isExpired(\DateTimeImmutable $now): bool { return $now >= $this->expiresAt; }
 
     /** @return list<PlanImportPreviewRow> */
