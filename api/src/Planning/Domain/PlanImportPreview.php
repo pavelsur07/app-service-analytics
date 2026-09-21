@@ -121,6 +121,11 @@ class PlanImportPreview
         return $this->expiresAt;
     }
 
+    public function createdAt(): \DateTimeImmutable
+    {
+        return $this->createdAt;
+    }
+
     public function appliedAt(): ?\DateTimeImmutable
     {
         return $this->appliedAt;
