@@ -9,6 +9,7 @@ final readonly class PlanImportPreviewRow
     public function __construct(
         public int $rowNumber,
         public string $marketplaceSku,
+        public ?string $sellerArticle,
         public string $businessDate,
         public int $quantity,
         public int $expectedVersion,
@@ -24,13 +25,22 @@ final readonly class PlanImportPreviewRow
         }
     }
 
-    /** @return array{rowNumber: int, marketplaceSku: string, businessDate: string, quantity: int, expectedVersion: int, currentQuantity: ?int, change: string} */
+    /** @return array{rowNumber: int, marketplaceSku: string, sellerArticle: ?string, businessDate: string, quantity: int, expectedVersion: int, currentQuantity: ?int, change: string} */
     public function toArray(): array
     {
-        return get_object_vars($this);
+        return [
+            'rowNumber' => $this->rowNumber,
+            'marketplaceSku' => $this->marketplaceSku,
+            'sellerArticle' => $this->sellerArticle,
+            'businessDate' => $this->businessDate,
+            'quantity' => $this->quantity,
+            'expectedVersion' => $this->expectedVersion,
+            'currentQuantity' => $this->currentQuantity,
+            'change' => $this->change,
+        ];
     }
 
-    /** @param array{rowNumber: int, marketplaceSku: string, businessDate: string, quantity: int, expectedVersion: int, currentQuantity: ?int, change: string} $data */
+    /** @param array{rowNumber: int, marketplaceSku: string, sellerArticle: ?string, businessDate: string, quantity: int, expectedVersion: int, currentQuantity: ?int, change: string} $data */
     public static function fromArray(array $data): self
     {
         return new self(...$data);

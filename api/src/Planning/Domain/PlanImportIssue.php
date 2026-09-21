@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Planning\Infrastructure\Import;
+namespace App\Planning\Domain;
 
 final readonly class PlanImportIssue
 {

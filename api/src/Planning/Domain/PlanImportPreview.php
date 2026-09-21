@@ -11,6 +11,7 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Table(name: 'planning_import_preview')]
 #[ORM\Index(name: 'idx_planning_import_preview_scope', columns: ['company_id', 'marketplace_account_id', 'id'])]
 #[ORM\Index(name: 'idx_planning_import_preview_expiry', columns: ['company_id', 'status', 'expires_at'])]
+#[ORM\Index(name: 'idx_planning_import_preview_actor', columns: ['company_id', 'actor_id'])]
 final class PlanImportPreview
 {
     public const string STATUS_READY = 'ready';
@@ -32,14 +33,14 @@ final class PlanImportPreview
     #[ORM\Column(length: 64)]
     private readonly string $fingerprint;
 
-    /** @var list<array{rowNumber: int, marketplaceSku: string, businessDate: string, quantity: int, expectedVersion: int, currentQuantity: ?int, change: string}> */
+    /** @var list<array{rowNumber: int, marketplaceSku: string, sellerArticle: ?string, businessDate: string, quantity: int, expectedVersion: int, currentQuantity: ?int, change: string}> */
     #[ORM\Column(type: 'json', options: ['jsonb' => true])]
     private readonly array $normalizedRows;
 
     #[ORM\Column(length: 16)]
     private string $status = self::STATUS_READY;
 
-    /** @var array<string, int>|null */
+    /** @var array{created: int, updated: int, unchanged: int}|null */
     #[ORM\Column(type: 'json', nullable: true, options: ['jsonb' => true])]
     private ?array $applyResult = null;
 
@@ -79,15 +80,50 @@ final class PlanImportPreview
         return new self($companyId, $marketplaceAccountId, $actorId, $fingerprint, $rows, $createdAt);
     }
 
-    public function id(): Uuid { return $this->id; }
-    public function companyId(): Uuid { return $this->companyId; }
-    public function marketplaceAccountId(): Uuid { return $this->marketplaceAccountId; }
-    public function actorId(): Uuid { return $this->actorId; }
-    public function fingerprint(): string { return $this->fingerprint; }
-    public function status(): string { return $this->status; }
-    public function expiresAt(): \DateTimeImmutable { return $this->expiresAt; }
-    public function appliedAt(): ?\DateTimeImmutable { return $this->appliedAt; }
-    public function isExpired(\DateTimeImmutable $now): bool { return $now >= $this->expiresAt; }
+    public function id(): Uuid
+    {
+        return $this->id;
+    }
+
+    public function companyId(): Uuid
+    {
+        return $this->companyId;
+    }
+
+    public function marketplaceAccountId(): Uuid
+    {
+        return $this->marketplaceAccountId;
+    }
+
+    public function actorId(): Uuid
+    {
+        return $this->actorId;
+    }
+
+    public function fingerprint(): string
+    {
+        return $this->fingerprint;
+    }
+
+    public function status(): string
+    {
+        return $this->status;
+    }
+
+    public function expiresAt(): \DateTimeImmutable
+    {
+        return $this->expiresAt;
+    }
+
+    public function appliedAt(): ?\DateTimeImmutable
+    {
+        return $this->appliedAt;
+    }
+
+    public function isExpired(\DateTimeImmutable $now): bool
+    {
+        return $now >= $this->expiresAt;
+    }
 
     /** @return list<PlanImportPreviewRow> */
     public function rows(): array
@@ -95,7 +131,7 @@ final class PlanImportPreview
         return array_map(static fn (array $row): PlanImportPreviewRow => PlanImportPreviewRow::fromArray($row), $this->normalizedRows);
     }
 
-    /** @param array<string, int> $result */
+    /** @param array{created: int, updated: int, unchanged: int} $result */
     public function markApplied(array $result, \DateTimeImmutable $appliedAt): void
     {
         if (self::STATUS_READY !== $this->status) {
@@ -106,6 +142,9 @@ final class PlanImportPreview
         $this->appliedAt = $appliedAt;
     }
 
-    /** @return array<string, int>|null */
-    public function result(): ?array { return $this->applyResult; }
+    /** @return array{created: int, updated: int, unchanged: int}|null */
+    public function result(): ?array
+    {
+        return $this->applyResult;
+    }
 }

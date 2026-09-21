@@ -783,6 +783,7 @@ app/        ← импортирует что угодно; из него не �
 | Журнал | `symfony/monolog-bundle` | в prod — простой поток в stderr с порога `warning`, **не** `fingers_crossed` из рецепта: тот сбрасывает буфер только вместе с ошибкой, и одиночное предупреждение не попадает в журнал никогда. `company_id` и `request_id` добавляет процессор `Shared\Ui\RequestContextProcessor`, а не каждый вызов по отдельности. Обработчика Sentry в конфиге нет: трекер для ошибок, журнал шире |
 | OpenAPI | `nelmio/api-doc-bundle` | схема генерируется из кода |
 | Валидация HTTP DTO | `symfony/validator` | атрибуты ограничений на DTO запроса; используется та же ветка `7.4.*`, что и у остальных компонентов Symfony |
+| Потоковое чтение XLSX | `openspout/openspout` `5.11.3` | импорт плана продаж без вычисления формул; файл и ZIP-архив проверяются до чтения, требует `ext-zip` |
 | Миграции | `doctrine/doctrine-migrations-bundle` | стандартный выбор для Doctrine; `migrations/` — одна папка на проект |
 | Тесты | `phpunit/phpunit`, `dama/doctrine-test-bundle` | второй даёт откат транзакции между тестами |
 | Анализ | `phpstan/phpstan` + `phpstan-doctrine` + `phpstan-strict-rules` | level 9 при `treatPhpDocTypesAsCertain: false`. Умолчание `true` заставляет анализатор верить PHPDoc больше, чем рантайму, и снимать проверку типа как избыточную — а данные приходят из БД и от площадок, где аннотация расходится с фактом молча. Baseline пустой |

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { components } from './schema'
-import { apiDelete } from './client'
+import { apiDelete, apiPostForm } from './client'
 import { http, server } from '../../tests/msw/server'
 
 type DailyPlanItem = components['schemas']['DailyPlanItemResponse']
@@ -51,5 +51,50 @@ describe('apiDelete', () => {
     )
 
     await expect(apiDelete(`http://localhost${path}`)).resolves.toBeUndefined()
+  })
+})
+
+describe('apiPostForm', () => {
+  it('передаёт XLSX без ручной границы Content-Type', async () => {
+    server.use(
+      http.post(
+        '/api/companies/{companyId}/planning/accounts/{accountId}/imports/preview',
+        async ({ request, response }) => {
+          expect(request.headers.get('Content-Type')).toContain(
+            'multipart/form-data; boundary=',
+          )
+          const data = await request.formData()
+          expect(data.get('file')).toBeInstanceOf(File)
+
+          return response(200).json({
+            previewId: 'preview-id',
+            expiresAt: '2026-09-22T12:00:00+00:00',
+            summary: { total: 0, new: 0, changed: 0, unchanged: 0 },
+            items: [],
+            issues: [],
+          })
+        },
+      ),
+    )
+    const form = new FormData()
+    form.append(
+      'file',
+      new File(['xlsx'], 'plan.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+    )
+
+    await expect(
+      apiPostForm<{ previewId: string }>(
+        `http://localhost/api/companies/${COMPANY_ID}/planning/accounts/${ACCOUNT_ID}/imports/preview`,
+        form,
+      ),
+    ).resolves.toEqual({
+      previewId: 'preview-id',
+      expiresAt: '2026-09-22T12:00:00+00:00',
+      summary: { total: 0, new: 0, changed: 0, unchanged: 0 },
+      items: [],
+      issues: [],
+    })
   })
 })

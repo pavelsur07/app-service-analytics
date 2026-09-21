@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Planning\Ui\Response;
 
+use App\Planning\Domain\PlanImportIssue;
 use App\Planning\Domain\PlanImportPreview;
-use App\Planning\Infrastructure\Import\PlanImportIssue;
+use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
 
 final readonly class PlanImportPreviewResponse
@@ -18,9 +19,10 @@ final readonly class PlanImportPreviewResponse
         #[OA\Property(nullable: true)] public ?string $previewId,
         #[OA\Property(format: 'date-time', nullable: true)] public ?string $expiresAt,
         public PlanImportSummaryResponse $summary,
-        #[OA\Property(type: 'array', items: new OA\Items(ref: PlanImportRowResponse::class))] public array $items,
-        #[OA\Property(type: 'array', items: new OA\Items(ref: PlanImportIssueResponse::class))] public array $issues,
-    ) {}
+        #[OA\Property(type: 'array', items: new OA\Items(ref: new Model(type: PlanImportRowResponse::class)))] public array $items,
+        #[OA\Property(type: 'array', items: new OA\Items(ref: new Model(type: PlanImportIssueResponse::class)))] public array $issues,
+    ) {
+    }
 
     public static function ready(PlanImportPreview $preview): self
     {
@@ -28,7 +30,7 @@ final readonly class PlanImportPreviewResponse
         $counts = array_count_values(array_map(static fn ($row): string => $row->change, $rows));
 
         return new self(
-            $preview->id()->toRfc4122(), $preview->expiresAt()->format(DATE_ATOM),
+            $preview->id()->toRfc4122(), $preview->expiresAt()->format(\DATE_ATOM),
             new PlanImportSummaryResponse(\count($rows), $counts['new'] ?? 0, $counts['changed'] ?? 0, $counts['unchanged'] ?? 0),
             array_map(PlanImportRowResponse::fromRow(...), $rows), [],
         );

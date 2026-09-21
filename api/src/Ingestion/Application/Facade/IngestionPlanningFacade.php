@@ -245,6 +245,25 @@ final readonly class IngestionPlanningFacade
         return $rows;
     }
 
+    /**
+     * @param list<string> $marketplaceSkus
+     *
+     * @return list<MarketplaceSku>
+     */
+    public function knownMarketplaceSkuDetails(string $companyId, string $marketplaceAccountId, array $marketplaceSkus): array
+    {
+        if (\count($marketplaceSkus) > 200) {
+            throw new \InvalidArgumentException('Too many marketplace SKUs.');
+        }
+        if ([] === $marketplaceSkus) {
+            return [];
+        }
+        /** @var list<array{marketplace_sku: string, offer_id: ?string, name: ?string}> $rows */
+        $rows = $this->skus->knownDetails($companyId, $marketplaceAccountId, $marketplaceSkus)->executeQuery()->fetchAllAssociative();
+
+        return array_map(static fn (array $row): MarketplaceSku => new MarketplaceSku($row['marketplace_sku'], $row['offer_id'], $row['name']), $rows);
+    }
+
     public function searchMarketplaceSkus(string $companyId, string $marketplaceAccountId, string $search, int $limit = 50, ?string $cursor = null): MarketplaceSkuPage
     {
         return $this->queryGuard->read(fn (): MarketplaceSkuPage => $this->searchMarketplaceSkusRead($companyId, $marketplaceAccountId, $search, $limit, $cursor));

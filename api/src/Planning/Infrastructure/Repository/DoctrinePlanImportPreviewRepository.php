@@ -10,7 +10,9 @@ use Doctrine\ORM\EntityManagerInterface;
 
 final readonly class DoctrinePlanImportPreviewRepository implements PlanImportPreviewRepository
 {
-    public function __construct(private EntityManagerInterface $entityManager) {}
+    public function __construct(private EntityManagerInterface $entityManager)
+    {
+    }
 
     public function add(PlanImportPreview $preview): void
     {

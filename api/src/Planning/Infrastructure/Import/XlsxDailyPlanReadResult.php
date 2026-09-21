@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Planning\Infrastructure\Import;
 
+use App\Planning\Domain\PlanImportIssue;
+
 final readonly class XlsxDailyPlanReadResult
 {
     /**

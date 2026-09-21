@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Planning\Application;
 
+use App\Planning\Domain\PlanImportIssue;
 use App\Planning\Domain\PlanImportPreview;
-use App\Planning\Infrastructure\Import\PlanImportIssue;
 
 final readonly class PreviewPlanImportResult
 {
@@ -14,5 +14,6 @@ final readonly class PreviewPlanImportResult
         public PlanImportPreviewOutcome $outcome,
         public ?PlanImportPreview $preview,
         public array $issues,
-    ) {}
+    ) {
+    }
 }

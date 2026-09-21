@@ -19,12 +19,12 @@ final class PlanImportPreviewTest extends TestCase
             Uuid::v7(),
             Uuid::v7(),
             str_repeat('a', 64),
-            [new PlanImportPreviewRow(2, 'SKU-1', '2026-09-22', 12, 0, null, 'new')],
+            [new PlanImportPreviewRow(2, 'SKU-1', 'offer-1', '2026-09-22', 12, 0, null, 'new')],
             $createdAt,
         );
 
         self::assertSame('ready', $preview->status());
-        self::assertSame($createdAt->modify('+24 hours')->format(DATE_ATOM), $preview->expiresAt()->format(DATE_ATOM));
+        self::assertSame($createdAt->modify('+24 hours')->format(\DATE_ATOM), $preview->expiresAt()->format(\DATE_ATOM));
         self::assertFalse($preview->isExpired($createdAt->modify('+23 hours')));
         self::assertTrue($preview->isExpired($createdAt->modify('+24 hours')));
         self::assertSame('SKU-1', $preview->rows()[0]->marketplaceSku);
@@ -40,6 +40,6 @@ final class PlanImportPreviewTest extends TestCase
         self::assertSame('applied', $preview->status());
         self::assertSame(['created' => 1, 'updated' => 2, 'unchanged' => 3], $preview->result());
         $this->expectException(\LogicException::class);
-        $preview->markApplied(['created' => 0], $createdAt->modify('+2 minutes'));
+        $preview->markApplied(['created' => 0, 'updated' => 0, 'unchanged' => 1], $createdAt->modify('+2 minutes'));
     }
 }

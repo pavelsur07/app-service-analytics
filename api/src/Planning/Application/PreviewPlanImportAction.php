@@ -6,10 +6,10 @@ namespace App\Planning\Application;
 
 use App\Identity\Application\Facade\IdentityAccountScopeFacade;
 use App\Ingestion\Application\Facade\IngestionPlanningFacade;
+use App\Planning\Domain\PlanImportIssue;
 use App\Planning\Domain\PlanImportPreview;
 use App\Planning\Domain\PlanImportPreviewRepository;
 use App\Planning\Domain\PlanImportPreviewRow;
-use App\Planning\Infrastructure\Import\PlanImportIssue;
 use App\Planning\Infrastructure\Import\XlsxDailyPlanReader;
 use App\Planning\Infrastructure\Query\DailyPlanVersionsQuery;
 use Symfony\Component\Uid\Uuid;
@@ -22,7 +22,8 @@ final readonly class PreviewPlanImportAction
         private XlsxDailyPlanReader $reader,
         private DailyPlanVersionsQuery $versions,
         private PlanImportPreviewRepository $previews,
-    ) {}
+    ) {
+    }
 
     public function __invoke(string $companyId, string $marketplaceAccountId, string $actorId, string $path): PreviewPlanImportResult
     {
@@ -32,14 +33,17 @@ final readonly class PreviewPlanImportAction
 
         $read = $this->reader->read($path);
         $issues = $read->issues;
-        $known = [];
+        $details = [];
         $uniqueSkus = array_values(array_unique(array_map(static fn ($row): string => $row->marketplaceSku, $read->rows)));
         foreach (array_chunk($uniqueSkus, 200) as $chunk) {
-            array_push($known, ...$this->ingestion->knownMarketplaceSkus($companyId, $marketplaceAccountId, $chunk));
+            array_push($details, ...$this->ingestion->knownMarketplaceSkuDetails($companyId, $marketplaceAccountId, $chunk));
         }
-        $known = array_fill_keys($known, true);
+        $known = [];
+        foreach ($details as $detail) {
+            $known[$detail->marketplaceSku] = $detail->offerId;
+        }
         foreach ($read->rows as $row) {
-            if (!isset($known[$row->marketplaceSku])) {
+            if (!\array_key_exists($row->marketplaceSku, $known)) {
                 $issues[] = new PlanImportIssue($row->rowNumber, 'marketplace_sku_unknown', 'SKU не найден в выбранном кабинете.');
             }
         }
@@ -54,7 +58,7 @@ final readonly class PreviewPlanImportAction
             $current = $versions[DailyPlanVersionsQuery::key($row->marketplaceSku, $row->businessDate)] ?? ['quantity' => null, 'version' => 0];
             $change = 0 === $current['version'] ? 'new' : ($current['quantity'] === $row->quantity ? 'unchanged' : 'changed');
             $previewRows[] = new PlanImportPreviewRow(
-                $row->rowNumber, $row->marketplaceSku, $row->businessDate, $row->quantity,
+                $row->rowNumber, $row->marketplaceSku, $known[$row->marketplaceSku], $row->businessDate, $row->quantity,
                 $current['version'], $current['quantity'], $change,
             );
         }

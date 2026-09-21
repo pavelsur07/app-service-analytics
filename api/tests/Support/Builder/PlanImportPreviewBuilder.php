@@ -24,17 +24,55 @@ final class PlanImportPreviewBuilder
         $this->marketplaceAccountId = Uuid::v7();
         $this->actorId = Uuid::v7();
         $this->fingerprint = hash('sha256', 'planning-preview');
-        $this->rows = [new PlanImportPreviewRow(2, 'SKU-1', '2026-09-22', 12, 0, null, 'new')];
+        $this->rows = [new PlanImportPreviewRow(2, 'SKU-1', 'offer-1', '2026-09-22', 12, 0, null, 'new')];
         $this->createdAt = new \DateTimeImmutable('2026-09-21 12:00:00 UTC');
     }
 
-    public static function aPlanImportPreview(): self { return new self(); }
+    public static function aPlanImportPreview(): self
+    {
+        return new self();
+    }
 
-    public function withCompanyId(Uuid $value): self { $clone = clone $this; $clone->companyId = $value; return $clone; }
-    public function withMarketplaceAccountId(Uuid $value): self { $clone = clone $this; $clone->marketplaceAccountId = $value; return $clone; }
-    public function withActorId(Uuid $value): self { $clone = clone $this; $clone->actorId = $value; return $clone; }
+    public function withCompanyId(Uuid $value): self
+    {
+        $clone = clone $this;
+        $clone->companyId = $value;
+
+        return $clone;
+    }
+
+    public function withMarketplaceAccountId(Uuid $value): self
+    {
+        $clone = clone $this;
+        $clone->marketplaceAccountId = $value;
+
+        return $clone;
+    }
+
+    public function withActorId(Uuid $value): self
+    {
+        $clone = clone $this;
+        $clone->actorId = $value;
+
+        return $clone;
+    }
+
     /** @param list<PlanImportPreviewRow> $value */
-    public function withRows(array $value): self { $clone = clone $this; $clone->rows = $value; return $clone; }
+    public function withRows(array $value): self
+    {
+        $clone = clone $this;
+        $clone->rows = $value;
+
+        return $clone;
+    }
+
+    public function withCreatedAt(\DateTimeImmutable $value): self
+    {
+        $clone = clone $this;
+        $clone->createdAt = $value;
+
+        return $clone;
+    }
 
     public function build(): PlanImportPreview
     {

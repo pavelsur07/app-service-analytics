@@ -2099,6 +2099,168 @@
                 }
             }
         },
+        "/api/companies/{companyId}/planning/accounts/{accountId}/imports/{previewId}/apply": {
+            "post": {
+                "operationId": "post_planning_import_apply",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "previewId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u0418\u043c\u043f\u043e\u0440\u0442 \u043f\u0440\u0438\u043c\u0435\u043d\u0451\u043d",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PlanImportApplyResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Preview \u0438\u043b\u0438 \u043a\u0430\u0431\u0438\u043d\u0435\u0442 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u041f\u043b\u0430\u043d \u0438\u0437\u043c\u0435\u043d\u0438\u043b\u0441\u044f \u043f\u043e\u0441\u043b\u0435 preview",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/planning/accounts/{accountId}/imports/preview": {
+            "post": {
+                "operationId": "post_planning_import_preview",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "required": [
+                                    "file"
+                                ],
+                                "properties": {
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "\u0424\u0430\u0439\u043b \u043f\u0440\u043e\u0432\u0435\u0440\u0435\u043d",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PlanImportPreviewResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041a\u0430\u0431\u0438\u043d\u0435\u0442 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u0424\u0430\u0439\u043b \u0438\u043b\u0438 \u0441\u0442\u0440\u043e\u043a\u0438 \u043d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PlanImportPreviewResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/companies/{companyId}/planning/accounts/{accountId}/skus/{sku}/plan": {
             "get": {
                 "operationId": "get_planning_daily_plan_read",
@@ -3873,6 +4035,161 @@
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/DailyClicksResponse"
+                        }
+                    }
+                },
+                "type": "object"
+            },
+            "PlanImportApplySummaryResponse": {
+                "required": [
+                    "created",
+                    "updated",
+                    "unchanged"
+                ],
+                "properties": {
+                    "created": {
+                        "type": "integer"
+                    },
+                    "updated": {
+                        "type": "integer"
+                    },
+                    "unchanged": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "PlanImportApplyResponse": {
+                "required": [
+                    "previewId",
+                    "summary"
+                ],
+                "properties": {
+                    "previewId": {
+                        "type": "string"
+                    },
+                    "summary": {
+                        "$ref": "#/components/schemas/PlanImportApplySummaryResponse"
+                    }
+                },
+                "type": "object"
+            },
+            "PlanImportSummaryResponse": {
+                "required": [
+                    "total",
+                    "new",
+                    "changed",
+                    "unchanged"
+                ],
+                "properties": {
+                    "total": {
+                        "type": "integer"
+                    },
+                    "new": {
+                        "type": "integer"
+                    },
+                    "changed": {
+                        "type": "integer"
+                    },
+                    "unchanged": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "PlanImportRowResponse": {
+                "required": [
+                    "rowNumber",
+                    "marketplaceSku",
+                    "businessDate",
+                    "quantity",
+                    "expectedVersion",
+                    "change"
+                ],
+                "properties": {
+                    "rowNumber": {
+                        "type": "integer"
+                    },
+                    "marketplaceSku": {
+                        "type": "string"
+                    },
+                    "sellerArticle": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "businessDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "quantity": {
+                        "type": "integer"
+                    },
+                    "expectedVersion": {
+                        "type": "integer"
+                    },
+                    "currentQuantity": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "change": {
+                        "type": "string",
+                        "enum": [
+                            "new",
+                            "changed",
+                            "unchanged"
+                        ]
+                    }
+                },
+                "type": "object"
+            },
+            "PlanImportIssueResponse": {
+                "required": [
+                    "code",
+                    "message"
+                ],
+                "properties": {
+                    "rowNumber": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "code": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "PlanImportPreviewResponse": {
+                "required": [
+                    "summary",
+                    "items",
+                    "issues"
+                ],
+                "properties": {
+                    "previewId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "expiresAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "summary": {
+                        "$ref": "#/components/schemas/PlanImportSummaryResponse"
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PlanImportRowResponse"
+                        }
+                    },
+                    "issues": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PlanImportIssueResponse"
                         }
                     }
                 },

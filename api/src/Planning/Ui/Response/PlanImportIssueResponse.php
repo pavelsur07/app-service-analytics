@@ -12,5 +12,6 @@ final readonly class PlanImportIssueResponse
         #[OA\Property(nullable: true)] public ?int $rowNumber,
         public string $code,
         public string $message,
-    ) {}
+    ) {
+    }
 }

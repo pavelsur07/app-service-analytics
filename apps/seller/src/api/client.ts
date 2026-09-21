@@ -30,6 +30,17 @@ export async function apiPost<T = unknown>(
   return response.json() as Promise<T>
 }
 
+// FormData сам формирует multipart boundary. Задавать Content-Type
+// вручную нельзя: браузер и тело разойдутся по границе.
+export async function apiPostForm<T>(path: string, body: FormData): Promise<T> {
+  const response = await fetch(path, { method: 'POST', body })
+  if (!response.ok) {
+    throw await parseApiError(response)
+  }
+
+  return response.json() as Promise<T>
+}
+
 // PUT — замена учётных данных подключения (ADR-007). Тем же путём
 // и по той же причине, что POST: прямой fetch разрешён только здесь.
 export async function apiPut<T = unknown>(

@@ -24,7 +24,8 @@ final readonly class ApplyPlanImportAction
         private IngestionPlanningFacade $ingestion,
         private EntityManagerInterface $entityManager,
         private Connection $connection,
-    ) {}
+    ) {
+    }
 
     public function __invoke(string $companyId, string $marketplaceAccountId, string $previewId, string $actorId): ApplyPlanImportResult
     {
@@ -120,7 +121,11 @@ final readonly class ApplyPlanImportAction
         return $known === $skus;
     }
 
-    /** @param list<PlanImportPreviewRow> $rows @return array<string, DailyPlan> */
+    /**
+     * @param list<PlanImportPreviewRow> $rows
+     *
+     * @return array<string, DailyPlan>
+     */
     private function lockedPlans(string $companyId, string $marketplaceAccountId, array $rows): array
     {
         if ([] === $rows) {
@@ -143,6 +148,7 @@ final readonly class ApplyPlanImportAction
         if ([] === $ids) {
             return [];
         }
+        /** @var list<DailyPlan> $entities */
         $entities = $this->entityManager->createQueryBuilder()->select('plan')->from(DailyPlan::class, 'plan')
             ->where('plan.id IN (:ids)')->setParameter('ids', $ids)->getQuery()->getResult();
         $plans = [];
@@ -156,5 +162,8 @@ final readonly class ApplyPlanImportAction
         return $plans;
     }
 
-    private static function key(string $sku, string $date): string { return $sku."\0".$date; }
+    private static function key(string $sku, string $date): string
+    {
+        return $sku."\0".$date;
+    }
 }

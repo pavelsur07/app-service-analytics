@@ -14,14 +14,15 @@ use OpenApi\Attributes as OA;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Requirement\Requirement;
 
 #[Route('/api/companies/{companyId}/planning/accounts/{accountId}/imports/preview', name: 'planning_import_preview', requirements: ['companyId' => Requirement::UUID, 'accountId' => Requirement::UUID], methods: ['POST'])]
 final readonly class PreviewPlanImportController
 {
-    public function __construct(private PreviewPlanImportAction $preview) {}
+    public function __construct(private PreviewPlanImportAction $preview)
+    {
+    }
 
     #[OA\RequestBody(required: true, content: new OA\MediaType(mediaType: 'multipart/form-data', schema: new OA\Schema(required: ['file'], properties: [new OA\Property(property: 'file', type: 'string', format: 'binary')])))]
     #[OA\Response(response: 200, description: 'Файл проверен', content: new Model(type: PlanImportPreviewResponse::class))]

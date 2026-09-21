@@ -452,6 +452,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/planning/accounts/{accountId}/imports/{previewId}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_planning_import_apply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/planning/accounts/{accountId}/imports/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_planning_import_preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/planning/accounts/{accountId}/skus/{sku}/plan": {
         parameters: {
             query?: never;
@@ -862,6 +894,46 @@ export interface components {
             linkId: string;
             month: string;
             items: components["schemas"]["DailyClicksResponse"][];
+        };
+        PlanImportApplySummaryResponse: {
+            created: number;
+            updated: number;
+            unchanged: number;
+        };
+        PlanImportApplyResponse: {
+            previewId: string;
+            summary: components["schemas"]["PlanImportApplySummaryResponse"];
+        };
+        PlanImportSummaryResponse: {
+            total: number;
+            new: number;
+            changed: number;
+            unchanged: number;
+        };
+        PlanImportRowResponse: {
+            rowNumber: number;
+            marketplaceSku: string;
+            sellerArticle?: string | null;
+            /** Format: date */
+            businessDate: string;
+            quantity: number;
+            expectedVersion: number;
+            currentQuantity?: number | null;
+            /** @enum {string} */
+            change: "new" | "changed" | "unchanged";
+        };
+        PlanImportIssueResponse: {
+            rowNumber?: number | null;
+            code: string;
+            message: string;
+        };
+        PlanImportPreviewResponse: {
+            previewId?: string | null;
+            /** Format: date-time */
+            expiresAt?: string | null;
+            summary: components["schemas"]["PlanImportSummaryResponse"];
+            items: components["schemas"]["PlanImportRowResponse"][];
+            issues: components["schemas"]["PlanImportIssueResponse"][];
         };
         DailyPlanItemResponse: {
             date: string;
@@ -2328,6 +2400,114 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_planning_import_apply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                accountId: string;
+                previewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Импорт применён */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanImportApplyResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Preview или кабинет не найден */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description План изменился после preview */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_planning_import_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                accountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Файл проверен */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanImportPreviewResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Кабинет не найден */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Файл или строки некорректны */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanImportPreviewResponse"];
                 };
             };
         };

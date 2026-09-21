@@ -9,7 +9,9 @@ use Doctrine\DBAL\Connection;
 
 final readonly class DailyPlanVersionsQuery
 {
-    public function __construct(private Connection $connection) {}
+    public function __construct(private Connection $connection)
+    {
+    }
 
     /**
      * @param list<PlanImportRow> $rows
@@ -43,10 +45,10 @@ final readonly class DailyPlanVersionsQuery
              AND plan.marketplace_sku = requested.marketplace_sku
              AND plan.business_date = requested.business_date
             SQL, [
-                'rows' => json_encode($requested, \JSON_THROW_ON_ERROR),
-                'company' => $companyId,
-                'account' => $marketplaceAccountId,
-            ])->fetchAllAssociative();
+            'rows' => json_encode($requested, \JSON_THROW_ON_ERROR),
+            'company' => $companyId,
+            'account' => $marketplaceAccountId,
+        ])->fetchAllAssociative();
 
         $versions = [];
         foreach ($result as $row) {

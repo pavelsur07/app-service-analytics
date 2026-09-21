@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost, apiPut } from './client'
+import { apiDelete, apiGet, apiPost, apiPostForm, apiPut } from './client'
 
 // Единственный способ обратиться к данным компании (CLAUDE.md §10:
 // сетевые запросы только через клиент, привязанный к компании). companyId
@@ -13,6 +13,11 @@ export function createCompanyApiClient(companyId: string) {
     // невозможно.
     post: <T>(path: string, body?: unknown): Promise<T> =>
       apiPost<T>(
+        `/api/companies/${encodeURIComponent(companyId)}${path}`,
+        body,
+      ),
+    postForm: <T>(path: string, body: FormData): Promise<T> =>
+      apiPostForm<T>(
         `/api/companies/${encodeURIComponent(companyId)}${path}`,
         body,
       ),

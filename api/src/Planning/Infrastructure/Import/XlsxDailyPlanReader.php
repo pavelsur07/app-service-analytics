@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Planning\Infrastructure\Import;
 
 use App\Planning\Domain\DailyPlan;
+use App\Planning\Domain\PlanImportIssue;
 use OpenSpout\Common\Entity\Cell\FormulaCell;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Reader\XLSX\Reader;
@@ -32,29 +33,30 @@ final class XlsxDailyPlanReader
                 return new XlsxDailyPlanReadResult([], [new PlanImportIssue(null, 'sheet_count_invalid', 'Файл должен содержать один лист.')]);
             }
 
-            $rows = iterator_to_array($sheets[0]->getRowIterator(), false);
+            return $this->normalize($sheets[0]->getRowIterator());
         } catch (\Throwable) {
             return new XlsxDailyPlanReadResult([], [new PlanImportIssue(null, 'xlsx_invalid', 'Файл XLSX не удалось прочитать.')]);
         } finally {
             $reader->close();
         }
-
-        return $this->normalize($rows);
     }
 
-    /** @param list<Row> $sourceRows */
-    private function normalize(array $sourceRows): XlsxDailyPlanReadResult
+    /** @param iterable<Row> $sourceRows */
+    private function normalize(iterable $sourceRows): XlsxDailyPlanReadResult
     {
-        if ([] === $sourceRows || ['SKU', 'Дата', 'План, шт.'] !== array_values($sourceRows[0]->toArray())) {
-            return new XlsxDailyPlanReadResult([], [new PlanImportIssue(1, 'headers_invalid', 'Ожидаются колонки SKU, Дата, План, шт.')]);
-        }
-
         $rows = [];
         $issues = [];
         $seen = [];
         $dataRows = 0;
-        foreach (array_slice($sourceRows, 1) as $offset => $sourceRow) {
-            $rowNumber = $offset + 2;
+        $rowNumber = 0;
+        foreach ($sourceRows as $sourceRow) {
+            ++$rowNumber;
+            if (1 === $rowNumber) {
+                if (['SKU', 'Дата', 'План, шт.'] !== array_values($sourceRow->toArray())) {
+                    return new XlsxDailyPlanReadResult([], [new PlanImportIssue(1, 'headers_invalid', 'Ожидаются колонки SKU, Дата, План, шт.')]);
+                }
+                continue;
+            }
             if ($sourceRow->isEmpty()) {
                 continue;
             }
@@ -102,13 +104,19 @@ final class XlsxDailyPlanReader
                 $rows[] = new PlanImportRow($rowNumber, $sku, $businessDate, $normalizedQuantity);
             }
         }
+        if (0 === $rowNumber) {
+            return new XlsxDailyPlanReadResult([], [new PlanImportIssue(1, 'headers_invalid', 'Ожидаются колонки SKU, Дата, План, шт.')]);
+        }
+        if (0 === $dataRows) {
+            $issues[] = new PlanImportIssue(null, 'data_rows_required', 'Файл не содержит строк плана.');
+        }
 
         return new XlsxDailyPlanReadResult($rows, $issues);
     }
 
     private function containsFormula(Row $row): bool
     {
-        foreach (array_slice($row->cells, 0, 3) as $cell) {
+        foreach (\array_slice($row->cells, 0, 3) as $cell) {
             if ($cell instanceof FormulaCell) {
                 return true;
             }
