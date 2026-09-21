@@ -15,7 +15,6 @@ use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Planning\Application\ApplyPlanImportAction;
 use App\Planning\Application\SaveDailyPlanAction;
 use App\Planning\Domain\DailyPlanRepository;
-use App\Planning\Domain\PlanChange;
 use App\Planning\Domain\PlanImportPreview;
 use App\Planning\Domain\PlanImportPreviewRow;
 use App\Tests\Support\Builder\CompanyBuilder;
@@ -23,6 +22,7 @@ use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\DailyPlanBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\MarketplaceListingBuilder;
+use App\Tests\Support\Builder\PlanChangeBuilder;
 use App\Tests\Support\Builder\PlanImportPreviewBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use DAMA\DoctrineTestBundle\PHPUnit\SkipDatabaseRollback;
@@ -62,7 +62,7 @@ final class PlanImportConcurrencyTest extends KernelTestCase
         [$company, $account, $actor] = $this->fixture();
         $plan = DailyPlanBuilder::aDailyPlan()->withCompanyId($company->id())->withMarketplaceAccountId($account->id())
             ->withUpdatedBy($actor->id())->withBusinessDate(new \DateTimeImmutable('2026-09-22'))->build();
-        $this->plans()->add($plan, PlanChange::created($plan));
+        $this->plans()->add($plan, PlanChangeBuilder::aPlanChange()->withPlan($plan)->build());
         $this->entityManager()->clear();
 
         $competing = $this->independentConnection();
