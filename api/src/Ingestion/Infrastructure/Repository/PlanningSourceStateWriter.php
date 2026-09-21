@@ -416,7 +416,7 @@ final readonly class PlanningSourceStateWriter
                      AND NOT (previous_outcome.has_prior
                               AND sale.business_date < account_state.baseline_completed_at::date) AS can_date_new_unit,
                    CASE WHEN :kind = 'returns' THEN COALESCE(return_raw.raw_document_id, sale.raw_document_id)
-                        ELSE COALESCE(:rawId::uuid, sale.raw_document_id) END AS raw_document_id
+                        ELSE COALESCE(sale.raw_document_id, :rawId::uuid) END AS raw_document_id
             FROM unit_outcome b
             JOIN sales_fact sale
               ON sale.company_id = b.company_id AND sale.marketplace_account_id = b.marketplace_account_id

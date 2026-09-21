@@ -389,6 +389,46 @@ final class IngestionPlanningFacadeTest extends KernelTestCase
         self::assertSame([$newRaw], $connection->fetchFirstColumn('SELECT raw_document_id::text FROM planning_ingestion_source_raw_document WHERE company_id = ? AND marketplace_account_id = ?', [$company, $account]));
     }
 
+    public function testPostingObservationKeepsExactSalesFactRawDocument(): void
+    {
+        self::bootKernel();
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $factRawDocumentId = Uuid::v7();
+        $windowRawDocumentId = Uuid::v7();
+        $sourceRowId = 'EXACT-RAW|SKU';
+
+        /** @var SalesFactRepository $sales */
+        $sales = self::getContainer()->get(SalesFactRepository::class);
+        $sales->upsertAll([
+            SalesFactBuilder::aSalesFact()->withCompanyId($companyId)->withMarketplaceAccountId($accountId)
+                ->withSourceRowId($sourceRowId)->withPostingNumber('EXACT-RAW')->withOrderNumber('EXACT-RAW')
+                ->withMarketplaceSku('SKU')->withRawDocumentId($factRawDocumentId)->build(),
+        ]);
+        /** @var MarketplacePostingStatusRepository $statuses */
+        $statuses = self::getContainer()->get(MarketplacePostingStatusRepository::class);
+        $statuses->recordChanged($companyId->toRfc4122(), [
+            MarketplacePostingStatusBuilder::aMarketplacePostingStatus()->withCompanyId($companyId)
+                ->withMarketplaceAccountId($accountId)->withPostingNumber('EXACT-RAW')->withOrderNumber('EXACT-RAW')
+                ->withStatus('delivered')->build(),
+        ]);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        (new PlanningSourceStateWriter($connection, new PlanningOutcomeQueryGuard($connection)))->recordCompleted(
+            $companyId->toRfc4122(), $accountId->toRfc4122(), 'postings', '2026-07-01', '2026-07-01',
+            hash('sha256', 'posting window raw'), 'rescan', [$windowRawDocumentId->toRfc4122()], [$sourceRowId],
+        );
+
+        self::assertSame(
+            $factRawDocumentId->toRfc4122(),
+            $connection->fetchOne(
+                'SELECT raw_document_id::text FROM planning_ingestion_resolution_observation WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+                [$companyId->toRfc4122(), $accountId->toRfc4122(), $sourceRowId],
+            ),
+        );
+    }
+
     public function testHistoricalRescanDoesNotBecomeTodaysBuyoutAfterRegularRepeat(): void
     {
         self::bootKernel();
