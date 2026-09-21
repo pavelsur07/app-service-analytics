@@ -110,6 +110,32 @@ final class PlanImportControllerTest extends WebTestCase
         self::assertNull($items[0]['sellerArticle']);
     }
 
+    public function testInvalidUploadUsesPreviewErrorContract(): void
+    {
+        $client = static::createClient();
+        [$company, $account] = $this->scope($client, []);
+        $file = tempnam(sys_get_temp_dir(), 'planning-invalid-');
+        self::assertIsString($file);
+        $this->files[] = $file;
+        file_put_contents($file, 'not an xlsx');
+
+        $client->request('POST', \sprintf('/api/companies/%s/planning/accounts/%s/imports/preview', $company->id(), $account->id()), files: [
+            'file' => new UploadedFile($file, 'plan.csv', 'text/csv', null, true),
+        ]);
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        $content = $client->getResponse()->getContent();
+        self::assertIsString($content);
+        $payload = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($payload);
+        self::assertSame(['total' => 0, 'new' => 0, 'changed' => 0, 'unchanged' => 0], $payload['summary']);
+        self::assertSame([], $payload['items']);
+        $issues = $payload['issues'];
+        self::assertIsArray($issues);
+        self::assertIsArray($issues[0]);
+        self::assertSame('xlsx_file_required', $issues[0]['code']);
+    }
+
     public function testApplyIsAtomicOnConflictAndIdempotentAfterSuccess(): void
     {
         $client = static::createClient();

@@ -6,6 +6,7 @@ namespace App\Planning\Ui\Controller;
 
 use App\Planning\Application\PlanImportPreviewOutcome;
 use App\Planning\Application\PreviewPlanImportAction;
+use App\Planning\Domain\PlanImportIssue;
 use App\Planning\Ui\Response\PlanImportPreviewResponse;
 use App\Shared\Ui\RequestAttributes;
 use App\Shared\Ui\Response\ValidationErrorResponse;
@@ -33,7 +34,9 @@ final readonly class PreviewPlanImportController
     {
         $file = $request->files->get('file');
         if (!$file instanceof UploadedFile || !$file->isValid() || 'xlsx' !== strtolower($file->getClientOriginalExtension())) {
-            return new JsonResponse(new ValidationErrorResponse(422, 'xlsx_file_required', 'Загрузите корректный файл .xlsx.'), 422);
+            return new JsonResponse(PlanImportPreviewResponse::invalid([
+                new PlanImportIssue(null, 'xlsx_file_required', 'Загрузите корректный файл .xlsx.'),
+            ]), 422);
         }
         $actorId = $request->attributes->get(RequestAttributes::ActorUserId);
         \assert(\is_string($actorId));

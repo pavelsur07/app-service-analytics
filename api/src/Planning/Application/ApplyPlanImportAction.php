@@ -11,6 +11,7 @@ use App\Planning\Domain\PlanChange;
 use App\Planning\Domain\PlanImportPreview;
 use App\Planning\Domain\PlanImportPreviewRow;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DeadlockException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
@@ -61,6 +62,7 @@ final readonly class ApplyPlanImportAction
                 $created = 0;
                 $updated = 0;
                 $unchanged = 0;
+                $pending = [];
                 $actor = Uuid::fromString($actorId);
                 $now = new \DateTimeImmutable();
                 foreach ($rows as $row) {
@@ -72,7 +74,9 @@ final readonly class ApplyPlanImportAction
                             new \DateTimeImmutable($row->businessDate), $row->quantity, $actor, $now,
                         );
                         $this->entityManager->persist($plan);
-                        $this->entityManager->persist(PlanChange::created($plan));
+                        $change = PlanChange::created($plan);
+                        $this->entityManager->persist($change);
+                        array_push($pending, $plan, $change);
                         ++$created;
                     } elseif ($current->quantity() === $row->quantity) {
                         ++$unchanged;
@@ -80,10 +84,16 @@ final readonly class ApplyPlanImportAction
                         $oldQuantity = $current->quantity();
                         $oldVersion = $current->version();
                         $current->changeQuantity($row->quantity, $actor, $now);
-                        $this->entityManager->persist(PlanChange::changed($current, $oldQuantity, $oldVersion));
+                        $change = PlanChange::changed($current, $oldQuantity, $oldVersion);
+                        $this->entityManager->persist($change);
+                        array_push($pending, $current, $change);
                         ++$updated;
                     }
+                    if (\count($pending) >= 400) {
+                        $this->flushAndDetach($pending);
+                    }
                 }
+                $this->flushAndDetach($pending);
                 $summary = ['created' => $created, 'updated' => $updated, 'unchanged' => $unchanged];
                 $preview->markApplied($summary, $now);
 
@@ -91,7 +101,7 @@ final readonly class ApplyPlanImportAction
             });
 
             return $result;
-        } catch (OptimisticLockException|UniqueConstraintViolationException) {
+        } catch (OptimisticLockException|DeadlockException|UniqueConstraintViolationException) {
             return new ApplyPlanImportResult(PlanImportApplyOutcome::Conflict);
         }
     }
@@ -143,6 +153,7 @@ final readonly class ApplyPlanImportAction
               ON requested.marketplace_sku = plan.marketplace_sku
              AND requested.business_date = plan.business_date
             WHERE plan.company_id = :company AND plan.marketplace_account_id = :account
+            ORDER BY plan.marketplace_sku, plan.business_date
             FOR UPDATE OF plan
             SQL, ['rows' => json_encode($requested, \JSON_THROW_ON_ERROR), 'company' => $companyId, 'account' => $marketplaceAccountId])->fetchFirstColumn();
         if ([] === $ids) {
@@ -165,5 +176,18 @@ final readonly class ApplyPlanImportAction
     private static function key(string $sku, string $date): string
     {
         return $sku."\0".$date;
+    }
+
+    /** @param list<object> $entities */
+    private function flushAndDetach(array &$entities): void
+    {
+        if ([] === $entities) {
+            return;
+        }
+        $this->entityManager->flush();
+        foreach ($entities as $entity) {
+            $this->entityManager->detach($entity);
+        }
+        $entities = [];
     }
 }

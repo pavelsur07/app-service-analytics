@@ -72,6 +72,16 @@ final class XlsxDailyPlanReaderTest extends TestCase
         self::assertSame('sheet_count_invalid', $sheetResult->issues[0]->code);
     }
 
+    public function testRejectsUnexpectedFourthColumn(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 12, 'unexpected']),
+        ]);
+
+        self::assertSame('headers_invalid', (new XlsxDailyPlanReader())->read($file)->issues[0]->code);
+    }
+
     public function testRejectsNoDataTooManyRowsAndUnsafeArchives(): void
     {
         $headerOnly = $this->xlsx([Row::fromValues(['SKU', 'Дата', 'План, шт.'])]);
