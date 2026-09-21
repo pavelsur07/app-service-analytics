@@ -37,9 +37,9 @@ FROM php:${PHP_VERSION}-fpm-alpine AS base
 #
 # fcgi даёт cgi-fcgi для healthcheck: проверять живость php-fpm снаружи
 # нечем, TCP-порт открыт и у зависшего мастера.
-RUN apk add --no-cache libpq fcgi \
-    && apk add --no-cache --virtual .build-deps postgresql-dev \
-    && docker-php-ext-install pdo_pgsql \
+RUN apk add --no-cache libpq libzip fcgi \
+    && apk add --no-cache --virtual .build-deps postgresql-dev libzip-dev \
+    && docker-php-ext-install pdo_pgsql zip \
     && apk del .build-deps
 
 WORKDIR /var/www/html
