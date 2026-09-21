@@ -48,7 +48,7 @@ final readonly class DoctrinePlanImportPreviewRepository implements PlanImportPr
                   AND status = 'ready' AND expires_at <= :now
                 SQL, [...$scope, 'now' => $now], ['now' => Types::DATETIME_IMMUTABLE]);
 
-            $insertedId = $connection->executeQuery(<<<'SQL'
+            $storedId = $connection->executeQuery(<<<'SQL'
                 INSERT INTO planning_import_preview (
                   id, company_id, marketplace_account_id, actor_id, fingerprint,
                   normalized_rows, status, apply_result, created_at, expires_at, applied_at
@@ -58,7 +58,7 @@ final readonly class DoctrinePlanImportPreviewRepository implements PlanImportPr
                 )
                 ON CONFLICT (company_id, marketplace_account_id, actor_id, fingerprint)
                   WHERE ((status)::text = 'ready'::text)
-                DO NOTHING
+                DO UPDATE SET fingerprint = EXCLUDED.fingerprint
                 RETURNING id::text
                 SQL, [
                 ...$scope,
@@ -71,12 +71,15 @@ final readonly class DoctrinePlanImportPreviewRepository implements PlanImportPr
                 'createdAt' => Types::DATETIME_IMMUTABLE,
                 'expiresAt' => Types::DATETIME_IMMUTABLE,
             ])->fetchOne();
-            if (false === $insertedId) {
+            if (!\is_string($storedId)) {
+                throw new \RuntimeException('Результат сохранения preview некорректен.');
+            }
+            if ($storedId !== $preview->id()->toRfc4122()) {
                 $existing = $this->entityManager->getRepository(PlanImportPreview::class)->findOneBy([
+                    'id' => $storedId,
                     'companyId' => $companyId,
                     'marketplaceAccountId' => $preview->marketplaceAccountId(),
                     'actorId' => $preview->actorId(),
-                    'fingerprint' => $preview->fingerprint(),
                     'status' => PlanImportPreview::STATUS_READY,
                 ]);
                 if (!$existing instanceof PlanImportPreview) {
