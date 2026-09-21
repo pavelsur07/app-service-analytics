@@ -8,13 +8,19 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Doctrine\DBAL\Types\Types;
 
-final readonly class ExpiredPlanImportPreviewCleaner
+/**
+ * Операционная межарендаторная очистка временных preview (CLAUDE.md §1).
+ *
+ * Запрос намеренно обходит все компании, не возвращает пользовательские
+ * данные и доступен только узкому action консольной команды через Deptrac.
+ */
+final readonly class CrossTenantExpiredPlanImportPreviewCleaner
 {
     public function __construct(private Connection $connection)
     {
     }
 
-    public function delete(\DateTimeImmutable $now, int $limit = 1_000): int
+    public function deleteExpiredAcrossCompanies(\DateTimeImmutable $now, int $limit = 1_000): int
     {
         if ($limit < 1 || $limit > 1_000) {
             throw new \InvalidArgumentException('Лимит очистки должен быть от 1 до 1000.');

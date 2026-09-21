@@ -34,8 +34,9 @@ final class Version20260921154000 extends AbstractMigration
             )
         SQL);
         $this->addSql('CREATE INDEX idx_planning_import_preview_scope ON planning_import_preview (company_id, marketplace_account_id, id)');
-        $this->addSql('CREATE INDEX idx_planning_import_preview_expiry ON planning_import_preview (company_id, status, expires_at)');
         $this->addSql('CREATE INDEX idx_planning_import_preview_actor ON planning_import_preview (company_id, actor_id)');
+        $this->addSql("CREATE INDEX idx_planning_import_preview_ready_expiry ON planning_import_preview (expires_at, id) WHERE ((status)::text = 'ready'::text)");
+        $this->addSql("CREATE INDEX idx_planning_import_preview_applied_cleanup ON planning_import_preview (applied_at, id) WHERE ((status)::text = 'applied'::text)");
     }
 
     public function down(Schema $schema): void

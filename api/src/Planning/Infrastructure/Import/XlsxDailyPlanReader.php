@@ -128,7 +128,7 @@ final class XlsxDailyPlanReader
     private function date(mixed $value): ?string
     {
         if ($value instanceof \DateTimeInterface) {
-            return \DateTimeImmutable::createFromInterface($value)->setTimezone(new \DateTimeZone('Europe/Moscow'))->format('Y-m-d');
+            return $value->format('Y-m-d');
         }
         if ((\is_int($value) || \is_float($value)) && $value >= 1 && $value <= 2_958_465) {
             $days = (int) floor((float) $value);

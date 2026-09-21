@@ -277,13 +277,31 @@ return static function (DeptracConfig $config): void {
                 DirectoryConfig::create('src/Planning/Domain/.*'),
             ),
             $planningApplication = Layer::withName('PlanningApplication')->collectors(
-                DirectoryConfig::create('src/Planning/Application/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Planning/Application/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Planning\\Application\\CleanupExpiredPlanImportsAcrossCompaniesAction$')],
+                ),
             ),
             $planningInfrastructure = Layer::withName('PlanningInfrastructure')->collectors(
-                DirectoryConfig::create('src/Planning/Infrastructure/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Planning/Infrastructure/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Planning\\Infrastructure\\Repository\\CrossTenantExpiredPlanImportPreviewCleaner$')],
+                ),
             ),
             $planningUi = Layer::withName('PlanningUi')->collectors(
-                DirectoryConfig::create('src/Planning/Ui/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/Planning/Ui/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\Planning\\Ui\\Command\\CleanupExpiredPlanImportsAcrossCompaniesCommand$')],
+                ),
+            ),
+            $planningImportCleanupQuery = Layer::withName('PlanningImportCleanupQuery')->collectors(
+                ClassLikeConfig::create('^App\\Planning\\Infrastructure\\Repository\\CrossTenantExpiredPlanImportPreviewCleaner$'),
+            ),
+            $planningImportCleanupAction = Layer::withName('PlanningImportCleanupAction')->collectors(
+                ClassLikeConfig::create('^App\\Planning\\Application\\CleanupExpiredPlanImportsAcrossCompaniesAction$'),
+            ),
+            $planningImportCleanupCommand = Layer::withName('PlanningImportCleanupCommand')->collectors(
+                ClassLikeConfig::create('^App\\Planning\\Ui\\Command\\CleanupExpiredPlanImportsAcrossCompaniesCommand$'),
             ),
 
             // Внешние библиотеки — не наши модули, но зависимость на них
@@ -472,6 +490,8 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($planningApplication)->accesses($planningDomain, $planningInfrastructure, $identityAccountScopeFacade, $ingestionPlanningFacade, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($planningInfrastructure)->accesses($planningDomain, $symfonyComponent),
             Ruleset::forLayer($planningDomain)->accesses($symfonyUid),
+            Ruleset::forLayer($planningImportCleanupCommand)->accesses($planningImportCleanupAction, $symfonyComponent),
+            Ruleset::forLayer($planningImportCleanupAction)->accesses($planningImportCleanupQuery),
         )
     ;
 };

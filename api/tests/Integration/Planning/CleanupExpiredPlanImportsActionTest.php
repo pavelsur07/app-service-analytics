@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Planning;
 
-use App\Planning\Application\CleanupExpiredPlanImportsAction;
+use App\Planning\Application\CleanupExpiredPlanImportsAcrossCompaniesAction;
 use App\Planning\Infrastructure\Repository\DoctrinePlanImportPreviewRepository;
 use App\Tests\Support\Builder\PlanImportPreviewBuilder;
 use Doctrine\ORM\EntityManagerInterface;
@@ -28,8 +28,8 @@ final class CleanupExpiredPlanImportsActionTest extends KernelTestCase
             $repository->add($preview);
         }
 
-        /** @var CleanupExpiredPlanImportsAction $cleanup */
-        $cleanup = self::getContainer()->get(CleanupExpiredPlanImportsAction::class);
+        /** @var CleanupExpiredPlanImportsAcrossCompaniesAction $cleanup */
+        $cleanup = self::getContainer()->get(CleanupExpiredPlanImportsAcrossCompaniesAction::class);
         self::assertSame(2, $cleanup($now));
 
         $remaining = $entityManager->getConnection()->fetchFirstColumn('SELECT id::text FROM planning_import_preview');

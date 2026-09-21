@@ -27,7 +27,7 @@ final class XlsxDailyPlanReaderTest extends TestCase
         $file = $this->xlsx([
             Row::fromValues(['SKU', 'Дата', 'План, шт.']),
             Row::fromValues(['SKU-1', '2026-09-22', 12]),
-            Row::fromValues(['SKU-2', new \DateTimeImmutable('2026-09-23 18:00:00'), 0]),
+            Row::fromValues(['SKU-2', new \DateTimeImmutable('2026-09-23 23:30:00 UTC'), 0]),
             Row::fromValues(['SKU-3', '2028-02-29', 1]),
         ]);
 

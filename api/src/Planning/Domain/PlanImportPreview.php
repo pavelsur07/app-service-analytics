@@ -10,9 +10,10 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Entity]
 #[ORM\Table(name: 'planning_import_preview')]
 #[ORM\Index(name: 'idx_planning_import_preview_scope', columns: ['company_id', 'marketplace_account_id', 'id'])]
-#[ORM\Index(name: 'idx_planning_import_preview_expiry', columns: ['company_id', 'status', 'expires_at'])]
 #[ORM\Index(name: 'idx_planning_import_preview_actor', columns: ['company_id', 'actor_id'])]
-final class PlanImportPreview
+#[ORM\Index(name: 'idx_planning_import_preview_ready_expiry', columns: ['expires_at', 'id'], options: ['where' => "((status)::text = 'ready'::text)"])]
+#[ORM\Index(name: 'idx_planning_import_preview_applied_cleanup', columns: ['applied_at', 'id'], options: ['where' => "((status)::text = 'applied'::text)"])]
+class PlanImportPreview
 {
     public const string STATUS_READY = 'ready';
     public const string STATUS_APPLIED = 'applied';
