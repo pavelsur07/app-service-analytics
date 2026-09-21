@@ -9,8 +9,8 @@
 # и рядом с ним не запускается — в нём другая роль у тех же имён.
 #
 # Топология развёрнута и обслуживает боевой трафик на app.conwix.com
-# и admin.conwix.com. Сертификаты Let's Encrypt выпущены, все семь
-# сервисов в состоянии healthy. Что именно проверено — docs/structure.md,
+# и admin.conwix.com. Сертификаты Let's Encrypt выпущены, сервисы
+# действующей production-версии healthy. Что именно проверено — docs/structure.md,
 # раздел про этот файл.
 #
 #   IMAGE=ghcr.io/…/api:<тег> APP_SECRET=… ACME_EMAIL=… \
@@ -299,6 +299,33 @@ services:
       - bin/console
       - app:ingestion:schedule-ozon-sync
       - --interval=1800
+    healthcheck:
+      test: ["CMD", "php", "bin/console", "dbal:run-sql", "SELECT 1", "--quiet"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Удаляет истёкшие preview импорта и старые сохранённые результаты.
+  # Отдельный цикл сохраняет границу модулей: Ingestion scheduler не
+  # получает зависимость на Planning. Redis-lock не даёт двум репликам
+  # выполнять одну межарендаторную очистку одновременно.
+  worker-planning-cleanup:
+    image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
+    restart: unless-stopped
+    environment: *api-env
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 128m
+    command:
+      - php
+      - bin/console
+      - app:planning:imports:cleanup
+      - --interval=3600
     healthcheck:
       test: ["CMD", "php", "bin/console", "dbal:run-sql", "SELECT 1", "--quiet"]
       interval: 30s

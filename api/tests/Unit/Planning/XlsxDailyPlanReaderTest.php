@@ -168,6 +168,40 @@ final class XlsxDailyPlanReaderTest extends TestCase
         self::assertSame('xlsx_invalid', $result->issues[0]->code);
     }
 
+    public function testRejectsWorkbookWithDamagedTailAfterSheetDeclaration(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 12]),
+        ]);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($file));
+        $workbook = $zip->getFromName('xl/workbook.xml');
+        self::assertIsString($workbook);
+        $workbook = str_replace('</workbook>', '<broken></workbook>', $workbook);
+        self::assertTrue($zip->addFromString('xl/workbook.xml', $workbook));
+        $zip->close();
+
+        self::assertSame('xlsx_invalid', (new XlsxDailyPlanReader())->read($file)->issues[0]->code);
+    }
+
+    public function testReturnsControlledIssueForRelationshipPrefixUnsupportedByOpenSpout(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 12]),
+        ]);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($file));
+        $workbook = $zip->getFromName('xl/workbook.xml');
+        self::assertIsString($workbook);
+        $workbook = str_replace(['xmlns:r=', ' r:id='], ['xmlns:rel=', ' rel:id='], $workbook);
+        self::assertTrue($zip->addFromString('xl/workbook.xml', $workbook));
+        $zip->close();
+
+        self::assertSame('xlsx_invalid', (new XlsxDailyPlanReader())->read($file)->issues[0]->code);
+    }
+
     public function testRejectsUnsafeWorksheetRowBeforeOpenSpoutExpandsTheGap(): void
     {
         $file = $this->xlsx([
@@ -215,7 +249,7 @@ final class XlsxDailyPlanReaderTest extends TestCase
         self::assertSame(XlsxDailyPlanReader::MAX_WORKSHEET_ROW + 1, $issue->rowNumber);
     }
 
-    public function testRejectsCellBeyondMaximumXlsxColumnBeforeOpenSpoutAllocatesIt(): void
+    public function testRejectsCellBeyondSafeImportColumnBeforeOpenSpoutAllocatesIt(): void
     {
         $file = $this->xlsx([
             Row::fromValues(['SKU', 'Дата', 'План, шт.']),
@@ -226,13 +260,34 @@ final class XlsxDailyPlanReaderTest extends TestCase
         $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
         self::assertIsString($sheet);
         self::assertStringContainsString('r="A2"', $sheet);
-        self::assertTrue($zip->addFromString('xl/worksheets/sheet1.xml', str_replace('r="A2"', 'r="ZZZZZ2"', $sheet)));
+        self::assertTrue($zip->addFromString('xl/worksheets/sheet1.xml', str_replace('r="A2"', 'r="Q2"', $sheet)));
         $zip->close();
 
         $issue = (new XlsxDailyPlanReader())->read($file)->issues[0];
 
         self::assertSame('worksheet_column_limit_exceeded', $issue->code);
         self::assertSame(2, $issue->rowNumber);
+    }
+
+    public function testRejectsWorksheetOutsideSpreadsheetNamespace(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 12]),
+        ]);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($file));
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        self::assertIsString($sheet);
+        $sheet = str_replace(
+            'http://schemas.openxmlformats.org/spreadsheetml/2006/main',
+            'https://example.test/untrusted-spreadsheet',
+            $sheet,
+        );
+        self::assertTrue($zip->addFromString('xl/worksheets/sheet1.xml', $sheet));
+        $zip->close();
+
+        self::assertSame('xlsx_invalid', (new XlsxDailyPlanReader())->read($file)->issues[0]->code);
     }
 
     public function testIssueUsesWorksheetRowNumberAfterEmptyRow(): void

@@ -9,12 +9,14 @@ use App\Planning\Infrastructure\Repository\CrossTenantExpiredPlanImportPreviewCl
 /** Операционная межарендаторная задача по CLAUDE.md §1. */
 final readonly class CleanupExpiredPlanImportsAcrossCompaniesAction
 {
+    public const int BATCH_SIZE = 1_000;
+
     public function __construct(private CrossTenantExpiredPlanImportPreviewCleaner $cleaner)
     {
     }
 
     public function __invoke(?\DateTimeImmutable $now = null): int
     {
-        return $this->cleaner->deleteExpiredAcrossCompanies($now ?? new \DateTimeImmutable());
+        return $this->cleaner->deleteExpiredAcrossCompanies($now ?? new \DateTimeImmutable(), self::BATCH_SIZE);
     }
 }

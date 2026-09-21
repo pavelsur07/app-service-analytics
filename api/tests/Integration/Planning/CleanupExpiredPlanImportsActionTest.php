@@ -8,7 +8,10 @@ use App\Planning\Application\CleanupExpiredPlanImportsAcrossCompaniesAction;
 use App\Planning\Infrastructure\Repository\DoctrinePlanImportPreviewRepository;
 use App\Tests\Support\Builder\PlanImportPreviewBuilder;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Tester\CommandTester;
 
 final class CleanupExpiredPlanImportsActionTest extends KernelTestCase
 {
@@ -34,5 +37,25 @@ final class CleanupExpiredPlanImportsActionTest extends KernelTestCase
 
         $remaining = $entityManager->getConnection()->fetchFirstColumn('SELECT id::text FROM planning_import_preview');
         self::assertSame([$recentApplied->id()->toRfc4122()], $remaining);
+    }
+
+    public function testCommandRunsOneCleanupPassWhenIntervalIsOmitted(): void
+    {
+        self::bootKernel();
+        self::assertNotNull(self::$kernel);
+        $command = (new Application(self::$kernel))->find('app:planning:imports:cleanup');
+        $tester = new CommandTester($command);
+
+        self::assertSame(Command::SUCCESS, $tester->execute([]));
+        self::assertStringContainsString('Очистка preview: удалено 0.', $tester->getDisplay());
+    }
+
+    public function testCommandRejectsNonPositiveLoopInterval(): void
+    {
+        self::bootKernel();
+        self::assertNotNull(self::$kernel);
+        $tester = new CommandTester((new Application(self::$kernel))->find('app:planning:imports:cleanup'));
+
+        self::assertSame(Command::INVALID, $tester->execute(['--interval' => '0']));
     }
 }
