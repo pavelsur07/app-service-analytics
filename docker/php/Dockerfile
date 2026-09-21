@@ -42,14 +42,6 @@ RUN apk add --no-cache libpq libzip fcgi \
     && docker-php-ext-install pdo_pgsql zip \
     && apk del .build-deps
 
-# Planning accepts XLSX up to 10,000,000 bytes. Multipart framing adds a
-# small overhead, so PHP's request limit is slightly higher while the
-# application still enforces the exact file limit.
-RUN { \
-        echo "upload_max_filesize=10M"; \
-        echo "post_max_size=11M"; \
-    } > /usr/local/etc/php/conf.d/zz-upload-limits.ini
-
 WORKDIR /var/www/html
 
 # --- prod-deps ----------------------------------------------------------

@@ -131,6 +131,43 @@ final class XlsxDailyPlanReaderTest extends TestCase
         self::assertSame([], (new XlsxDailyPlanReader())->read($file)->issues);
     }
 
+    public function testReadsRowsAndCellsWithoutOptionalReferences(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 12]),
+        ]);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($file));
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        self::assertIsString($sheet);
+        $sheet = preg_replace('/(<(?:row|c)) r="[^"]+"/', '$1', $sheet);
+        self::assertIsString($sheet);
+        self::assertTrue($zip->addFromString('xl/worksheets/sheet1.xml', $sheet));
+        $zip->close();
+
+        $result = (new XlsxDailyPlanReader())->read($file);
+
+        self::assertSame([], $result->issues);
+        self::assertSame([2, 'SKU-1', '2026-09-22', 12], [$result->rows[0]->rowNumber, $result->rows[0]->marketplaceSku, $result->rows[0]->businessDate, $result->rows[0]->quantity]);
+    }
+
+    public function testDamagedWorkbookXmlReturnsControlledIssue(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues(['SKU-1', '2026-09-22', 12]),
+        ]);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($file));
+        self::assertTrue($zip->addFromString('xl/workbook.xml', '<workbook><broken>'));
+        $zip->close();
+
+        $result = (new XlsxDailyPlanReader())->read($file);
+
+        self::assertSame('xlsx_invalid', $result->issues[0]->code);
+    }
+
     public function testRejectsUnsafeWorksheetRowBeforeOpenSpoutExpandsTheGap(): void
     {
         $file = $this->xlsx([

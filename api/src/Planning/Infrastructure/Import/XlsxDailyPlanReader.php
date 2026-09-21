@@ -19,7 +19,8 @@ final class XlsxDailyPlanReader
     public const int MAX_WORKSHEET_ROW = 50_000;
     private const int MAX_WORKSHEET_COLUMN = 16_384;
     private const int MAX_UNCOMPRESSED_BYTES = 50_000_000;
-    private const int MAX_ARCHIVE_ENTRIES = 10_000;
+    private const string SPREADSHEET_NAMESPACE = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+    private const string STRICT_SPREADSHEET_NAMESPACE = 'http://purl.oclc.org/ooxml/spreadsheetml/main';
 
     public function read(string $path): XlsxDailyPlanReadResult
     {
@@ -55,6 +56,9 @@ final class XlsxDailyPlanReader
         $rowNumber = 0;
         foreach ($sourceRows as $sourceRow) {
             ++$rowNumber;
+            if ($rowNumber > self::MAX_WORKSHEET_ROW) {
+                return new XlsxDailyPlanReadResult([], [new PlanImportIssue($rowNumber, 'worksheet_row_limit_exceeded', 'Номер строки листа превышает безопасный лимит 50 000.')]);
+            }
             if (1 === $rowNumber) {
                 $header = array_values($sourceRow->toArray());
                 if (['SKU', 'Дата', 'План, шт.'] !== \array_slice($header, 0, 3)
@@ -188,9 +192,6 @@ final class XlsxDailyPlanReader
         }
         $archiveEntries = [];
         try {
-            if ($zip->numFiles > self::MAX_ARCHIVE_ENTRIES) {
-                return new PlanImportIssue(null, 'archive_limit_exceeded', 'Архив XLSX слишком велик.');
-            }
             $total = 0;
             for ($index = 0; $index < $zip->numFiles; ++$index) {
                 $stat = $zip->statIndex($index);
@@ -247,12 +248,12 @@ final class XlsxDailyPlanReader
     private function worksheetEntries(string $path, array $archiveEntries): ?array
     {
         $sheetIds = [];
-        $workbook = \XMLReader::open('zip://'.$path.'#xl/workbook.xml', null, \LIBXML_NONET | \LIBXML_COMPACT);
+        $workbook = @\XMLReader::open('zip://'.$path.'#xl/workbook.xml', null, \LIBXML_NONET | \LIBXML_COMPACT);
         if (false === $workbook) {
             return null;
         }
         try {
-            while ($workbook->read()) {
+            while (@$workbook->read()) {
                 if (\XMLReader::ELEMENT === $workbook->nodeType && 'sheet' === $workbook->localName) {
                     $id = $workbook->getAttribute('r:id');
                     if (null === $id || '' === $id) {
@@ -269,12 +270,12 @@ final class XlsxDailyPlanReader
         }
 
         $targets = [];
-        $relationships = \XMLReader::open('zip://'.$path.'#xl/_rels/workbook.xml.rels', null, \LIBXML_NONET | \LIBXML_COMPACT);
+        $relationships = @\XMLReader::open('zip://'.$path.'#xl/_rels/workbook.xml.rels', null, \LIBXML_NONET | \LIBXML_COMPACT);
         if (false === $relationships) {
             return null;
         }
         try {
-            while ($relationships->read()) {
+            while (@$relationships->read()) {
                 if (\XMLReader::ELEMENT !== $relationships->nodeType || 'Relationship' !== $relationships->localName) {
                     continue;
                 }
@@ -308,26 +309,41 @@ final class XlsxDailyPlanReader
     private function validateWorksheetRows(string $path, array $worksheetEntries): ?PlanImportIssue
     {
         foreach ($worksheetEntries as $entry) {
-            $reader = \XMLReader::open('zip://'.$path.'#'.$entry, null, \LIBXML_NONET | \LIBXML_COMPACT);
+            $reader = @\XMLReader::open('zip://'.$path.'#'.$entry, null, \LIBXML_NONET | \LIBXML_COMPACT);
             if (false === $reader) {
                 return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
             }
+            $currentRow = 0;
+            $lastColumn = 0;
             try {
-                while ($reader->read()) {
+                while (@$reader->read()) {
                     if (\XMLReader::ELEMENT !== $reader->nodeType) {
                         continue;
                     }
+                    if (!\in_array($reader->namespaceURI, [self::SPREADSHEET_NAMESPACE, self::STRICT_SPREADSHEET_NAMESPACE], true)) {
+                        continue;
+                    }
                     if ('row' === $reader->localName) {
-                        $rowIssue = $this->validateWorksheetRow($reader->getAttribute('r'));
+                        $row = $reader->getAttribute('r');
+                        $currentRow = null === $row ? $currentRow + 1 : (int) $row;
+                        $lastColumn = 0;
+                        $rowIssue = $this->validateWorksheetRow($row, $currentRow);
                         if (null !== $rowIssue) {
                             return $rowIssue;
                         }
+                        $spans = $reader->getAttribute('spans');
+                        if (null !== $spans && 1 === preg_match('/^[1-9][0-9]*:([1-9][0-9]*)$/', $spans, $matches)
+                            && (\strlen($matches[1]) > 5 || (int) $matches[1] > self::MAX_WORKSHEET_COLUMN)) {
+                            return new PlanImportIssue($currentRow, 'worksheet_column_limit_exceeded', 'Номер колонки листа превышает предел XLSX.');
+                        }
                     }
                     if ('c' === $reader->localName) {
-                        $cellIssue = $this->validateWorksheetCell($reader->getAttribute('r'));
+                        $reference = $reader->getAttribute('r');
+                        $cellIssue = $this->validateWorksheetCell($reference, $currentRow, $lastColumn + 1);
                         if (null !== $cellIssue) {
                             return $cellIssue;
                         }
+                        $lastColumn = null === $reference ? $lastColumn + 1 : $this->columnNumber($reference);
                     }
                 }
             } finally {
@@ -338,13 +354,14 @@ final class XlsxDailyPlanReader
         return null;
     }
 
-    private function validateWorksheetRow(?string $row): ?PlanImportIssue
+    private function validateWorksheetRow(?string $row, int $implicitRow): ?PlanImportIssue
     {
-        if (null === $row || 1 !== preg_match('/^[1-9][0-9]*$/', $row)) {
+        if (null !== $row && 1 !== preg_match('/^[1-9][0-9]*$/', $row)) {
             return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
         }
-        if (\strlen($row) > 5 || (int) $row > self::MAX_WORKSHEET_ROW) {
-            $rowNumber = \strlen($row) < 19 ? (int) $row : null;
+        $normalized = $row ?? (string) $implicitRow;
+        if (\strlen($normalized) > 5 || (int) $normalized > self::MAX_WORKSHEET_ROW) {
+            $rowNumber = \strlen($normalized) < 19 ? (int) $normalized : null;
 
             return new PlanImportIssue($rowNumber, 'worksheet_row_limit_exceeded', 'Номер строки листа превышает безопасный лимит 50 000.');
         }
@@ -352,26 +369,42 @@ final class XlsxDailyPlanReader
         return null;
     }
 
-    private function validateWorksheetCell(?string $reference): ?PlanImportIssue
+    private function validateWorksheetCell(?string $reference, int $currentRow, int $implicitColumn): ?PlanImportIssue
     {
-        if (null === $reference || 1 !== preg_match('/^([A-Z]+)([1-9][0-9]*)$/', $reference, $matches)) {
+        if (null === $reference) {
+            if ($currentRow < 1) {
+                return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
+            }
+
+            return $implicitColumn > self::MAX_WORKSHEET_COLUMN
+                ? new PlanImportIssue($currentRow, 'worksheet_column_limit_exceeded', 'Номер колонки листа превышает предел XLSX.')
+                : null;
+        }
+        if (1 !== preg_match('/^([A-Z]+)([1-9][0-9]*)$/', $reference, $matches)) {
             return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
         }
-        $rowIssue = $this->validateWorksheetRow($matches[2]);
+        $rowIssue = $this->validateWorksheetRow($matches[2], (int) $matches[2]);
         if (null !== $rowIssue) {
             return $rowIssue;
         }
         if (\strlen($matches[1]) > 3) {
             return new PlanImportIssue((int) $matches[2], 'worksheet_column_limit_exceeded', 'Номер колонки листа превышает предел XLSX.');
         }
-        $column = 0;
-        foreach (str_split($matches[1]) as $letter) {
-            $column = $column * 26 + \ord($letter) - 64;
-        }
+        $column = $this->columnNumber($reference);
         if ($column > self::MAX_WORKSHEET_COLUMN) {
             return new PlanImportIssue((int) $matches[2], 'worksheet_column_limit_exceeded', 'Номер колонки листа превышает предел XLSX.');
         }
 
         return null;
+    }
+
+    private function columnNumber(string $reference): int
+    {
+        $column = 0;
+        for ($index = 0; isset($reference[$index]) && !ctype_digit($reference[$index]); ++$index) {
+            $column = $column * 26 + \ord($reference[$index]) - 64;
+        }
+
+        return $column;
     }
 }
