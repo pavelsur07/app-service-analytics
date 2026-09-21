@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Planning;
 
 use App\Planning\Infrastructure\Import\XlsxDailyPlanReader;
+use OpenSpout\Common\Entity\Cell;
 use OpenSpout\Common\Entity\Cell\FormulaCell;
 use OpenSpout\Common\Entity\Row;
+use OpenSpout\Common\Entity\Style\Style;
 use OpenSpout\Writer\XLSX\Writer;
 use PHPUnit\Framework\TestCase;
 
@@ -27,7 +29,11 @@ final class XlsxDailyPlanReaderTest extends TestCase
         $file = $this->xlsx([
             Row::fromValues(['SKU', 'Дата', 'План, шт.']),
             Row::fromValues(['SKU-1', '2026-09-22', 12]),
-            Row::fromValues(['SKU-2', new \DateTimeImmutable('2026-09-23 23:30:00 UTC'), 0]),
+            new Row([
+                Cell::fromValue('SKU-2'),
+                Cell::fromValue(new \DateTimeImmutable('2026-09-23 23:30:00 UTC'), new Style(format: 'yyyy-mm-dd')),
+                Cell::fromValue(0),
+            ]),
             Row::fromValues(['SKU-3', '2028-02-29', 1]),
         ]);
 
@@ -38,6 +44,20 @@ final class XlsxDailyPlanReaderTest extends TestCase
         self::assertSame([2, 'SKU-1', '2026-09-22', 12], [$result->rows[0]->rowNumber, $result->rows[0]->marketplaceSku, $result->rows[0]->businessDate, $result->rows[0]->quantity]);
         self::assertSame([3, 'SKU-2', '2026-09-23', 0], [$result->rows[1]->rowNumber, $result->rows[1]->marketplaceSku, $result->rows[1]->businessDate, $result->rows[1]->quantity]);
         self::assertSame('2028-02-29', $result->rows[2]->businessDate);
+    }
+
+    public function testNormalizesNumericSkuAndRejectsGeneralNumericDate(): void
+    {
+        $file = $this->xlsx([
+            Row::fromValues(['SKU', 'Дата', 'План, шт.']),
+            Row::fromValues([1_727_916_074, '2026-09-22', 1]),
+            Row::fromValues(['SKU-2', 46_287, 2]),
+        ]);
+
+        $result = (new XlsxDailyPlanReader())->read($file);
+
+        self::assertSame('1727916074', $result->rows[0]->marketplaceSku);
+        self::assertSame([[3, 'date_invalid']], array_map(static fn ($issue): array => [$issue->rowNumber, $issue->code], $result->issues));
     }
 
     public function testCollectsAllRowErrorsAndDuplicateKeys(): void

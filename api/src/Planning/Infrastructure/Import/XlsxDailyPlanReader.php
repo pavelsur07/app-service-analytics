@@ -82,11 +82,11 @@ final class XlsxDailyPlanReader
                     $rowIssues[] = new PlanImportIssue($rowNumber, 'formula_forbidden', 'Формулы в обязательных ячейках запрещены.');
                 }
             }
-            $sku = $values[0] ?? null;
+            $sku = $this->sku($values[0] ?? null);
             $date = $values[1] ?? null;
             $quantity = $values[2] ?? null;
 
-            if (!\is_string($sku) || !DailyPlan::isMarketplaceSkuValid($sku)) {
+            if (null === $sku || !DailyPlan::isMarketplaceSkuValid($sku)) {
                 $rowIssues[] = new PlanImportIssue($rowNumber, 'sku_invalid', 'SKU не задан или некорректен.');
             } else {
                 $skuReferences[] = new PlanImportSkuReference($rowNumber, $sku);
@@ -100,7 +100,7 @@ final class XlsxDailyPlanReader
                 $rowIssues[] = new PlanImportIssue($rowNumber, 'quantity_invalid', 'План должен быть целым неотрицательным числом.');
             }
 
-            if (\is_string($sku) && DailyPlan::isMarketplaceSkuValid($sku) && null !== $businessDate) {
+            if (null !== $sku && DailyPlan::isMarketplaceSkuValid($sku) && null !== $businessDate) {
                 $key = $sku."\0".$businessDate;
                 if (isset($seen[$key])) {
                     $rowIssues[] = new PlanImportIssue($rowNumber, 'duplicate_key', 'Пара SKU + дата повторяется.');
@@ -111,7 +111,7 @@ final class XlsxDailyPlanReader
 
             array_push($issues, ...$rowIssues);
             if ([] === $rowIssues) {
-                \assert(\is_string($sku) && null !== $businessDate && null !== $normalizedQuantity);
+                \assert(null !== $sku && null !== $businessDate && null !== $normalizedQuantity);
                 $rows[] = new PlanImportRow($rowNumber, $sku, $businessDate, $normalizedQuantity);
             }
         }
@@ -130,18 +130,24 @@ final class XlsxDailyPlanReader
         if ($value instanceof \DateTimeInterface) {
             return $value->format('Y-m-d');
         }
-        if ((\is_int($value) || \is_float($value)) && $value >= 1 && $value <= 2_958_465) {
-            $days = (int) floor((float) $value);
-
-            return (new \DateTimeImmutable('1899-12-30', new \DateTimeZone('Europe/Moscow')))
-                ->modify('+'.$days.' days')->format('Y-m-d');
-        }
         if (!\is_string($value)) {
             return null;
         }
         $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value, new \DateTimeZone('Europe/Moscow'));
 
         return false !== $date && $date->format('Y-m-d') === $value ? $value : null;
+    }
+
+    private function sku(mixed $value): ?string
+    {
+        if (\is_int($value) && $value >= 0) {
+            return (string) $value;
+        }
+        if (\is_float($value) && is_finite($value) && $value >= 0 && $value <= 9_007_199_254_740_991 && floor($value) === $value) {
+            return number_format($value, 0, '.', '');
+        }
+
+        return \is_string($value) ? $value : null;
     }
 
     private function quantity(mixed $value): ?int
