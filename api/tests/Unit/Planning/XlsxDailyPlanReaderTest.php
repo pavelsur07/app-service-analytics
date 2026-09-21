@@ -62,10 +62,11 @@ final class XlsxDailyPlanReaderTest extends TestCase
     {
         $formula = $this->xlsx([
             Row::fromValues(['SKU', 'Дата', 'План, шт.']),
-            new Row([new FormulaCell('"SKU-1"'), ...Row::fromValues(['2026-09-22', 2])->cells]),
+            new Row([...Row::fromValues(['UNKNOWN', 'invalid-date'])->cells, new FormulaCell('1+1')]),
         ]);
         $formulaResult = (new XlsxDailyPlanReader())->read($formula);
-        self::assertSame('formula_forbidden', $formulaResult->issues[0]->code);
+        self::assertSame(['formula_forbidden', 'date_invalid', 'quantity_invalid'], array_map(static fn ($issue): string => $issue->code, $formulaResult->issues));
+        self::assertSame('UNKNOWN', $formulaResult->skuReferences[0]->marketplaceSku);
 
         $secondSheet = $this->xlsx([Row::fromValues(['SKU', 'Дата', 'План, шт.'])], true);
         $sheetResult = (new XlsxDailyPlanReader())->read($secondSheet);
@@ -137,6 +138,7 @@ final class XlsxDailyPlanReaderTest extends TestCase
         $writer = new Writer();
         $writer->openToFile($file);
         $writer->addRow(Row::fromValues(['SKU', 'Дата', 'План, шт.']));
+        $writer->addRow(Row::fromValues([]));
         for ($row = 1; $row < XlsxDailyPlanReader::MAX_ROWS; ++$row) {
             $writer->addRow(Row::fromValues(['SKU-'.$row, '2026-09-22', 1]));
         }
@@ -146,7 +148,7 @@ final class XlsxDailyPlanReaderTest extends TestCase
         $result = (new XlsxDailyPlanReader())->read($file);
 
         self::assertSame('date_invalid', $result->issues[0]->code);
-        self::assertSame(XlsxDailyPlanReader::MAX_ROWS + 1, $result->issues[0]->rowNumber);
+        self::assertSame(XlsxDailyPlanReader::MAX_ROWS + 2, $result->issues[0]->rowNumber);
     }
 
     /** @param list<Row> $rows */

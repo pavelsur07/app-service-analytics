@@ -14,6 +14,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 final readonly class IngestionPlanningFacade
 {
+    private const int MAX_KNOWN_MARKETPLACE_SKUS = 10_000;
+
     public function __construct(
         private PlanningOrderCohortsQuery $cohorts,
         private PlanningCohortProvenanceQuery $provenance,
@@ -228,7 +230,7 @@ final readonly class IngestionPlanningFacade
      */
     public function knownMarketplaceSkus(string $companyId, string $marketplaceAccountId, array $marketplaceSkus): array
     {
-        if (\count($marketplaceSkus) > 200) {
+        if (\count($marketplaceSkus) > self::MAX_KNOWN_MARKETPLACE_SKUS) {
             throw new \InvalidArgumentException('Too many marketplace SKUs.');
         }
 
@@ -252,7 +254,7 @@ final readonly class IngestionPlanningFacade
      */
     public function knownMarketplaceSkuDetails(string $companyId, string $marketplaceAccountId, array $marketplaceSkus): array
     {
-        if (\count($marketplaceSkus) > 200) {
+        if (\count($marketplaceSkus) > self::MAX_KNOWN_MARKETPLACE_SKUS) {
             throw new \InvalidArgumentException('Too many marketplace SKUs.');
         }
         if ([] === $marketplaceSkus) {

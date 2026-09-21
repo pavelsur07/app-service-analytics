@@ -53,10 +53,6 @@ final class XlsxDailyPlanReader
         $rowNumber = 0;
         foreach ($sourceRows as $sourceRow) {
             ++$rowNumber;
-            if ($rowNumber > self::MAX_ROWS + 1) {
-                $issues[] = new PlanImportIssue($rowNumber, 'row_limit_exceeded', 'В файле больше 10 000 строк.');
-                break;
-            }
             if (1 === $rowNumber) {
                 if (['SKU', 'Дата', 'План, шт.'] !== array_values($sourceRow->toArray())) {
                     return new XlsxDailyPlanReadResult([], [new PlanImportIssue(1, 'headers_invalid', 'Ожидаются колонки SKU, Дата, План, шт.')]);
@@ -72,16 +68,17 @@ final class XlsxDailyPlanReader
                 break;
             }
 
-            if ($this->containsFormula($sourceRow)) {
-                $issues[] = new PlanImportIssue($rowNumber, 'formula_forbidden', 'Формулы в обязательных ячейках запрещены.');
-                continue;
-            }
-
             $values = array_values($sourceRow->toArray());
+            $rowIssues = [];
+            foreach (\array_slice($sourceRow->cells, 0, 3, true) as $index => $cell) {
+                if ($cell instanceof FormulaCell) {
+                    $values[$index] = null;
+                    $rowIssues[] = new PlanImportIssue($rowNumber, 'formula_forbidden', 'Формулы в обязательных ячейках запрещены.');
+                }
+            }
             $sku = $values[0] ?? null;
             $date = $values[1] ?? null;
             $quantity = $values[2] ?? null;
-            $rowIssues = [];
 
             if (!\is_string($sku) || !DailyPlan::isMarketplaceSkuValid($sku)) {
                 $rowIssues[] = new PlanImportIssue($rowNumber, 'sku_invalid', 'SKU не задан или некорректен.');
@@ -120,17 +117,6 @@ final class XlsxDailyPlanReader
         }
 
         return new XlsxDailyPlanReadResult($rows, $issues, $skuReferences);
-    }
-
-    private function containsFormula(Row $row): bool
-    {
-        foreach (\array_slice($row->cells, 0, 3) as $cell) {
-            if ($cell instanceof FormulaCell) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function date(mixed $value): ?string

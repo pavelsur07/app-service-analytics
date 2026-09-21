@@ -121,10 +121,7 @@ final readonly class ApplyPlanImportAction
     private function allSkusStillKnown(string $companyId, string $marketplaceAccountId, array $rows): bool
     {
         $skus = array_values(array_unique(array_map(static fn (PlanImportPreviewRow $row): string => $row->marketplaceSku, $rows)));
-        $known = [];
-        foreach (array_chunk($skus, 200) as $chunk) {
-            array_push($known, ...$this->ingestion->knownMarketplaceSkus($companyId, $marketplaceAccountId, $chunk));
-        }
+        $known = $this->ingestion->knownMarketplaceSkus($companyId, $marketplaceAccountId, $skus);
         sort($known);
         sort($skus);
 

@@ -33,11 +33,8 @@ final readonly class PreviewPlanImportAction
 
         $read = $this->reader->read($path);
         $issues = $read->issues;
-        $details = [];
         $uniqueSkus = array_values(array_unique(array_map(static fn ($reference): string => $reference->marketplaceSku, $read->skuReferences)));
-        foreach (array_chunk($uniqueSkus, 200) as $chunk) {
-            array_push($details, ...$this->ingestion->knownMarketplaceSkuDetails($companyId, $marketplaceAccountId, $chunk));
-        }
+        $details = $this->ingestion->knownMarketplaceSkuDetails($companyId, $marketplaceAccountId, $uniqueSkus);
         $known = [];
         foreach ($details as $detail) {
             $known[$detail->marketplaceSku] = $detail->offerId;
