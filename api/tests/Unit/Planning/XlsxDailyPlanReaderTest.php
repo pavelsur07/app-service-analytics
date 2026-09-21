@@ -390,6 +390,19 @@ final class XlsxDailyPlanReaderTest extends TestCase
         self::assertTrue($zip->addFile($bombSource, 'xl/bomb.xml'));
         $zip->close();
         self::assertSame('archive_limit_exceeded', (new XlsxDailyPlanReader())->read($bomb)->issues[0]->code);
+
+        $manyEntries = tempnam(sys_get_temp_dir(), 'planning-many-entries-');
+        self::assertIsString($manyEntries);
+        $this->files[] = $manyEntries;
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($manyEntries, \ZipArchive::OVERWRITE));
+        for ($entry = 0; $entry <= XlsxDailyPlanReader::MAX_ARCHIVE_ENTRIES; ++$entry) {
+            if (!$zip->addFromString('empty/'.$entry, '')) {
+                self::fail('Не удалось подготовить ZIP с большим числом элементов.');
+            }
+        }
+        $zip->close();
+        self::assertSame('archive_limit_exceeded', (new XlsxDailyPlanReader())->read($manyEntries)->issues[0]->code);
     }
 
     public function testReportsInvalidLastRowAtMaximumAllowedSize(): void

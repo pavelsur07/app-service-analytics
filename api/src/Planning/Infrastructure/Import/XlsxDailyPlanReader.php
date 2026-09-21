@@ -8,7 +8,6 @@ use App\Planning\Domain\DailyPlan;
 use App\Planning\Domain\PlanImportIssue;
 use OpenSpout\Common\Entity\Cell\FormulaCell;
 use OpenSpout\Common\Entity\Row;
-use OpenSpout\Common\Exception\OpenSpoutException;
 use OpenSpout\Reader\XLSX\Options;
 use OpenSpout\Reader\XLSX\Reader;
 
@@ -17,6 +16,7 @@ final class XlsxDailyPlanReader
     public const int MAX_FILE_BYTES = 10_000_000;
     public const int MAX_ROWS = 10_000;
     public const int MAX_WORKSHEET_ROW = 50_000;
+    public const int MAX_ARCHIVE_ENTRIES = 1_000;
     private const int MAX_WORKSHEET_COLUMN = 16;
     private const int MAX_UNCOMPRESSED_BYTES = 50_000_000;
     private const string SPREADSHEET_NAMESPACE = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
@@ -38,10 +38,15 @@ final class XlsxDailyPlanReader
             }
 
             return $this->normalize($sheets[0]->getRowIterator());
-        } catch (OpenSpoutException) {
+        } catch (\Throwable) {
             return new XlsxDailyPlanReadResult([], [new PlanImportIssue(null, 'xlsx_invalid', 'Файл XLSX не удалось прочитать.')]);
         } finally {
-            $reader->close();
+            try {
+                $reader->close();
+            } catch (\Throwable) {
+                // The untrusted document may leave the vendor reader only
+                // partially initialized. There is no useful recovery here.
+            }
         }
     }
 
@@ -195,6 +200,9 @@ final class XlsxDailyPlanReader
         }
         $archiveEntries = [];
         try {
+            if ($zip->numFiles > self::MAX_ARCHIVE_ENTRIES) {
+                return new PlanImportIssue(null, 'archive_limit_exceeded', 'XLSX содержит слишком много файлов.');
+            }
             $total = 0;
             for ($index = 0; $index < $zip->numFiles; ++$index) {
                 $stat = $zip->statIndex($index);
@@ -204,6 +212,9 @@ final class XlsxDailyPlanReader
                 $entryName = $stat['name'] ?? null;
                 if (!\is_string($entryName)) {
                     return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX повреждена.');
+                }
+                if (isset($archiveEntries[$entryName])) {
+                    return new PlanImportIssue(null, 'xlsx_invalid', 'Структура XLSX содержит повторяющиеся файлы.');
                 }
                 $archiveEntries[$entryName] = true;
                 if (str_ends_with($entryName, '/')) {
