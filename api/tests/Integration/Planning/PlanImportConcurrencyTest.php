@@ -31,6 +31,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 #[SkipDatabaseRollback]
@@ -82,6 +83,47 @@ final class PlanImportConcurrencyTest extends KernelTestCase
             }
             $competing->rollBack();
             $competing->close();
+            $this->cleanup($company, $actor);
+        }
+    }
+
+    public function testFlushConflictInsideCallerTransactionIsRethrownWithoutPartialData(): void
+    {
+        [$company, $account, $actor, $preview] = $this->fixture();
+        $connection = $this->connection();
+        $connection->beginTransaction();
+        $connection->executeStatement(<<<'SQL'
+            CREATE FUNCTION pg_temp.raise_planning_unique_violation() RETURNS trigger
+            LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'forced planning import conflict' USING ERRCODE = '23505';
+            END
+            $$
+            SQL);
+        $connection->executeStatement(<<<'SQL'
+            CREATE TRIGGER planning_import_force_unique_violation
+            BEFORE INSERT ON planning_daily_plan
+            FOR EACH ROW EXECUTE FUNCTION pg_temp.raise_planning_unique_violation()
+            SQL);
+
+        try {
+            try {
+                $this->apply()($company->id()->toRfc4122(), $account->id()->toRfc4122(), $preview->id()->toRfc4122(), $actor->id()->toRfc4122());
+                self::fail('Конфликт flush во внешней транзакции должен быть проброшен владельцу транзакции.');
+            } catch (DriverException $exception) {
+                self::assertSame('23505', $exception->getSQLState());
+            }
+
+            self::assertFalse($this->entityManager()->isOpen());
+            self::assertTrue($connection->isTransactionActive());
+            self::assertSame(PlanImportPreview::STATUS_READY, $connection->fetchOne('SELECT status FROM planning_import_preview WHERE id = ?', [$preview->id()->toRfc4122()]));
+            self::assertSame(0, $this->dbCount($connection->fetchOne('SELECT COUNT(*) FROM planning_daily_plan WHERE company_id = ?', [$company->id()->toRfc4122()])));
+            self::assertSame(0, $this->dbCount($connection->fetchOne('SELECT COUNT(*) FROM planning_plan_change WHERE company_id = ?', [$company->id()->toRfc4122()])));
+        } finally {
+            while ($connection->getTransactionNestingLevel() > 0) {
+                $connection->rollBack();
+            }
+            $this->managers()->resetManager();
             $this->cleanup($company, $actor);
         }
     }
@@ -194,6 +236,14 @@ final class PlanImportConcurrencyTest extends KernelTestCase
     private function connection(): Connection
     {
         return $this->entityManager()->getConnection();
+    }
+
+    private function managers(): ManagerRegistry
+    {
+        /** @var ManagerRegistry $managers */
+        $managers = self::getContainer()->get(ManagerRegistry::class);
+
+        return $managers;
     }
 
     private function companies(): CompanyRepository

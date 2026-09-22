@@ -20,16 +20,16 @@ final readonly class PlanningOutcomeQueryGuard
      *
      * @return T
      */
-    public function read(callable $read, string $statementTimeout = '5s'): mixed
+    public function read(callable $read, string $statementTimeout = '5s', bool $tuneAnalyticsPlanner = true): mixed
     {
         $native = $this->connection->getNativeConnection();
         if ($this->connection->isTransactionActive() || ($native instanceof \PDO && $native->inTransaction())) {
-            return $this->withinSavepoint($read, $statementTimeout);
+            return $this->withinSavepoint($read, $statementTimeout, $tuneAnalyticsPlanner);
         }
 
-        return $this->connection->transactional(static function (Connection $connection) use ($read, $statementTimeout): mixed {
+        return $this->connection->transactional(static function (Connection $connection) use ($read, $statementTimeout, $tuneAnalyticsPlanner): mixed {
             $connection->executeStatement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
-            self::configure($connection, $statementTimeout);
+            self::configure($connection, $statementTimeout, $tuneAnalyticsPlanner);
 
             return $read();
         });
@@ -70,11 +70,11 @@ final readonly class PlanningOutcomeQueryGuard
      *
      * @return T
      */
-    private function withinSavepoint(callable $work, string $statementTimeout): mixed
+    private function withinSavepoint(callable $work, string $statementTimeout, bool $tuneAnalyticsPlanner): mixed
     {
         $this->connection->createSavepoint('planning_outcome_guard');
         try {
-            self::configure($this->connection, $statementTimeout);
+            self::configure($this->connection, $statementTimeout, $tuneAnalyticsPlanner);
 
             return $work();
         } finally {
@@ -83,13 +83,15 @@ final readonly class PlanningOutcomeQueryGuard
         }
     }
 
-    private static function configure(Connection $connection, string $statementTimeout): void
+    private static function configure(Connection $connection, string $statementTimeout, bool $tuneAnalyticsPlanner): void
     {
         if (!\in_array($statementTimeout, ['5s', '25s'], true)) {
             throw new \InvalidArgumentException('Некорректный таймаут запроса планирования.');
         }
-        $connection->executeStatement('SET LOCAL jit = off');
-        $connection->executeStatement('SET LOCAL enable_nestloop = off');
+        if ($tuneAnalyticsPlanner) {
+            $connection->executeStatement('SET LOCAL jit = off');
+            $connection->executeStatement('SET LOCAL enable_nestloop = off');
+        }
         $connection->executeStatement("SET LOCAL statement_timeout = '".$statementTimeout."'");
     }
 }
