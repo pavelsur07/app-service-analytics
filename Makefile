@@ -25,7 +25,7 @@ DB_NAME := app
 DB_TEST_NAME := $(DB_NAME)_test
 
 .PHONY: help \
-	init up down down-clear build pull ps logs \
+	init up stop down down-clear build pull ps logs \
 	api-shell api-install api-migrate api-migrate-test api-console \
 	db-wait db-test-create db-test-rebuild db-schema-validate db-rebuild-check \
 	test test-unit test-int test-func test-e2e test-cov \
@@ -48,7 +48,10 @@ init: down-clear build up db-wait api-install front-install front-dev api-migrat
 up: ## запуск контейнеров
 	$(COMPOSE) up -d
 
-down: ## остановка контейнеров
+stop: ## остановка контейнеров текущего проекта без удаления
+	$(COMPOSE) stop
+
+down: ## остановка с удалением контейнеров и сети
 	$(COMPOSE) down
 
 down-clear: ## остановка с удалением томов
