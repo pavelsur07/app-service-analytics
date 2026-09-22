@@ -13,6 +13,7 @@ use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Planning\Application\ApplyPlanImportAction;
+use App\Planning\Application\PlanImportApplyOutcome;
 use App\Planning\Application\SaveDailyPlanAction;
 use App\Planning\Domain\DailyPlanRepository;
 use App\Planning\Domain\PlanImportPreview;
@@ -35,7 +36,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 #[SkipDatabaseRollback]
 final class PlanImportConcurrencyTest extends KernelTestCase
 {
-    public function testSecondApplyWaitsForThePreviewLockHeldByFirstApply(): void
+    public function testSecondApplyReturnsConflictWhenPreviewLockCannotBeAcquired(): void
     {
         [$company, $account, $actor, $preview] = $this->fixture();
         $competing = $this->independentConnection();
@@ -44,13 +45,41 @@ final class PlanImportConcurrencyTest extends KernelTestCase
 
         try {
             $this->connection()->executeStatement("SET lock_timeout = '100ms'");
-            try {
-                $this->apply()($company->id()->toRfc4122(), $account->id()->toRfc4122(), $preview->id()->toRfc4122(), $actor->id()->toRfc4122());
-                self::fail('Второй apply не должен проходить блокировку preview первого apply.');
-            } catch (DriverException $exception) {
-                self::assertStringContainsString('lock timeout', $exception->getMessage());
-            }
+            $result = $this->apply()($company->id()->toRfc4122(), $account->id()->toRfc4122(), $preview->id()->toRfc4122(), $actor->id()->toRfc4122());
+            self::assertSame(PlanImportApplyOutcome::Conflict, $result->outcome);
+            self::assertTrue($this->entityManager()->isOpen());
+            self::assertSame(1, $this->dbCount($this->connection()->fetchOne('SELECT 1')));
+            self::assertSame(PlanImportPreview::STATUS_READY, $this->connection()->fetchOne('SELECT status FROM planning_import_preview WHERE id = ?', [$preview->id()->toRfc4122()]));
+            self::assertSame(0, $this->dbCount($this->connection()->fetchOne('SELECT COUNT(*) FROM planning_daily_plan WHERE company_id = ?', [$company->id()->toRfc4122()])));
+            self::assertSame(0, $this->dbCount($this->connection()->fetchOne('SELECT COUNT(*) FROM planning_plan_change WHERE company_id = ?', [$company->id()->toRfc4122()])));
         } finally {
+            $competing->rollBack();
+            $competing->close();
+            $this->cleanup($company, $actor);
+        }
+    }
+
+    public function testApplyUsesSavepointWhenCallerAlreadyOwnsTransaction(): void
+    {
+        [$company, $account, $actor, $preview] = $this->fixture();
+        $competing = $this->independentConnection();
+        $competing->beginTransaction();
+        $competing->executeQuery('SELECT id FROM planning_import_preview WHERE id = ? FOR UPDATE', [$preview->id()->toRfc4122()]);
+
+        $this->connection()->beginTransaction();
+        try {
+            $this->connection()->executeStatement("SET lock_timeout = '100ms'");
+            $this->connection()->executeStatement("SET statement_timeout = '7s'");
+            $result = $this->apply()($company->id()->toRfc4122(), $account->id()->toRfc4122(), $preview->id()->toRfc4122(), $actor->id()->toRfc4122());
+            self::assertSame(PlanImportApplyOutcome::Conflict, $result->outcome);
+            self::assertTrue($this->connection()->isTransactionActive());
+            self::assertTrue($this->entityManager()->isOpen());
+            self::assertSame('100ms', $this->connection()->fetchOne("SELECT current_setting('lock_timeout')"));
+            self::assertSame('7s', $this->connection()->fetchOne("SELECT current_setting('statement_timeout')"));
+        } finally {
+            while ($this->connection()->getTransactionNestingLevel() > 0) {
+                $this->connection()->rollBack();
+            }
             $competing->rollBack();
             $competing->close();
             $this->cleanup($company, $actor);
@@ -130,6 +159,13 @@ final class PlanImportConcurrencyTest extends KernelTestCase
         }
         $connection->executeStatement('DELETE FROM company WHERE id = ?', [$companyId]);
         $connection->executeStatement('DELETE FROM "user" WHERE id = ?', [$actor->id()->toRfc4122()]);
+    }
+
+    private function dbCount(mixed $value): int
+    {
+        self::assertIsInt($value);
+
+        return $value;
     }
 
     private function independentConnection(): Connection

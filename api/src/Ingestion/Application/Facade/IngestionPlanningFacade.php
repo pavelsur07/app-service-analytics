@@ -238,7 +238,7 @@ final readonly class IngestionPlanningFacade
         if ([] === $marketplaceSkus) {
             return [];
         }
-        $rows = $this->skus->known($companyId, $marketplaceAccountId, $marketplaceSkus)->executeQuery()->fetchFirstColumn();
+        $rows = $this->queryGuard->read(fn (): array => $this->skus->known($companyId, $marketplaceAccountId, $marketplaceSkus)->executeQuery()->fetchFirstColumn(), '25s');
         foreach ($rows as $row) {
             if (!\is_string($row)) {
                 throw new \UnexpectedValueException('Marketplace SKU query returned a non-string value.');
@@ -287,7 +287,7 @@ final readonly class IngestionPlanningFacade
             return [];
         }
         /** @var list<array{marketplace_sku: string, offer_id: ?string, name: ?string}> $rows */
-        $rows = $this->skus->knownDetails($companyId, $marketplaceAccountId, $marketplaceSkus)->executeQuery()->fetchAllAssociative();
+        $rows = $this->queryGuard->read(fn (): array => $this->skus->knownDetails($companyId, $marketplaceAccountId, $marketplaceSkus)->executeQuery()->fetchAllAssociative(), '25s');
 
         return array_map(static fn (array $row): MarketplaceSku => new MarketplaceSku($row['marketplace_sku'], $row['offer_id'], $row['name']), $rows);
     }

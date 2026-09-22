@@ -20,16 +20,16 @@ final readonly class PlanningOutcomeQueryGuard
      *
      * @return T
      */
-    public function read(callable $read): mixed
+    public function read(callable $read, string $statementTimeout = '5s'): mixed
     {
         $native = $this->connection->getNativeConnection();
         if ($this->connection->isTransactionActive() || ($native instanceof \PDO && $native->inTransaction())) {
-            return $this->withinSavepoint($read);
+            return $this->withinSavepoint($read, $statementTimeout);
         }
 
-        return $this->connection->transactional(static function (Connection $connection) use ($read): mixed {
+        return $this->connection->transactional(static function (Connection $connection) use ($read, $statementTimeout): mixed {
             $connection->executeStatement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
-            self::configure($connection);
+            self::configure($connection, $statementTimeout);
 
             return $read();
         });
@@ -70,11 +70,11 @@ final readonly class PlanningOutcomeQueryGuard
      *
      * @return T
      */
-    private function withinSavepoint(callable $work): mixed
+    private function withinSavepoint(callable $work, string $statementTimeout): mixed
     {
         $this->connection->createSavepoint('planning_outcome_guard');
         try {
-            self::configure($this->connection);
+            self::configure($this->connection, $statementTimeout);
 
             return $work();
         } finally {
@@ -83,10 +83,13 @@ final readonly class PlanningOutcomeQueryGuard
         }
     }
 
-    private static function configure(Connection $connection): void
+    private static function configure(Connection $connection, string $statementTimeout): void
     {
+        if (!\in_array($statementTimeout, ['5s', '25s'], true)) {
+            throw new \InvalidArgumentException('Некорректный таймаут запроса планирования.');
+        }
         $connection->executeStatement('SET LOCAL jit = off');
         $connection->executeStatement('SET LOCAL enable_nestloop = off');
-        $connection->executeStatement("SET LOCAL statement_timeout = '5s'");
+        $connection->executeStatement("SET LOCAL statement_timeout = '".$statementTimeout."'");
     }
 }

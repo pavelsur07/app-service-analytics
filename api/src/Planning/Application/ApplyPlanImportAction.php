@@ -11,20 +11,24 @@ use App\Planning\Domain\PlanChange;
 use App\Planning\Domain\PlanImportPreview;
 use App\Planning\Domain\PlanImportPreviewRow;
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\Exception\DeadlockException;
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\OptimisticLockException;
+use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Uid\Uuid;
 
 final readonly class ApplyPlanImportAction
 {
+    private const string APPLY_STATEMENT_TIMEOUT = '25s';
+    private const string APPLY_LOCK_TIMEOUT = '1s';
+
     public function __construct(
         private IdentityAccountScopeFacade $accounts,
         private IngestionPlanningFacade $ingestion,
         private EntityManagerInterface $entityManager,
         private Connection $connection,
+        private ManagerRegistry $managers,
     ) {
     }
 
@@ -34,76 +38,175 @@ final readonly class ApplyPlanImportAction
             return new ApplyPlanImportResult(PlanImportApplyOutcome::AccountNotFound);
         }
 
-        try {
-            /** @var ApplyPlanImportResult $result */
-            $result = $this->entityManager->wrapInTransaction(function () use ($companyId, $marketplaceAccountId, $previewId, $actorId): ApplyPlanImportResult {
-                $preview = $this->lockedPreview($companyId, $marketplaceAccountId, $previewId);
-                if (null === $preview || $preview->actorId()->toRfc4122() !== $actorId) {
-                    return new ApplyPlanImportResult(PlanImportApplyOutcome::NotFound);
-                }
-                if (PlanImportPreview::STATUS_APPLIED === $preview->status()) {
-                    return new ApplyPlanImportResult(PlanImportApplyOutcome::Applied, $preview->result());
-                }
-                if ($preview->isExpired(new \DateTimeImmutable())) {
-                    return new ApplyPlanImportResult(PlanImportApplyOutcome::NotFound);
-                }
-                $rows = $preview->rows();
-                if (!$this->allSkusStillKnown($companyId, $marketplaceAccountId, $rows)) {
+        $work = function () use ($companyId, $marketplaceAccountId, $previewId, $actorId): ApplyPlanImportResult {
+            $preview = $this->lockedPreview($companyId, $marketplaceAccountId, $previewId);
+            if (null === $preview || $preview->actorId()->toRfc4122() !== $actorId) {
+                return new ApplyPlanImportResult(PlanImportApplyOutcome::NotFound);
+            }
+            if (PlanImportPreview::STATUS_APPLIED === $preview->status()) {
+                return new ApplyPlanImportResult(PlanImportApplyOutcome::Applied, $preview->result());
+            }
+            if ($preview->isExpired(new \DateTimeImmutable())) {
+                return new ApplyPlanImportResult(PlanImportApplyOutcome::NotFound);
+            }
+            $rows = $preview->rows();
+            if (!$this->allSkusStillKnown($companyId, $marketplaceAccountId, $rows)) {
+                return new ApplyPlanImportResult(PlanImportApplyOutcome::Conflict);
+            }
+            $plans = $this->lockedPlans($companyId, $marketplaceAccountId, $rows);
+            foreach ($rows as $row) {
+                $current = $plans[self::key($row->marketplaceSku, $row->businessDate)] ?? null;
+                if ((null === $current && 0 !== $row->expectedVersion) || (null !== $current && $current->version() !== $row->expectedVersion)) {
                     return new ApplyPlanImportResult(PlanImportApplyOutcome::Conflict);
                 }
-                $plans = $this->lockedPlans($companyId, $marketplaceAccountId, $rows);
-                foreach ($rows as $row) {
-                    $current = $plans[self::key($row->marketplaceSku, $row->businessDate)] ?? null;
-                    if ((null === $current && 0 !== $row->expectedVersion) || (null !== $current && $current->version() !== $row->expectedVersion)) {
-                        return new ApplyPlanImportResult(PlanImportApplyOutcome::Conflict);
-                    }
-                }
+            }
 
-                $created = 0;
-                $updated = 0;
-                $unchanged = 0;
-                $pending = [];
-                $actor = Uuid::fromString($actorId);
-                $now = new \DateTimeImmutable();
-                foreach ($rows as $row) {
-                    $key = self::key($row->marketplaceSku, $row->businessDate);
-                    $current = $plans[$key] ?? null;
-                    if (null === $current) {
-                        $plan = DailyPlan::create(
-                            Uuid::fromString($companyId), Uuid::fromString($marketplaceAccountId), $row->marketplaceSku,
-                            new \DateTimeImmutable($row->businessDate), $row->quantity, $actor, $now,
-                        );
-                        $this->entityManager->persist($plan);
-                        $change = PlanChange::created($plan);
-                        $this->entityManager->persist($change);
-                        array_push($pending, $plan, $change);
-                        ++$created;
-                    } elseif ($current->quantity() === $row->quantity) {
-                        ++$unchanged;
-                    } else {
-                        $oldQuantity = $current->quantity();
-                        $oldVersion = $current->version();
-                        $current->changeQuantity($row->quantity, $actor, $now);
-                        $change = PlanChange::changed($current, $oldQuantity, $oldVersion);
-                        $this->entityManager->persist($change);
-                        array_push($pending, $current, $change);
-                        ++$updated;
-                    }
-                    if (\count($pending) >= 400) {
-                        $this->flushAndDetach($pending);
-                    }
+            $created = 0;
+            $updated = 0;
+            $unchanged = 0;
+            $pending = [];
+            $actor = Uuid::fromString($actorId);
+            $now = new \DateTimeImmutable();
+            foreach ($rows as $row) {
+                $key = self::key($row->marketplaceSku, $row->businessDate);
+                $current = $plans[$key] ?? null;
+                if (null === $current) {
+                    $plan = DailyPlan::create(
+                        Uuid::fromString($companyId), Uuid::fromString($marketplaceAccountId), $row->marketplaceSku,
+                        new \DateTimeImmutable($row->businessDate), $row->quantity, $actor, $now,
+                    );
+                    $this->entityManager->persist($plan);
+                    $change = PlanChange::created($plan);
+                    $this->entityManager->persist($change);
+                    array_push($pending, $plan, $change);
+                    ++$created;
+                } elseif ($current->quantity() === $row->quantity) {
+                    ++$unchanged;
+                } else {
+                    $oldQuantity = $current->quantity();
+                    $oldVersion = $current->version();
+                    $current->changeQuantity($row->quantity, $actor, $now);
+                    $change = PlanChange::changed($current, $oldQuantity, $oldVersion);
+                    $this->entityManager->persist($change);
+                    array_push($pending, $current, $change);
+                    ++$updated;
                 }
-                $this->flushAndDetach($pending);
-                $summary = ['created' => $created, 'updated' => $updated, 'unchanged' => $unchanged];
-                $preview->markApplied($summary, $now);
+                if (\count($pending) >= 400) {
+                    $this->flushAndDetach($pending);
+                }
+            }
+            $this->flushAndDetach($pending);
+            $summary = ['created' => $created, 'updated' => $updated, 'unchanged' => $unchanged];
+            $preview->markApplied($summary, $now);
 
-                return new ApplyPlanImportResult(PlanImportApplyOutcome::Applied, $summary);
-            });
+            return new ApplyPlanImportResult(PlanImportApplyOutcome::Applied, $summary);
+        };
+
+        $inOuterTransaction = $this->connection->isTransactionActive();
+        if ($inOuterTransaction) {
+            return $this->runInExistingTransaction($work);
+        }
+
+        $settings = $this->captureApplyTimeouts();
+        $this->connection->beginTransaction();
+        try {
+            $this->configureApplyTimeouts();
+            $result = $work();
+            $this->entityManager->flush();
+            $this->restoreApplyTimeouts($settings);
+            $this->connection->commit();
 
             return $result;
-        } catch (OptimisticLockException|DeadlockException|UniqueConstraintViolationException) {
-            return new ApplyPlanImportResult(PlanImportApplyOutcome::Conflict);
+        } catch (\Throwable $failure) {
+            $this->rollbackAfterFailure();
+            if ($this->isRetryableFailure($failure)) {
+                return new ApplyPlanImportResult(PlanImportApplyOutcome::Conflict);
+            }
+
+            throw $failure;
         }
+    }
+
+    /** @param \Closure(): ApplyPlanImportResult $work */
+    private function runInExistingTransaction(\Closure $work): ApplyPlanImportResult
+    {
+        $savepoint = 'planning_apply';
+        $settings = $this->connection->fetchAssociative("SELECT current_setting('statement_timeout') AS statement_timeout, current_setting('lock_timeout') AS lock_timeout");
+        if (!\is_array($settings) || !\is_string($settings['statement_timeout'] ?? null) || !\is_string($settings['lock_timeout'] ?? null)) {
+            throw new \UnexpectedValueException('Не удалось сохранить настройки таймаутов apply.');
+        }
+        $this->connection->createSavepoint($savepoint);
+        try {
+            $this->configureApplyTimeouts();
+            $result = $work();
+            $this->entityManager->flush();
+            $this->restoreApplyTimeouts($settings);
+            $this->connection->releaseSavepoint($savepoint);
+
+            return $result;
+        } catch (\Throwable $failure) {
+            $this->connection->rollbackSavepoint($savepoint);
+            $this->connection->releaseSavepoint($savepoint);
+
+            if ($this->isRetryableFailure($failure)) {
+                // The surrounding transaction owns the caller's UnitOfWork.
+                // A flush failure closes the shared manager, so it must be
+                // propagated and the transaction owner must roll back. A
+                // lock conflict before flush can safely become Conflict.
+                if (!$this->entityManager->isOpen()) {
+                    throw $failure;
+                }
+
+                return new ApplyPlanImportResult(PlanImportApplyOutcome::Conflict);
+            }
+
+            throw $failure;
+        }
+    }
+
+    private function configureApplyTimeouts(): void
+    {
+        $this->connection->executeStatement("SET LOCAL statement_timeout = '".self::APPLY_STATEMENT_TIMEOUT."'");
+        $this->connection->executeStatement("SET LOCAL lock_timeout = '".self::APPLY_LOCK_TIMEOUT."'");
+    }
+
+    /** @return array{statement_timeout: string, lock_timeout: string} */
+    private function captureApplyTimeouts(): array
+    {
+        $settings = $this->connection->fetchAssociative("SELECT current_setting('statement_timeout') AS statement_timeout, current_setting('lock_timeout') AS lock_timeout");
+        if (!\is_array($settings) || !\is_string($settings['statement_timeout'] ?? null) || !\is_string($settings['lock_timeout'] ?? null)) {
+            throw new \UnexpectedValueException('Не удалось сохранить настройки таймаутов apply.');
+        }
+
+        return ['statement_timeout' => $settings['statement_timeout'], 'lock_timeout' => $settings['lock_timeout']];
+    }
+
+    /** @param array{statement_timeout: string, lock_timeout: string} $settings */
+    private function restoreApplyTimeouts(array $settings): void
+    {
+        $this->connection->executeStatement("SET LOCAL statement_timeout = '".$settings['statement_timeout']."'");
+        $this->connection->executeStatement("SET LOCAL lock_timeout = '".$settings['lock_timeout']."'");
+    }
+
+    private function rollbackAfterFailure(): void
+    {
+        if ($this->connection->isTransactionActive()) {
+            $this->connection->rollBack();
+        }
+        $this->recoverEntityManager();
+    }
+
+    private function recoverEntityManager(): void
+    {
+        if (!$this->entityManager->isOpen()) {
+            $this->managers->resetManager();
+        }
+    }
+
+    private function isRetryableFailure(\Throwable $failure): bool
+    {
+        return $failure instanceof OptimisticLockException
+            || ($failure instanceof DriverException && \in_array($failure->getSQLState(), ['23505', '40001', '40P01', '55P03', '57014'], true));
     }
 
     private function lockedPreview(string $companyId, string $marketplaceAccountId, string $previewId): ?PlanImportPreview
@@ -158,7 +261,13 @@ final readonly class ApplyPlanImportAction
         }
         /** @var list<DailyPlan> $entities */
         $entities = $this->entityManager->createQueryBuilder()->select('plan')->from(DailyPlan::class, 'plan')
-            ->where('plan.id IN (:ids)')->setParameter('ids', $ids)->getQuery()->getResult();
+            ->where('plan.id IN (:ids)')
+            ->andWhere('plan.companyId = :company')
+            ->andWhere('plan.marketplaceAccountId = :account')
+            ->setParameter('ids', $ids)
+            ->setParameter('company', $companyId)
+            ->setParameter('account', $marketplaceAccountId)
+            ->getQuery()->getResult();
         $plans = [];
         foreach ($entities as $plan) {
             if (!$plan instanceof DailyPlan) {
