@@ -1144,7 +1144,8 @@ ADR выбираются явно параметром ADR или по ссыл�
 ```
 # Окружение
 make init              полный подъём с нуля: down-clear, build, up, install, migrate
-make up / make down    запуск и остановка
+make up / make stop    запуск и остановка без удаления контейнеров
+make down              остановка с удалением контейнеров и сети
 make down-clear        остановка с удалением томов
 make build / make pull сборка и обновление образов
 make ps / make logs    состояние и журналы
