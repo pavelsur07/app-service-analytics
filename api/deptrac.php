@@ -224,7 +224,7 @@ return static function (DeptracConfig $config): void {
                     must: [DirectoryConfig::create('src/Ingestion/Infrastructure/.*')],
                     mustNot: [
                         ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\RecentlyIngestedAccountsQuery$'),
-                        ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\AllCompaniesRawObjects(SinceQuery|Row)$'),
+                        ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\AllCompaniesRawObject(sSinceQuery|Row)$'),
                         DirectoryConfig::create('src/Ingestion/Infrastructure/Storage/.*'),
                     ],
                 ),
@@ -250,7 +250,7 @@ return static function (DeptracConfig $config): void {
             // (CLAUDE.md §1). Узкий слой на класс: запрос виден только
             // команде сверки, команда — единственная, кому он выдан.
             $ingestionRawVerificationQuery = Layer::withName('IngestionRawVerificationQuery')->collectors(
-                ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\AllCompaniesRawObjects(SinceQuery|Row)$'),
+                ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\AllCompaniesRawObject(sSinceQuery|Row)$'),
             ),
             $ingestionRawVerificationCommand = Layer::withName('IngestionRawVerificationCommand')->collectors(
                 ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\VerifyRawStorageCommand$'),
