@@ -279,6 +279,7 @@ Ingestion дополнительно:
 | Сценарий | `Infrastructure/Query` | `Ui/Response` |
 |---|---|---|
 | Выкуп (`Buyout`) | `Buyout*`, `UnclassifiedOzonBuyout*`, `OzonPostingRawHistory*` | `Buyout*` |
+| Юнит-экономика (`UnitEconomics`) | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |
 
 ```
 Ingestion/Infrastructure/Connector/

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Query;
+namespace App\Ingestion\Infrastructure\Query\UnitEconomics;
 
 /**
  * Курсор страницы отчёта: пара «значение сортировки, артикул» вместе

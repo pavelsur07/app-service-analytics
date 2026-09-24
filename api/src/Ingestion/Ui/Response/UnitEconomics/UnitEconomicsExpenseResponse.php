@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Ui\Response;
+namespace App\Ingestion\Ui\Response\UnitEconomics;
 
 /**
  * Расход одного типа. Денежная величина — минорные единицы (ADR-004),

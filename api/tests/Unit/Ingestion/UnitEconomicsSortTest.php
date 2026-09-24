@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Ingestion;
 
-use App\Ingestion\Infrastructure\Query\UnitEconomicsSkuRow;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsSort;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsSkuRow;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsSort;
 use PHPUnit\Framework\TestCase;
 
 final class UnitEconomicsSortTest extends TestCase

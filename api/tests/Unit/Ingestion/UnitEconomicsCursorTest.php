@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Ingestion;
 
-use App\Ingestion\Infrastructure\Query\UnitEconomicsCursor;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsDirection;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsSort;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsCursor;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsDirection;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsSort;
 use PHPUnit\Framework\TestCase;
 
 final class UnitEconomicsCursorTest extends TestCase
