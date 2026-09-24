@@ -101,7 +101,13 @@ CLIENT_SECRET=''
 
 # Разрешённые пары «метод путь» — всё, что скрипт вообще может вызвать.
 # Путь сверяется без строки запроса, целиком от начала до конца.
+# grep сверяет построчно, поэтому путь с переводом строки или другим
+# управляющим символом отклоняется раньше: иначе хвост после перевода
+# строки прошёл бы мимо проверки.
 allowed() {
+    case "$2" in
+        *[![:print:]]*) return 1 ;;
+    esac
     printf '%s %s\n' "$1" "${2%%\?*}" | grep -Eqx \
         -e 'POST /api/client/token' \
         -e 'GET /api/client/campaign' \
@@ -329,9 +335,11 @@ probe POST "statistics-products-sku-$YESTERDAY" \
 # строго по очереди: заказать -> дождаться -> скачать -> следующий.
 report_uuid() {
     python3 - "$1" <<'PYEOF'
-import json, sys
+import json, re, sys
 data = json.load(open(sys.argv[1]))
-print(data.get('UUID') or data.get('uuid') or '')
+value = str(data.get('UUID') or data.get('uuid') or '')
+# UUID идёт в путь и в строку запроса: принимается только точная форма.
+print(value if re.fullmatch(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', value) else '')
 PYEOF
 }
 
