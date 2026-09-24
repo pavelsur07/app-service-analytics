@@ -44,7 +44,10 @@ DIR=${OZON_PERFORMANCE_FIXTURE_DIR:-$ROOT/api/tests/Fixtures/Marketplace/ozon/pe
 BASE=${OZON_PERFORMANCE_FIXTURE_BASE:-https://api-performance.ozon.ru}
 WORK=$(mktemp -d)
 chmod 700 "$WORK"
-trap 'rm -rf "$WORK"' EXIT
+# dash выполняет ловушку EXIT только при обычном выходе. Сигнал поэтому
+# переводится в exit: иначе Ctrl-C оставил бы на диске секрет и токен.
+trap 'stty echo 2>/dev/null || true; rm -rf "$WORK"' EXIT
+trap 'exit 130' INT TERM HUP
 mkdir -p "$DIR"
 # Только в пустой каталог: файлы прошлого прогона с другими окнами
 # остались бы рядом с новыми, и фикстуры смешались бы незаметно.
@@ -137,7 +140,9 @@ call() {
         exit 2
     fi
 
-    set -- -sS -o "$out" -D "$out.headers" -w '%{http_code}' -X "$method" \
+    # Потолок на запрос: зависшая сеть не должна держать токен на диске
+    # сколь угодно долго.
+    set -- -sS --connect-timeout 15 --max-time 120 -o "$out" -D "$out.headers" -w '%{http_code}' -X "$method" \
         -H 'Accept: application/json' -H "@$WORK/auth.header"
     if [ -n "$body" ]; then
         printf '%s' "$body" > "$WORK/body.json"

@@ -1,7 +1,14 @@
 # Ozon Performance API: разведка перед ADR-026
 
 Снято `bin/ozon-performance-fixture.sh` на кабинете первого клиента.
-Два прогона — 2026-09-24. Фикстурами считаются только файлы второго прогона (окна от 2026-08-25 и `products/sku` за 2026-09-23). Файлы первого (`*-2026-09-17*`, кроме `statistics-csv-one`) не коммитятся. Фикстуры лежат в
+Два прогона — 2026-09-24, 20:23 и 20:29 по Москве. Фикстурами считаются только файлы второго прогона, каждый со своим `.headers`:
+
+- `auth-bad-secret.json`, `auth-bad-token.json`;
+- `campaign-list.json`, `campaign-29088934-products.json`, `campaign-37583494-products.json`, `search-promo-products.json`;
+- `statistics-expense-2026-08-25.json`, `statistics-expense-2025-09-01.json`, `statistics-daily-2026-08-25.json`, `statistics-products-sku-2026-09-23.json`;
+- `statistics-json-many-2026-08-25{-request,-status,}.json`, `statistics-csv-one-2026-09-17{-request.json,-status.json,.csv}`, `cpo-orders-2026-08-25{-request,-status,}.json`.
+
+Из первого прогона в каталоге остались `statistics-json-many-2026-09-17*` и `cpo-orders-2026-09-17*`. Их второй прогон не перезаписал: имена с окном в неделю. Они не коммитятся. Одноимённые файлы первого прогона второй перезаписал. Коммитится каждая фикстура вместе со стадией, в которой её читает парсер. Фикстуры лежат в
 `api/tests/Fixtures/Marketplace/ozon/performance/`. Документация — OpenAPI
 Performance API от 2026-08-19: сам docs.ozon.ru закрыт антиботом.
 
