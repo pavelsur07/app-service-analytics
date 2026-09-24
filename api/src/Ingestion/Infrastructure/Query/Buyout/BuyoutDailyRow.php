@@ -2,12 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Ui\Response;
+namespace App\Ingestion\Infrastructure\Query\Buyout;
 
-use OpenApi\Attributes as OA;
-
-#[OA\Schema(required: ['date', 'actualBuyoutRateBps', 'projectedBuyoutRateBps', 'resolutionRateBps', 'orderedQuantity', 'resolvedQuantity', 'projectedBuyoutQuantity'])]
-final readonly class BuyoutDailyPointResponse
+final readonly class BuyoutDailyRow
 {
     public function __construct(
         public string $date,

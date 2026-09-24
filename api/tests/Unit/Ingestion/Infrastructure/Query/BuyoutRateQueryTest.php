@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Ingestion\Infrastructure\Query;
 
-use App\Ingestion\Infrastructure\Query\BuyoutRateQuery;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateQuery;
 use PHPUnit\Framework\TestCase;
 
 final class BuyoutRateQueryTest extends TestCase

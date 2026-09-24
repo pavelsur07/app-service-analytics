@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Query;
+namespace App\Ingestion\Infrastructure\Query\Buyout;
 
 /** Whitelisted SQL direction for the buyout-rate keyset order. */
 enum BuyoutRateDirection: string

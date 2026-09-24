@@ -272,6 +272,14 @@ security checker. Публичные HTTP-контроллеры находят�
 
 Ingestion дополнительно:
 
+`Infrastructure/Query` и `Ui/Response` группируются по устойчивым предметным
+сценариям. Подпапка появляется для группы связанных классов, а не для одного
+файла. Операционные запросы остаются в корне `Query`.
+
+| Сценарий | `Infrastructure/Query` | `Ui/Response` |
+|---|---|---|
+| Выкуп (`Buyout`) | `Buyout*`, `UnclassifiedOzonBuyout*`, `OzonPostingRawHistory*` | `Buyout*` |
+
 ```
 Ingestion/Infrastructure/Connector/
 ├── Wildberries/

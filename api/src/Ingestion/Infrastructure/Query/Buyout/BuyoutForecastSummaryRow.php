@@ -2,12 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Ui\Response;
+namespace App\Ingestion\Infrastructure\Query\Buyout;
 
-use OpenApi\Attributes as OA;
-
-#[OA\Schema(required: ['orderedQuantity', 'resolvedQuantity', 'projectedBuyoutQuantity', 'projectedBuyoutRateBps', 'resolutionRateBps'])]
-final readonly class BuyoutRateSummaryResponse
+final readonly class BuyoutForecastSummaryRow
 {
     public function __construct(
         public int $orderedQuantity,

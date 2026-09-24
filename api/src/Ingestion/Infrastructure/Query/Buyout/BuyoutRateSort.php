@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Query;
+namespace App\Ingestion\Infrastructure\Query\Buyout;
 
 /** Numeric aggregate used to order the complete SKU cohort. */
 enum BuyoutRateSort: string

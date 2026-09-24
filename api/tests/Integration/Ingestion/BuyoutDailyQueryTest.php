@@ -7,7 +7,7 @@ namespace App\Tests\Integration\Ingestion;
 use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use App\Ingestion\Domain\SalesFactRepository;
-use App\Ingestion\Infrastructure\Query\BuyoutDailyQuery;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutDailyQuery;
 use App\Tests\Support\Builder\MarketplacePostingStatusBuilder;
 use App\Tests\Support\Builder\MarketplaceReturnFactBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;

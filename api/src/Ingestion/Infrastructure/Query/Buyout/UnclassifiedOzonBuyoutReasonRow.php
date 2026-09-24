@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Query;
+namespace App\Ingestion\Infrastructure\Query\Buyout;
 
 /** Агрегированная operational-диагностика исходов, оставшихся NULL. */
 final readonly class UnclassifiedOzonBuyoutReasonRow

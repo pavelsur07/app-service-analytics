@@ -6,7 +6,7 @@ namespace App\Tests\Integration\Ingestion;
 
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
-use App\Ingestion\Infrastructure\Query\OzonPostingRawHistoryQuery;
+use App\Ingestion\Infrastructure\Query\Buyout\OzonPostingRawHistoryQuery;
 use App\Ingestion\Ui\Command\BackfillOzonPostingStatusesCommand;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use Doctrine\DBAL\Connection;

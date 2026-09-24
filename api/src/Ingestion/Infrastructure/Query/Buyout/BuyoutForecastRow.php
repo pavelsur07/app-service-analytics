@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Query;
+namespace App\Ingestion\Infrastructure\Query\Buyout;
 
 /** Накопительный прогноз одного SKU за выбранный cohort range. */
 final readonly class BuyoutForecastRow

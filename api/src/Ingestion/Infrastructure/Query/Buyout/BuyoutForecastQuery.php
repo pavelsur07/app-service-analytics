@@ -2,27 +2,36 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Query;
+namespace App\Ingestion\Infrastructure\Query\Buyout;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
-/** Дневной actual/projected ряд одной SKU, одним bounded SQL-запросом. */
-final readonly class BuyoutDailyQuery
+/**
+ * Live forecast ADR-019: mature 30-day baseline, SKU sample >=30 или
+ * account fallback. Не материализуется и меняется сразу с status history.
+ */
+final readonly class BuyoutForecastQuery
 {
+    public const int MIN_TRAINING_QUANTITY = 30;
+
     public function __construct(private Connection $connection)
     {
     }
 
+    /** @param list<string>|null $marketplaceSkus */
     public function build(
         string $companyId,
-        string $marketplaceSku,
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         \DateTimeImmutable $asOf,
+        int $limit,
+        ?string $cursor,
+        ?array $marketplaceSkus = null,
     ): QueryBuilder {
         $maturitySample = BuyoutMaturityQuery::MIN_SAMPLE_SIZE;
-        $trainingSample = BuyoutForecastQuery::MIN_TRAINING_QUANTITY;
+        $trainingSample = self::MIN_TRAINING_QUANTITY;
         $source = <<<SQL
             WITH tenant_outcome AS MATERIALIZED (
                 SELECT company_id, marketplace_account_id, source_row_id,
@@ -86,7 +95,6 @@ final readonly class BuyoutDailyQuery
             ),
             current_rows AS (
                 SELECT o.*,
-                       m.p95_seconds AS current_p95_seconds,
                        CASE
                            WHEN s.sample_quantity >= {$trainingSample}
                                THEN s.d_quantity::numeric / NULLIF(s.t1_quantity + s.d_quantity + s.t2_quantity + s.p_quantity, 0)
@@ -109,29 +117,18 @@ final readonly class BuyoutDailyQuery
                            ELSE NULL
                        END AS post_handover_rate
                 FROM tenant_outcome o
-                LEFT JOIN maturity m ON m.marketplace_account_id = o.marketplace_account_id
                 LEFT JOIN sku_training s
                   ON s.marketplace_account_id = o.marketplace_account_id
                  AND s.marketplace_sku = o.marketplace_sku
                 LEFT JOIN account_training a
                   ON a.marketplace_account_id = o.marketplace_account_id
-                WHERE o.marketplace_sku = :marketplaceSku
-                  AND o.business_date >= :from
+                WHERE o.business_date >= :from
                   AND o.business_date <= :to
             ),
-            daily AS (
-                SELECT business_date,
+            forecast AS (
+                SELECT marketplace_sku,
                        SUM(quantity)::bigint AS ordered_quantity,
                        COALESCE(SUM(quantity) FILTER (WHERE outcome IS NOT NULL), 0)::bigint AS resolved_quantity,
-                       COALESCE(SUM(quantity) FILTER (WHERE outcome = 'D'), 0)::bigint AS d_quantity,
-                       COALESCE(SUM(quantity) FILTER (WHERE outcome = 'T2'), 0)::bigint AS t2_quantity,
-                       COALESCE(SUM(quantity) FILTER (WHERE outcome = 'P'), 0)::bigint AS p_quantity,
-                       BOOL_AND(
-                           current_p95_seconds IS NOT NULL
-                           AND EXTRACT(EPOCH FROM (
-                               :asOf::timestamp - ((business_date + 1)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')
-                           )) > current_p95_seconds
-                       ) AS mature,
                        BOOL_OR(
                            outcome IS NULL AND (
                                NOT is_forecast_eligible
@@ -152,57 +149,87 @@ final readonly class BuyoutDailyQuery
                            ELSE 0::numeric
                        END) AS projected_eligible_quantity
                 FROM current_rows
-                GROUP BY business_date
+                GROUP BY marketplace_sku
             )
-            SELECT business_date,
-                   CASE WHEN mature AND (d_quantity + t2_quantity + p_quantity) > 0
-                        THEN ROUND(10000::numeric * d_quantity / (d_quantity + t2_quantity + p_quantity))::int
-                        ELSE NULL END AS actual_buyout_rate_bps,
-                   CASE WHEN missing_rate OR projected_eligible_quantity = 0 THEN NULL
-                        ELSE ROUND(10000::numeric * projected_quantity / projected_eligible_quantity)::int END AS projected_buyout_rate_bps,
-                   ROUND(10000::numeric * resolved_quantity / NULLIF(ordered_quantity, 0))::int AS resolution_rate_bps,
-                   ordered_quantity,
-                   resolved_quantity,
-                   CASE WHEN missing_rate THEN NULL ELSE ROUND(projected_quantity)::int END AS projected_buyout_quantity
-            FROM daily
+            , forecast_rows AS (
+                SELECT marketplace_sku,
+                       ordered_quantity,
+                       resolved_quantity,
+                       CASE WHEN missing_rate THEN NULL ELSE ROUND(projected_quantity)::int END AS projected_buyout_quantity,
+                       CASE WHEN missing_rate THEN NULL ELSE projected_quantity END AS projected_buyout_quantity_exact,
+                       CASE WHEN missing_rate THEN NULL ELSE projected_eligible_quantity END AS projected_eligible_quantity_exact,
+                       CASE WHEN missing_rate OR projected_eligible_quantity = 0 THEN NULL
+                            ELSE ROUND(10000::numeric * projected_quantity / projected_eligible_quantity)::int END AS projected_buyout_rate_bps,
+                       ROUND(10000::numeric * resolved_quantity / NULLIF(ordered_quantity, 0))::int AS resolution_rate_bps
+                FROM forecast
+            )
+            SELECT forecast_rows.*,
+                   SUM(ordered_quantity) OVER ()::bigint AS summary_ordered_quantity,
+                   SUM(resolved_quantity) OVER ()::bigint AS summary_resolved_quantity,
+                   CASE WHEN COUNT(*) FILTER (WHERE projected_buyout_quantity_exact IS NULL) OVER () > 0
+                        THEN NULL ELSE ROUND(SUM(projected_buyout_quantity_exact) OVER ())::int END AS summary_projected_buyout_quantity,
+                   CASE WHEN COUNT(*) FILTER (WHERE projected_buyout_quantity_exact IS NULL) OVER () > 0
+                             OR SUM(projected_eligible_quantity_exact) OVER () = 0
+                        THEN NULL
+                        ELSE ROUND(10000::numeric * SUM(projected_buyout_quantity_exact) OVER () / SUM(projected_eligible_quantity_exact) OVER ())::int
+                   END AS summary_projected_buyout_rate_bps,
+                   ROUND(10000::numeric * SUM(resolved_quantity) OVER () / NULLIF(SUM(ordered_quantity) OVER (), 0))::int AS summary_resolution_rate_bps
+            FROM forecast_rows
             SQL;
 
         $utc = new \DateTimeZone('UTC');
         $moscow = new \DateTimeZone('Europe/Moscow');
-
-        return $this->connection->createQueryBuilder()
+        $query = $this->connection->createQueryBuilder()
             ->select('*')
-            ->from('('.$source.')', 'daily')
+            ->from('('.$source.')', 'forecast')
             ->setParameter('companyId', $companyId)
-            ->setParameter('marketplaceSku', $marketplaceSku)
             ->setParameter('from', $from->format('Y-m-d'))
             ->setParameter('to', $to->format('Y-m-d'))
             ->setParameter('asOf', $asOf->setTimezone($utc)->format('Y-m-d H:i:s'))
             ->setParameter('asOfMoscow', $asOf->setTimezone($moscow)->format('Y-m-d H:i:s'))
-            ->orderBy('business_date', 'ASC')
-            ->setMaxResults(91);
+            ->orderBy('marketplace_sku', 'ASC');
+
+        // limit=0 используется только полным summary aggregate поверх
+        // этого SQL; наружный запрос всё равно возвращает одну строку.
+        if ($limit > 0) {
+            $query->setMaxResults($limit + 1);
+        }
+
+        if (null !== $cursor) {
+            $query->andWhere('marketplace_sku > :cursor')->setParameter('cursor', $cursor);
+        }
+
+        if (null !== $marketplaceSkus) {
+            if ([] === $marketplaceSkus) {
+                $query->andWhere('1 = 0');
+            } else {
+                $query->andWhere('marketplace_sku IN (:pageSkus)')
+                    ->setParameter('pageSkus', $marketplaceSkus, ArrayParameterType::STRING);
+            }
+        }
+
+        return $query;
     }
 
     /**
      * @param array<string, mixed> $row
      */
-    public static function mapRow(array $row): BuyoutDailyRow
+    public static function mapRow(array $row): BuyoutForecastRow
     {
-        return new BuyoutDailyRow(
-            date: self::string($row['business_date'] ?? null),
-            actualBuyoutRateBps: self::nullableInteger($row['actual_buyout_rate_bps'] ?? null),
-            projectedBuyoutRateBps: self::nullableInteger($row['projected_buyout_rate_bps'] ?? null),
-            resolutionRateBps: self::nullableInteger($row['resolution_rate_bps'] ?? null),
+        return new BuyoutForecastRow(
+            marketplaceSku: self::string($row['marketplace_sku'] ?? null),
             orderedQuantity: self::integer($row['ordered_quantity'] ?? null),
             resolvedQuantity: self::integer($row['resolved_quantity'] ?? null),
             projectedBuyoutQuantity: self::nullableInteger($row['projected_buyout_quantity'] ?? null),
+            projectedBuyoutRateBps: self::nullableInteger($row['projected_buyout_rate_bps'] ?? null),
+            resolutionRateBps: self::integer($row['resolution_rate_bps'] ?? null),
         );
     }
 
     private static function string(mixed $value): string
     {
         if (!\is_string($value)) {
-            throw new \UnexpectedValueException('Expected string in daily buyout row.');
+            throw new \UnexpectedValueException('Expected string in buyout forecast row.');
         }
 
         return $value;
@@ -217,7 +244,7 @@ final readonly class BuyoutDailyQuery
             return (int) $value;
         }
 
-        throw new \UnexpectedValueException('Expected integer in daily buyout row.');
+        throw new \UnexpectedValueException('Expected integer in buyout forecast row.');
     }
 
     private static function nullableInteger(mixed $value): ?int

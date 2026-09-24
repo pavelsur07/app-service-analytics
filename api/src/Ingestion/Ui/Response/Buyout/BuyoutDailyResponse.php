@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Ui\Response;
+namespace App\Ingestion\Ui\Response\Buyout;
 
 use OpenApi\Attributes as OA;
 
