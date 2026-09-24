@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Ui\Response;
+namespace App\Ingestion\Ui\Response\Listings;
 
 /**
  * Только сами артикулы — расширение хранит их локально и сверяет

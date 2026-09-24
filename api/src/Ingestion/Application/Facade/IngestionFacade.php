@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application\Facade;
 
-use App\Ingestion\Infrastructure\Query\ListingSnapshotCriteria;
-use App\Ingestion\Infrastructure\Query\ListingSnapshotsQuery;
+use App\Ingestion\Infrastructure\Query\Listings\ListingSnapshotCriteria;
+use App\Ingestion\Infrastructure\Query\Listings\ListingSnapshotsQuery;
 
 /**
  * Единственный вход в Ingestion снаружи (CLAUDE.md, «Модули»).

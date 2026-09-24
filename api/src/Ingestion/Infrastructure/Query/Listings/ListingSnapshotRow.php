@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Query;
+namespace App\Ingestion\Infrastructure\Query\Listings;
 
 use App\Shared\Domain\ValueObject\Money;
 

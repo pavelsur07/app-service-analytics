@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Query;
+namespace App\Ingestion\Infrastructure\Query\Listings;
 
 /**
  * Одно поле, и всё же DTO, а не голая строка: правило §5 требует
