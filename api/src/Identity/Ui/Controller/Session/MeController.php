@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Controller;
+namespace App\Identity\Ui\Controller\Session;
 
 use App\Identity\Domain\User;
 use App\Identity\Infrastructure\Query\UserCompaniesQuery;
