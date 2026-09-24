@@ -28,6 +28,7 @@ DB_TEST_NAME := $(DB_NAME)_test
 	init up stop down down-clear build pull ps logs \
 	api-shell api-install api-migrate api-migrate-test api-console \
 	db-wait db-test-create db-test-rebuild db-schema-validate db-rebuild-check \
+	s3-wait s3-bucket-create \
 	test test-unit test-int test-func test-e2e test-cov \
 	lint lint-fix stan deptrac structure-check audit \
 	front-typecheck front-lint front-test front-knip \
@@ -42,7 +43,7 @@ help: ## список целей с описаниями
 
 # --- Окружение ---------------------------------------------------------
 
-init: down-clear build up db-wait api-install front-install front-dev api-migrate ## подъём с нуля: down-clear, build, up, install, migrate
+init: down-clear build up db-wait api-install front-install front-dev api-migrate s3-bucket-create ## подъём с нуля: down-clear, build, up, install, migrate, бакеты
 	@echo "Готово: окружение поднято, зависимости установлены, миграции применены."
 
 up: ## запуск контейнеров
@@ -110,6 +111,23 @@ db-schema-validate: ## Doctrine mapping и обе мигрированные с�
 	$(COMPOSE) exec -T php-cli php bin/console doctrine:schema:validate
 	$(COMPOSE) exec -T php-cli php bin/console doctrine:schema:validate --env=test
 
+# --- Хранилище сырья (ADR-024) ----------------------------------------------
+# MinIO из docker-compose.yml. Проверка готовности — из php-cli, а не внутри
+# контейнера MinIO: так проверяется ровно тот сетевой путь, по которому
+# ходит приложение.
+
+s3-wait: ## ожидание готовности MinIO
+	@echo "Ожидание MinIO..."
+	@for i in $$(seq 1 30); do \
+		$(COMPOSE) exec -T php-cli php -r 'exit(@file_get_contents("http://minio:9000/minio/health/live") === false ? 1 : 0);' >/dev/null 2>&1 && exit 0; \
+		sleep 1; \
+	done; \
+	echo "MinIO не готов за 30с" >&2; exit 1
+
+s3-bucket-create: s3-wait ## бакеты сырья для dev и test (идемпотентно) и проверка записи-чтения
+	$(COMPOSE) exec -T php-cli php bin/console app:ingestion:raw-storage-check --create-bucket
+	$(COMPOSE) exec -T php-cli php bin/console app:ingestion:raw-storage-check --create-bucket --env=test
+
 # Условие закрытия задачи с миграцией (CLAUDE.md, «Миграции и изменения
 # схемы»). Проверяет не то, что миграция применилась у разработчика
 # поверх схемы, сложившейся за несколько итераций, а то, что она
@@ -126,7 +144,7 @@ db-rebuild-check: down-clear up db-wait api-migrate api-migrate-test db-schema-v
 # пересоздавать на каждый запуск тестов. `test` собирает полный путь для
 # разработчика; в CI шаги вызываются по отдельности.
 
-test: db-wait db-test-create api-migrate-test test-unit test-int test-func ## все уровни (unit+integration+functional); e2e — отдельно
+test: db-wait db-test-create api-migrate-test s3-bucket-create test-unit test-int test-func ## все уровни (unit+integration+functional); e2e — отдельно
 	@echo "unit + integration + functional пройдены."
 
 test-unit: ## тесты без БД
@@ -295,6 +313,6 @@ review: ## подготовка + Claude; REVIEW_RISK=high (по умолчан�
 
 ci-local: structure-check stan deptrac lint front-typecheck front-lint front-knip front-test audit \
 	api-types-check \
-	db-wait db-test-create api-migrate-test test-unit test-int test-func \
+	db-wait db-test-create api-migrate-test s3-bucket-create test-unit test-int test-func \
 	front-build test-e2e ## всё, что прогоняет конвейер Stage 4, одной командой
 	@echo "ci-local: все проверки пройдены."

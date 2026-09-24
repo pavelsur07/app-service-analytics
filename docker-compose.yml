@@ -86,6 +86,19 @@ services:
   redis:
     image: redis:7.4-alpine
 
+  # S3-совместимое хранилище сырья для разработки и тестов (ADR-024);
+  # на проде — S3 Timeweb Cloud. Образ с quay.io: на Docker Hub
+  # репозиторий minio/minio больше не публикуется (проверено 24.09.2026).
+  # Учётка ниже — только для песочницы, в api/.env те же значения.
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: conwix
+      MINIO_ROOT_PASSWORD: conwix-dev-secret
+    volumes:
+      - minio_data:/data
+
   # glibc (bookworm-slim), не alpine — осознанное расхождение с образами
   # PHP, где база alpine. Нативные модули экосистемы Node (rollup, esbuild,
   # lightningcss, oxc, браузеры Playwright) собираются и тестируются прежде
@@ -172,3 +185,4 @@ services:
 
 volumes:
   postgres_data:
+  minio_data:

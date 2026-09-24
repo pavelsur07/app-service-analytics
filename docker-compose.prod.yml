@@ -101,6 +101,22 @@ x-api-env: &api-env
   # :? остаётся fail-closed предохранителем для ручных запусков и старого workflow.
   SELLER_APP_ORIGIN: ${SELLER_APP_ORIGIN:-https://app.conwix.com}
   REGISTRATION_DOCUMENTS_VERSION: ${REGISTRATION_DOCUMENTS_VERSION:?}
+  # Хранилище сырья внешних API — S3 Timeweb Cloud (ADR-024). Бакет
+  # и ключи с правами только на него заводит владелец в панели Timeweb;
+  # значения — только в /opt/conwix/.env на сервере.
+  #
+  # :- , не :? — на этапе 1 хранилищем ещё никто не пользуется, и выкладка
+  # не должна падать, пока бакета нет. Пустые значения перекрывают
+  # dev-умолчания MinIO из испечённого в образ api/.env, поэтому без
+  # настройки проверка (app:ingestion:raw-storage-check) отказывает явно,
+  # а не стучится в MinIO, которого на проде нет. Когда сырьё начнёт
+  # писаться в S3 (этап 2), здесь станет :? — без хранилища загрузка
+  # остановится, а не потеряет данные молча.
+  RAW_STORAGE_ENDPOINT: ${RAW_STORAGE_ENDPOINT:-}
+  RAW_STORAGE_REGION: ${RAW_STORAGE_REGION:-}
+  RAW_STORAGE_BUCKET: ${RAW_STORAGE_BUCKET:-}
+  RAW_STORAGE_ACCESS_KEY: ${RAW_STORAGE_ACCESS_KEY:-}
+  RAW_STORAGE_SECRET_KEY: ${RAW_STORAGE_SECRET_KEY:-}
 
 services:
   traefik:
