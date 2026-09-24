@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Ui\Response;
+namespace App\Ingestion\Ui\Response\Sales;
 
 /**
  * Денежные величины — целое число минорных единиц плюс код валюты

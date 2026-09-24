@@ -282,6 +282,7 @@ Ingestion дополнительно:
 | Юнит-экономика (`UnitEconomics`) | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |
 | Себестоимость (`ListingCosts`) | `ListingCost*` | `ListingCost*` |
 | Товары (`Listings`) | `ListingSnapshot*`, `CompanySku*` | `CompanySkuListResponse` |
+| Продажи (`Sales`) | `SalesFactList*`, `SkuSalesSummary*` | `SalesFactList*`, `SkuSales*` |
 
 ```
 Ingestion/Infrastructure/Connector/

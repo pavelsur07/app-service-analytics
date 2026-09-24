@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Query;
+namespace App\Ingestion\Infrastructure\Query\Sales;
 
 /**
  * Итог по одному артикулу в одной валюте. Валюта — часть строки, а не

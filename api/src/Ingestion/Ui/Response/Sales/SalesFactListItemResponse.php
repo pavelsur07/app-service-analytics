@@ -2,13 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Query;
+namespace App\Ingestion\Ui\Response\Sales;
 
 /**
- * Строго типизированный результат SalesFactListQuery — снимает
- * приведение типов из mixed-строк DBAL с вызывающего кода (контроллера).
+ * amountMinor/currency, не Money — brick/money не выходит в контракт API
+ * (ADR-004), фронтенд форматирует сам через formatMinorAmount(), денежная
+ * арифметика в компонентах запрещена (docs/patterns.md).
  */
-final readonly class SalesFactListRow
+final readonly class SalesFactListItemResponse
 {
     public function __construct(
         public string $marketplaceAccountId,

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Ui\Response;
+namespace App\Ingestion\Ui\Response\Sales;
 
 /**
  * Итог по артикулу за окно дней. `totals` — список, а не одно значение,
