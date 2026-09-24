@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Controller;
+namespace App\Identity\Ui\Controller\Admin;
 
 use App\Identity\Ui\Response\AdminMeResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;

@@ -256,6 +256,9 @@ HTTP-входы сессии находятся в `Ui/Controller/Session` (`Log
 Регистрация и подтверждение email находятся в `Ui/Controller/Registration`
 (`SelfRegistration`, `RegisterClientAccount`, `ResendEmailVerification`,
 `ConfirmEmail`).
+Системные HTTP-входы находятся в `Ui/Controller/Admin` (`AdminLogin`,
+`AdminMe`, `CreateAdministrator`, `ListClientAccounts`,
+`SetClientAccountStatus`).
 
 Самостоятельная регистрация в `Identity` проходит через три отдельных
 Application-сценария: создать аккаунт, повторно отправить письмо и подтвердить

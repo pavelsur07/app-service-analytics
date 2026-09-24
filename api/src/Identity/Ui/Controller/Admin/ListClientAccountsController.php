@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Controller;
+namespace App\Identity\Ui\Controller\Admin;
 
 use App\Identity\Infrastructure\Query\AdminCompanyRow;
 use App\Identity\Infrastructure\Query\AllCompaniesForAdminQuery;
