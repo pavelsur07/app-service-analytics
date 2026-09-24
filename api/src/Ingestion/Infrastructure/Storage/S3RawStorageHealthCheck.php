@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Storage;
 
 use AsyncAws\Core\Exception\Http\ClientException;
+use AsyncAws\Core\Exception\Http\HttpException;
 use AsyncAws\S3\Exception\BucketAlreadyOwnedByYouException;
 use AsyncAws\S3\S3Client;
 use Symfony\Component\Uid\Uuid;
@@ -88,8 +89,12 @@ final readonly class S3RawStorageHealthCheck
      * перезапишет объект — тогда в версионируемом бакете повторные
      * загрузки копят версии, и нужен lifecycle неактуальных версий (ADR-024).
      *
-     * @return array{key: string, conditionalWrite: bool} ключ пробного объекта (уже удалён)
-     *                                                    и соблюдает ли провайдер условную запись
+     * Третий исход — провайдер отвергает сам заголовок (501, 400): запись
+     * и чтение при этом исправны, но условную запись в S3RawDocumentStorage
+     * до этапа 2 придётся отключить, lifecycle тут не поможет.
+     *
+     * @return array{key: string, conditionalWrite: 'honoured'|'ignored'|'rejected'} ключ пробного
+     *                                                                               объекта (уже удалён) и исход условной записи
      */
     public function probe(): array
     {
@@ -105,7 +110,7 @@ final readonly class S3RawStorageHealthCheck
             'ContentType' => 'text/plain',
         ])->resolve();
 
-        $conditionalWrite = false;
+        $conditionalWrite = 'ignored';
         try {
             try {
                 $this->s3->putObject([
@@ -116,10 +121,10 @@ final readonly class S3RawStorageHealthCheck
                     'IfNoneMatch' => '*',
                 ])->resolve();
             } catch (ClientException $conflict) {
-                if (412 !== $conflict->getCode()) {
-                    throw $conflict;
-                }
-                $conditionalWrite = true;
+                $conditionalWrite = 412 === $conflict->getCode() ? 'honoured' : 'rejected';
+            } catch (HttpException) {
+                // 501 NotImplemented и прочие 5xx на заголовок — тоже «отвергнут».
+                $conditionalWrite = 'rejected';
             }
 
             $read = $this->s3->getObject([
@@ -127,8 +132,8 @@ final readonly class S3RawStorageHealthCheck
                 'Key' => $key,
             ])->getBody()->getContentAsString();
 
-            // Соблюдено условие — лежит первое тело; нет — второе.
-            $expected = $conditionalWrite ? $payload : 'overwritten';
+            // Проигнорировано условие — лежит второе тело; иначе — первое.
+            $expected = 'ignored' === $conditionalWrite ? 'overwritten' : $payload;
             if ($read !== $expected) {
                 throw new \RuntimeException(\sprintf('Прочитано не то, что записано: %s', $key));
             }
