@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Application;
+namespace App\Ingestion\Application\Buyout;
 
 final readonly class BuyoutRateSummary
 {

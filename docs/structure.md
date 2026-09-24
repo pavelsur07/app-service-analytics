@@ -272,18 +272,19 @@ security checker. Публичные HTTP-контроллеры находят�
 
 Ingestion дополнительно:
 
-`Infrastructure/Query` и `Ui/Response` группируются по устойчивым предметным
+`Application`, `Infrastructure/Query` и `Ui/Response` группируются по устойчивым предметным
 сценариям. Подпапка появляется для группы связанных классов, а не для одного
-файла. Операционные запросы остаются в корне `Query`.
+файла. Операционные сценарии остаются в корне `Application`, операционные запросы —
+в корне `Query`.
 
-| Сценарий | `Infrastructure/Query` | `Ui/Response` |
-|---|---|---|
-| Выкуп (`Buyout`) | `Buyout*`, `UnclassifiedOzonBuyout*`, `OzonPostingRawHistory*` | `Buyout*` |
-| Юнит-экономика (`UnitEconomics`) | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |
-| Себестоимость (`ListingCosts`) | `ListingCost*` | `ListingCost*` |
-| Товары (`Listings`) | `ListingSnapshot*`, `CompanySku*` | `CompanySkuListResponse` |
-| Продажи (`Sales`) | `SalesFactList*`, `SkuSalesSummary*` | `SalesFactList*`, `SkuSales*` |
-| Подключения (`Connections`) | — | `ConnectedAccountResponse`, `ConnectionResponse`, `ConnectionsResponse`, `ReplacedCredentialsResponse` |
+| Сценарий | `Application` | `Infrastructure/Query` | `Ui/Response` |
+|---|---|---|---|
+| Выкуп (`Buyout`) | `BuildBuyoutDailySeriesAction`, `BuildBuyoutRateReportAction`, `BuyoutRateReport`, `BuyoutRateSku`, `BuyoutRateSummary` | `Buyout*`, `UnclassifiedOzonBuyout*`, `OzonPostingRawHistory*` | `Buyout*` |
+| Юнит-экономика (`UnitEconomics`) | — | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |
+| Себестоимость (`ListingCosts`) | — | `ListingCost*` | `ListingCost*` |
+| Товары (`Listings`) | — | `ListingSnapshot*`, `CompanySku*` | `CompanySkuListResponse` |
+| Продажи (`Sales`) | — | `SalesFactList*`, `SkuSalesSummary*` | `SalesFactList*`, `SkuSales*` |
+| Подключения (`Connections`) | — | — | `ConnectedAccountResponse`, `ConnectionResponse`, `ConnectionsResponse`, `ReplacedCredentialsResponse` |
 
 ```
 Ingestion/Infrastructure/Connector/

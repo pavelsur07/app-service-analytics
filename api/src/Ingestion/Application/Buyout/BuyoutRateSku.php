@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Application;
+namespace App\Ingestion\Application\Buyout;
 
 /** Application DTO одного SKU; не привязан к DBAL row или HTTP response. */
 final readonly class BuyoutRateSku
