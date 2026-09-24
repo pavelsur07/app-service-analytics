@@ -46,6 +46,12 @@ WORK=$(mktemp -d)
 chmod 700 "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$DIR"
+# Только в пустой каталог: файлы прошлого прогона с другими окнами
+# остались бы рядом с новыми, и фикстуры смешались бы незаметно.
+if [ -n "$(ls -A "$DIR")" ]; then
+    echo "Каталог $DIR не пуст — очистите его перед прогоном." >&2
+    exit 1
+fi
 
 # Даты — в московском времени: площадка группирует статистику по нему.
 eval "$(python3 - <<'PYEOF'
@@ -235,18 +241,26 @@ probe GET campaign-list '/api/client/campaign' || exit 1
 
 # Кампании по типу: SKU — оплата за клик, SEARCH_PROMO — оплата за заказ.
 # Для снимков берутся не больше десяти — это потолок одного отчёта.
+# Значения из ответа площадки попадают в eval только через shlex.quote,
+# а идентификаторы кампаний — только цифрами: иначе апостроф в ответе
+# исполнился бы как команда оболочки с токеном в руках, мимо allow-list.
 eval "$(python3 - "$DIR/campaign-list.json" <<'PYEOF'
-import json, sys
+import json, shlex, sys
 items = json.load(open(sys.argv[1])).get('list', [])
+items = [i for i in items if str(i.get('id', '')).isdigit()]
 by_type = {}
 for item in items:
-    by_type.setdefault(item.get('advObjectType', '?'), []).append(str(item['id']))
-print(f"CAMPAIGN_COUNT={len(items)}")
-print(f"ALL_IDS='{' '.join(str(i['id']) for i in items[:10])}'")
-print(f"SKU_IDS='{' '.join(by_type.get('SKU', [])[:3])}'")
-print(f"FIRST_ID='{items[0]['id'] if items else ''}'")
+    by_type.setdefault(str(item.get('advObjectType', '?')), []).append(str(item['id']))
 summary = ', '.join(f"{t}: {len(ids)}" for t, ids in sorted(by_type.items()))
-print(f"TYPES='{summary}'")
+values = {
+    'CAMPAIGN_COUNT': str(len(items)),
+    'ALL_IDS': ' '.join(str(i['id']) for i in items[:10]),
+    'SKU_IDS': ' '.join(by_type.get('SKU', [])[:3]),
+    'FIRST_ID': str(items[0]['id']) if items else '',
+    'TYPES': summary,
+}
+for key, value in values.items():
+    print(f"{key}={shlex.quote(value)}")
 PYEOF
 )"
 echo "    кампаний: $CAMPAIGN_COUNT ($TYPES)"
@@ -263,8 +277,10 @@ PROBE_PATH=/api/client/campaign/search_promo/v2/products
 probe POST search-promo-products '{"page":1,"pageSize":100}' '{}' || true
 
 # --- Синхронная статистика -------------------------------------------------
+EXPENSE_FILE=/dev/null
 probe GET "statistics-expense-$MONTH_FROM" \
-    "/api/client/statistics/expense/json?dateFrom=$MONTH_FROM&dateTo=$YESTERDAY" || true
+    "/api/client/statistics/expense/json?dateFrom=$MONTH_FROM&dateTo=$YESTERDAY" \
+    && EXPENSE_FILE="$WORK/statistics-expense-$MONTH_FROM" || true
 probe GET "statistics-daily-$MONTH_FROM" \
     "/api/client/statistics/daily/json?dateFrom=$MONTH_FROM&dateTo=$YESTERDAY" || true
 
@@ -275,7 +291,9 @@ probe GET "statistics-expense-$OLD_FROM" \
 # Кампании, у которых за месяц был расход: отчёты по остальным пусты
 # (первый прогон 2026-09-24: из десяти первых кампаний данные были у трёх,
 # а 51 из 94 — в архиве). Не больше десяти — потолок одного отчёта.
-SPENT_JSON=$(python3 - "$DIR/statistics-expense-$MONTH_FROM.json" <<'PYEOF'
+# Только из ответа этого прогона: при отказе probe файла нет, и берётся
+# первый десяток кампаний из списка.
+SPENT_JSON=$(python3 - "$EXPENSE_FILE" <<'PYEOF'
 import json, sys
 try:
     rows = json.load(open(sys.argv[1])).get('rows', [])
@@ -283,6 +301,8 @@ except (OSError, ValueError):
     rows = []
 ids = []
 for row in rows:
+    if not str(row.get('id', '')).isdigit():
+        continue
     if row.get('moneySpent', '0,00') != '0,00' and row['id'] not in ids:
         ids.append(row['id'])
 print(json.dumps(ids[:10]))
