@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Ingestion;
 
-use App\Ingestion\Application\BuildBuyoutRateReportAction;
+use App\Ingestion\Application\Buyout\BuildBuyoutRateReportAction;
 use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use App\Ingestion\Domain\SalesFact;
@@ -440,7 +440,7 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
             ->build();
     }
 
-    private function report(\DateTimeImmutable $asOf): \App\Ingestion\Application\BuyoutRateReport
+    private function report(\DateTimeImmutable $asOf): \App\Ingestion\Application\Buyout\BuyoutRateReport
     {
         return ($this->action())(
             companyId: $this->companyId->toRfc4122(),

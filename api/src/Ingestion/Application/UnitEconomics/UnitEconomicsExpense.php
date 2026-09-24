@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Application;
+namespace App\Ingestion\Application\UnitEconomics;
 
 final readonly class UnitEconomicsExpense
 {

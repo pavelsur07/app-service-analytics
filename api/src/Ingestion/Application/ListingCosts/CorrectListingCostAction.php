@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Application;
+namespace App\Ingestion\Application\ListingCosts;
 
 use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Domain\ListingCostAuditAction;

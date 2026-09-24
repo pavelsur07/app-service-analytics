@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Controller;
 
-use App\Ingestion\Application\BuildBuyoutRateReportAction;
-use App\Ingestion\Application\BuyoutRateSku;
+use App\Ingestion\Application\Buyout\BuildBuyoutRateReportAction;
+use App\Ingestion\Application\Buyout\BuyoutRateSku;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateCursor;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateDirection;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateQuery;

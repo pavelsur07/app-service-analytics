@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Application;
+namespace App\Ingestion\Application\Buyout;
 
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutForecastQuery;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutForecastRow;

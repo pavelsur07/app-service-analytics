@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Application;
+namespace App\Ingestion\Application\UnitEconomics;
 
 /**
  * Юнит-экономика за период: по товарам и отдельно по кабинету.
