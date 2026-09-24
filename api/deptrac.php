@@ -150,7 +150,7 @@ return static function (DeptracConfig $config): void {
                 ClassLikeConfig::create('^App\\Identity\\Application\\(ConfirmEmail|ResendEmailVerification)Action$'),
             ),
             $identityEmailVerificationUi = Layer::withName('IdentityEmailVerificationUi')->collectors(
-                ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\(ConfirmEmail|ResendEmailVerification)Controller$'),
+                ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Registration\\(ConfirmEmail|ResendEmailVerification)Controller$'),
             ),
             // Широкий Ui продавца — без единственного контроллера выше.
             // Без mustNot он попал бы сюда, и грант на межарендаторный
@@ -162,7 +162,7 @@ return static function (DeptracConfig $config): void {
                     mustNot: [
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\ListClientAccountsController$'),
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Command\\PurgeUnconfirmedAccountsCommand$'),
-                        ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\(ConfirmEmail|ResendEmailVerification)Controller$'),
+                        ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Registration\\(ConfirmEmail|ResendEmailVerification)Controller$'),
                     ],
                 ),
             ),

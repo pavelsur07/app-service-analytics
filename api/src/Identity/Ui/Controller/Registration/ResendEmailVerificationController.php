@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Controller;
+namespace App\Identity\Ui\Controller\Registration;
 
 use App\Identity\Application\ResendEmailVerificationAction;
 use App\Identity\Ui\Request\ResendEmailVerificationRequest;
