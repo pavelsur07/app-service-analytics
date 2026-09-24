@@ -8,7 +8,7 @@ use App\Identity\Application\CreateAdministratorAction;
 use App\Identity\Domain\Administrator;
 use App\Identity\Domain\ValueObject\AdminRole;
 use App\Identity\Ui\Request\CreateAdministratorRequest;
-use App\Identity\Ui\Response\AdministratorResponse;
+use App\Identity\Ui\Response\Admin\AdministratorResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Nelmio\ApiDocBundle\Attribute\Model;

@@ -8,7 +8,7 @@ use App\Identity\Application\ConfirmEmailAction;
 use App\Identity\Domain\ValueObject\EmailConfirmationOutcome;
 use App\Identity\Domain\ValueObject\EmailVerificationSecret;
 use App\Identity\Ui\Request\ConfirmEmailRequest;
-use App\Identity\Ui\Response\EmailConfirmationResponse;
+use App\Identity\Ui\Response\Registration\EmailConfirmationResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;

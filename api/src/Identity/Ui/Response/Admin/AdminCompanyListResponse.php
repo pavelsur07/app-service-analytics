@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Response;
+namespace App\Identity\Ui\Response\Admin;
+
+use App\Identity\Ui\Response\AdminCompanyResponse;
 
 /**
  * Offset-пагинация (docs/patterns.md, «Контракт списочного эндпоинта»):

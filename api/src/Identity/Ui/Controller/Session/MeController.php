@@ -8,7 +8,7 @@ use App\Identity\Domain\User;
 use App\Identity\Infrastructure\Query\UserCompaniesQuery;
 use App\Identity\Infrastructure\Query\UserCompanyRow;
 use App\Identity\Ui\Response\MeCompanyResponse;
-use App\Identity\Ui\Response\MeResponse;
+use App\Identity\Ui\Response\Session\MeResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
 use Symfony\Bundle\SecurityBundle\Security;

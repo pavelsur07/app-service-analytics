@@ -36,22 +36,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/email-verification/confirm": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["post_identity_email_verification_confirm"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/admin/administrators": {
         parameters: {
             query?: never;
@@ -62,6 +46,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["post_identity_admin_administrator_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/companies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_identity_admin_companies_list"];
+        put?: never;
+        post: operations["post_identity_admin_company_register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/companies/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_admin_company_status"];
         delete?: never;
         options?: never;
         head?: never;
@@ -100,16 +116,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/companies": {
+    "/api/companies/{companyId}/extension-tokens/{id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["get_identity_admin_companies_list"];
+        get?: never;
         put?: never;
-        post: operations["post_identity_admin_company_register"];
+        post?: never;
+        delete: operations["delete_identity_extension_token_revoke"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/email-verification/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_email_verification_confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/email-verification/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_email_verification_resend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/sign-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_self_registration"];
         delete?: never;
         options?: never;
         head?: never;
@@ -142,70 +206,6 @@ export interface paths {
         get: operations["get_identity_auth_me"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/email-verification/resend": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["post_identity_email_verification_resend"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/companies/{companyId}/extension-tokens/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_identity_extension_token_revoke"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/sign-up": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["post_identity_self_registration"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/companies/{id}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["post_identity_admin_company_status"];
         delete?: never;
         options?: never;
         head?: never;
@@ -561,29 +561,11 @@ export interface components {
             code: string;
             message: string;
         };
-        EmailConfirmationResponse: {
-            outcome: string;
-            next?: string | null;
-        };
         AdministratorResponse: {
             id: string;
             email: string;
             role: string;
             createdAt: string;
-        };
-        MeCompanyResponse: {
-            id: string;
-            name: string;
-        };
-        ExtensionMeResponse: {
-            email: string;
-            company: components["schemas"]["MeCompanyResponse"];
-        };
-        IssueExtensionTokenResponse: {
-            id: string;
-            token: string;
-            tokenPrefix: string;
-            expiresAt: string;
         };
         AdminCompanyResponse: {
             id: string;
@@ -599,19 +581,37 @@ export interface components {
             page: number;
             per_page: number;
         };
+        ClientAccountStatusResponse: {
+            status: string;
+            changed: boolean;
+        };
+        MeCompanyResponse: {
+            id: string;
+            name: string;
+        };
+        ExtensionMeResponse: {
+            email: string;
+            company: components["schemas"]["MeCompanyResponse"];
+        };
+        IssueExtensionTokenResponse: {
+            id: string;
+            token: string;
+            tokenPrefix: string;
+            expiresAt: string;
+        };
+        EmailConfirmationResponse: {
+            outcome: string;
+            next?: string | null;
+        };
+        SelfRegistrationResponse: {
+            message: string;
+        };
         LoginResponse: {
             email: string;
         };
         MeResponse: {
             email: string;
             companies: components["schemas"]["MeCompanyResponse"][];
-        };
-        SelfRegistrationResponse: {
-            message: string;
-        };
-        ClientAccountStatusResponse: {
-            status: string;
-            changed: boolean;
         };
         ConnectionResponse: {
             id: string;
@@ -927,59 +927,6 @@ export interface operations {
             };
         };
     };
-    post_identity_email_verification_confirm: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    token: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Email подтверждён, сессия открыта */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmailConfirmationResponse"];
-                };
-            };
-            /** @description Токен уже использован */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmailConfirmationResponse"];
-                };
-            };
-            /** @description Токен истёк или неизвестен */
-            410: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmailConfirmationResponse"];
-                };
-            };
-            /** @description Некорректный запрос */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ValidationErrorResponse"];
-                };
-            };
-        };
-    };
     post_identity_admin_administrator_create: {
         parameters: {
             query?: never;
@@ -1031,57 +978,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
-                };
-            };
-        };
-    };
-    get_identity_extension_me: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Пользователь и компания, к которым привязан предъявленный токен */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExtensionMeResponse"];
-                };
-            };
-            /** @description Токен отсутствует, истёк, отозван или участник исключён из компании */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ValidationErrorResponse"];
-                };
-            };
-        };
-    };
-    post_identity_extension_token_issue: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                companyId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Токен выпущен. Поле token отдаётся единственный раз и больше не восстанавливается. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["IssueExtensionTokenResponse"];
                 };
             };
         };
@@ -1165,32 +1061,63 @@ export interface operations {
             };
         };
     };
-    post_identity_auth_login: {
+    post_identity_admin_company_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    status: "active" | "blocked";
+                };
+            };
+        };
+        responses: {
+            /** @description Целевое состояние достигнуто; changed=false, если аккаунт уже был в нём */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientAccountStatusResponse"];
+                };
+            };
+            /** @description Неизвестный статус */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_identity_extension_me: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    email: string;
-                    password: string;
-                };
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Вход выполнен, сессия установлена */
+            /** @description Пользователь и компания, к которым привязан предъявленный токен */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LoginResponse"];
+                    "application/json": components["schemas"]["ExtensionMeResponse"];
                 };
             };
-            /** @description Неверный email или пароль — сообщение одинаково для обоих случаев (ADR-007) */
+            /** @description Токен отсутствует, истёк, отозван или участник исключён из компании */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1201,22 +1128,107 @@ export interface operations {
             };
         };
     };
-    get_identity_auth_me: {
+    post_identity_extension_token_issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Токен выпущен. Поле token отдаётся единственный раз и больше не восстанавливается. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueExtensionTokenResponse"];
+                };
+            };
+        };
+    };
+    delete_identity_extension_token_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Токен отозван. Повторный отзыв идемпотентен. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Токена с таким id в этой компании нет */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_identity_email_verification_confirm: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    token: string;
+                };
+            };
+        };
         responses: {
-            /** @description Текущий пользователь и компании, доступные ему по членству */
+            /** @description Email подтверждён, сессия открыта */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MeResponse"];
+                    "application/json": components["schemas"]["EmailConfirmationResponse"];
+                };
+            };
+            /** @description Токен уже использован */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailConfirmationResponse"];
+                };
+            };
+            /** @description Токен истёк или неизвестен */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailConfirmationResponse"];
+                };
+            };
+            /** @description Некорректный запрос */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
         };
@@ -1248,36 +1260,6 @@ export interface operations {
             };
             /** @description Некорректный email */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ValidationErrorResponse"];
-                };
-            };
-        };
-    };
-    delete_identity_extension_token_revoke: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                companyId: string;
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Токен отозван. Повторный отзыв идемпотентен. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Токена с таким id в этой компании нет */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1349,40 +1331,58 @@ export interface operations {
             };
         };
     };
-    post_identity_admin_company_status: {
+    post_identity_auth_login: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: {
             content: {
                 "application/json": {
-                    /** @enum {string} */
-                    status: "active" | "blocked";
+                    email: string;
+                    password: string;
                 };
             };
         };
         responses: {
-            /** @description Целевое состояние достигнуто; changed=false, если аккаунт уже был в нём */
+            /** @description Вход выполнен, сессия установлена */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ClientAccountStatusResponse"];
+                    "application/json": components["schemas"]["LoginResponse"];
                 };
             };
-            /** @description Неизвестный статус */
-            422: {
+            /** @description Неверный email или пароль — сообщение одинаково для обоих случаев (ADR-007) */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_identity_auth_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Текущий пользователь и компании, доступные ему по членству */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
                 };
             };
         };

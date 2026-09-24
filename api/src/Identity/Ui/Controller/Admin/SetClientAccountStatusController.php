@@ -7,7 +7,7 @@ namespace App\Identity\Ui\Controller\Admin;
 use App\Identity\Application\ChangeCompanyStatusAction;
 use App\Identity\Domain\Administrator;
 use App\Identity\Domain\ValueObject\CompanyStatus;
-use App\Identity\Ui\Response\ClientAccountStatusResponse;
+use App\Identity\Ui\Response\Admin\ClientAccountStatusResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Identity\Ui\Controller\Admin;
 
-use App\Identity\Ui\Response\AdminMeResponse;
+use App\Identity\Ui\Response\Admin\AdminMeResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;

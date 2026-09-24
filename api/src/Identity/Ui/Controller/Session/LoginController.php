@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Identity\Ui\Controller\Session;
 
-use App\Identity\Ui\Response\LoginResponse;
+use App\Identity\Ui\Response\Session\LoginResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;

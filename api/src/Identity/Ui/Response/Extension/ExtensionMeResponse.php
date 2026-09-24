@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Response;
+namespace App\Identity\Ui\Response\Extension;
+
+use App\Identity\Ui\Response\MeCompanyResponse;
 
 /**
  * Одна компания, не список: токен расширения привязан к одной компании
