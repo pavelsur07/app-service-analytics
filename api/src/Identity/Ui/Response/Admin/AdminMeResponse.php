@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Response;
+namespace App\Identity\Ui\Response\Admin;
 
 /**
  * Кто вошёл в системный контур. Один DTO на вход и на /me, в отличие

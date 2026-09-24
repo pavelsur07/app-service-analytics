@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Response;
+namespace App\Identity\Ui\Response\Extension;
 
 /**
  * $token — открытый текст секрета, единственный раз за всю жизнь токена:

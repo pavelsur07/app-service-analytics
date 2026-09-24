@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Response;
+namespace App\Identity\Ui\Response\Admin;
 
 /**
  * `changed: false` — аккаунт уже был в этом состоянии. Не ошибка:

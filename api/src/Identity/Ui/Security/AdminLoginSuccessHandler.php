@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Identity\Ui\Security;
 
 use App\Identity\Domain\Administrator;
-use App\Identity\Ui\Response\AdminMeResponse;
+use App\Identity\Ui\Response\Admin\AdminMeResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;

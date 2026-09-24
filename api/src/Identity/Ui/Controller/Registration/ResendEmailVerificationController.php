@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Controller;
+namespace App\Identity\Ui\Controller\Registration;
 
 use App\Identity\Application\ResendEmailVerificationAction;
 use App\Identity\Ui\Request\ResendEmailVerificationRequest;
-use App\Identity\Ui\Response\SelfRegistrationResponse;
+use App\Identity\Ui\Response\Registration\SelfRegistrationResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;

@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Response;
+namespace App\Identity\Ui\Response\Session;
+
+use App\Identity\Ui\Response\MeCompanyResponse;
 
 final readonly class MeResponse
 {

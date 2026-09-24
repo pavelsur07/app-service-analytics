@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Controller;
+namespace App\Identity\Ui\Controller\Registration;
 
 use App\Identity\Application\RegisterClientAccountAction;
 use App\Identity\Domain\User;
 use App\Identity\Ui\Request\SelfRegistrationRequest;
-use App\Identity\Ui\Response\SelfRegistrationResponse;
+use App\Identity\Ui\Response\Registration\SelfRegistrationResponse;
 use App\Identity\Ui\Security\RegistrationProtection;
 use App\Identity\Ui\Security\RegistrationProtectionDecision;
 use App\Shared\Ui\Response\ValidationErrorResponse;

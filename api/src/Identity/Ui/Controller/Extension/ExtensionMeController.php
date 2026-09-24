@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Controller;
+namespace App\Identity\Ui\Controller\Extension;
 
 use App\Identity\Domain\ExtensionTokenRepository;
 use App\Identity\Domain\User;
 use App\Identity\Infrastructure\Query\CompanyNameQuery;
 use App\Identity\Infrastructure\Security\ExtensionTokenRequestAttributes;
-use App\Identity\Ui\Response\ExtensionMeResponse;
+use App\Identity\Ui\Response\Extension\ExtensionMeResponse;
 use App\Identity\Ui\Response\MeCompanyResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;

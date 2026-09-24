@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Controller;
+namespace App\Identity\Ui\Controller\Admin;
 
 use App\Identity\Infrastructure\Query\AdminCompanyRow;
 use App\Identity\Infrastructure\Query\AllCompaniesForAdminQuery;
-use App\Identity\Ui\Response\AdminCompanyListResponse;
+use App\Identity\Ui\Response\Admin\AdminCompanyListResponse;
 use App\Identity\Ui\Response\AdminCompanyResponse;
 use App\Shared\Ui\QueryParameter;
 use App\Shared\Ui\Response\ValidationErrorResponse;

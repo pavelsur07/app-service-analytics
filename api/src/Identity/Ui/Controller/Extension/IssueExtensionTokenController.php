@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Controller;
+namespace App\Identity\Ui\Controller\Extension;
 
 use App\Identity\Application\IssueExtensionTokenAction;
 use App\Identity\Domain\User;
-use App\Identity\Ui\Response\IssueExtensionTokenResponse;
+use App\Identity\Ui\Response\Extension\IssueExtensionTokenResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
 use Symfony\Bundle\SecurityBundle\Security;

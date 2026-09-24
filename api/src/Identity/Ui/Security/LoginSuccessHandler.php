@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Identity\Ui\Security;
 
 use App\Identity\Domain\User;
-use App\Identity\Ui\Response\LoginResponse;
+use App\Identity\Ui\Response\Session\LoginResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;

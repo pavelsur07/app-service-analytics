@@ -250,6 +250,20 @@ Identity/
 └── Ui/               контроллеры, консольные команды
 ```
 
+HTTP-входы сессии находятся в `Ui/Controller/Session` (`Login`, `Me`).
+Входы расширения находятся в `Ui/Controller/Extension` (`ExtensionMe`,
+`IssueExtensionToken`, `RevokeExtensionToken`).
+Регистрация и подтверждение email находятся в `Ui/Controller/Registration`
+(`SelfRegistration`, `RegisterClientAccount`, `ResendEmailVerification`,
+`ConfirmEmail`). `RegisterClientAccount` обслуживает admin-контур;
+подпапка группирует сценарий регистрации и не задаёт права доступа.
+Остальные системные HTTP-входы находятся в `Ui/Controller/Admin` (`AdminLogin`,
+`AdminMe`, `CreateAdministrator`, `ListClientAccounts`,
+`SetClientAccountStatus`).
+Ответы этих входов лежат в соответствующих `Ui/Response/Session`,
+`Extension`, `Registration` и `Admin`. Общие для двух контуров
+`MeCompanyResponse` и `AdminCompanyResponse` остаются в корне `Ui/Response`.
+
 Самостоятельная регистрация в `Identity` проходит через три отдельных
 Application-сценария: создать аккаунт, повторно отправить письмо и подтвердить
 email. Домен хранит одноразовые хэши токенов и зафиксированную версию принятых
@@ -257,7 +271,8 @@ email. Домен хранит одноразовые хэши токенов и
 resend/confirm с ручной уборкой через узкую advisory-lock границу, отправляет
 регистрационное письмо синхронно (чтобы открытый токен не попал в doctrine-
 очередь) и запрещает вход неподтверждённому пользователю через общий
-security checker. Публичные HTTP-контроллеры находятся в `Ui/Controller`,
+security checker. Публичные HTTP-контроллеры самостоятельной регистрации
+находятся в `Ui/Controller/Registration`,
 а консервативная уборка заброшенных аккаунтов доступна только ручной командой
 `app:identity:purge-unconfirmed-accounts` в `Ui/Command`. Для уборки в Deptrac
 выделена узкая цепочка Command → Application action → cleanup port/adapter:
