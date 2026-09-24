@@ -22,7 +22,6 @@ use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceListingCostRepos
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceListingPriceWriter;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceListingWriter;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplacePostingStatusWriter;
-use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceRawDocumentRepository;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceReturnFactWriter;
 use App\Ingestion\Infrastructure\Persistence\DoctrineSalesFactWriter;
 use App\PriceMonitoring\Infrastructure\Persistence\DoctrinePriceObservationWriter;
@@ -265,7 +264,7 @@ final class PurgeUnconfirmedAccountsCommandTest extends KernelTestCase
             'marketplace_raw_document' => MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
                 ->withCompanyId($company->id())
                 ->withRawBody(json_encode(['id' => Uuid::v7()->toRfc4122()], \JSON_THROW_ON_ERROR))
-                ->persistWith(new DoctrineMarketplaceRawDocumentRepository($connection)),
+                ->persistWith(MarketplaceRawDocumentBuilder::repository(self::getContainer())),
             'marketplace_listing' => $this->protectWithListing($company),
             'marketplace_listing_cost' => MarketplaceListingCostBuilder::aMarketplaceListingCost()
                 ->withCompanyId($company->id())

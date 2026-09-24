@@ -11,7 +11,6 @@ use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Infrastructure\Query\ActiveOzonAccountsQuery;
 use App\Ingestion\Application\NotifyStaleAccountsAction;
 use App\Ingestion\Domain\MarketplaceReportType;
-use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceRawDocumentRepository;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
@@ -217,7 +216,7 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
             ->withMarketplaceAccountId($account->id())
             ->withReportType($reportType)
             ->withReceivedAt(new \DateTimeImmutable('-1 hour'))
-            ->persistWith(new DoctrineMarketplaceRawDocumentRepository($this->connection($container)));
+            ->persistWith(MarketplaceRawDocumentBuilder::repository($container));
     }
 
     private function connection(ContainerInterface $container): Connection

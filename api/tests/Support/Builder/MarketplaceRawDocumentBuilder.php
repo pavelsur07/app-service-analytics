@@ -6,6 +6,7 @@ namespace App\Tests\Support\Builder;
 
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -93,6 +94,18 @@ final class MarketplaceRawDocumentBuilder
             rawBody: $this->rawBody,
             receivedAt: $this->receivedAt,
         );
+    }
+
+    /**
+     * Репозиторий из контейнера теста — с хранилищем тел и режимом
+     * RAW_BODY_STORE из окружения (ADR-024), как у боевого кода.
+     */
+    public static function repository(ContainerInterface $container): MarketplaceRawDocumentRepository
+    {
+        $repository = $container->get(MarketplaceRawDocumentRepository::class);
+        \assert($repository instanceof MarketplaceRawDocumentRepository);
+
+        return $repository;
     }
 
     public function persistWith(MarketplaceRawDocumentRepository $repository): MarketplaceRawDocument

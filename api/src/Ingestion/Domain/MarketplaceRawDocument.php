@@ -61,8 +61,26 @@ class MarketplaceRawDocument
     #[ORM\Column(length: 64)]
     private readonly string $bodyHash;
 
-    #[ORM\Column(type: 'text')]
-    private readonly string $body;
+    /**
+     * В базе — только у документов до ADR-024 (и при аварийном
+     * RAW_BODY_STORE=database); у остальных тело — объект в S3,
+     * а здесь NULL. В памяти у документа, созданного capture(), тело
+     * есть всегда — его и пишет репозиторий.
+     */
+    #[ORM\Column(type: 'text', nullable: true)]
+    private readonly ?string $body;
+
+    /**
+     * Ключ объекта в S3 (ADR-024) — для диагностики и как признак
+     * «тело в хранилище». При чтении ключ пересобирается из полей строки
+     * и сверяется с этим значением, а не берётся отсюда на веру.
+     */
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $storageKey = null;
+
+    /** Размер исходного тела в байтах — для наблюдения за объёмом хранилища. */
+    #[ORM\Column(type: 'bigint', nullable: true)]
+    private ?int $byteSize = null;
 
     #[ORM\Column]
     private readonly \DateTimeImmutable $receivedAt;
@@ -150,9 +168,23 @@ class MarketplaceRawDocument
         return $this->bodyHash;
     }
 
+    /**
+     * Тело в памяти: сущность создаётся только через capture() и не
+     * гидрируется из базы, поэтому тело здесь есть всегда.
+     */
     public function body(): string
     {
         return $this->body;
+    }
+
+    public function storageKey(): ?string
+    {
+        return $this->storageKey;
+    }
+
+    public function byteSize(): ?int
+    {
+        return $this->byteSize;
     }
 
     public function receivedAt(): \DateTimeImmutable

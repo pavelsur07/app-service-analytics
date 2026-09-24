@@ -112,17 +112,17 @@ db-schema-validate: ## Doctrine mapping и обе мигрированные с�
 	$(COMPOSE) exec -T php-cli php bin/console doctrine:schema:validate --env=test
 
 # --- Хранилище сырья (ADR-024) ----------------------------------------------
-# MinIO из docker-compose.yml. Проверка готовности — из php-cli, а не внутри
-# контейнера MinIO: так проверяется ровно тот сетевой путь, по которому
+# SeaweedFS из docker-compose.yml (сервис s3). Проверка готовности — из php-cli,
+# а не внутри контейнера хранилища: так проверяется ровно тот сетевой путь, по которому
 # ходит приложение.
 
-s3-wait: ## ожидание готовности MinIO
-	@echo "Ожидание MinIO..."
+s3-wait: ## ожидание готовности хранилища сырья (SeaweedFS)
+	@echo "Ожидание хранилища сырья..."
 	@for i in $$(seq 1 30); do \
-		$(COMPOSE) exec -T php-cli php -r 'exit(@file_get_contents("http://minio:9000/minio/health/live") === false ? 1 : 0);' >/dev/null 2>&1 && exit 0; \
+		$(COMPOSE) exec -T php-cli php -r 'exit(@file_get_contents("http://s3:8333/healthz") === false ? 1 : 0);' >/dev/null 2>&1 && exit 0; \
 		sleep 1; \
 	done; \
-	echo "MinIO не готов за 30с" >&2; exit 1
+	echo "Хранилище сырья не готово за 30с" >&2; exit 1
 
 s3-bucket-create: s3-wait ## бакеты сырья для dev и test (идемпотентно) и проверка записи-чтения
 	$(COMPOSE) exec -T php-cli php bin/console app:ingestion:raw-storage-check --create-bucket

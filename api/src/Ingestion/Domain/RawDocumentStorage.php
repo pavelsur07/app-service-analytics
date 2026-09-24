@@ -11,6 +11,11 @@ namespace App\Ingestion\Domain;
  * Интерфейс в Domain ради границы Deptrac: Domain и Application не видят
  * клиента S3, он живёт только в Infrastructure (docs/patterns.md,
  * «Когда интерфейс в Domain нужен»).
+ *
+ * companyId — первым параметром, как у репозиториев (CLAUDE.md §1):
+ * реализация отказывает, если ключ не лежит в префиксе этой компании.
+ * Ключ при чтении пересобирается из полей строки, найденной
+ * company-scoped запросом, а не берётся готовым извне.
  */
 interface RawDocumentStorage
 {
@@ -19,13 +24,13 @@ interface RawDocumentStorage
      * ключ детерминирован содержимым, поэтому повторная запись того же
      * ключа — уже выполненная запись, а не новая версия объекта.
      */
-    public function put(RawObjectKey $key, string $body): void;
+    public function put(string $companyId, RawObjectKey $key, string $body): void;
 
     /**
      * @throws RawObjectNotFound объекта нет — не пустая строка и не null:
      *                           пропавшее сырьё не должно выглядеть пустым ответом
      */
-    public function get(RawObjectKey $key): string;
+    public function get(string $companyId, RawObjectKey $key): string;
 
-    public function exists(RawObjectKey $key): bool;
+    public function exists(string $companyId, RawObjectKey $key): bool;
 }

@@ -24,6 +24,9 @@ services:
             string $kernelSecret: '%kernel.secret%'
             int $expenseWindowDays: '%env(int:OZON_EXPENSE_WINDOW_DAYS)%'
             string $rawStorageBucket: '%env(RAW_STORAGE_BUCKET)%'
+            # s3 | database — аварийный возврат записи тел в базу на время
+            # наблюдения этапа 2 ADR-024; убирается на этапе 3.
+            string $rawBodyStore: '%env(RAW_BODY_STORE)%'
             string $rawStorageEndpoint: '%env(RAW_STORAGE_ENDPOINT)%'
             string $rawStorageRegion: '%env(RAW_STORAGE_REGION)%'
             string $rawStorageAccessKey: '%env(RAW_STORAGE_ACCESS_KEY)%'
@@ -77,7 +80,7 @@ services:
         arguments:
             $mailer: '@mailer.sync'
 
-    # Хранилище сырья — S3 (ADR-024): MinIO в песочнице, Timeweb Cloud
+    # Хранилище сырья — S3 (ADR-024): SeaweedFS в песочнице, Timeweb Cloud
     # на проде. Адресация по пути, а не поддомену бакета: так работают
     # оба, и имя бакета не обязано быть валидным DNS-именем.
     AsyncAws\S3\S3Client:
