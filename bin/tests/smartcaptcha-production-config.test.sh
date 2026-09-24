@@ -33,7 +33,12 @@ test_smartcaptcha_secret_is_required_only_by_api() {
         'ACME_EMAIL=test@example.invalid' \
         'POSTGRES_USER=test' \
         'POSTGRES_PASSWORD=test' \
-        'POSTGRES_DB=test' > "$env_file"
+        'POSTGRES_DB=test' \
+        'RAW_STORAGE_ENDPOINT=https://s3.example.invalid' \
+        'RAW_STORAGE_REGION=test-1' \
+        'RAW_STORAGE_BUCKET=test-bucket' \
+        'RAW_STORAGE_ACCESS_KEY=test-access' \
+        'RAW_STORAGE_SECRET_KEY=test-secret' > "$env_file"
 
     if env -u SMARTCAPTCHA_SERVER_KEY \
         docker compose --env-file "$env_file" -f "$ROOT/docker-compose.prod.yml" \
