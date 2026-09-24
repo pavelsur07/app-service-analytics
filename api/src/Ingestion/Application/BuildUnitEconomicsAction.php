@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Ingestion\Application;
 
 use App\Ingestion\Domain\OzonFeeTypeNames;
-use App\Ingestion\Infrastructure\Query\ExpenseCoverageQuery;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsCursor;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsDirection;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsExpenseRow;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsQuery;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsSkuRow;
-use App\Ingestion\Infrastructure\Query\UnitEconomicsSort;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\ExpenseCoverageQuery;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsCursor;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsDirection;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsExpenseRow;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsQuery;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsSkuRow;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsSort;
 use App\Shared\Domain\ValueObject\Money;
 
 /**

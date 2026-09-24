@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Ingestion\Infrastructure\Query;
 
-use App\Ingestion\Infrastructure\Query\BuyoutDailyQuery;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutDailyQuery;
 use PHPUnit\Framework\TestCase;
 
 final class BuyoutDailyQueryTest extends TestCase

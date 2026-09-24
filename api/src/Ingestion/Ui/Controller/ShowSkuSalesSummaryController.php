@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Controller;
 
-use App\Ingestion\Infrastructure\Query\SkuSalesSummaryQuery;
-use App\Ingestion\Infrastructure\Query\SkuSalesSummaryRow;
-use App\Ingestion\Ui\Response\SkuSalesSummaryResponse;
-use App\Ingestion\Ui\Response\SkuSalesTotalResponse;
+use App\Ingestion\Infrastructure\Query\Sales\SkuSalesSummaryQuery;
+use App\Ingestion\Infrastructure\Query\Sales\SkuSalesSummaryRow;
+use App\Ingestion\Ui\Response\Sales\SkuSalesSummaryResponse;
+use App\Ingestion\Ui\Response\Sales\SkuSalesTotalResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;

@@ -6,8 +6,8 @@ namespace App\Tests\Integration\Ingestion;
 
 use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\SalesFactRepository;
-use App\Ingestion\Infrastructure\Query\BuyoutMaturityQuery;
-use App\Ingestion\Infrastructure\Query\BuyoutMaturityRow;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutMaturityQuery;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutMaturityRow;
 use App\Tests\Support\Builder\MarketplacePostingStatusBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
 use Doctrine\DBAL\Connection;

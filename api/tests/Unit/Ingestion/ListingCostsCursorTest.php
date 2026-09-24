@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Ingestion;
 
-use App\Ingestion\Infrastructure\Query\ListingCostsCursor;
+use App\Ingestion\Infrastructure\Query\ListingCosts\ListingCostsCursor;
 use PHPUnit\Framework\TestCase;
 
 final class ListingCostsCursorTest extends TestCase

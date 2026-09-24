@@ -7,7 +7,7 @@ namespace App\Ingestion\Ui\Controller;
 use App\Ingestion\Application\ReplaceCredentialsResult;
 use App\Ingestion\Application\ReplaceOzonCredentialsAction;
 use App\Ingestion\Ui\Request\ReplaceCredentialsRequest;
-use App\Ingestion\Ui\Response\ReplacedCredentialsResponse;
+use App\Ingestion\Ui\Response\Connections\ReplacedCredentialsResponse;
 use App\Shared\Ui\RequestAttributes;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;

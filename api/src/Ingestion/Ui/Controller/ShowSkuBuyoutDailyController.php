@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Ingestion\Ui\Controller;
 
 use App\Ingestion\Application\BuildBuyoutDailySeriesAction;
-use App\Ingestion\Infrastructure\Query\BuyoutDailyRow;
-use App\Ingestion\Ui\Response\BuyoutDailyPointResponse;
-use App\Ingestion\Ui\Response\BuyoutDailyResponse;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutDailyRow;
+use App\Ingestion\Ui\Response\Buyout\BuyoutDailyPointResponse;
+use App\Ingestion\Ui\Response\Buyout\BuyoutDailyResponse;
 use App\Shared\Ui\QueryParameter;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;

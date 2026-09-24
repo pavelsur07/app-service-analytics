@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application;
 
-use App\Ingestion\Infrastructure\Query\BuyoutForecastQuery;
-use App\Ingestion\Infrastructure\Query\BuyoutForecastRow;
-use App\Ingestion\Infrastructure\Query\BuyoutForecastSummaryQuery;
-use App\Ingestion\Infrastructure\Query\BuyoutRateCursor;
-use App\Ingestion\Infrastructure\Query\BuyoutRateDirection;
-use App\Ingestion\Infrastructure\Query\BuyoutRateQuery;
-use App\Ingestion\Infrastructure\Query\BuyoutRateRow;
-use App\Ingestion\Infrastructure\Query\BuyoutRateSort;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutForecastQuery;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutForecastRow;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutForecastSummaryQuery;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateCursor;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateDirection;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateQuery;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateRow;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateSort;
 use Doctrine\DBAL\Connection;
 
 /** Выполняет bounded aggregate и собирает keyset-страницу отчёта. */
@@ -220,7 +220,7 @@ final readonly class BuildBuyoutRateReportAction
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         \DateTimeImmutable $asOf,
-    ): \App\Ingestion\Infrastructure\Query\BuyoutForecastSummaryRow {
+    ): \App\Ingestion\Infrastructure\Query\Buyout\BuyoutForecastSummaryRow {
         $summaryQuery = $this->summary->build($companyId, $from, $to, $asOf);
         $summaryRow = $connection->fetchAssociative(
             $summaryQuery->getSQL(),

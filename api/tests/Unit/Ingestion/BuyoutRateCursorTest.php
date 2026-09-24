@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Ingestion;
 
-use App\Ingestion\Infrastructure\Query\BuyoutRateCursor;
-use App\Ingestion\Infrastructure\Query\BuyoutRateDirection;
-use App\Ingestion\Infrastructure\Query\BuyoutRateSort;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateCursor;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateDirection;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateSort;
 use PHPUnit\Framework\TestCase;
 
 final class BuyoutRateCursorTest extends TestCase

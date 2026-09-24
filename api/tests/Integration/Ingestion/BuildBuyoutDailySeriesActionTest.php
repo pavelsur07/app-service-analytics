@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Ingestion;
 
 use App\Ingestion\Application\BuildBuyoutDailySeriesAction;
-use App\Ingestion\Infrastructure\Query\BuyoutDailyQuery;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutDailyQuery;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;

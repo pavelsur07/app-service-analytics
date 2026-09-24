@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Controller;
 
-use App\Ingestion\Infrastructure\Query\SalesFactListQuery;
-use App\Ingestion\Infrastructure\Query\SalesFactListRow;
-use App\Ingestion\Ui\Response\SalesFactListItemResponse;
-use App\Ingestion\Ui\Response\SalesFactListResponse;
+use App\Ingestion\Infrastructure\Query\Sales\SalesFactListQuery;
+use App\Ingestion\Infrastructure\Query\Sales\SalesFactListRow;
+use App\Ingestion\Ui\Response\Sales\SalesFactListItemResponse;
+use App\Ingestion\Ui\Response\Sales\SalesFactListResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;

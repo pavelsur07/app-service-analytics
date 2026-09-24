@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application;
 
-use App\Ingestion\Infrastructure\Query\BuyoutDailyQuery;
-use App\Ingestion\Infrastructure\Query\BuyoutDailyRow;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutDailyQuery;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutDailyRow;
 use Doctrine\DBAL\Connection;
 
 /** Выполняет bounded daily aggregate с защитой от плохого cold-import plan. */

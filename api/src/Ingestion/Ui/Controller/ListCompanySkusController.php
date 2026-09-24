@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Controller;
 
-use App\Ingestion\Infrastructure\Query\CompanySkuRow;
-use App\Ingestion\Infrastructure\Query\CompanySkusQuery;
-use App\Ingestion\Ui\Response\CompanySkuListResponse;
+use App\Ingestion\Infrastructure\Query\Listings\CompanySkuRow;
+use App\Ingestion\Infrastructure\Query\Listings\CompanySkusQuery;
+use App\Ingestion\Ui\Response\Listings\CompanySkuListResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
