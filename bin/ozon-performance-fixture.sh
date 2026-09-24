@@ -18,7 +18,7 @@
 # Что нужно выяснить (docs/task/ozon-advertising-research.md):
 #   1. формат сумм в JSON — точка или запятая, с НДС или без;
 #   2. что отдаёт /statistics/json по нескольким кампаниям — JSON или ZIP;
-#   3. отдаёт ли /statistics/products/sku дни старше вчерашнего;
+#   3. форму ответа /statistics/products/sku (только сегодня и вчера);
 #   4. глубину истории — запрос за месяц год назад;
 #   5. поля отчёта по заказам «Оплаты за заказ»;
 #   6. есть ли в ответах персональные данные покупателей или контрагентов;
@@ -272,15 +272,37 @@ probe GET "statistics-daily-$MONTH_FROM" \
 probe GET "statistics-expense-$OLD_FROM" \
     "/api/client/statistics/expense/json?dateFrom=$OLD_FROM&dateTo=$OLD_TO" || true
 
-# 3. products/sku: вчера и неделю назад. Документация говорит «dateFrom
-# не раньше предыдущего дня» — проверяем, значит ли это «только вчера».
+# Кампании, у которых за месяц был расход: отчёты по остальным пусты
+# (первый прогон 2026-09-24: из десяти первых кампаний данные были у трёх,
+# а 51 из 94 — в архиве). Не больше десяти — потолок одного отчёта.
+SPENT_JSON=$(python3 - "$DIR/statistics-expense-$MONTH_FROM.json" <<'PYEOF'
+import json, sys
+try:
+    rows = json.load(open(sys.argv[1])).get('rows', [])
+except (OSError, ValueError):
+    rows = []
+ids = []
+for row in rows:
+    if row.get('moneySpent', '0,00') != '0,00' and row['id'] not in ids:
+        ids.append(row['id'])
+print(json.dumps(ids[:10]))
+PYEOF
+)
+if [ "$SPENT_JSON" = '[]' ]; then
+    SPENT_JSON=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1].split()))' "$ALL_IDS")
+fi
+SPENT_FIRST=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])[0])' "$SPENT_JSON")
+echo "    кампании с расходом за месяц: $SPENT_JSON"
+
+# 3. products/sku. Первый прогон ответил «date range must contain only
+# today or yesterday» и «empty campaigns»: метод годится только для
+# вчерашнего хвоста и требует список кампаний. Имя поля — по описанию
+# не подтверждено, поэтому два кандидата.
 PROBE_PATH=/api/client/statistics/products/sku
 probe POST "statistics-products-sku-$YESTERDAY" \
-    "{\"dateFrom\":\"$YESTERDAY\",\"dateTo\":\"$YESTERDAY\"}" \
-    "{\"dateFrom\":\"${YESTERDAY}T00:00:00Z\",\"dateTo\":\"${TODAY}T00:00:00Z\"}" || true
-probe POST "statistics-products-sku-$WEEK_AGO" \
-    "{\"dateFrom\":\"$WEEK_AGO\",\"dateTo\":\"$WEEK_AGO\"}" \
-    "{\"dateFrom\":\"${WEEK_AGO}T00:00:00Z\",\"dateTo\":\"${DAY_BEFORE}T00:00:00Z\"}" || true
+    "{\"campaigns\":$SPENT_JSON,\"dateFrom\":\"$YESTERDAY\",\"dateTo\":\"$YESTERDAY\"}" \
+    "{\"campaignIds\":$SPENT_JSON,\"dateFrom\":\"$YESTERDAY\",\"dateTo\":\"$YESTERDAY\"}" \
+    "{\"campaign_ids\":$SPENT_JSON,\"date_from\":\"$YESTERDAY\",\"date_to\":\"$YESTERDAY\"}" || true
 
 # --- Асинхронные отчёты ------------------------------------------------------
 # Одновременно у аккаунта формируется один отчёт, поэтому они идут
@@ -335,22 +357,23 @@ async_report() {
     fi
 }
 
-# 2. Несколько кампаний в одном отчёте: JSON или ZIP?
-CAMPAIGNS_JSON=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1].split()))' "$ALL_IDS")
+# 2. Несколько кампаний в одном отчёте. Первый прогон: JSON, не ZIP —
+# объект с ключами-идентификаторами кампаний. Окно — месяц, чтобы
+# фикстура содержала историю, а не одну неделю.
 PROBE_PATH=/api/client/statistics/json
-async_report "statistics-json-many-$WEEK_FROM" POST "statistics-json-many-$WEEK_FROM" \
-    "{\"campaigns\":$CAMPAIGNS_JSON,\"dateFrom\":\"$WEEK_FROM\",\"dateTo\":\"$YESTERDAY\",\"groupBy\":\"DATE\"}"
+async_report "statistics-json-many-$MONTH_FROM" POST "statistics-json-many-$MONTH_FROM" \
+    "{\"campaigns\":$SPENT_JSON,\"dateFrom\":\"$MONTH_FROM\",\"dateTo\":\"$YESTERDAY\",\"groupBy\":\"DATE\"}"
 
 # Одна кампания, CSV-вариант — для сравнения форм.
 PROBE_PATH=/api/client/statistics
 async_report "statistics-csv-one-$WEEK_FROM" POST "statistics-csv-one-$WEEK_FROM" \
-    "{\"campaigns\":[\"$FIRST_ID\"],\"dateFrom\":\"$WEEK_FROM\",\"dateTo\":\"$YESTERDAY\",\"groupBy\":\"DATE\"}"
+    "{\"campaigns\":[\"$SPENT_FIRST\"],\"dateFrom\":\"$WEEK_FROM\",\"dateTo\":\"$YESTERDAY\",\"groupBy\":\"DATE\"}"
 
-# 5. «Оплата за заказ»: заказы, выбранные товары.
+# 5. «Оплата за заказ»: заказы, выбранные товары. Окно — месяц: за неделю
+# первого прогона заказов не нашлось, а атрибуция идёт до 30 дней.
 PROBE_PATH=/api/client/statistic/orders/generate/json
-async_report "cpo-orders-$WEEK_FROM" POST "cpo-orders-$WEEK_FROM" \
-    "{\"from\":\"${WEEK_FROM}T00:00:00Z\",\"to\":\"${TODAY}T00:00:00Z\"}" \
-    "{\"dateFrom\":\"$WEEK_FROM\",\"dateTo\":\"$YESTERDAY\"}"
+async_report "cpo-orders-$MONTH_FROM" POST "cpo-orders-$MONTH_FROM" \
+    "{\"from\":\"${MONTH_FROM}T00:00:00Z\",\"to\":\"${TODAY}T00:00:00Z\"}"
 
 # «Оплата за заказ»: заказы, все товары.
 async_report "cpo-all-sku-orders-$WEEK_FROM" GET "cpo-all-sku-orders-$WEEK_FROM" \
