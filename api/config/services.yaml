@@ -80,7 +80,7 @@ services:
         arguments:
             $mailer: '@mailer.sync'
 
-    # Хранилище сырья — S3 (ADR-024): MinIO в песочнице, Timeweb Cloud
+    # Хранилище сырья — S3 (ADR-024): SeaweedFS в песочнице, Timeweb Cloud
     # на проде. Адресация по пути, а не поддомену бакета: так работают
     # оба, и имя бакета не обязано быть валидным DNS-именем.
     AsyncAws\S3\S3Client:

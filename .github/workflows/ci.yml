@@ -176,9 +176,9 @@ jobs:
       # AuthControllerTest::testExceedingLoginAttemptsIsThrottled падает
       # DNS-ошибкой на хосте redis, а не ошибкой самого теста.
       #
-      # minio — хранилище сырья (ADR-024): интеграционные тесты адаптера S3
+      # s3 — хранилище сырья (ADR-024, SeaweedFS): интеграционные тесты адаптера S3
       # пишут в бакет conwix-test, его создаёт make s3-bucket-create.
-      - run: docker compose up -d postgres redis minio php-cli
+      - run: docker compose up -d postgres redis s3 php-cli
 
       # Без if по cache-hit: composer install не только раскладывает
       # vendor, но и выполняет post-install-cmd (cache:clear,
@@ -457,9 +457,9 @@ jobs:
       # не может достучаться до хоста redis при входе — тот же класс
       # пробела, что уже чинили в backend-джобе (login_throttling),
       # здесь не был перенесён на e2e-джобу.
-      # minio — подготовка e2e пишет сырьё через команды импорта, а тела
+      # s3 — подготовка e2e пишет сырьё через команды импорта, а тела
       # сырья с этапа 2 ADR-024 — только в хранилище.
-      - run: docker compose up -d postgres redis minio php-fpm nginx playwright
+      - run: docker compose up -d postgres redis s3 php-fpm nginx playwright
 
       # См. комментарий в задаче backend: шаг обязателен и при попадании
       # в кэш — post-install-cmd прогревает var/cache, без которого

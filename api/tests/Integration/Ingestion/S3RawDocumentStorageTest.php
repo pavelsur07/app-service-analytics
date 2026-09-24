@@ -12,7 +12,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * ADR-024 на MinIO из docker-compose (бакет conwix-test, make s3-bucket-create).
+ * ADR-024 на SeaweedFS из docker-compose (бакет conwix-test, make s3-bucket-create).
  *
  * DAMA откатывает только PostgreSQL: объекты в бакете переживают тест.
  * Поэтому ключи уникальны на тест (новые UUID компании и подключения),

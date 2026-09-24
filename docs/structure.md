@@ -331,7 +331,7 @@ Ingestion/Infrastructure/Connector/
 `Domain/RawObjectKey`. Проверка из консоли —
 `Ui/Command/CheckRawStorageCommand` (`app:ingestion:raw-storage-check`,
 с `--create-bucket` — только dev и test, `make s3-bucket-create`).
-В песочнице хранилище — сервис `minio` из `docker-compose.yml`
+В песочнице хранилище — сервис `s3` (SeaweedFS) из `docker-compose.yml`
 (бакеты `conwix-dev` и `conwix-test`), на проде — S3 Timeweb Cloud.
 
 Общая абстракция коннектора появляется после второго коннектора,

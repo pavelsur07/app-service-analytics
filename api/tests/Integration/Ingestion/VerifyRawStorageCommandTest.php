@@ -16,7 +16,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 
 /**
- * Сверка хранилища сырья (ADR-024, этап 2) на MinIO: чистый прогон
+ * Сверка хранилища сырья (ADR-024, этап 2) на SeaweedFS: чистый прогон
  * и прогон, где объект одной строки пропал.
  */
 final class VerifyRawStorageCommandTest extends KernelTestCase

@@ -114,7 +114,7 @@ x-api-env: &api-env
   RAW_STORAGE_ACCESS_KEY: ${RAW_STORAGE_ACCESS_KEY:?}
   RAW_STORAGE_SECRET_KEY: ${RAW_STORAGE_SECRET_KEY:?}
   # s3 — тело в хранилище (ADR-024, этап 2). database — аварийный возврат
-  # записи тел в базу без выкладки: строка RAW_BODY_STORE=database
+  # записи тел в базу без выкладки (ADR-025, временно, до этапа 3): строка RAW_BODY_STORE=database
   # в /opt/conwix/.env и пересоздание api и worker-ingestion
   # (docs/operations-checklist.md). Чтение понимает оба вида строк.
   # Откат образа ниже этапа 2 после появления строк с body = NULL
