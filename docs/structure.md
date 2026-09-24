@@ -280,7 +280,7 @@ Ingestion дополнительно:
 | Сценарий | `Application` | `Infrastructure/Query` | `Ui/Response` |
 |---|---|---|---|
 | Выкуп (`Buyout`) | `BuildBuyoutDailySeriesAction`, `BuildBuyoutRateReportAction`, `BuyoutRateReport`, `BuyoutRateSku`, `BuyoutRateSummary` | `Buyout*`, `UnclassifiedOzonBuyout*`, `OzonPostingRawHistory*` | `Buyout*` |
-| Юнит-экономика (`UnitEconomics`) | — | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |
+| Юнит-экономика (`UnitEconomics`) | `BuildUnitEconomicsAction`, `UnitEconomicsExpense`, `UnitEconomicsReport`, `UnitEconomicsSku` | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |
 | Себестоимость (`ListingCosts`) | — | `ListingCost*` | `ListingCost*` |
 | Товары (`Listings`) | — | `ListingSnapshot*`, `CompanySku*` | `CompanySkuListResponse` |
 | Продажи (`Sales`) | — | `SalesFactList*`, `SkuSalesSummary*` | `SalesFactList*`, `SkuSales*` |

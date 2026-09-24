@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Controller;
 
-use App\Ingestion\Application\BuildUnitEconomicsAction;
-use App\Ingestion\Application\UnitEconomicsExpense;
-use App\Ingestion\Application\UnitEconomicsSku;
+use App\Ingestion\Application\UnitEconomics\BuildUnitEconomicsAction;
+use App\Ingestion\Application\UnitEconomics\UnitEconomicsExpense;
+use App\Ingestion\Application\UnitEconomics\UnitEconomicsSku;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsCursor;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsDirection;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsQuery;

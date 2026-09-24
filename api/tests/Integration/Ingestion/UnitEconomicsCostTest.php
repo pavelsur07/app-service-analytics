@@ -6,8 +6,8 @@ namespace App\Tests\Integration\Ingestion;
 
 use App\Identity\Domain\Company;
 use App\Identity\Domain\CompanyRepository;
-use App\Ingestion\Application\BuildUnitEconomicsAction;
-use App\Ingestion\Application\UnitEconomicsReport;
+use App\Ingestion\Application\UnitEconomics\BuildUnitEconomicsAction;
+use App\Ingestion\Application\UnitEconomics\UnitEconomicsReport;
 use App\Ingestion\Domain\MarketplaceListingCost;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceListingCostRepository;
