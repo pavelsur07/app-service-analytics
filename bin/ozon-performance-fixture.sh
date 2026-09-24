@@ -365,7 +365,7 @@ wait_and_download() {
     done
     [ "$state" = OK ] || { echo '    не дождались за 5 минут'; return 1; }
     cp "$WORK/status" "$WORK/$w_name-status"
-    printf 'Content-Type: application/json\n' > "$WORK/$w_name-status.headers"
+    cp "$WORK/status.headers" "$WORK/$w_name-status.headers"
     save "$WORK/$w_name-status" "$w_name-status"
 
     code=$(call GET "/api/client/statistics/report?UUID=$w_uuid" "$WORK/$w_name")
