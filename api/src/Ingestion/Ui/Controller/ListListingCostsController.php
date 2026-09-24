@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Ingestion\Ui\Controller;
 
 use App\Ingestion\Application\ListListingCostsAction;
-use App\Ingestion\Infrastructure\Query\ListingCostRow;
-use App\Ingestion\Infrastructure\Query\ListingCostsCursor;
-use App\Ingestion\Infrastructure\Query\ListingCostsQuery;
-use App\Ingestion\Ui\Response\ListingCostItemResponse;
-use App\Ingestion\Ui\Response\ListingCostListResponse;
+use App\Ingestion\Infrastructure\Query\ListingCosts\ListingCostRow;
+use App\Ingestion\Infrastructure\Query\ListingCosts\ListingCostsCursor;
+use App\Ingestion\Infrastructure\Query\ListingCosts\ListingCostsQuery;
+use App\Ingestion\Ui\Response\ListingCosts\ListingCostItemResponse;
+use App\Ingestion\Ui\Response\ListingCosts\ListingCostListResponse;
 use App\Shared\Ui\QueryParameter;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;

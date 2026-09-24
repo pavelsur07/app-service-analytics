@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Infrastructure\Query;
+namespace App\Ingestion\Infrastructure\Query\ListingCosts;
 
 /**
  * Курсор страницы экрана себестоимости: пара «выручка, артикул».

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application;
 
-use App\Ingestion\Infrastructure\Query\ListingCostRow;
+use App\Ingestion\Infrastructure\Query\ListingCosts\ListingCostRow;
 
 /**
  * Страница экрана ввода себестоимости.

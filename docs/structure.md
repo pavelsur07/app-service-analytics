@@ -280,6 +280,7 @@ Ingestion дополнительно:
 |---|---|---|
 | Выкуп (`Buyout`) | `Buyout*`, `UnclassifiedOzonBuyout*`, `OzonPostingRawHistory*` | `Buyout*` |
 | Юнит-экономика (`UnitEconomics`) | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |
+| Себестоимость (`ListingCosts`) | `ListingCost*` | `ListingCost*` |
 
 ```
 Ingestion/Infrastructure/Connector/
