@@ -251,6 +251,8 @@ Identity/
 ```
 
 HTTP-входы сессии находятся в `Ui/Controller/Session` (`Login`, `Me`).
+Входы расширения находятся в `Ui/Controller/Extension` (`ExtensionMe`,
+`IssueExtensionToken`, `RevokeExtensionToken`).
 
 Самостоятельная регистрация в `Identity` проходит через три отдельных
 Application-сценария: создать аккаунт, повторно отправить письмо и подтвердить

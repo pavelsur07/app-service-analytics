@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Identity\Ui\Controller;
+namespace App\Identity\Ui\Controller\Extension;
 
 use App\Identity\Application\IssueExtensionTokenAction;
 use App\Identity\Domain\User;
