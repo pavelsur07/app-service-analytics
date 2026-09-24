@@ -222,8 +222,17 @@ return static function (DeptracConfig $config): void {
             $ingestionInfrastructure = Layer::withName('IngestionInfrastructure')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Ingestion/Infrastructure/.*')],
-                    mustNot: [ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\RecentlyIngestedAccountsQuery$')],
+                    mustNot: [
+                        ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\RecentlyIngestedAccountsQuery$'),
+                        DirectoryConfig::create('src/Ingestion/Infrastructure/Storage/.*'),
+                    ],
                 ),
+            ),
+            // Хранилище сырья (ADR-024) — единственное место, где разрешён
+            // клиент S3. Вынесено из IngestionInfrastructure, чтобы грант
+            // на AsyncAws не достался соседним адаптерам.
+            $ingestionStorage = Layer::withName('IngestionStorage')->collectors(
+                DirectoryConfig::create('src/Ingestion/Infrastructure/Storage/.*'),
             ),
             $ingestionOperationalQuery = Layer::withName('IngestionOperationalQuery')->collectors(
                 ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\RecentlyIngestedAccountsQuery$'),
@@ -303,6 +312,12 @@ return static function (DeptracConfig $config): void {
             // общий неймспейс верхнего уровня, отдельный слой не нужен).
             $sentry = Layer::withName('Sentry')->collectors(
                 ClassLikeConfig::create('^Sentry\\.*'),
+            ),
+            // async-aws/s3 — клиент хранилища сырья (ADR-024). Грант — только
+            // у IngestionStorage: Domain видит интерфейс RawDocumentStorage,
+            // соседние адаптеры Infrastructure клиента не видят.
+            $asyncAws = Layer::withName('AsyncAws')->collectors(
+                ClassLikeConfig::create('^AsyncAws\\.*'),
             ),
         )
         ->rulesets(
@@ -386,7 +401,9 @@ return static function (DeptracConfig $config): void {
             // и не требует оркестрации Application (CLAUDE.md: «Синхронные
             // сценарии вызываются напрямую из Ui»), в отличие от записи,
             // которая всегда идёт через Application/Facade.
-            Ruleset::forLayer($ingestionUi)->accesses($ingestionApplication, $ingestionDomain, $ingestionInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
+            // ingestionStorage — только ради проверки хранилища из консоли
+            // (CheckRawStorageCommand); сырьё приложение читает через Domain.
+            Ruleset::forLayer($ingestionUi)->accesses($ingestionApplication, $ingestionDomain, $ingestionInfrastructure, $ingestionStorage, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
             // Команды фоновых процессов — не весь IngestionUi: только им
             // разрешён IngestionOperationalAction (см. слой выше).
             Ruleset::forLayer($ingestionOperationalCommand)->accesses($ingestionSyncAction, $ingestionFreshnessAction, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent),
@@ -414,6 +431,7 @@ return static function (DeptracConfig $config): void {
             // причине есть у identityFacade.
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $ingestionInfrastructure, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($ingestionStorage)->accesses($ingestionDomain, $symfonyUid, $asyncAws),
             Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),
 
             // PriceMonitoring — ниже Ingestion и от него не зависит вовсе

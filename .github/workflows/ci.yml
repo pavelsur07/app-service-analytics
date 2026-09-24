@@ -175,7 +175,10 @@ jobs:
       # redis — сессии/rate limit login_throttling (ADR-007). Без него
       # AuthControllerTest::testExceedingLoginAttemptsIsThrottled падает
       # DNS-ошибкой на хосте redis, а не ошибкой самого теста.
-      - run: docker compose up -d postgres redis php-cli
+      #
+      # minio — хранилище сырья (ADR-024): интеграционные тесты адаптера S3
+      # пишут в бакет conwix-test, его создаёт make s3-bucket-create.
+      - run: docker compose up -d postgres redis minio php-cli
 
       # Без if по cache-hit: composer install не только раскладывает
       # vendor, но и выполняет post-install-cmd (cache:clear,
@@ -187,7 +190,7 @@ jobs:
 
       - run: make lint stan deptrac structure-check
 
-      - run: make db-wait db-test-create api-migrate api-migrate-test db-schema-validate test-unit test-int test-func
+      - run: make db-wait db-test-create api-migrate api-migrate-test db-schema-validate s3-bucket-create test-unit test-int test-func
 
   frontend:
     name: frontend

@@ -776,6 +776,7 @@ app/        ← импортирует что угодно; из него не �
 | Offset-пагинация | `pagerfanta/core` | с DBAL-адаптером, не с ORM; `pagerfanta/pagerfanta` — версия 2.0.1 для PHP 5.3, после 3.x пакет разделён на `core` + адаптеры |
 | Keyset-пагинация | своё | 50 строк; готовые решения навязывают модель |
 | HTTP-клиент | `symfony/http-client` | ретраи и таймауты штатно |
+| Объектное хранилище | `async-aws/s3` | сырьё внешних API (ADR-024). Ходит через `symfony/http-client`, своего HTTP-стека нет; адресация по пути — для Timeweb и MinIO. Только в `Ingestion/Infrastructure/Storage`, за интерфейсом `RawDocumentStorage`; Deptrac выдаёт грант на слой `AsyncAws` только слою `IngestionStorage`. Запись условная (`If-None-Match: *`), логгер у клиента отключён — ADR-024. Зафиксирован `3.5.*` — клиент на пути загрузки |
 | Лимиты запросов | `symfony/rate-limiter` | хранилище — Redis; для tenant-scoped нагрузки ключ лимитера — компания, не IP: у клиента бывает несколько устройств, а платит за нагрузку один арендатор. Порог в `when@test` занижается, чтобы тест на срабатывание не слал сотни запросов |
 | Блокировки | `symfony/lock` | Redis |
 | Очередь | `symfony/messenger` | doctrine-транспорт |
@@ -807,6 +808,8 @@ company-key для нагрузки уже существующего аренд
 | `lexik/jwt-authentication-bundle` | аутентификация на сессиях по ADR-007 |
 | `knplabs/knp-paginator-bundle` | завязан на ORM-гидрацию |
 | `beberlei/DoctrineExtensions` | тянет диалектные функции; нужное пишется точечно |
+| `aws/aws-sdk-php` | тяжелее и со своим HTTP-стеком; для S3 хватает `async-aws/s3` (ADR-024) |
+| `league/flysystem` | абстракция файловых систем ради одного S3 — лишний слой (ADR-024) |
 
 ## Frontend
 

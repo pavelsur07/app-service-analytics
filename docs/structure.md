@@ -25,6 +25,9 @@ app-service-analytics/
 │   ├── review.py         явный Git-снимок, Claude/Codex и артефакты ревью
 │   ├── capture-ozon-buyout-fixtures.sh  интерактивно снимает raw-ответы
 │   │                         Ozon без передачи API-ключа в argv
+│   ├── set-raw-storage-env.sh  реквизиты хранилища сырья (ADR-024)
+│   │                         в /opt/conwix/.env: ввод человеком,
+│   │                         секрет — через stdin SSH, не argv
 │   ├── tests/             автономные shell-контрактные тесты утилит
 │   └── e2e-seed.sh       сеет компанию/подключение и разбирает фикстуру
 │                         Ozon в sales_fact перед Playwright (make test-e2e);
@@ -112,7 +115,11 @@ Redis, PostgreSQL.
 
 Секреты (`APP_SECRET`, пароль базы) сгенерированы на самом сервере
 и лежат в `/opt/conwix/.env` с режимом 600. Через конвейер и через
-машину разработчика они не проходили. В GitHub хранится только ключ
+машину разработчика они не проходили. Исключение — реквизиты хранилища
+сырья (`RAW_STORAGE_*`, ADR-024): ключи выпускает владелец в панели
+Timeweb Cloud и вводит на своей машине в `bin/set-raw-storage-env.sh`,
+который передаёт их на сервер через stdin SSH — не в argv, не в историю
+shell и не в файл на машине. В GitHub хранится только ключ
 доступа для выкладки и адрес сервера.
 
 **Известное ограничение площадки.** Машина имеет 1.9 ГиБ памяти на семь
@@ -306,6 +313,16 @@ Ingestion/Infrastructure/Connector/
 ├── Wildberries/
 └── Ozon/
 ```
+
+**Хранилище сырья (ADR-024)** — `Ingestion/Infrastructure/Storage/`:
+`S3RawDocumentStorage` (реализация `Domain/RawDocumentStorage`, gzip при
+записи и распаковка при чтении) и `S3RawStorageHealthCheck` (пробная
+запись-чтение-удаление вне префикса сырья). Ключ объекта собирает
+`Domain/RawObjectKey`. Проверка из консоли —
+`Ui/Command/CheckRawStorageCommand` (`app:ingestion:raw-storage-check`,
+с `--create-bucket` — только dev и test, `make s3-bucket-create`).
+В песочнице хранилище — сервис `minio` из `docker-compose.yml`
+(бакеты `conwix-dev` и `conwix-test`), на проде — S3 Timeweb Cloud.
 
 Общая абстракция коннектора появляется после второго коннектора,
 не до первого.
