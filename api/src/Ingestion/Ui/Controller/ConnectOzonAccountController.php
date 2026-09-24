@@ -7,7 +7,7 @@ namespace App\Ingestion\Ui\Controller;
 use App\Ingestion\Application\ConnectOzonAccountAction;
 use App\Ingestion\Application\ConnectOzonAccountResult;
 use App\Ingestion\Ui\Request\ConnectOzonAccountRequest;
-use App\Ingestion\Ui\Response\ConnectedAccountResponse;
+use App\Ingestion\Ui\Response\Connections\ConnectedAccountResponse;
 use App\Shared\Ui\RequestAttributes;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;

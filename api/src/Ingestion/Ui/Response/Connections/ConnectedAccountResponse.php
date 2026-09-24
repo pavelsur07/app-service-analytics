@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Ui\Response;
+namespace App\Ingestion\Ui\Response\Connections;
 
 use OpenApi\Attributes as OA;
 

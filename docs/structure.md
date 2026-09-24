@@ -283,6 +283,7 @@ Ingestion дополнительно:
 | Себестоимость (`ListingCosts`) | `ListingCost*` | `ListingCost*` |
 | Товары (`Listings`) | `ListingSnapshot*`, `CompanySku*` | `CompanySkuListResponse` |
 | Продажи (`Sales`) | `SalesFactList*`, `SkuSalesSummary*` | `SalesFactList*`, `SkuSales*` |
+| Подключения (`Connections`) | — | `ConnectedAccountResponse`, `ConnectionResponse`, `ConnectionsResponse`, `ReplacedCredentialsResponse` |
 
 ```
 Ingestion/Infrastructure/Connector/
@@ -308,7 +309,7 @@ Ingestion/Infrastructure/Connector/
 `Ui/Controller/ConnectOzonAccountController` публикует
 `POST /api/companies/{companyId}/connections`; `Ui/Request/ConnectOzonAccountRequest` —
 DTO с ручным разбором тела (не Symfony Form), не пропускающий значения
-секрета в исключения; `Ui/Response/ConnectedAccountResponse` не несёт
+секрета в исключения; `Ui/Response/Connections/ConnectedAccountResponse` не несёт
 учётных данных кабинета — только id, название и состояние.
 
 Витрина процента выкупа Ozon также остаётся внутри `Ingestion`: raw-ответы,

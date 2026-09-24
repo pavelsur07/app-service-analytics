@@ -6,8 +6,8 @@ namespace App\Ingestion\Ui\Controller;
 
 use App\Ingestion\Application\CompanyConnectionView;
 use App\Ingestion\Application\ListCompanyConnectionsAction;
-use App\Ingestion\Ui\Response\ConnectionResponse;
-use App\Ingestion\Ui\Response\ConnectionsResponse;
+use App\Ingestion\Ui\Response\Connections\ConnectionResponse;
+use App\Ingestion\Ui\Response\Connections\ConnectionsResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
