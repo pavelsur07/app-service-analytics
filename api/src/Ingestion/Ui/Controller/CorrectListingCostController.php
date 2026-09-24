@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Controller;
 
-use App\Ingestion\Application\CorrectListingCostAction;
+use App\Ingestion\Application\ListingCosts\CorrectListingCostAction;
 use App\Ingestion\Domain\ListingCostOutcome;
 use App\Ingestion\Ui\Request\ListingCostRequest;
 use App\Shared\Domain\ValueObject\Money;

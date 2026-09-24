@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Controller;
 
-use App\Ingestion\Application\ListListingCostsAction;
+use App\Ingestion\Application\ListingCosts\ListListingCostsAction;
 use App\Ingestion\Infrastructure\Query\ListingCosts\ListingCostRow;
 use App\Ingestion\Infrastructure\Query\ListingCosts\ListingCostsCursor;
 use App\Ingestion\Infrastructure\Query\ListingCosts\ListingCostsQuery;

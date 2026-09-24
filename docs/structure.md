@@ -281,7 +281,7 @@ Ingestion дополнительно:
 |---|---|---|---|
 | Выкуп (`Buyout`) | `BuildBuyoutDailySeriesAction`, `BuildBuyoutRateReportAction`, `BuyoutRateReport`, `BuyoutRateSku`, `BuyoutRateSummary` | `Buyout*`, `UnclassifiedOzonBuyout*`, `OzonPostingRawHistory*` | `Buyout*` |
 | Юнит-экономика (`UnitEconomics`) | `BuildUnitEconomicsAction`, `UnitEconomicsExpense`, `UnitEconomicsReport`, `UnitEconomicsSku` | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |
-| Себестоимость (`ListingCosts`) | — | `ListingCost*` | `ListingCost*` |
+| Себестоимость (`ListingCosts`) | `CorrectListingCostAction`, `ListListingCostsAction`, `ListingCostsPage`, `SetListingCostAction` | `ListingCost*` | `ListingCost*` |
 | Товары (`Listings`) | — | `ListingSnapshot*`, `CompanySku*` | `CompanySkuListResponse` |
 | Продажи (`Sales`) | — | `SalesFactList*`, `SkuSalesSummary*` | `SalesFactList*`, `SkuSales*` |
 | Подключения (`Connections`) | — | — | `ConnectedAccountResponse`, `ConnectionResponse`, `ConnectionsResponse`, `ReplacedCredentialsResponse` |

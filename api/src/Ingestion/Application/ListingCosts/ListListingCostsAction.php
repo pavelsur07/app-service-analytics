@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Ingestion\Application;
+namespace App\Ingestion\Application\ListingCosts;
 
 use App\Ingestion\Infrastructure\Query\ListingCosts\ListingCostsCursor;
 use App\Ingestion\Infrastructure\Query\ListingCosts\ListingCostsQuery;
