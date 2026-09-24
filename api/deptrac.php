@@ -224,6 +224,7 @@ return static function (DeptracConfig $config): void {
                     must: [DirectoryConfig::create('src/Ingestion/Infrastructure/.*')],
                     mustNot: [
                         ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\RecentlyIngestedAccountsQuery$'),
+                        ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\AllCompaniesRawObjects(SinceQuery|Row)$'),
                         DirectoryConfig::create('src/Ingestion/Infrastructure/Storage/.*'),
                     ],
                 ),
@@ -244,10 +245,23 @@ return static function (DeptracConfig $config): void {
             $ingestionOperationalCommand = Layer::withName('IngestionOperationalCommand')->collectors(
                 ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\(ScheduleOzonSync|CheckDataFreshness)Command$'),
             ),
+            // Сверка хранилища сырья (ADR-024, этап 2): межарендаторное
+            // чтение строк с ключами объектов — операционная задача
+            // (CLAUDE.md §1). Узкий слой на класс: запрос виден только
+            // команде сверки, команда — единственная, кому он выдан.
+            $ingestionRawVerificationQuery = Layer::withName('IngestionRawVerificationQuery')->collectors(
+                ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\AllCompaniesRawObjects(SinceQuery|Row)$'),
+            ),
+            $ingestionRawVerificationCommand = Layer::withName('IngestionRawVerificationCommand')->collectors(
+                ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\VerifyRawStorageCommand$'),
+            ),
             $ingestionUi = Layer::withName('IngestionUi')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Ingestion/Ui/.*')],
-                    mustNot: [ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\(ScheduleOzonSync|CheckDataFreshness)Command$')],
+                    mustNot: [
+                        ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\(ScheduleOzonSync|CheckDataFreshness)Command$'),
+                        ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\VerifyRawStorageCommand$'),
+                    ],
                 ),
             ),
 
@@ -406,6 +420,10 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($ingestionUi)->accesses($ingestionApplication, $ingestionDomain, $ingestionInfrastructure, $ingestionStorage, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
             // Команды фоновых процессов — не весь IngestionUi: только им
             // разрешён IngestionOperationalAction (см. слой выше).
+            // ingestionInfrastructure — ради RawDocumentBody::key(): ключ
+            // пересобирается тем же кодом, что при записи и чтении.
+            Ruleset::forLayer($ingestionRawVerificationCommand)->accesses($ingestionRawVerificationQuery, $ingestionDomain, $ingestionInfrastructure, $sharedUi, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($ingestionRawVerificationQuery)->accesses($symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionOperationalCommand)->accesses($ingestionSyncAction, $ingestionFreshnessAction, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent),
             // ingestionInfrastructure — синхронные запросы чтения, которые
             // Application только склеивает для экрана

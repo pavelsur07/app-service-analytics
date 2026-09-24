@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Ingestion;
 
 use App\Ingestion\Domain\MarketplaceReportType;
-use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceRawDocumentRepository;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use Doctrine\DBAL\Connection;
@@ -98,10 +97,7 @@ final class RecentlyIngestedAccountsQueryTest extends KernelTestCase
 
     private function document(Uuid $companyId, Uuid $accountId, \DateTimeImmutable $receivedAt): void
     {
-        // Не $container->get() конкретного класса: private-сервис без
-        // потребителя вычищается компилятором контейнера (та же причина,
-        // что в DoctrineMarketplaceRawDocumentRepositoryTest).
-        $repository = new DoctrineMarketplaceRawDocumentRepository($this->connection());
+        $repository = MarketplaceRawDocumentBuilder::repository(self::getContainer());
 
         MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
             ->withCompanyId($companyId)

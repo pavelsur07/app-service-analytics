@@ -24,8 +24,10 @@ final readonly class S3RawDocumentStorage implements RawDocumentStorage
     ) {
     }
 
-    public function put(RawObjectKey $key, string $body): void
+    public function put(string $companyId, RawObjectKey $key, string $body): void
     {
+        self::assertBelongs($companyId, $key);
+
         $compressed = gzencode($body, 6);
         if (false === $compressed) {
             throw new \RuntimeException(\sprintf('Не удалось сжать тело для %s', $key->toString()));
@@ -58,8 +60,10 @@ final readonly class S3RawDocumentStorage implements RawDocumentStorage
         }
     }
 
-    public function get(RawObjectKey $key): string
+    public function get(string $companyId, RawObjectKey $key): string
     {
+        self::assertBelongs($companyId, $key);
+
         try {
             $compressed = $this->s3->getObject([
                 'Bucket' => $this->rawStorageBucket,
@@ -91,8 +95,10 @@ final readonly class S3RawDocumentStorage implements RawDocumentStorage
      * Поэтому HeadObject с перехватом ровно NoSuchKey, а не waiter
      * objectExists(), у которого любой не-200 — просто «не успех».
      */
-    public function exists(RawObjectKey $key): bool
+    public function exists(string $companyId, RawObjectKey $key): bool
     {
+        self::assertBelongs($companyId, $key);
+
         try {
             $this->s3->headObject([
                 'Bucket' => $this->rawStorageBucket,
@@ -110,5 +116,14 @@ final readonly class S3RawDocumentStorage implements RawDocumentStorage
         }
 
         return true;
+    }
+
+    private static function assertBelongs(string $companyId, RawObjectKey $key): void
+    {
+        if (!$key->belongsTo($companyId)) {
+            // Ошибка программы, а не данных: ключ собран для другой
+            // компании. Молча выполнить запрос значило бы нарушить §1.
+            throw new \LogicException(\sprintf('Ключ объекта сырья не принадлежит компании %s.', $companyId));
+        }
     }
 }

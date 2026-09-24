@@ -457,7 +457,9 @@ jobs:
       # не может достучаться до хоста redis при входе — тот же класс
       # пробела, что уже чинили в backend-джобе (login_throttling),
       # здесь не был перенесён на e2e-джобу.
-      - run: docker compose up -d postgres redis php-fpm nginx playwright
+      # minio — подготовка e2e пишет сырьё через команды импорта, а тела
+      # сырья с этапа 2 ADR-024 — только в хранилище.
+      - run: docker compose up -d postgres redis minio php-fpm nginx playwright
 
       # См. комментарий в задаче backend: шаг обязателен и при попадании
       # в кэш — post-install-cmd прогревает var/cache, без которого
@@ -501,7 +503,8 @@ jobs:
       # экран открывается против того же php-fpm, что видит браузер.
       # Без миграции здесь она пуста: раньше это было незаметно, пока
       # e2e не требовал таблиц (стартовый пинг-экран).
-      - run: make db-wait api-migrate
+      # s3-bucket-create — бакет, куда сид пишет тела сырья (ADR-024).
+      - run: make db-wait api-migrate s3-bucket-create
 
       - run: make test-e2e
 

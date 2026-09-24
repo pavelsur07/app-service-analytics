@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Query\Buyout;
 
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Infrastructure\Persistence\RawDocumentBody;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 use Symfony\Component\Uid\Uuid;
@@ -16,6 +17,7 @@ final readonly class OzonPostingRawHistoryQuery
 {
     public function __construct(
         private Connection $connection,
+        private RawDocumentBody $rawDocumentBody,
     ) {
     }
 
@@ -60,7 +62,8 @@ final readonly class OzonPostingRawHistoryQuery
     public function fetchDocument(string $companyId, string $marketplaceAccountId, Uuid $id): OzonPostingRawHistoryRow
     {
         $row = $this->connection->createQueryBuilder()
-            ->select('id', 'body', 'received_at')
+            // Тело — из базы или из S3 (ADR-024): решает RawDocumentBody.
+            ->select('id', 'received_at', RawDocumentBody::COLUMNS)
             ->from('marketplace_raw_document')
             ->where('company_id = :companyId')
             ->andWhere('marketplace_account_id = :marketplaceAccountId')
@@ -75,6 +78,7 @@ final readonly class OzonPostingRawHistoryQuery
         if (false === $row) {
             throw new \UnexpectedValueException('Ozon posting raw document disappeared during backfill.');
         }
+        $row['body'] = $this->rawDocumentBody->read($companyId, $row);
 
         return self::mapRow($row);
     }

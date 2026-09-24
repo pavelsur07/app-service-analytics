@@ -47,6 +47,17 @@ final class RawObjectKeyTest extends TestCase
         self::assertStringStartsWith(RawObjectKey::PREFIX.'/companies/', $first);
     }
 
+    public function testBelongsOnlyToItsCompany(): void
+    {
+        $company = Uuid::v7();
+        $key = RawObjectKey::for($company, Uuid::v7(), 'ozon_accrual_by_day', new \DateTimeImmutable('2026-09-04'), self::HASH, 'json');
+
+        self::assertTrue($key->belongsTo($company->toRfc4122()));
+        // Строка в верхнем регистре — тот же идентификатор.
+        self::assertTrue($key->belongsTo(strtoupper($company->toRfc4122())));
+        self::assertFalse($key->belongsTo(Uuid::v7()->toRfc4122()));
+    }
+
     /**
      * @return iterable<string, array{string, string, string}>
      */

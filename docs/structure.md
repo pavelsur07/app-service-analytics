@@ -314,6 +314,16 @@ Ingestion/Infrastructure/Connector/
 └── Ozon/
 ```
 
+**Тела сырых документов (ADR-024, этап 2)** пишет и читает
+`Persistence/DoctrineMarketplaceRawDocumentRepository`: при
+`RAW_BODY_STORE=s3` — объект в хранилище и строка с ключом (`storage_key`,
+`byte_size`, `body = NULL`), при аварийном `database` — тело в базе.
+Откуда читать тело, решает `Persistence/RawDocumentBody` — одно место для
+репозитория и `Query/Buyout/OzonPostingRawHistoryQuery`. Сверка
+хранилища со строками — `Ui/Command/VerifyRawStorageCommand`
+(`app:ingestion:raw-storage-verify --since=…`) поверх межарендаторного
+`Query/AllCompaniesRawObjectsSinceQuery`; оба — в узких слоях Deptrac.
+
 **Хранилище сырья (ADR-024)** — `Ingestion/Infrastructure/Storage/`:
 `S3RawDocumentStorage` (реализация `Domain/RawDocumentStorage`, gzip при
 записи и распаковка при чтении) и `S3RawStorageHealthCheck` (пробная

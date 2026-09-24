@@ -66,4 +66,17 @@ final readonly class RawObjectKey
     {
         return $this->key;
     }
+
+    /**
+     * Лежит ли объект в префиксе этой компании. Порт хранилища сверяет
+     * ключ с companyId вызывающего (CLAUDE.md §1): ключ чужой компании
+     * не читается и не пишется, даже если собран верно.
+     */
+    public function belongsTo(string $companyId): bool
+    {
+        return str_starts_with(
+            $this->key,
+            \sprintf('%s/companies/%s/', self::PREFIX, Uuid::fromString($companyId)->toRfc4122()),
+        );
+    }
 }

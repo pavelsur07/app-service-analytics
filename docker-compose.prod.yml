@@ -105,18 +105,22 @@ x-api-env: &api-env
   # и ключи с правами только на него заводит владелец в панели Timeweb;
   # значения — только в /opt/conwix/.env на сервере.
   #
-  # :- , не :? — на этапе 1 хранилищем ещё никто не пользуется, и выкладка
-  # не должна падать, пока бакета нет. Пустые значения перекрывают
-  # dev-умолчания MinIO из испечённого в образ api/.env, поэтому без
-  # настройки проверка (app:ingestion:raw-storage-check) отказывает явно,
-  # а не стучится в MinIO, которого на проде нет. Когда сырьё начнёт
-  # писаться в S3 (этап 2), здесь станет :? — без хранилища загрузка
-  # остановится, а не потеряет данные молча.
-  RAW_STORAGE_ENDPOINT: ${RAW_STORAGE_ENDPOINT:-}
-  RAW_STORAGE_REGION: ${RAW_STORAGE_REGION:-}
-  RAW_STORAGE_BUCKET: ${RAW_STORAGE_BUCKET:-}
-  RAW_STORAGE_ACCESS_KEY: ${RAW_STORAGE_ACCESS_KEY:-}
-  RAW_STORAGE_SECRET_KEY: ${RAW_STORAGE_SECRET_KEY:-}
+  # :? — с этапа 2 тела новых сырых документов пишутся только в хранилище:
+  # без реквизитов выкладка не проходит, а не запускает загрузку, которая
+  # упадёт на первой записи.
+  RAW_STORAGE_ENDPOINT: ${RAW_STORAGE_ENDPOINT:?}
+  RAW_STORAGE_REGION: ${RAW_STORAGE_REGION:?}
+  RAW_STORAGE_BUCKET: ${RAW_STORAGE_BUCKET:?}
+  RAW_STORAGE_ACCESS_KEY: ${RAW_STORAGE_ACCESS_KEY:?}
+  RAW_STORAGE_SECRET_KEY: ${RAW_STORAGE_SECRET_KEY:?}
+  # s3 — тело в хранилище (ADR-024, этап 2). database — аварийный возврат
+  # записи тел в базу без выкладки: строка RAW_BODY_STORE=database
+  # в /opt/conwix/.env и пересоздание api и worker-ingestion
+  # (docs/operations-checklist.md). Чтение понимает оба вида строк.
+  # Откат образа ниже этапа 2 после появления строк с body = NULL
+  # запрещён — старый код их не читает; аварийный путь только этот.
+  # Убирается на этапе 3.
+  RAW_BODY_STORE: ${RAW_BODY_STORE:-s3}
 
 services:
   traefik:
