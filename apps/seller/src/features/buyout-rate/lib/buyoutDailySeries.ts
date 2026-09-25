@@ -1,3 +1,5 @@
+import type { components } from '../../../api/schema'
+
 interface DailyRates {
   actualBuyoutRateBps?: number | null
   projectedBuyoutRateBps?: number | null
@@ -28,9 +30,10 @@ export function countAvailableRateDays(series: readonly DailyRates[]): {
   return { actualDays, projectedDays }
 }
 
-interface DailyMaturity {
-  maturityStatus: 'mature' | 'preliminary'
-}
+type DailyMaturity = Pick<
+  components['schemas']['BuyoutDailyPointResponse'],
+  'maturityStatus'
+>
 
 /**
  * Непрерывные отрезки незрелых точек в индексах ряда. Зрелость считается
