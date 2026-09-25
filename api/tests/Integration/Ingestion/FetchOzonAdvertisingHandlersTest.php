@@ -92,6 +92,9 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
             array_reverse($expectedDays),
             $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdSkuDay),
         );
+        // Список, по которому выбраны кампании, сохранён до разбора
+        // с днём снимка из сообщения (ADR-006).
+        self::assertSame([$chunk['to']], $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdCampaigns));
     }
 
     public function testOldChunkDoesNotAskForSku(): void

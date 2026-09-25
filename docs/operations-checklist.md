@@ -75,7 +75,9 @@ ADR-007 «с первого дня», и ограничение по адрес�
 
 - [ ] `marketplace_account.advertising_state = 'active'` у подключения.
 - [ ] В `marketplace_raw_document` появились `ozon_ad_campaigns`,
-      `ozon_ad_expense`, `ozon_ad_daily`, `ozon_ad_sku_day`; самый ранний `period`
+      `ozon_ad_expense`, `ozon_ad_daily`, а `ozon_ad_sku_day` — если у кабинета
+      есть неархивные кампании типа `SKU` (иначе запроса нет, ADR-026 п. 4);
+      самый ранний `period`
       у `ozon_ad_expense` — около года назад (первичная загрузка, ADR-026 п. 4).
 - [ ] `messenger:failed:show` без сообщений `FetchOzonAd*`.
 

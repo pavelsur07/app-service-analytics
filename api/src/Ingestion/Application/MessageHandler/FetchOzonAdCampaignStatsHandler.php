@@ -75,7 +75,7 @@ final readonly class FetchOzonAdCampaignStatsHandler
 
             $skuDays = OzonAdvertisingWindows::skuDays($from, $to, OzonAdvertisingWindows::today(new \DateTimeImmutable()));
             if ([] !== $skuDays) {
-                $this->captureSkuDays($companyId, $accountId, $token, $skuDays);
+                $this->captureSkuDays($companyId, $accountId, $token, $to, $skuDays);
             }
         } catch (\Throwable $failure) {
             if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
@@ -101,12 +101,19 @@ final readonly class FetchOzonAdCampaignStatsHandler
     /**
      * @param list<\DateTimeImmutable> $days
      */
-    private function captureSkuDays(Uuid $companyId, Uuid $accountId, string $token, array $days): void
+    private function captureSkuDays(Uuid $companyId, Uuid $accountId, string $token, \DateTimeImmutable $to, array $days): void
     {
+        // Сначала raw, потом разбор (ADR-006): список, по которому выбраны
+        // кампании запроса, сохраняется как есть. `period` — последний день
+        // куска из сообщения, а не часы обработчика: повтор после полуночи
+        // попадает в тот же документ.
+        $campaigns = $this->client->campaigns($token);
+        $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdCampaigns, $to, $campaigns);
+
         $campaignIds = array_values(array_map(
             static fn (OzonAdCampaign $campaign): string => $campaign->id,
             array_filter(
-                $this->campaignParser->parse($this->client->campaigns($token)),
+                $this->campaignParser->parse($campaigns),
                 static fn (OzonAdCampaign $campaign): bool => OzonAdCampaign::StateArchived !== $campaign->state
                     && OzonAdCampaign::TypeSku === $campaign->advObjectType,
             ),
