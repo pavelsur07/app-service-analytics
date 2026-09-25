@@ -207,7 +207,9 @@ export function SkuBuyoutDaily({
                 tickLine={false}
                 width={48}
               />
-              <Tooltip content={<DailyTooltip />} />
+              {/* Точка без факта и прогноза тоже нужна в подсказке: доля
+                  без оценки объясняет, почему прогноза нет. */}
+              <Tooltip content={<DailyTooltip />} filterNull={false} />
               <Line
                 connectNulls={false}
                 dataKey="actualBuyoutRateBps"
