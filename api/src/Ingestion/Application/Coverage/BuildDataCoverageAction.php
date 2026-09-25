@@ -33,7 +33,9 @@ final readonly class BuildDataCoverageAction
     {
         $connection = null;
         foreach ($this->identityFacade->listConnections($companyId) as $candidate) {
-            if ($candidate->id === $marketplaceAccountId) {
+            // Источники отчёта — эндпоинты Ozon: у кабинета другой площадки
+            // строки «нет данных» были бы неправдой.
+            if ($candidate->id === $marketplaceAccountId && 'ozon' === $candidate->marketplace) {
                 $connection = $candidate;
             }
         }

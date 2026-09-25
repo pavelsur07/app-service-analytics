@@ -68,6 +68,29 @@ export function monthLabel(month: string): string {
   return match === null || name === undefined ? month : `${name} ${match[1]}`
 }
 
+/** Самый ранний месяц, который отдаёт API. */
+const FIRST_MONTH = '2020-01'
+
+/**
+ * Месяц из адреса, если API его примет: `YYYY-MM`, номер 01–12,
+ * от `FIRST_MONTH` до текущего. Иначе — текущий: битая или
+ * «будущая» ссылка открывает отчёт, а не ошибку, которую не повторить.
+ */
+export function monthFromParam(value: string | null, current: string): string {
+  const match = /^\d{4}-(\d{2})$/.exec(value ?? '')
+  const monthNumber = match === null ? 0 : Number(match[1])
+  if (value === null || monthNumber < 1 || monthNumber > 12) {
+    return current
+  }
+
+  return value < FIRST_MONTH || value > current ? current : value
+}
+
+/** Раньше `FIRST_MONTH` API отчёт не отдаёт. */
+export function canGoBack(month: string): boolean {
+  return month > FIRST_MONTH
+}
+
 /** Следующего месяца отчёт не отдаёт: данных за будущее нет. */
 export function canGoForward(month: string, current: string): boolean {
   return month < current

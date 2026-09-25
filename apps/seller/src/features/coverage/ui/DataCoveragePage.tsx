@@ -9,10 +9,12 @@ import {
 } from '../../../../../../packages/ui/src'
 import { useConnections } from '../../../shared/model/useConnections'
 import {
+  canGoBack,
   canGoForward,
   cellTitle,
   currentMonth,
   dayNumber,
+  monthFromParam,
   monthLabel,
   shiftMonth,
   statusView,
@@ -38,10 +40,11 @@ export function DataCoveragePage() {
   const connections = useConnections(companyId)
 
   const current = currentMonth()
-  const month = /^\d{4}-\d{2}$/.test(params.get('month') ?? '')
-    ? (params.get('month') ?? current)
-    : current
-  const list = connections.data?.connections ?? []
+  const month = monthFromParam(params.get('month'), current)
+  // Отчёт — по эндпоинтам Ozon; кабинет другой площадки API не примет.
+  const list = (connections.data?.connections ?? []).filter(
+    (connection) => connection.marketplace === 'ozon',
+  )
   const accountId =
     list.find((connection) => connection.id === params.get('account'))?.id ??
     list[0]?.id ??
@@ -100,6 +103,7 @@ export function DataCoveragePage() {
         <div className="ml-auto flex items-center gap-1">
           <Button
             aria-label="Предыдущий месяц"
+            disabled={!canGoBack(month)}
             onClick={() => {
               update({ month: shiftMonth(month, -1) })
             }}

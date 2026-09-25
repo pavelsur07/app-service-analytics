@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canGoBack,
   canGoForward,
   cellTitle,
   currentMonth,
   dayNumber,
+  monthFromParam,
   monthLabel,
   shiftMonth,
   statusView,
@@ -33,6 +35,19 @@ describe('переключатель месяца', () => {
   it('не пускает в будущий месяц', () => {
     expect(canGoForward('2026-08', '2026-09')).toBe(true)
     expect(canGoForward('2026-09', '2026-09')).toBe(false)
+    expect(canGoBack('2020-02')).toBe(true)
+    expect(canGoBack('2020-01')).toBe(false)
+  })
+
+  it('берёт из адреса только месяц, который примет API, иначе текущий', () => {
+    expect(monthFromParam('2026-08', '2026-09')).toBe('2026-08')
+    expect(monthFromParam('2020-01', '2026-09')).toBe('2020-01')
+    expect(monthFromParam(null, '2026-09')).toBe('2026-09')
+    expect(monthFromParam('2026-13', '2026-09')).toBe('2026-09')
+    expect(monthFromParam('2026-00', '2026-09')).toBe('2026-09')
+    expect(monthFromParam('2019-12', '2026-09')).toBe('2026-09')
+    expect(monthFromParam('2026-10', '2026-09')).toBe('2026-09')
+    expect(monthFromParam('сентябрь', '2026-09')).toBe('2026-09')
   })
 
   it('считает текущий месяц по Москве, а не по часам браузера', () => {
