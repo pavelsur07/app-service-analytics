@@ -23,8 +23,8 @@ use Symfony\Component\Messenger\Stamp\DelayStamp;
  * это минута занятого воркера на каждый отчёт.
  *
  * Из ответа читается только UUID. Отказ лимита (429) — в том числе
- * «у кабинета уже формируется отчёт» — повторяется через минуту с потолком
- * попыток; прочий отказ 4xx — предупреждение в журнал. Повторная доставка
+ * «у кабинета уже формируется отчёт» — повторяется примерно через минуту
+ * с разбросом, не дольше суток; прочий отказ 4xx — предупреждение в журнал. Повторная доставка
  * сообщения закажет отчёт ещё раз: это согласованное отступление
  * от CLAUDE.md §4 (ADR-026 п. 4), лишняя выгрузка из суточного лимита.
  */
@@ -35,8 +35,17 @@ final readonly class OrderOzonAdSkuReportHandler
 
     public const int RATE_LIMIT_RETRY_MS = 60_000;
 
-    /** Попыток заказа на отказах лимита: раз в минуту — около часа. */
-    public const int MAX_ATTEMPTS = 60;
+    /**
+     * Попыток заказа на отказах лимита: около минуты каждая — около суток.
+     * Потолок меряет длительность отказа, а не место в очереди: площадка
+     * пропускает примерно один заказ в минуту, и первичная загрузка
+     * с сотней заказов проходит за часы, ни один не упираясь в потолок.
+     * Сутки — это и сброс суточного лимита выгрузок.
+     */
+    public const int MAX_ATTEMPTS = 1_440;
+
+    /** Разброс задержки повтора: отклонённые заказы не просыпаются одной волной. */
+    private const int RETRY_JITTER_MS = 30_000;
 
     public function __construct(
         private IdentityFacade $identityFacade,
@@ -118,7 +127,7 @@ final readonly class OrderOzonAdSkuReportHandler
 
         $this->bus->dispatch(
             new OrderOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $message->to, $message->campaignIds, $message->attempt + 1),
-            [new DelayStamp(self::RATE_LIMIT_RETRY_MS)],
+            [new DelayStamp(self::RATE_LIMIT_RETRY_MS - self::RETRY_JITTER_MS + random_int(0, 2 * self::RETRY_JITTER_MS))],
         );
     }
 

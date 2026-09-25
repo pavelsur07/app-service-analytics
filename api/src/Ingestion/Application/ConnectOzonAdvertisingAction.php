@@ -212,8 +212,9 @@ final readonly class ConnectOzonAdvertisingAction
 
         try {
             // Список кампаний из пробы — сразу в raw: по нему куски первичной
-            // загрузки заказывают SKU-отчёты, и ни одному не придётся
-            // запрашивать его заново (лимит площадки, 429).
+            // загрузки заказывают SKU-отчёты, не запрашивая его заново (лимит
+            // площадки, 429). Это оптимизация, а не условие: сбой хранилища
+            // здесь постановку кусков не срывает — куски запросят список сами.
             $this->rawDocuments->add(MarketplaceRawDocument::capture(
                 companyId: Uuid::fromString($companyId),
                 marketplaceAccountId: Uuid::fromString($marketplaceAccountId),
@@ -221,7 +222,15 @@ final readonly class ConnectOzonAdvertisingAction
                 period: $today,
                 rawBody: $campaignList,
             ));
+        } catch (\Throwable $failure) {
+            $this->logger->warning('Список кампаний из пробы рекламного ключа не сохранён в raw — куски первичной загрузки запросят его сами', [
+                'company_id' => $companyId,
+                'marketplace_account_id' => $marketplaceAccountId,
+                'exception_class' => $failure::class,
+            ]);
+        }
 
+        try {
             foreach (OzonAdvertisingWindows::initial($today) as $chunk) {
                 $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to'], withReports: true));
             }

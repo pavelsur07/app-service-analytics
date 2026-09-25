@@ -191,7 +191,12 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         $retry = $retries[0]->getMessage();
         self::assertInstanceOf(OrderOzonAdSkuReportMessage::class, $retry);
         self::assertSame(2, $retry->attempt);
-        self::assertSame(60_000, $retries[0]->last(DelayStamp::class)?->getDelay());
+        // Около минуты, с разбросом: отклонённые заказы не просыпаются
+        // одной волной.
+        $delay = $retries[0]->last(DelayStamp::class)?->getDelay();
+        self::assertNotNull($delay);
+        self::assertGreaterThanOrEqual(30_000, $delay);
+        self::assertLessThanOrEqual(90_000, $delay);
 
         // Постоянный отказ (исчерпан суточный лимит) — не бесконечная
         // петля, а предупреждение на потолке.
