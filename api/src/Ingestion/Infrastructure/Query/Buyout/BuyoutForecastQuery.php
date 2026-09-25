@@ -30,48 +30,28 @@ final readonly class BuyoutForecastQuery
         ?string $cursor,
         ?array $marketplaceSkus = null,
     ): QueryBuilder {
-        $maturitySample = BuyoutMaturityQuery::MIN_SAMPLE_SIZE;
+        $maturityCtes = BuyoutMaturityQuery::maturityCtes();
+        $trainingDays = BuyoutMaturityQuery::trainingDaysCte();
         $trainingSample = self::MIN_TRAINING_QUANTITY;
         $source = <<<SQL
             WITH tenant_outcome AS MATERIALIZED (
                 SELECT company_id, marketplace_account_id, source_row_id,
                        posting_number, order_number, marketplace_sku,
                        quantity, business_date, outcome,
-                       handed_over_at, resolved_at, is_forecast_eligible
+                       handed_over_at, resolved_at, is_forecast_eligible,
+                       resolution_observed, is_in_flight
                 FROM buyout_outcome
                 WHERE company_id = :companyId
             ),
-            posting_intervals AS (
-                SELECT DISTINCT company_id, marketplace_account_id, posting_number,
-                       EXTRACT(EPOCH FROM (resolved_at - handed_over_at))::bigint AS duration_seconds
-                FROM tenant_outcome
-                WHERE outcome IS NOT NULL
-                  AND posting_number IS NOT NULL
-                  AND handed_over_at IS NOT NULL
-                  AND resolved_at IS NOT NULL
-                  AND resolved_at >= handed_over_at
-                  AND resolved_at <= :asOf
-            ),
-            maturity AS (
-                SELECT marketplace_account_id,
-                       CASE WHEN COUNT(*) >= {$maturitySample}
-                            THEN PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_seconds)
-                            ELSE NULL
-                       END AS p95_seconds
-                FROM posting_intervals
-                GROUP BY marketplace_account_id
-            ),
+            {$maturityCtes},
+            {$trainingDays},
             training_rows AS (
                 SELECT o.*
                 FROM tenant_outcome o
-                JOIN maturity m ON m.marketplace_account_id = o.marketplace_account_id
-                WHERE m.p95_seconds IS NOT NULL
-                  AND o.outcome IN ('T1', 'D', 'T2', 'P')
-                  AND o.business_date < (:asOfMoscow::timestamp - make_interval(secs => m.p95_seconds::double precision))::date
-                  AND o.business_date >= (:asOfMoscow::timestamp - make_interval(secs => m.p95_seconds::double precision))::date - INTERVAL '30 days'
-                  AND EXTRACT(EPOCH FROM (
-                      :asOf::timestamp - ((o.business_date + 1)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')
-                  )) > m.p95_seconds
+                JOIN training_days d
+                  ON d.marketplace_account_id = o.marketplace_account_id
+                 AND d.business_date = o.business_date
+                WHERE o.outcome IN ('T1', 'D', 'T2', 'P')
             ),
             sku_training AS (
                 SELECT marketplace_account_id, marketplace_sku,

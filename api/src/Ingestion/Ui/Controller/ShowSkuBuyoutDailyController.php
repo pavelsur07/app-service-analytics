@@ -69,6 +69,8 @@ final class ShowSkuBuyoutDailyController
             orderedQuantity: $row->orderedQuantity,
             resolvedQuantity: $row->resolvedQuantity,
             projectedBuyoutQuantity: $row->projectedBuyoutQuantity,
+            maturityStatus: $row->maturityStatus,
+            inFlightRateBps: $row->inFlightRateBps,
         );
     }
 

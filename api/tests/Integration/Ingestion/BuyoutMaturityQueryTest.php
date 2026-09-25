@@ -54,14 +54,14 @@ final class BuyoutMaturityQueryTest extends KernelTestCase
         self::assertTrue($atThirty->isCohortMature($boundary, $boundary->modify('+29 hours +1 second')));
     }
 
-    public function testExcludesFutureAndNegativeIntervalsAndScopesByAccount(): void
+    public function testExcludesFutureAndUnobservedResolutionsAndScopesByAccount(): void
     {
         $this->deliveredPosting('VALID', 10);
         $this->deliveredPosting('FUTURE', 10, '2026-09-02 00:00:00');
-        $this->negativePosting('NEGATIVE');
+        $this->firstSeenResolvedPosting('FIRST-SEEN-RESOLVED');
 
         $otherAccount = Uuid::v7();
-        $this->deliveredPosting('OTHER', 20, '2026-08-01 00:00:00', $otherAccount);
+        $this->deliveredPosting('OTHER', 20, accountId: $otherAccount);
 
         $ours = $this->maturity($this->accountId);
         $theirs = $this->maturity($otherAccount);
@@ -70,6 +70,20 @@ final class BuyoutMaturityQueryTest extends KernelTestCase
         self::assertSame(10 * 3600, $ours->p50Seconds);
         self::assertSame(1, $theirs->sampleSize);
         self::assertSame(20 * 3600, $theirs->p50Seconds);
+    }
+
+    public function testMeasuresFromEndOfOrderDayInMoscowAndClampsSameDayResolution(): void
+    {
+        // Заказ 2026-07-01, конец дня по Москве — 2026-07-01 21:00 UTC.
+        // handover в 23:00 UTC не является точкой отсчёта (ADR-029).
+        $this->deliveredPosting('LATE-HANDOVER', 1, '2026-07-01 23:00:00');
+        $this->deliveredPosting('SAME-DAY', 1, '2026-07-01 10:00:00');
+
+        $maturity = $this->maturity($this->accountId);
+
+        self::assertSame(2, $maturity->sampleSize);
+        self::assertSame(0, $maturity->p50Seconds);
+        self::assertSame(3 * 3600, $maturity->p90Seconds);
     }
 
     public function testAsOfRepresentsTheSameInstantRegardlessOfInputTimezone(): void
@@ -95,7 +109,7 @@ final class BuyoutMaturityQueryTest extends KernelTestCase
     private function deliveredPosting(
         string $posting,
         int $hours,
-        string $handedAt = '2026-08-01 00:00:00',
+        string $handedAt = '2026-07-01 21:00:00',
         ?Uuid $accountId = null,
     ): void {
         $accountId ??= $this->accountId;
@@ -109,6 +123,7 @@ final class BuyoutMaturityQueryTest extends KernelTestCase
                 ->withOrderNumber('ORDER-'.$posting)
                 ->withMarketplaceSku('SKU-'.$posting)
                 ->withStatus('delivered')
+                ->withBusinessDate(new \DateTimeImmutable('2026-07-01'))
                 ->build(),
         ]);
         $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
@@ -117,7 +132,7 @@ final class BuyoutMaturityQueryTest extends KernelTestCase
         ]);
     }
 
-    private function negativePosting(string $posting): void
+    private function firstSeenResolvedPosting(string $posting): void
     {
         $this->sales()->upsertAll([
             SalesFactBuilder::aSalesFact()
@@ -130,8 +145,8 @@ final class BuyoutMaturityQueryTest extends KernelTestCase
                 ->withStatus('delivered')
                 ->build(),
         ]);
-        // delivering увиден уже после terminal: такой интервал нельзя
-        // интерпретировать как скорость доставки.
+        // Первое наблюдение уже terminal: resolved_at — начало наблюдения,
+        // а не момент закрытия, и в выборку срока он не входит.
         $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
             $this->postingStatus($this->accountId, $posting, 'delivered', new \DateTimeImmutable('2026-08-02 10:00:00')),
             $this->postingStatus($this->accountId, $posting, 'delivering', new \DateTimeImmutable('2026-08-02 11:00:00')),

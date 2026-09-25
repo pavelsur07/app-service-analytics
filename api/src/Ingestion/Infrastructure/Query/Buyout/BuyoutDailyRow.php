@@ -14,6 +14,8 @@ final readonly class BuyoutDailyRow
         public int $orderedQuantity,
         public int $resolvedQuantity,
         public ?int $projectedBuyoutQuantity,
+        public string $maturityStatus,
+        public ?int $inFlightRateBps,
     ) {
     }
 }

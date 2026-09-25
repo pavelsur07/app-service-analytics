@@ -78,7 +78,8 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
         self::assertSame(769, $skuA->t1RateBps);
         self::assertSame(385, $skuA->t2RateBps);
         self::assertSame(385, $skuA->partialReturnRateBps);
-        self::assertSame('mature', $skuA->maturityStatus);
+        // Возраст периода больше p95, но 10 из 26 штук ещё в доставке.
+        self::assertSame('preliminary', $skuA->maturityStatus);
 
         $zeroDenominator = $bySku['SKU-Z'];
         self::assertSame(2, $zeroDenominator->orderedQuantity);
@@ -91,11 +92,47 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
 
     public function testMaturityUsesStrictAgeGreaterThanP95(): void
     {
-        $onBoundary = $this->report(new \DateTimeImmutable('2026-08-02T22:00:00Z'));
-        $afterBoundary = $this->report(new \DateTimeImmutable('2026-08-02T22:00:01Z'));
+        $this->sales()->upsertAll([$this->sale('CLOSED', 'ORDER-CLOSED', 'SKU-CLOSED', 'delivered', 1)]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('CLOSED', 'ORDER-CLOSED', 'delivering', '2026-08-02 00:00:00'),
+            $this->postingStatus('CLOSED', 'ORDER-CLOSED', 'delivered', '2026-08-02 01:00:00'),
+        ]);
 
-        self::assertSame('preliminary', $onBoundary->items[0]->maturityStatus);
-        self::assertSame('mature', $afterBoundary->items[0]->maturityStatus);
+        $onBoundary = self::item($this->report(new \DateTimeImmutable('2026-08-02T22:00:00Z')), 'SKU-CLOSED');
+        $afterBoundary = self::item($this->report(new \DateTimeImmutable('2026-08-02T22:00:01Z')), 'SKU-CLOSED');
+
+        self::assertSame('preliminary', $onBoundary->maturityStatus);
+        self::assertSame('mature', $afterBoundary->maturityStatus);
+    }
+
+    public function testMaturityAllowsInFlightShareUpToThreePercentOnly(): void
+    {
+        $facts = [];
+        $statuses = [];
+        for ($index = 1; $index <= 33; ++$index) {
+            $posting = 'EDGE-'.$index;
+            $facts[] = $this->sale($posting, 'ORDER-'.$posting, 'SKU-EDGE', 'delivered', 1);
+            $statuses[] = $this->postingStatus($posting, 'ORDER-'.$posting, 'delivering', '2026-08-02 00:00:00');
+            $statuses[] = $this->postingStatus($posting, 'ORDER-'.$posting, 'delivered', '2026-08-02 01:00:00');
+        }
+        // 1 из 34 штук в доставке — 2,94%.
+        $facts[] = $this->sale('EDGE-FLIGHT', 'ORDER-EDGE-FLIGHT', 'SKU-EDGE', 'delivering', 1);
+        $statuses[] = $this->postingStatus('EDGE-FLIGHT', 'ORDER-EDGE-FLIGHT', 'delivering', '2026-08-02 00:00:00');
+        // Нераспознанный исход без активного статуса зрелость не блокирует.
+        $facts[] = $this->sale('EDGE-UNKNOWN', 'ORDER-EDGE-UNKNOWN', 'SKU-EDGE', 'cancelled', 1);
+        $statuses[] = $this->postingStatus('EDGE-UNKNOWN', 'ORDER-EDGE-UNKNOWN', 'cancelled', '2026-08-02 01:00:00');
+        $this->sales()->upsertAll($facts);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), $statuses);
+
+        $asOf = new \DateTimeImmutable('2026-08-02T22:00:01Z');
+        self::assertSame('mature', self::item($this->report($asOf), 'SKU-EDGE')->maturityStatus);
+
+        // Вторая штука в доставке — 2 из 35, 5,7%.
+        $this->sales()->upsertAll([$this->sale('EDGE-FLIGHT-2', 'ORDER-EDGE-FLIGHT-2', 'SKU-EDGE', 'delivering', 1)]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('EDGE-FLIGHT-2', 'ORDER-EDGE-FLIGHT-2', 'delivering', '2026-08-02 00:00:00'),
+        ]);
+        self::assertSame('preliminary', self::item($this->report($asOf), 'SKU-EDGE')->maturityStatus);
     }
 
     public function testActualBuyoutSortPaginatesNullsLastWithoutLosingForecasts(): void
@@ -119,8 +156,10 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
 
         $second = $action(...$arguments, cursor: BuyoutRateCursor::fromString($first->nextCursor));
         self::assertSame(['SKU-LOW', 'SKU-NULL'], array_column($second->items, 'marketplaceSku'));
-        self::assertSame(4, $second->items[1]->projectedBuyoutQuantity);
-        self::assertSame(8929, $second->items[1]->projectedBuyoutRateBps);
+        // Обучение — только зрелые дни кабинета: 2026-08-02 со штуками
+        // в доставке в окно не входит, остаётся полностью выкупленный 07-10.
+        self::assertSame(5, $second->items[1]->projectedBuyoutQuantity);
+        self::assertSame(10000, $second->items[1]->projectedBuyoutRateBps);
         self::assertNotNull($second->nextCursor);
 
         $third = $action(...$arguments, cursor: BuyoutRateCursor::fromString($second->nextCursor));
@@ -286,8 +325,9 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
         for ($index = 1; $index <= 30; ++$index) {
             $posting = 'TRAIN-'.$index;
             $facts[] = $this->sale($posting, 'TRAIN-'.$index, 'TRAIN', 'delivered', 1, '2026-06-01');
-            $statuses[] = $this->postingStatus($posting, 'TRAIN-'.$index, 'delivering', '2026-06-02 00:00:00');
-            $statuses[] = $this->postingStatus($posting, 'TRAIN-'.$index, 'delivered', '2026-06-02 01:00:00');
+            // Конец дня заказа по Москве — 2026-06-01 21:00 UTC: p95 = 1 час.
+            $statuses[] = $this->postingStatus($posting, 'TRAIN-'.$index, 'delivering', '2026-06-01 21:30:00');
+            $statuses[] = $this->postingStatus($posting, 'TRAIN-'.$index, 'delivered', '2026-06-01 22:00:00');
         }
         $this->sales()->upsertAll($facts);
         $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), $statuses);
@@ -438,6 +478,17 @@ final class BuildBuyoutRateReportActionTest extends KernelTestCase
             ->withReturnReasonName($reason)
             ->withQuantity($quantity)
             ->build();
+    }
+
+    private static function item(\App\Ingestion\Application\Buyout\BuyoutRateReport $report, string $sku): \App\Ingestion\Application\Buyout\BuyoutRateSku
+    {
+        foreach ($report->items as $item) {
+            if ($sku === $item->marketplaceSku) {
+                return $item;
+            }
+        }
+
+        self::fail('SKU '.$sku.' is missing from the buyout report.');
     }
 
     private function report(\DateTimeImmutable $asOf): \App\Ingestion\Application\Buyout\BuyoutRateReport

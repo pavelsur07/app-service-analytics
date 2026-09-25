@@ -3,6 +3,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,7 +13,10 @@ import {
 import { Button, Card, StatusPanel } from '../../../../../../packages/ui/src'
 import type { components } from '../../../api/schema'
 import type { BuyoutDays } from '../lib/buyoutParams'
-import { countAvailableRateDays } from '../lib/buyoutDailySeries'
+import {
+  countAvailableRateDays,
+  preliminaryRanges,
+} from '../lib/buyoutDailySeries'
 import { formatRateBps } from '../lib/buyoutStatusPresentation'
 import { useBuyoutDaily } from '../model/useBuyoutDaily'
 
@@ -86,6 +90,10 @@ export function SkuBuyoutDaily({
 
   const series = query.data.series
   const { actualDays, projectedDays } = countAvailableRateDays(series)
+  // Числовая ось по индексу дня: затенение незрелого дня должно иметь
+  // ширину и тогда, когда он один между двумя зрелыми.
+  const chartData = series.map((point, index) => ({ ...point, index }))
+  const unmatured = preliminaryRanges(series)
 
   return (
     <Card>
@@ -94,7 +102,8 @@ export function SkuBuyoutDaily({
           <div>
             <h3 className="font-semibold">Динамика по дням</h3>
             <p className="text-xs text-text-muted">
-              Факт появляется после созревания когорты, пунктир — текущий
+              Факт есть только у созревших дней: срок доставки прошёл и в пути
+              не больше 3% заказов. Затенены незрелые дни, пунктир — текущий
               прогноз.
             </p>
           </div>
@@ -106,6 +115,10 @@ export function SkuBuyoutDaily({
             <span className="inline-flex items-center gap-1.5">
               <span className="w-5 border-t-2 border-dashed border-warning-icon" />
               Прогноз
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-3 w-5 rounded-sm bg-surface-sunken" />
+              Не созрел
             </span>
           </div>
         </div>
@@ -119,9 +132,11 @@ export function SkuBuyoutDaily({
           <thead>
             <tr>
               <th>Дата</th>
+              <th>Созрел</th>
               <th>Факт</th>
               <th>Прогноз</th>
               <th>Разрешилось</th>
+              <th>В доставке</th>
               <th>Заказано</th>
               <th>Прогноз количества</th>
             </tr>
@@ -130,9 +145,11 @@ export function SkuBuyoutDaily({
             {series.map((point) => (
               <tr key={point.date}>
                 <td>{longDate(point.date)}</td>
+                <td>{point.maturityStatus === 'mature' ? 'Да' : 'Нет'}</td>
                 <td>{formatRateBps(point.actualBuyoutRateBps)}</td>
                 <td>{formatRateBps(point.projectedBuyoutRateBps)}</td>
                 <td>{formatRateBps(point.resolutionRateBps)}</td>
+                <td>{formatRateBps(point.inFlightRateBps)}</td>
                 <td>{QUANTITY.format(point.orderedQuantity)}</td>
                 <td>
                   {point.projectedBuyoutQuantity === null ||
@@ -151,17 +168,32 @@ export function SkuBuyoutDaily({
           aria-label="Динамика фактического и прогнозного процента выкупа"
         >
           <ResponsiveContainer height="100%" width="100%">
-            <LineChart data={series} margin={{ left: 4, right: 12, top: 8 }}>
+            <LineChart data={chartData} margin={{ left: 4, right: 12, top: 8 }}>
               <CartesianGrid
                 stroke="var(--color-border-subtle)"
                 vertical={false}
               />
+              {unmatured.map((range) => (
+                <ReferenceArea
+                  fill="var(--color-surface-sunken)"
+                  fillOpacity={1}
+                  ifOverflow="hidden"
+                  key={range.start}
+                  x1={range.start - 0.5}
+                  x2={range.end + 0.5}
+                />
+              ))}
               <XAxis
+                allowDecimals={false}
                 axisLine={false}
-                dataKey="date"
+                dataKey="index"
+                domain={[-0.5, series.length - 0.5]}
                 tick={{ fill: 'var(--color-text-muted)', fontSize: 11 }}
-                tickFormatter={shortDate}
+                tickFormatter={(index: number) =>
+                  shortDate(series[index]?.date)
+                }
                 tickLine={false}
+                type="number"
               />
               <YAxis
                 axisLine={false}
@@ -220,12 +252,18 @@ function DailyTooltip({
         <dd className="text-right">
           {formatRateBps(point.actualBuyoutRateBps)}
         </dd>
+        <dt className="text-text-muted">Когорта</dt>
+        <dd className="text-right">
+          {point.maturityStatus === 'mature' ? 'Созрела' : 'Не созрела'}
+        </dd>
         <dt className="text-text-muted">Прогноз</dt>
         <dd className="text-right">
           {formatRateBps(point.projectedBuyoutRateBps)}
         </dd>
         <dt className="text-text-muted">Разрешилось</dt>
         <dd className="text-right">{formatRateBps(point.resolutionRateBps)}</dd>
+        <dt className="text-text-muted">В доставке</dt>
+        <dd className="text-right">{formatRateBps(point.inFlightRateBps)}</dd>
         <dt className="text-text-muted">Количество</dt>
         <dd className="text-right">
           {point.projectedBuyoutQuantity === null ||
@@ -239,7 +277,11 @@ function DailyTooltip({
   )
 }
 
-function shortDate(value: string): string {
+function shortDate(value: string | undefined): string {
+  if (value === undefined) {
+    return ''
+  }
+
   return new Intl.DateTimeFormat('ru-RU', {
     day: '2-digit',
     month: '2-digit',

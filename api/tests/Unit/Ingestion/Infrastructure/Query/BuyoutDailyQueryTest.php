@@ -19,8 +19,11 @@ final class BuyoutDailyQueryTest extends TestCase
             'ordered_quantity' => '0',
             'resolved_quantity' => '0',
             'projected_buyout_quantity' => null,
+            'maturity_status' => 'preliminary',
+            'in_flight_rate_bps' => null,
         ]);
 
         self::assertNull($row->resolutionRateBps);
+        self::assertNull($row->inFlightRateBps);
     }
 }

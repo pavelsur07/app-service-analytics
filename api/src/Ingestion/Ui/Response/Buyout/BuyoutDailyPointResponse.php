@@ -6,7 +6,7 @@ namespace App\Ingestion\Ui\Response\Buyout;
 
 use OpenApi\Attributes as OA;
 
-#[OA\Schema(required: ['date', 'actualBuyoutRateBps', 'projectedBuyoutRateBps', 'resolutionRateBps', 'orderedQuantity', 'resolvedQuantity', 'projectedBuyoutQuantity'])]
+#[OA\Schema(required: ['date', 'actualBuyoutRateBps', 'projectedBuyoutRateBps', 'resolutionRateBps', 'orderedQuantity', 'resolvedQuantity', 'projectedBuyoutQuantity', 'maturityStatus', 'inFlightRateBps'])]
 final readonly class BuyoutDailyPointResponse
 {
     public function __construct(
@@ -17,6 +17,10 @@ final readonly class BuyoutDailyPointResponse
         public int $orderedQuantity,
         public int $resolvedQuantity,
         public ?int $projectedBuyoutQuantity,
+        #[OA\Property(description: 'ADR-029: факт есть только у зрелой точки', enum: ['mature', 'preliminary'])]
+        public string $maturityStatus,
+        #[OA\Property(description: 'Доля количества в доставке, bps')]
+        public ?int $inFlightRateBps,
     ) {
     }
 }

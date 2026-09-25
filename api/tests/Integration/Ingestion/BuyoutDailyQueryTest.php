@@ -51,6 +51,8 @@ final class BuyoutDailyQueryTest extends KernelTestCase
         self::assertSame(7692, $rows[0]->actualBuyoutRateBps);
         self::assertSame(7692, $rows[0]->projectedBuyoutRateBps);
         self::assertSame(10000, $rows[0]->resolutionRateBps);
+        self::assertSame('mature', $rows[0]->maturityStatus);
+        self::assertSame(0, $rows[0]->inFlightRateBps);
 
         self::assertSame(10, $rows[1]->orderedQuantity);
         self::assertSame(0, $rows[1]->resolvedQuantity);
@@ -61,6 +63,43 @@ final class BuyoutDailyQueryTest extends KernelTestCase
         // (24+10) / (24+10+2+1) = 9189 bps.
         self::assertSame(9189, $rows[1]->projectedBuyoutRateBps);
         self::assertSame(0, $rows[1]->resolutionRateBps);
+        self::assertSame('preliminary', $rows[1]->maturityStatus);
+        self::assertSame(10000, $rows[1]->inFlightRateBps);
+    }
+
+    public function testMaturityIsPerDaySoAnInFlightDayBetweenClosedDaysStaysPreliminary(): void
+    {
+        $facts = [];
+        $statuses = [];
+        foreach (['2026-08-26', '2026-08-27', '2026-08-28'] as $date) {
+            $posting = 'GAP-D-'.$date;
+            $facts[] = $this->sale($posting, $posting, 'GAP', 'delivered', 3, $date);
+            $statuses[] = $this->postingStatus($posting, $posting, 'delivering', $date.' 01:00:00');
+            $statuses[] = $this->postingStatus($posting, $posting, 'delivered', $date.' 02:00:00');
+        }
+        // Долгий хвост 27-го: одна штука из четырёх всё ещё в доставке.
+        $facts[] = $this->sale('GAP-TAIL', 'GAP-TAIL', 'GAP', 'delivering', 1, '2026-08-27');
+        $statuses[] = $this->postingStatus('GAP-TAIL', 'GAP-TAIL', 'delivering', '2026-08-27 01:00:00');
+        $this->sales()->upsertAll($facts);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), $statuses);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $rawRows = (new BuyoutDailyQuery($connection))->build(
+            companyId: $this->companyId->toRfc4122(),
+            marketplaceSku: 'GAP',
+            from: new \DateTimeImmutable('2026-08-26'),
+            to: new \DateTimeImmutable('2026-08-28'),
+            asOf: new \DateTimeImmutable('2026-08-30T12:00:00Z'),
+        )->executeQuery()->fetchAllAssociative();
+        $rows = array_map(BuyoutDailyQuery::mapRow(...), $rawRows);
+
+        self::assertSame(['mature', 'preliminary', 'mature'], array_column($rows, 'maturityStatus'));
+        self::assertSame([0, 2500, 0], array_column($rows, 'inFlightRateBps'));
+        self::assertSame(10000, $rows[0]->actualBuyoutRateBps);
+        // Факт строго по известным исходам был бы 100% — но день не созрел.
+        self::assertNull($rows[1]->actualBuyoutRateBps);
+        self::assertSame(10000, $rows[2]->actualBuyoutRateBps);
     }
 
     public function testDailySeriesLeavesTerminalUnknownWithoutForecast(): void
