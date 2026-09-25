@@ -39,6 +39,8 @@ final readonly class BuyoutDailyQuery
         $inFlightWithinLimit = BuyoutMaturityQuery::inFlightWithinLimitSql('quantity', 'is_in_flight');
         $trainingSample = BuyoutForecastQuery::MIN_TRAINING_QUANTITY;
         $forecastAggregates = BuyoutForecastQuery::forecastAggregatesSql();
+        $handoverCurve = BuyoutForecastQuery::handoverCurveCtes();
+        $handoverFactorJoin = BuyoutForecastQuery::handoverFactorJoinSql('o');
         $projectedRate = BuyoutForecastQuery::projectedRateSql('projected_quantity', 'projected_eligible_quantity', 'ordered_quantity', 'unestimated_quantity');
         $projectedQuantity = BuyoutForecastQuery::projectedQuantitySql('projected_quantity', 'ordered_quantity', 'unestimated_quantity');
         $source = <<<SQL
@@ -80,6 +82,7 @@ final readonly class BuyoutDailyQuery
                 FROM training_rows
                 GROUP BY marketplace_account_id
             ),
+            {$handoverCurve},
             current_rows AS (
                 SELECT o.*,
                        m.p95_seconds AS current_p95_seconds,
@@ -103,7 +106,8 @@ final readonly class BuyoutDailyQuery
                            WHEN a.sample_quantity >= {$trainingSample}
                                THEN a.d_quantity::numeric / NULLIF(a.d_quantity + a.t2_quantity + a.p_quantity, 0)
                            ELSE NULL
-                       END AS post_handover_rate
+                       END AS post_handover_rate,
+                       COALESCE(hf.factor, 1::numeric) AS handover_factor
                 FROM tenant_outcome o
                 LEFT JOIN maturity m ON m.marketplace_account_id = o.marketplace_account_id
                 LEFT JOIN sku_training s
@@ -111,6 +115,7 @@ final readonly class BuyoutDailyQuery
                  AND s.marketplace_sku = o.marketplace_sku
                 LEFT JOIN account_training a
                   ON a.marketplace_account_id = o.marketplace_account_id
+                {$handoverFactorJoin}
                 WHERE {$skuFilter}
                   AND o.business_date >= :from
                   AND o.business_date <= :to
