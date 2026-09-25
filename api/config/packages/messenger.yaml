@@ -38,11 +38,11 @@ framework:
                 # Это же окно достаётся письмам (routing ниже): SMTP,
                 # недоступный семь секунд, до сих пор стоил клиенту
                 # уведомления о сломанном подключении.
+                # Отказ лимита площадки (429) — повтор через Retry-After, потолок —
+                # сутки; прочие ошибки — прежние 5 повторов, 30 с × 3, до 10 минут
+                # (ADR-028, RateLimitAwareRetryStrategy).
                 retry_strategy:
-                    max_retries: 5
-                    delay: 30000
-                    multiplier: 3
-                    max_delay: 600000
+                    service: App\Ingestion\Infrastructure\Messenger\RateLimitAwareRetryStrategy
             # Своё имя очереди обязательно, и это не косметика.
             #
             # DSN без queue_name даёт очередь «default». Пока он стоял
@@ -77,11 +77,11 @@ framework:
                 dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
                 options:
                     queue_name: backfill
+                # Отказ лимита площадки (429) — повтор через Retry-After, потолок —
+                # сутки; прочие ошибки — прежние 5 повторов, 30 с × 3, до 10 минут
+                # (ADR-028, RateLimitAwareRetryStrategy).
                 retry_strategy:
-                    max_retries: 5
-                    delay: 30000
-                    multiplier: 3
-                    max_delay: 600000
+                    service: App\Ingestion\Infrastructure\Messenger\RateLimitAwareRetryStrategy
             async_calc:
                 dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
                 options:
