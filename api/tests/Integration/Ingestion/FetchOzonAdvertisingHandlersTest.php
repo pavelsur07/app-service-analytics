@@ -139,6 +139,13 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
             [$this->fixture('campaign-list.json')],
             $this->rawBodies($container, $account, MarketplaceReportType::OzonAdCampaigns),
         );
+        // День снимка — последний день куска из сообщения, а не часы
+        // обработчика: повтор после полуночи попадает в тот же документ
+        // (CLAUDE.md §4).
+        self::assertSame(
+            [$today->modify('-2 days')->format('Y-m-d')],
+            $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdCampaigns),
+        );
         self::assertSame([], $fetcher->skuRequests);
     }
 
@@ -154,6 +161,28 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         $this->syncStats($container, $account, $chunks[1]['from'], $chunks[1]['to']);
 
         self::assertSame([], $this->rawBodies($container, $account, MarketplaceReportType::OzonAdCampaigns));
+    }
+
+    public function testLateRejectionOfAReplacedKeyDoesNotBreakTheNewOne(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $connection = $this->connection($container);
+        $this->fetcher($container, tokenStatus: 401, beforeRejection: static function () use ($connection, $account): void {
+            // Клиент заменил ключ, пока запрос со старым был в пути:
+            // замена поднимает версию подключения (ADR-008).
+            $connection->executeStatement(
+                'UPDATE marketplace_account SET version = version + 1 WHERE company_id = ? AND id = ?',
+                [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
+            );
+        });
+
+        $this->syncStats($container, $account);
+
+        // Отказ пришёл по старому ключу — новый он не ломает и письма
+        // не порождает.
+        self::assertSame(['state' => 'active', 'advertising_state' => 'active'], $this->states($container, $account));
+        self::assertSame(0, $this->warningsContaining($container, 'Письмо о сломанном рекламном ключе'));
     }
 
     public function testRawOfOneCompanyIsNotStoredUnderAnother(): void
