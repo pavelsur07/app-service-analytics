@@ -53,6 +53,27 @@ final readonly class OzonPerformanceCampaignClient implements OzonAdvertisingFet
         ]);
     }
 
+    public function orderSkuReport(string $token, array $campaignIds, \DateTimeImmutable $from, \DateTimeImmutable $to): string
+    {
+        // Форма — та, что сняла разведка: `campaigns`, дни и `groupBy = DATE`.
+        return $this->http->post($token, '/api/client/statistics/json', [
+            'campaigns' => $campaignIds,
+            'dateFrom' => $from->format('Y-m-d'),
+            'dateTo' => $to->format('Y-m-d'),
+            'groupBy' => 'DATE',
+        ]);
+    }
+
+    public function reportState(string $token, string $uuid): string
+    {
+        return $this->http->get($token, "/api/client/statistics/{$uuid}");
+    }
+
+    public function report(string $token, string $uuid): string
+    {
+        return $this->http->get($token, '/api/client/statistics/report', ['UUID' => $uuid]);
+    }
+
     /**
      * Даты — днями `Y-m-d`, как их снимал `bin/ozon-performance-fixture.sh`:
      * площадка считает их днями по Москве (ADR-026).

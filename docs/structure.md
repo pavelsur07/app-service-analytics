@@ -325,6 +325,9 @@ Ingestion/Infrastructure/Connector/
 в `Application/MessageHandler/`, периоды — `Application/OzonAdvertisingWindows`.
 Raw-типы `ozon_ad_expense`, `ozon_ad_daily`; головной кусок ещё
 `ozon_ad_campaigns` и `ozon_ad_sku_day` (SKU за вчера и сегодня).
+SKU за дни раньше вчерашнего — асинхронные отчёты цепочкой сообщений
+`OrderOzonAdSkuReportMessage` → `CheckOzonAdSkuReportMessage`, raw-тип
+`ozon_ad_sku_report`. Разовый повтор — `app:ingestion:backfill-ozon-advertising`.
 
 **Тела сырых документов (ADR-024, этап 2)** пишет и читает
 `Persistence/DoctrineMarketplaceRawDocumentRepository`: при

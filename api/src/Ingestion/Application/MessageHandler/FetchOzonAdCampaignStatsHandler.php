@@ -6,6 +6,7 @@ namespace App\Ingestion\Application\MessageHandler;
 
 use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
+use App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Domain\MarketplaceRawDocument;
@@ -17,6 +18,7 @@ use App\Ingestion\Domain\OzonAdvertisingFetcher;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -49,6 +51,7 @@ final readonly class FetchOzonAdCampaignStatsHandler
         private OzonAdvertisingFetcher $client,
         private MarketplaceRawDocumentRepository $rawDocuments,
         private OzonAdCampaignListParser $campaignParser,
+        private MessageBusInterface $bus,
         private LoggerInterface $logger,
     ) {
     }
@@ -78,6 +81,11 @@ final readonly class FetchOzonAdCampaignStatsHandler
             $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
             if (OzonAdvertisingWindows::isHeadChunk($to, $today)) {
                 $this->captureCampaignsAndSku($companyId, $accountId, $token, $to, OzonAdvertisingWindows::skuDays($from, $to, $today));
+            }
+
+            $reportPeriod = OzonAdvertisingWindows::skuReportPeriod($from, $to, $today);
+            if (true === ($message->withReports ?? false) && null !== $reportPeriod) {
+                $this->orderSkuReports($message, $companyId, $accountId, $token, $reportPeriod[0], $reportPeriod[1]);
             }
         } catch (\Throwable $failure) {
             if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
@@ -116,20 +124,62 @@ final readonly class FetchOzonAdCampaignStatsHandler
             return;
         }
 
-        $campaignIds = array_values(array_map(
-            static fn (OzonAdCampaign $campaign): string => $campaign->id,
-            array_filter(
-                $this->campaignParser->parse($campaigns),
-                static fn (OzonAdCampaign $campaign): bool => OzonAdCampaign::StateArchived !== $campaign->state
-                    && OzonAdCampaign::TypeSku === $campaign->advObjectType,
-            ),
-        ));
+        $campaignIds = $this->activeSkuCampaignIds($campaigns);
 
         foreach ($days as $day) {
             foreach (array_chunk($campaignIds, OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST) as $batch) {
                 $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdSkuDay, $day, $this->client->productsSku($token, $batch, $day));
             }
         }
+    }
+
+    /**
+     * SKU-отчёты за кусок без вчера и сегодня (ADR-026 п. 4) — последним
+     * шагом, после сохранения расхода: отказ раньше не оставит заказанных
+     * отчётов у недозагруженного куска. Кампании — все неархивные типа
+     * `SKU` из последнего сохранённого списка; его ещё нет — список
+     * запрашивается и сохраняется, сначала raw, потом разбор.
+     */
+    private function orderSkuReports(
+        FetchOzonAdCampaignStatsMessage $message,
+        Uuid $companyId,
+        Uuid $accountId,
+        string $token,
+        \DateTimeImmutable $from,
+        \DateTimeImmutable $to,
+    ): void {
+        $campaigns = $this->rawDocuments->latestBody($message->companyId, $accountId, MarketplaceReportType::OzonAdCampaigns);
+        if (null === $campaigns) {
+            $campaigns = $this->client->campaigns($token);
+            $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdCampaigns, $to, $campaigns);
+        }
+
+        foreach (array_chunk($this->activeSkuCampaignIds($campaigns), OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST) as $batch) {
+            $this->bus->dispatch(new OrderOzonAdSkuReportMessage(
+                $message->companyId,
+                $message->marketplaceAccountId,
+                $from->format('Y-m-d'),
+                $to->format('Y-m-d'),
+                $batch,
+            ));
+        }
+    }
+
+    /**
+     * Все неархивные кампании типа `SKU`: у других типов списка товаров нет.
+     *
+     * @return list<string>
+     */
+    private function activeSkuCampaignIds(string $campaignList): array
+    {
+        return array_values(array_map(
+            static fn (OzonAdCampaign $campaign): string => $campaign->id,
+            array_filter(
+                $this->campaignParser->parse($campaignList),
+                static fn (OzonAdCampaign $campaign): bool => OzonAdCampaign::StateArchived !== $campaign->state
+                    && OzonAdCampaign::TypeSku === $campaign->advObjectType,
+            ),
+        ));
     }
 
     /**

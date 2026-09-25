@@ -17,6 +17,13 @@ final readonly class FetchOzonAdCampaignStatsMessage
         public string $marketplaceAccountId,
         public string $from,
         public string $to,
+        /**
+         * Поставить после загрузки SKU-отчёты за кусок (ADR-026 п. 4):
+         * суточный тик, глубокий рескан, первичная загрузка, консольная
+         * команда. Nullable — сообщения, стоявшие в очереди до появления
+         * поля, разбираются без него и читаются как `false`.
+         */
+        public ?bool $withReports = null,
     ) {
     }
 }

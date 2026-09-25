@@ -38,4 +38,22 @@ interface OzonAdvertisingFetcher
      * @param list<string> $campaignIds не больше `OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST`
      */
     public function productsSku(string $token, array $campaignIds, \DateTimeImmutable $day): string;
+
+    /**
+     * Заказ асинхронного отчёта кампания × SKU × день за `[from, to]`
+     * (`POST /api/client/statistics/json`), тело ответа как есть — в нём UUID.
+     *
+     * @param list<string> $campaignIds не больше `OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST`
+     */
+    public function orderSkuReport(string $token, array $campaignIds, \DateTimeImmutable $from, \DateTimeImmutable $to): string;
+
+    /**
+     * Состояние заказанного отчёта (`GET /api/client/statistics/{UUID}`).
+     */
+    public function reportState(string $token, string $uuid): string;
+
+    /**
+     * Готовый отчёт (`GET /api/client/statistics/report?UUID=…`), тело как есть.
+     */
+    public function report(string $token, string $uuid): string;
 }
