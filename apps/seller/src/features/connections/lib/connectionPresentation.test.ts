@@ -66,4 +66,12 @@ describe('advertisingPresentation', () => {
     expect(stopped.label).toBe('Реклама остановлена')
     expect(stopped.tone).toBe('warning')
   })
+
+  it('сломанный рекламный ключ видно и при сломанном подключении', () => {
+    // Восстановить подключение магазина мало — ключ рекламы всё равно
+    // придётся заменить, и экран обязан это сказать.
+    expect(advertisingPresentation('broken', 'broken').label).toBe(
+      'Нужно заменить рекламный ключ',
+    )
+  })
 })

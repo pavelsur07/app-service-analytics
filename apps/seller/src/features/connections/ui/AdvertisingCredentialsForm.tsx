@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CircleCheck, CircleX } from 'lucide-react'
+import { CircleX } from 'lucide-react'
 import { ApiError } from '../../../api/ApiError'
 import {
   Button,
@@ -39,6 +39,13 @@ export function AdvertisingCredentialsForm({
     setOpen(false)
   }
 
+  const openForm = () => {
+    // Исход прошлой отправки к новой не относится: без сброса форма
+    // сразу показала бы «ключ сохранён» или старую ошибку.
+    mutation.reset()
+    setOpen(true)
+  }
+
   if (!open) {
     return (
       <div>
@@ -46,9 +53,7 @@ export function AdvertisingCredentialsForm({
           type="button"
           variant="secondary"
           size="compact"
-          onClick={() => {
-            setOpen(true)
-          }}
+          onClick={openForm}
         >
           {connected ? 'Заменить рекламный ключ' : 'Подключить рекламу'}
         </Button>
@@ -70,6 +75,8 @@ export function AdvertisingCredentialsForm({
         event.preventDefault()
         mutation.mutate(
           { marketplaceAccountId, clientId, clientSecret, version },
+          // Успех виден по самому списку: он перечитывается, и метка
+          // рекламы меняется на «подключена».
           { onSuccess: close },
         )
       }}
@@ -106,18 +113,6 @@ export function AdvertisingCredentialsForm({
             role="alert"
             title={failure.title}
             tone="negative"
-          />
-        </Card>
-      )}
-
-      {mutation.isSuccess && (
-        <Card>
-          <StatusPanel
-            description="Ozon принял ключ. Статистика рекламы начнёт загружаться по расписанию."
-            icon={<CircleCheck aria-hidden="true" size={20} />}
-            role="status"
-            title="Рекламный ключ сохранён"
-            tone="accent"
           />
         </Card>
       )}
