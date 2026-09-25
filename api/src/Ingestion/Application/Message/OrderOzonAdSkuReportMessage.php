@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application\Message;
 
+use App\Ingestion\Domain\OzonAdReportKind;
+
 /**
  * Заказать асинхронный отчёт рекламы за `[from, to]` (`Y-m-d` по Москве)
  * (ADR-026 п. 4): SKU-отчёт — по пачке кампаний не больше десяти, отчёт
@@ -31,5 +33,16 @@ final readonly class OrderOzonAdSkuReportMessage
         /** Вид отчёта (`OzonAdReportKind`); `null` — SKU-отчёт. */
         public ?string $kind = null,
     ) {
+    }
+
+    /**
+     * Вид отчёта. Чтение только через этот метод: сообщение, стоявшее
+     * в очереди до появления поля, восстанавливается без конструктора,
+     * и свойство у него не инициализировано, а не `null` — `??` читает
+     * такое свойство без ошибки.
+     */
+    public function reportKind(): string
+    {
+        return OzonAdReportKind::of($this->kind ?? null);
     }
 }

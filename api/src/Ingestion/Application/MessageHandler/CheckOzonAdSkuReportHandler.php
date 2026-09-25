@@ -76,7 +76,7 @@ final readonly class CheckOzonAdSkuReportHandler
                 $this->rawDocuments->add(MarketplaceRawDocument::capture(
                     companyId: Uuid::fromString($target->companyId),
                     marketplaceAccountId: Uuid::fromString($target->marketplaceAccountId),
-                    reportType: OzonAdReportKind::rawType(OzonAdReportKind::of($message->kind)),
+                    reportType: OzonAdReportKind::rawType($message->reportKind()),
                     period: $from,
                     rawBody: $this->client->report($token, $message->uuid),
                 ));
@@ -119,7 +119,7 @@ final readonly class CheckOzonAdSkuReportHandler
         }
 
         $this->bus->dispatch(
-            new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $message->uuid, $message->attempt + 1, $message->kind),
+            new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $message->uuid, $message->attempt + 1, $message->reportKind()),
             [new DelayStamp(min(OrderOzonAdSkuReportHandler::FIRST_CHECK_DELAY_MS * $message->attempt, self::MAX_DELAY_MS))],
         );
     }
@@ -131,7 +131,7 @@ final readonly class CheckOzonAdSkuReportHandler
     private function giveUp(CheckOzonAdSkuReportMessage $message, string $reason): void
     {
         $this->logger->warning('Отчёт рекламы Ozon не загружен', [
-            'kind' => OzonAdReportKind::of($message->kind),
+            'kind' => $message->reportKind(),
             'company_id' => $message->companyId,
             'marketplace_account_id' => $message->marketplaceAccountId,
             'period_from' => $message->from,

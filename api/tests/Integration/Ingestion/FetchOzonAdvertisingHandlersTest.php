@@ -212,6 +212,44 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         self::assertSame([], $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuReport));
     }
 
+    public function testCheckQueuedBeforeTheKindFieldIsStillASkuReport(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $this->fetcher($container);
+
+        // Сообщение, сериализованное до появления поля `kind`: очередь
+        // восстанавливает его без конструктора, и свойство остаётся
+        // неинициализированным. Обработчик обязан прочитать его как SKU-отчёт.
+        $legacy = $this->withoutProperty(
+            new CheckOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-25', '054cd190-6514-4465-8792-e3e11f396886', 1),
+            'kind',
+        );
+        $handler = $container->get(CheckOzonAdSkuReportHandler::class);
+        \assert($handler instanceof CheckOzonAdSkuReportHandler);
+        $handler($legacy);
+
+        self::assertCount(1, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuReport));
+    }
+
+    public function testOrderQueuedBeforeTheKindFieldIsStillASkuReport(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+
+        $legacy = $this->withoutProperty(
+            new OrderOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-25', '2026-09-23', ['14275771']),
+            'kind',
+        );
+        $handler = $container->get(OrderOzonAdSkuReportHandler::class);
+        \assert($handler instanceof OrderOzonAdSkuReportHandler);
+        $handler($legacy);
+
+        self::assertCount(1, $fetcher->reportOrders);
+        self::assertSame([], $fetcher->cpoOrders);
+    }
+
     public function testRateLimitedOrderIsRetriedLaterWithinACeiling(): void
     {
         $container = $this->bootedContainer();
@@ -519,6 +557,32 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         }
 
         return $messages;
+    }
+
+    /**
+     * Сообщение в том виде, в каком его восстановит очередь, если оно было
+     * сериализовано до появления свойства: `unserialize` без этого свойства,
+     * конструктор не вызывается.
+     *
+     * @template T of object
+     *
+     * @param T $message
+     *
+     * @return T
+     */
+    private function withoutProperty(object $message, string $property): object
+    {
+        $serialized = serialize($message);
+        $stripped = preg_replace('/s:'.\strlen($property).':"'.$property.'";(?:N|s:\d+:"[^"]*");/', '', $serialized, 1, $count);
+        self::assertSame(1, $count);
+        \assert(\is_string($stripped));
+        $stripped = preg_replace_callback('/^O:(\d+):"([^"]+)":(\d+):/', static fn (array $m): string => 'O:'.$m[1].':"'.$m[2].'":'.((int) $m[3] - 1).':', $stripped);
+        \assert(\is_string($stripped));
+
+        $restored = unserialize($stripped);
+        self::assertInstanceOf($message::class, $restored);
+
+        return $restored;
     }
 
     private function httpFailure(int $status): \Throwable

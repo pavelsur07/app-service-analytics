@@ -64,7 +64,7 @@ final readonly class OrderOzonAdSkuReportHandler
         $timezone = new \DateTimeZone(OzonAdvertisingWindows::TIMEZONE);
         $from = \DateTimeImmutable::createFromFormat('!Y-m-d', $message->from, $timezone);
         $to = \DateTimeImmutable::createFromFormat('!Y-m-d', $message->to, $timezone);
-        $kind = OzonAdReportKind::of($message->kind);
+        $kind = $message->reportKind();
         $campaignsValid = OzonAdReportKind::Sku === $kind
             ? [] !== $message->campaignIds && \count($message->campaignIds) <= OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST
             : [] === $message->campaignIds;
@@ -143,7 +143,7 @@ final readonly class OrderOzonAdSkuReportHandler
                 $message->campaignIds,
                 $message->attempt + 1,
                 $refusedSince->format(\DateTimeInterface::ATOM),
-                $message->kind,
+                $message->reportKind(),
             ),
             [new DelayStamp(self::RATE_LIMIT_RETRY_MS - self::RETRY_JITTER_MS + random_int(0, 2 * self::RETRY_JITTER_MS))],
         );
@@ -156,7 +156,7 @@ final readonly class OrderOzonAdSkuReportHandler
     private function giveUp(OrderOzonAdSkuReportMessage $message, string $reason): void
     {
         $this->logger->warning('Отчёт рекламы Ozon не заказан', [
-            'kind' => OzonAdReportKind::of($message->kind),
+            'kind' => $message->reportKind(),
             'company_id' => $message->companyId,
             'marketplace_account_id' => $message->marketplaceAccountId,
             'period_from' => $message->from,
