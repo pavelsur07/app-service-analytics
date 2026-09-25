@@ -223,6 +223,8 @@ final readonly class BuyoutForecastQuery
     /**
      * Ожидаемый выкуп в штуках: ожидаемые D штук с оценкой, масштабированные
      * на всё заказанное количество (ADR-031); NULL при превышении порога.
+     * Пустой ожидаемый знаменатель (все штуки T1 или R) количество не
+     * обнуляет: ожидаемый выкуп тогда 0 штук, NULL только у ставки.
      */
     public static function projectedQuantitySql(string $projected, string $ordered, string $unestimated): string
     {
