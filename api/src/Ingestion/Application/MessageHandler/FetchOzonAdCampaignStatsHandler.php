@@ -14,6 +14,7 @@ use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonAdCampaign;
 use App\Ingestion\Domain\OzonAdCampaignListParser;
+use App\Ingestion\Domain\OzonAdReportKind;
 use App\Ingestion\Domain\OzonAdvertisingFetcher;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use Psr\Log\LoggerInterface;
@@ -83,9 +84,23 @@ final readonly class FetchOzonAdCampaignStatsHandler
                 $this->captureCampaignsAndSku($companyId, $accountId, $token, $to, OzonAdvertisingWindows::skuDays($from, $to, $today));
             }
 
-            $reportPeriod = OzonAdvertisingWindows::skuReportPeriod($from, $to, $today);
-            if (true === ($message->withReports ?? false) && null !== $reportPeriod) {
-                $this->orderSkuReports($message, $companyId, $accountId, $token, $reportPeriod[0], $reportPeriod[1]);
+            if (true === ($message->withReports ?? false)) {
+                $reportPeriod = OzonAdvertisingWindows::skuReportPeriod($from, $to, $today);
+                if (null !== $reportPeriod) {
+                    $this->orderSkuReports($message, $companyId, $accountId, $token, $reportPeriod[0], $reportPeriod[1]);
+                }
+
+                // Заказы «Оплаты за заказ» — по всей организации, за весь
+                // кусок: products/sku для них нет, и вчера с сегодня никто
+                // другой не отдаст.
+                $this->bus->dispatch(new OrderOzonAdSkuReportMessage(
+                    $message->companyId,
+                    $message->marketplaceAccountId,
+                    $message->from,
+                    $message->to,
+                    [],
+                    kind: OzonAdReportKind::CpoOrders,
+                ));
             }
         } catch (\Throwable $failure) {
             if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {

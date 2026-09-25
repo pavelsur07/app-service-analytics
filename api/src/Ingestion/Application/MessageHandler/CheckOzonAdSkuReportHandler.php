@@ -10,7 +10,7 @@ use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
-use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Domain\OzonAdReportKind;
 use App\Ingestion\Domain\OzonAdvertisingFetcher;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonRateLimited;
@@ -21,9 +21,9 @@ use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Проверка заказанного SKU-отчёта (ADR-026 п. 4). Готов — скачать
- * и сохранить в raw как есть (`ozon_ad_sku_report`, `period` — начало
- * периода). Не готов — то же сообщение снова, с растущей задержкой.
+ * Проверка заказанного отчёта рекламы (ADR-026 п. 4). Готов — скачать
+ * и сохранить в raw как есть (raw-тип по виду отчёта: `ozon_ad_sku_report`
+ * или `ozon_ad_cpo_orders`, `period` — начало периода). Не готов — то же сообщение снова, с растущей задержкой.
  * `ERROR` площадки или потолок проверок — предупреждение в журнал, отчёт
  * не загружен: период снова закажут суточное окно, рескан или консольная
  * команда.
@@ -60,7 +60,7 @@ final readonly class CheckOzonAdSkuReportHandler
 
         $target = $this->identityFacade->findOzonAdvertisingTarget($message->companyId, $message->marketplaceAccountId);
         if (null === $target) {
-            $this->logger->info('Реклама подключения не активна — проверка SKU-отчёта пропущена', [
+            $this->logger->info('Реклама подключения не активна — проверка отчёта пропущена', [
                 'company_id' => $message->companyId,
                 'marketplace_account_id' => $message->marketplaceAccountId,
             ]);
@@ -76,7 +76,7 @@ final readonly class CheckOzonAdSkuReportHandler
                 $this->rawDocuments->add(MarketplaceRawDocument::capture(
                     companyId: Uuid::fromString($target->companyId),
                     marketplaceAccountId: Uuid::fromString($target->marketplaceAccountId),
-                    reportType: MarketplaceReportType::OzonAdSkuReport,
+                    reportType: OzonAdReportKind::rawType($message->reportKind()),
                     period: $from,
                     rawBody: $this->client->report($token, $message->uuid),
                 ));
@@ -119,7 +119,7 @@ final readonly class CheckOzonAdSkuReportHandler
         }
 
         $this->bus->dispatch(
-            new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $message->uuid, $message->attempt + 1),
+            new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $message->uuid, $message->attempt + 1, $message->reportKind()),
             [new DelayStamp(min(OrderOzonAdSkuReportHandler::FIRST_CHECK_DELAY_MS * $message->attempt, self::MAX_DELAY_MS))],
         );
     }
@@ -130,7 +130,8 @@ final readonly class CheckOzonAdSkuReportHandler
      */
     private function giveUp(CheckOzonAdSkuReportMessage $message, string $reason): void
     {
-        $this->logger->warning('SKU-отчёт рекламы Ozon не загружен', [
+        $this->logger->warning('Отчёт рекламы Ozon не загружен', [
+            'kind' => $message->reportKind(),
             'company_id' => $message->companyId,
             'marketplace_account_id' => $message->marketplaceAccountId,
             'period_from' => $message->from,

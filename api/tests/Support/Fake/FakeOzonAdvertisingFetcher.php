@@ -102,6 +102,16 @@ final class FakeOzonAdvertisingFetcher implements OzonAdvertisingFetcher
         return $this->reportRequest;
     }
 
+    /** @var list<array{from: string, to: string}> */
+    public array $cpoOrders = [];
+
+    public function orderCpoOrdersReport(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string
+    {
+        $this->cpoOrders[] = ['from' => $from->format('Y-m-d'), 'to' => $to->format('Y-m-d')];
+
+        return $this->reportRequest;
+    }
+
     public function reportState(string $token, string $uuid): string
     {
         $state = array_shift($this->states) ?? 'IN_PROGRESS';

@@ -64,6 +64,16 @@ final readonly class OzonPerformanceCampaignClient implements OzonAdvertisingFet
         ]);
     }
 
+    public function orderCpoOrdersReport(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string
+    {
+        // Форма — та, что сняла разведка: границы днями в полночь UTC,
+        // площадка переводит их в московские сутки, `to` включительно.
+        return $this->http->post($token, '/api/client/statistic/orders/generate/json', [
+            'from' => $from->format('Y-m-d').'T00:00:00Z',
+            'to' => $to->format('Y-m-d').'T00:00:00Z',
+        ]);
+    }
+
     public function reportState(string $token, string $uuid): string
     {
         return $this->http->get($token, "/api/client/statistics/{$uuid}");
