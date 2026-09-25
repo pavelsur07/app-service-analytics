@@ -9,7 +9,8 @@ use Doctrine\DBAL\Query\QueryBuilder;
 
 /**
  * Quantity-weighted actual rates. Все суммы и деления выполняет PostgreSQL;
- * R исключён из buyout/conversion denominators согласно ADR-019.
+ * R исключён из buyout/conversion denominators согласно ADR-019. Строка
+ * зрела по ADR-029: возраст конца периода и доля SKU в доставке.
  */
 final readonly class BuyoutRateQuery
 {
@@ -30,36 +31,18 @@ final readonly class BuyoutRateQuery
         BuyoutRateSort $sort = BuyoutRateSort::Ordered,
         BuyoutRateDirection $direction = BuyoutRateDirection::Desc,
     ): QueryBuilder {
-        $maturitySample = BuyoutMaturityQuery::MIN_SAMPLE_SIZE;
+        $maturityCtes = BuyoutMaturityQuery::maturityCtes();
+        $inFlightWithinLimit = BuyoutMaturityQuery::inFlightWithinLimitSql('o.quantity', 'o.is_in_flight');
         $source = <<<SQL
             WITH tenant_outcome AS MATERIALIZED (
-                SELECT company_id, marketplace_account_id, source_row_id,
-                       posting_number, order_number, marketplace_sku,
+                SELECT company_id, marketplace_account_id,
+                       posting_number, marketplace_sku,
                        quantity, business_date, outcome,
-                       handed_over_at, resolved_at, is_forecast_eligible
+                       resolved_at, resolution_observed, is_in_flight
                 FROM buyout_outcome
                 WHERE company_id = :companyId
             ),
-            posting_intervals AS (
-                SELECT DISTINCT company_id, marketplace_account_id, posting_number,
-                       EXTRACT(EPOCH FROM (resolved_at - handed_over_at))::bigint AS duration_seconds
-                FROM tenant_outcome
-                WHERE outcome IS NOT NULL
-                  AND posting_number IS NOT NULL
-                  AND handed_over_at IS NOT NULL
-                  AND resolved_at IS NOT NULL
-                  AND resolved_at >= handed_over_at
-                  AND resolved_at <= :asOf
-            ),
-            maturity AS (
-                SELECT marketplace_account_id,
-                       CASE WHEN COUNT(*) >= {$maturitySample}
-                            THEN PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_seconds)
-                            ELSE NULL
-                       END AS p95_seconds
-                FROM posting_intervals
-                GROUP BY marketplace_account_id
-            ),
+            {$maturityCtes},
             aggregated AS (
                 SELECT o.marketplace_sku,
                        SUM(o.quantity)::bigint AS ordered_quantity,
@@ -70,6 +53,7 @@ final readonly class BuyoutRateQuery
                        COALESCE(SUM(o.quantity) FILTER (WHERE o.outcome = 'R'), 0)::bigint AS client_return_quantity,
                        COALESCE(SUM(o.quantity) FILTER (WHERE o.outcome IS NULL), 0)::bigint AS unresolved_quantity,
                        CASE WHEN BOOL_AND(m.p95_seconds IS NOT NULL AND :cohortAgeSeconds > m.p95_seconds)
+                                 AND {$inFlightWithinLimit}
                             THEN 'mature' ELSE 'preliminary' END AS maturity_status
                 FROM tenant_outcome o
                 LEFT JOIN maturity m ON m.marketplace_account_id = o.marketplace_account_id

@@ -7,7 +7,10 @@ namespace App\Ingestion\Infrastructure\Query\Buyout;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
-/** Дневной actual/projected ряд одной SKU, одним bounded SQL-запросом. */
+/**
+ * Дневной actual/projected ряд одной SKU, одним bounded SQL-запросом.
+ * Точка зрела по ADR-029: возраст дня и доля SKU-дня в доставке.
+ */
 final readonly class BuyoutDailyQuery
 {
     public function __construct(private Connection $connection)
@@ -21,48 +24,29 @@ final readonly class BuyoutDailyQuery
         \DateTimeImmutable $to,
         \DateTimeImmutable $asOf,
     ): QueryBuilder {
-        $maturitySample = BuyoutMaturityQuery::MIN_SAMPLE_SIZE;
+        $maturityCtes = BuyoutMaturityQuery::maturityCtes();
+        $trainingDays = BuyoutMaturityQuery::trainingDaysCte();
+        $inFlightWithinLimit = BuyoutMaturityQuery::inFlightWithinLimitSql('quantity', 'is_in_flight');
         $trainingSample = BuyoutForecastQuery::MIN_TRAINING_QUANTITY;
         $source = <<<SQL
             WITH tenant_outcome AS MATERIALIZED (
-                SELECT company_id, marketplace_account_id, source_row_id,
-                       posting_number, order_number, marketplace_sku,
+                SELECT company_id, marketplace_account_id,
+                       posting_number, marketplace_sku,
                        quantity, business_date, outcome,
-                       handed_over_at, resolved_at, is_forecast_eligible
+                       handed_over_at, resolved_at, is_forecast_eligible,
+                       resolution_observed, is_in_flight
                 FROM buyout_outcome
                 WHERE company_id = :companyId
             ),
-            posting_intervals AS (
-                SELECT DISTINCT company_id, marketplace_account_id, posting_number,
-                       EXTRACT(EPOCH FROM (resolved_at - handed_over_at))::bigint AS duration_seconds
-                FROM tenant_outcome
-                WHERE outcome IS NOT NULL
-                  AND posting_number IS NOT NULL
-                  AND handed_over_at IS NOT NULL
-                  AND resolved_at IS NOT NULL
-                  AND resolved_at >= handed_over_at
-                  AND resolved_at <= :asOf
-            ),
-            maturity AS (
-                SELECT marketplace_account_id,
-                       CASE WHEN COUNT(*) >= {$maturitySample}
-                            THEN PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY duration_seconds)
-                            ELSE NULL
-                       END AS p95_seconds
-                FROM posting_intervals
-                GROUP BY marketplace_account_id
-            ),
+            {$maturityCtes},
+            {$trainingDays},
             training_rows AS (
                 SELECT o.*
                 FROM tenant_outcome o
-                JOIN maturity m ON m.marketplace_account_id = o.marketplace_account_id
-                WHERE m.p95_seconds IS NOT NULL
-                  AND o.outcome IN ('T1', 'D', 'T2', 'P')
-                  AND o.business_date < (:asOfMoscow::timestamp - make_interval(secs => m.p95_seconds::double precision))::date
-                  AND o.business_date >= (:asOfMoscow::timestamp - make_interval(secs => m.p95_seconds::double precision))::date - INTERVAL '30 days'
-                  AND EXTRACT(EPOCH FROM (
-                      :asOf::timestamp - ((o.business_date + 1)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')
-                  )) > m.p95_seconds
+                JOIN training_days d
+                  ON d.marketplace_account_id = o.marketplace_account_id
+                 AND d.business_date = o.business_date
+                WHERE o.outcome IN ('T1', 'D', 'T2', 'P')
             ),
             sku_training AS (
                 SELECT marketplace_account_id, marketplace_sku,
@@ -131,7 +115,8 @@ final readonly class BuyoutDailyQuery
                            AND EXTRACT(EPOCH FROM (
                                :asOf::timestamp - ((business_date + 1)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')
                            )) > current_p95_seconds
-                       ) AS mature,
+                       ) AND {$inFlightWithinLimit} AS mature,
+                       COALESCE(SUM(quantity) FILTER (WHERE is_in_flight), 0)::bigint AS in_flight_quantity,
                        BOOL_OR(
                            outcome IS NULL AND (
                                NOT is_forecast_eligible
@@ -163,7 +148,9 @@ final readonly class BuyoutDailyQuery
                    ROUND(10000::numeric * resolved_quantity / NULLIF(ordered_quantity, 0))::int AS resolution_rate_bps,
                    ordered_quantity,
                    resolved_quantity,
-                   CASE WHEN missing_rate THEN NULL ELSE ROUND(projected_quantity)::int END AS projected_buyout_quantity
+                   CASE WHEN missing_rate THEN NULL ELSE ROUND(projected_quantity)::int END AS projected_buyout_quantity,
+                   CASE WHEN mature THEN 'mature' ELSE 'preliminary' END AS maturity_status,
+                   ROUND(10000::numeric * in_flight_quantity / NULLIF(ordered_quantity, 0))::int AS in_flight_rate_bps
             FROM daily
             SQL;
 
@@ -196,7 +183,18 @@ final readonly class BuyoutDailyQuery
             orderedQuantity: self::integer($row['ordered_quantity'] ?? null),
             resolvedQuantity: self::integer($row['resolved_quantity'] ?? null),
             projectedBuyoutQuantity: self::nullableInteger($row['projected_buyout_quantity'] ?? null),
+            maturityStatus: self::maturityStatus($row['maturity_status'] ?? null),
+            inFlightRateBps: self::nullableInteger($row['in_flight_rate_bps'] ?? null),
         );
+    }
+
+    private static function maturityStatus(mixed $value): string
+    {
+        if ('mature' !== $value && 'preliminary' !== $value) {
+            throw new \UnexpectedValueException('Expected maturity status in daily buyout row.');
+        }
+
+        return $value;
     }
 
     private static function string(mixed $value): string

@@ -47,4 +47,28 @@ final class ImportOzonFixtureCommandTest extends KernelTestCase
             [$companyId->toRfc4122()],
         ));
     }
+
+    public function testObservedAtOptionBackdatesRawAndStatusObservations(): void
+    {
+        self::bootKernel();
+        $companyId = Uuid::v7();
+        /** @var ImportOzonFixtureCommand $command */
+        $command = self::getContainer()->get(ImportOzonFixtureCommand::class);
+        $tester = new CommandTester($command);
+
+        self::assertSame(0, $tester->execute([
+            'companyId' => $companyId->toRfc4122(),
+            'marketplaceAccountId' => Uuid::v7()->toRfc4122(),
+            'businessDate' => '2026-08-01',
+            'fixturePath' => self::FIXTURE,
+            '--observed-at' => '2026-08-01T12:00:00Z',
+        ]));
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        self::assertSame(['2026-08-01 12:00:00'], $connection->fetchFirstColumn(
+            'SELECT DISTINCT observed_at::text FROM marketplace_posting_status WHERE company_id = ?',
+            [$companyId->toRfc4122()],
+        ));
+    }
 }

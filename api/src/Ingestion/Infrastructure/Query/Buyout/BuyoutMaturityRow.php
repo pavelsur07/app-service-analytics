@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Query\Buyout;
 
-/** Percentiles времени handover -> terminal для одного кабинета. */
+/** Percentiles времени от конца дня заказа до закрытия (ADR-029) для одного кабинета. */
 final readonly class BuyoutMaturityRow
 {
     public function __construct(

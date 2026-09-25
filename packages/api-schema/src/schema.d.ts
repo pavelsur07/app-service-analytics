@@ -790,6 +790,13 @@ export interface components {
             orderedQuantity: number;
             resolvedQuantity: number;
             projectedBuyoutQuantity: number | null;
+            /**
+             * @description ADR-029: факт есть только у зрелой точки
+             * @enum {string}
+             */
+            maturityStatus: "mature" | "preliminary";
+            /** @description Доля количества в доставке, bps */
+            inFlightRateBps: number | null;
         };
         BuyoutDailyResponse: {
             marketplaceSku: string;
