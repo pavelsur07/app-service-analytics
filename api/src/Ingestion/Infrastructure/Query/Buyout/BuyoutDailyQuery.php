@@ -17,13 +17,23 @@ final readonly class BuyoutDailyQuery
     {
     }
 
+    /**
+     * @param string|null $marketplaceSku null — все SKU компании одним рядом
+     * @param bool        $pointInTime    источник на момент asOf (ADR-030),
+     *                                    а не текущий buyout_outcome
+     */
     public function build(
         string $companyId,
-        string $marketplaceSku,
+        ?string $marketplaceSku,
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         \DateTimeImmutable $asOf,
+        bool $pointInTime = false,
     ): QueryBuilder {
+        $outcomeSource = $pointInTime
+            ? 'buyout_outcome_as_of(:companyId::uuid, :asOf::timestamp)'
+            : 'buyout_outcome WHERE company_id = :companyId';
+        $skuFilter = null === $marketplaceSku ? 'TRUE' : 'o.marketplace_sku = :marketplaceSku';
         $maturityCtes = BuyoutMaturityQuery::maturityCtes();
         $trainingDays = BuyoutMaturityQuery::trainingDaysCte();
         $inFlightWithinLimit = BuyoutMaturityQuery::inFlightWithinLimitSql('quantity', 'is_in_flight');
@@ -35,8 +45,7 @@ final readonly class BuyoutDailyQuery
                        quantity, business_date, outcome,
                        handed_over_at, resolved_at, is_forecast_eligible,
                        resolution_observed, is_in_flight
-                FROM buyout_outcome
-                WHERE company_id = :companyId
+                FROM {$outcomeSource}
             ),
             {$maturityCtes},
             {$trainingDays},
@@ -99,7 +108,7 @@ final readonly class BuyoutDailyQuery
                  AND s.marketplace_sku = o.marketplace_sku
                 LEFT JOIN account_training a
                   ON a.marketplace_account_id = o.marketplace_account_id
-                WHERE o.marketplace_sku = :marketplaceSku
+                WHERE {$skuFilter}
                   AND o.business_date >= :from
                   AND o.business_date <= :to
             ),
@@ -143,6 +152,9 @@ final readonly class BuyoutDailyQuery
                    CASE WHEN mature AND (d_quantity + t2_quantity + p_quantity) > 0
                         THEN ROUND(10000::numeric * d_quantity / (d_quantity + t2_quantity + p_quantity))::int
                         ELSE NULL END AS actual_buyout_rate_bps,
+                   CASE WHEN (d_quantity + t2_quantity + p_quantity) > 0
+                        THEN ROUND(10000::numeric * d_quantity / (d_quantity + t2_quantity + p_quantity))::int
+                        ELSE NULL END AS known_buyout_rate_bps,
                    CASE WHEN missing_rate OR projected_eligible_quantity = 0 THEN NULL
                         ELSE ROUND(10000::numeric * projected_quantity / projected_eligible_quantity)::int END AS projected_buyout_rate_bps,
                    ROUND(10000::numeric * resolved_quantity / NULLIF(ordered_quantity, 0))::int AS resolution_rate_bps,
@@ -157,17 +169,21 @@ final readonly class BuyoutDailyQuery
         $utc = new \DateTimeZone('UTC');
         $moscow = new \DateTimeZone('Europe/Moscow');
 
-        return $this->connection->createQueryBuilder()
+        $query = $this->connection->createQueryBuilder()
             ->select('*')
             ->from('('.$source.')', 'daily')
             ->setParameter('companyId', $companyId)
-            ->setParameter('marketplaceSku', $marketplaceSku)
             ->setParameter('from', $from->format('Y-m-d'))
             ->setParameter('to', $to->format('Y-m-d'))
             ->setParameter('asOf', $asOf->setTimezone($utc)->format('Y-m-d H:i:s'))
             ->setParameter('asOfMoscow', $asOf->setTimezone($moscow)->format('Y-m-d H:i:s'))
             ->orderBy('business_date', 'ASC')
             ->setMaxResults(91);
+        if (null !== $marketplaceSku) {
+            $query->setParameter('marketplaceSku', $marketplaceSku);
+        }
+
+        return $query;
     }
 
     /**
@@ -185,6 +201,7 @@ final readonly class BuyoutDailyQuery
             projectedBuyoutQuantity: self::nullableInteger($row['projected_buyout_quantity'] ?? null),
             maturityStatus: self::maturityStatus($row['maturity_status'] ?? null),
             inFlightRateBps: self::nullableInteger($row['in_flight_rate_bps'] ?? null),
+            knownBuyoutRateBps: self::nullableInteger($row['known_buyout_rate_bps'] ?? null),
         );
     }
 

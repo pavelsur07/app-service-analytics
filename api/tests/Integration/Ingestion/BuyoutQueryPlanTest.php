@@ -65,6 +65,7 @@ final class BuyoutQueryPlanTest extends KernelTestCase
         yield 'rate list sorted by actual buyout' => ['rate_actual'];
         yield 'forecast list' => ['forecast'];
         yield 'daily series' => ['daily'];
+        yield 'account daily series as of a past date (ADR-030)' => ['daily_as_of'];
     }
 
     #[DataProvider('reportQueries')]
@@ -212,6 +213,16 @@ final class BuyoutQueryPlanTest extends KernelTestCase
                 $from,
                 $to,
                 $asOf,
+            ),
+            // Продажи засеяны «сейчас»: дата «на» после загрузки, чтобы
+            // функция действительно читала когорту, а не пустой срез.
+            'daily_as_of' => (new BuyoutDailyQuery($connection))->build(
+                $this->companyId->toRfc4122(),
+                null,
+                $from,
+                $to,
+                new \DateTimeImmutable('+1 day'),
+                pointInTime: true,
             ),
             default => throw new \InvalidArgumentException("Unknown buyout query {$queryName}."),
         };
