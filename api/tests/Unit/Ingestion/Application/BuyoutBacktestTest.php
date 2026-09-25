@@ -102,6 +102,7 @@ final class BuyoutBacktestTest extends TestCase
             maturityStatus: $maturity,
             inFlightRateBps: null,
             knownBuyoutRateBps: $known,
+            unestimatedRateBps: null,
         );
     }
 }

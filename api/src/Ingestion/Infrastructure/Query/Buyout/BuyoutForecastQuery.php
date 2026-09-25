@@ -41,6 +41,8 @@ final readonly class BuyoutForecastQuery
         $trainingSample = self::MIN_TRAINING_QUANTITY;
         $aggregates = self::forecastAggregatesSql();
         $handoverCurve = self::handoverCurveCtes();
+        $unestimatedRate = self::unestimatedRateSql('unestimated_quantity', 'ordered_quantity');
+        $summaryUnestimatedRate = self::unestimatedRateSql('SUM(unestimated_quantity) OVER ()', 'SUM(ordered_quantity) OVER ()');
         $handoverFactorJoin = self::handoverFactorJoinSql('o');
         $quantity = self::projectedQuantitySql('projected_quantity', 'ordered_quantity', 'unestimated_quantity');
         $rate = self::projectedRateSql('projected_quantity', 'projected_eligible_quantity', 'ordered_quantity', 'unestimated_quantity');
@@ -138,7 +140,8 @@ final readonly class BuyoutForecastQuery
                        unestimated_quantity,
                        {$quantity} AS projected_buyout_quantity,
                        {$rate} AS projected_buyout_rate_bps,
-                       ROUND(10000::numeric * resolved_quantity / NULLIF(ordered_quantity, 0))::int AS resolution_rate_bps
+                       ROUND(10000::numeric * resolved_quantity / NULLIF(ordered_quantity, 0))::int AS resolution_rate_bps,
+                       {$unestimatedRate} AS unestimated_rate_bps
                 FROM forecast
             )
             SELECT forecast_rows.*,
@@ -146,7 +149,8 @@ final readonly class BuyoutForecastQuery
                    SUM(resolved_quantity) OVER ()::bigint AS summary_resolved_quantity,
                    {$summaryQuantity} AS summary_projected_buyout_quantity,
                    {$summaryRate} AS summary_projected_buyout_rate_bps,
-                   ROUND(10000::numeric * SUM(resolved_quantity) OVER () / NULLIF(SUM(ordered_quantity) OVER (), 0))::int AS summary_resolution_rate_bps
+                   ROUND(10000::numeric * SUM(resolved_quantity) OVER () / NULLIF(SUM(ordered_quantity) OVER (), 0))::int AS summary_resolution_rate_bps,
+                   {$summaryUnestimatedRate} AS summary_unestimated_rate_bps
             FROM forecast_rows
             SQL;
 
@@ -279,6 +283,12 @@ final readonly class BuyoutForecastQuery
             SQL;
     }
 
+    /** Доля заказанного количества без оценки (ADR-031), bps; NULL без заказов. */
+    public static function unestimatedRateSql(string $unestimated, string $ordered): string
+    {
+        return "ROUND(10000::numeric * {$unestimated} / NULLIF({$ordered}, 0))::int";
+    }
+
     /**
      * Ставка агрегата по суммам ADR-031: NULL, если штук без оценки больше
      * порога или ожидаемый знаменатель пуст.
@@ -317,6 +327,7 @@ final readonly class BuyoutForecastQuery
             projectedBuyoutQuantity: self::nullableInteger($row['projected_buyout_quantity'] ?? null),
             projectedBuyoutRateBps: self::nullableInteger($row['projected_buyout_rate_bps'] ?? null),
             resolutionRateBps: self::integer($row['resolution_rate_bps'] ?? null),
+            unestimatedRateBps: self::nullableInteger($row['unestimated_rate_bps'] ?? null),
         );
     }
 

@@ -35,6 +35,7 @@ final class ListBuyoutRatesControllerTest extends WebTestCase
             'projectedBuyoutQuantity' => null,
             'projectedBuyoutRateBps' => null,
             'resolutionRateBps' => null,
+            'unestimatedRateBps' => null,
         ], $payload['summary']);
     }
 
@@ -61,6 +62,8 @@ final class ListBuyoutRatesControllerTest extends WebTestCase
             'projectedBuyoutQuantity' => null,
             'projectedBuyoutRateBps' => null,
             'resolutionRateBps' => 0,
+            // Обучения у кабинета нет — ни одна штука не получила оценки.
+            'unestimatedRateBps' => 10000,
         ], $first['summary']);
         self::assertIsString($first['nextCursor']);
 

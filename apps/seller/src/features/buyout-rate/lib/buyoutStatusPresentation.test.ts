@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatRateBps, maturityPresentation } from './buyoutStatusPresentation'
+import {
+  forecastCoverageLabel,
+  formatRateBps,
+  maturityPresentation,
+} from './buyoutStatusPresentation'
 
 describe('формат процента выкупа', () => {
   it('форматирует basis points до двух знаков без лишних нулей', () => {
@@ -29,5 +33,18 @@ describe('статус матурации', () => {
       label: 'Предварительно · 62,34% разрешилось',
       tone: 'warning',
     })
+  })
+})
+
+describe('доля заказов в прогнозе', () => {
+  it('называет долю заказов, по которой построен прогноз', () => {
+    expect(forecastCoverageLabel(4500, 500)).toBe('по 95% заказов')
+    expect(forecastCoverageLabel(4500, 690)).toBe('по 93,1% заказов')
+  })
+
+  it('молчит, когда в прогноз вошли все заказы или прогноза нет', () => {
+    expect(forecastCoverageLabel(4500, 0)).toBeNull()
+    expect(forecastCoverageLabel(4500, null)).toBeNull()
+    expect(forecastCoverageLabel(null, 1200)).toBeNull()
   })
 })

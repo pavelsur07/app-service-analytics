@@ -8,6 +8,7 @@ import type {
   BuyoutSortDirection,
 } from '../lib/buyoutParams'
 import {
+  forecastCoverageLabel,
   formatRateBps,
   maturityPresentation,
 } from '../lib/buyoutStatusPresentation'
@@ -160,6 +161,10 @@ function BuyoutRows({
   onToggle: () => void
 }) {
   const dynamicsId = getDynamicsId(item.marketplaceSku)
+  const coverage = forecastCoverageLabel(
+    item.projectedBuyoutRateBps,
+    item.unestimatedRateBps,
+  )
 
   return (
     <>
@@ -188,6 +193,7 @@ function BuyoutRows({
           </div>
           <div className="mt-1 text-xs text-text-muted">
             Прогноз {formatRateBps(item.projectedBuyoutRateBps)}
+            {coverage === null ? null : ` · ${coverage}`}
             {item.projectedBuyoutQuantity === null ||
             item.projectedBuyoutQuantity === undefined
               ? null

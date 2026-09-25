@@ -21,6 +21,27 @@ export function formatRateBps(basisPoints: number | null | undefined): string {
   return `${integer < 0 ? '−' : ''}${whole}${fraction}%`
 }
 
+/**
+ * ADR-031: прогноз построен без штук без оценки. Подпись показывается,
+ * только когда прогноз есть и часть заказов в него не вошла.
+ */
+export function forecastCoverageLabel(
+  projectedRateBps: number | null | undefined,
+  unestimatedRateBps: number | null | undefined,
+): string | null {
+  if (
+    projectedRateBps === null ||
+    projectedRateBps === undefined ||
+    unestimatedRateBps === null ||
+    unestimatedRateBps === undefined ||
+    unestimatedRateBps <= 0
+  ) {
+    return null
+  }
+
+  return `по ${formatRateBps(10000 - unestimatedRateBps)} заказов`
+}
+
 export function maturityPresentation(
   status: MaturityStatus,
   resolutionRateBps: number | null,

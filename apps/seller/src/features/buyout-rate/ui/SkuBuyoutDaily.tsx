@@ -137,6 +137,7 @@ export function SkuBuyoutDaily({
               <th>Прогноз</th>
               <th>Разрешилось</th>
               <th>В доставке</th>
+              <th>Без оценки прогноза</th>
               <th>Заказано</th>
               <th>Прогноз количества</th>
             </tr>
@@ -150,6 +151,7 @@ export function SkuBuyoutDaily({
                 <td>{formatRateBps(point.projectedBuyoutRateBps)}</td>
                 <td>{formatRateBps(point.resolutionRateBps)}</td>
                 <td>{formatRateBps(point.inFlightRateBps)}</td>
+                <td>{formatRateBps(point.unestimatedRateBps)}</td>
                 <td>{QUANTITY.format(point.orderedQuantity)}</td>
                 <td>
                   {point.projectedBuyoutQuantity === null ||
@@ -266,6 +268,16 @@ function DailyTooltip({
         <dd className="text-right">{formatRateBps(point.resolutionRateBps)}</dd>
         <dt className="text-text-muted">В доставке</dt>
         <dd className="text-right">{formatRateBps(point.inFlightRateBps)}</dd>
+        {point.unestimatedRateBps === null ||
+        point.unestimatedRateBps === undefined ||
+        point.unestimatedRateBps <= 0 ? null : (
+          <>
+            <dt className="text-text-muted">Без оценки</dt>
+            <dd className="text-right">
+              {formatRateBps(point.unestimatedRateBps)}
+            </dd>
+          </>
+        )}
         <dt className="text-text-muted">Количество</dt>
         <dd className="text-right">
           {point.projectedBuyoutQuantity === null ||

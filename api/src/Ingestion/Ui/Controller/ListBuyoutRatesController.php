@@ -90,6 +90,7 @@ final class ListBuyoutRatesController
                 projectedBuyoutQuantity: $report->summary->projectedBuyoutQuantity,
                 projectedBuyoutRateBps: $report->summary->projectedBuyoutRateBps,
                 resolutionRateBps: $report->summary->resolutionRateBps,
+                unestimatedRateBps: $report->summary->unestimatedRateBps,
             ),
             items: array_map(self::item(...), $report->items),
             nextCursor: null === $report->nextCursor ? null : self::encodeCursor($report->nextCursor),
@@ -114,6 +115,7 @@ final class ListBuyoutRatesController
             partialReturnRateBps: $item->partialReturnRateBps,
             maturityStatus: $item->maturityStatus,
             resolutionRateBps: $item->resolutionRateBps,
+            unestimatedRateBps: $item->unestimatedRateBps,
         );
     }
 

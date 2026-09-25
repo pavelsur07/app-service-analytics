@@ -79,6 +79,7 @@ final readonly class BuildBuyoutRateReportAction
                     projectedBuyoutQuantity: $summary->projectedBuyoutQuantity,
                     projectedBuyoutRateBps: $summary->projectedBuyoutRateBps,
                     resolutionRateBps: $summary->resolutionRateBps,
+                    unestimatedRateBps: $summary->unestimatedRateBps,
                 ),
                 items: array_map(
                     static fn (BuyoutRateRow $row): BuyoutRateSku => self::toSku($row, $forecastBySku[$row->marketplaceSku] ?? null),
@@ -203,6 +204,7 @@ final readonly class BuildBuyoutRateReportAction
                 projectedBuyoutQuantity: $summaryResult->projectedBuyoutQuantity,
                 projectedBuyoutRateBps: $summaryResult->projectedBuyoutRateBps,
                 resolutionRateBps: $summaryResult->resolutionRateBps,
+                unestimatedRateBps: $summaryResult->unestimatedRateBps,
             ),
             items: array_map(
                 static fn (BuyoutRateRow $row): BuyoutRateSku => self::toSku($row, $forecastBySku[$row->marketplaceSku] ?? null),
@@ -291,6 +293,7 @@ final readonly class BuildBuyoutRateReportAction
             t2RateBps: $row->t2RateBps,
             partialReturnRateBps: $row->partialReturnRateBps,
             maturityStatus: $row->maturityStatus,
+            unestimatedRateBps: $forecast?->unestimatedRateBps,
         );
     }
 
