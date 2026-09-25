@@ -14,6 +14,7 @@ use App\Ingestion\Application\Message\FetchOzonAdCampaignsMessage;
 use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonAdCampaignsHandler;
 use App\Ingestion\Application\MessageHandler\FetchOzonAdCampaignStatsHandler;
+use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonAdvertisingFetcher;
 use App\Ingestion\Infrastructure\Connector\OzonPerformance\OzonPerformanceCampaignClient;
@@ -57,6 +58,56 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
             $this->rawBodies($container, $account, MarketplaceReportType::OzonAdDaily),
         );
         self::assertSame(['2026-08-25'], $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdExpense));
+    }
+
+    public function testFreshChunkAlsoStoresSkuForYesterdayAndToday(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+        $chunk = OzonAdvertisingWindows::lastDays(OzonAdvertisingWindows::today(new \DateTimeImmutable()), 30)[0];
+
+        $this->syncStats($container, $account, $chunk['from'], $chunk['to']);
+
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+        $expectedDays = [$today->format('Y-m-d'), $today->modify('-1 day')->format('Y-m-d')];
+        self::assertSame($expectedDays, array_values(array_unique(array_column($fetcher->skuRequests, 'day'))));
+
+        // В снятом списке 94 кампании; products/sku получает только
+        // неархивные типа SKU — у других списка товаров нет, — и не больше
+        // десяти за запрос.
+        $expectedIds = $this->activeSkuCampaignIds();
+        $requested = [];
+        foreach ($fetcher->skuRequests as $request) {
+            self::assertLessThanOrEqual(10, \count($request['campaigns']));
+            if ($request['day'] === $expectedDays[0]) {
+                $requested = [...$requested, ...$request['campaigns']];
+            }
+        }
+        self::assertSame($expectedIds, $requested);
+
+        // Ответы разных пачек одного дня совпадают (заглушка отдаёт одну
+        // фикстуру) и дедуплицируются: по документу на день.
+        self::assertSame(
+            array_reverse($expectedDays),
+            $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdSkuDay),
+        );
+        // Список, по которому выбраны кампании, сохранён до разбора
+        // с днём снимка из сообщения (ADR-006).
+        self::assertSame([$chunk['to']], $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdCampaigns));
+    }
+
+    public function testOldChunkDoesNotAskForSku(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+
+        // products/sku отдаёт только сегодня и вчера: кусок истории его
+        // не вызывает вовсе.
+        $this->syncStats($container, $account);
+
+        self::assertSame([], $fetcher->skuRequests);
     }
 
     public function testRepeatedChunkDoesNotDuplicateRaw(): void
@@ -170,6 +221,27 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         $this->syncStats($container, $account, '2026-08-25', '2026-09-24');
     }
 
+    /**
+     * @return list<string>
+     */
+    private function activeSkuCampaignIds(): array
+    {
+        $list = json_decode($this->fixture('campaign-list.json'), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($list);
+        self::assertIsArray($list['list']);
+        $ids = [];
+        foreach ($list['list'] as $campaign) {
+            self::assertIsArray($campaign);
+            if ('CAMPAIGN_STATE_ARCHIVED' !== $campaign['state'] && 'SKU' === $campaign['advObjectType']) {
+                self::assertIsString($campaign['id']);
+                $ids[] = $campaign['id'];
+            }
+        }
+        self::assertNotSame([], $ids);
+
+        return $ids;
+    }
+
     private function syncStats(ContainerInterface $container, MarketplaceAccount $account, string $from = '2026-08-25', string $to = '2026-09-23'): void
     {
         $handler = $container->get(FetchOzonAdCampaignStatsHandler::class);
@@ -178,11 +250,11 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
     }
 
     /**
-     * @return OzonAdvertisingFetcher&object{calls: int}
+     * @return OzonAdvertisingFetcher&object{calls: int, skuRequests: list<array{day: string, campaigns: list<string>}>}
      */
     private function fetcher(ContainerInterface $container, int $tokenStatus = 200, ?\Closure $beforeRejection = null): OzonAdvertisingFetcher
     {
-        $fetcher = new class($tokenStatus, $this->fixture('campaign-list.json'), $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json'), $beforeRejection) implements OzonAdvertisingFetcher {
+        $fetcher = new class($tokenStatus, $this->fixture('campaign-list.json'), $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json'), $beforeRejection, $this->fixture('statistics-products-sku-2026-09-23.json')) implements OzonAdvertisingFetcher {
             public int $calls = 0;
 
             public function __construct(
@@ -191,6 +263,7 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
                 private readonly string $expense,
                 private readonly string $daily,
                 private readonly ?\Closure $beforeRejection,
+                private readonly string $sku,
             ) {
             }
 
@@ -228,6 +301,16 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
             public function daily(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string
             {
                 return $this->daily;
+            }
+
+            /** @var list<array{day: string, campaigns: list<string>}> */
+            public array $skuRequests = [];
+
+            public function productsSku(string $token, array $campaignIds, \DateTimeImmutable $day): string
+            {
+                $this->skuRequests[] = ['day' => $day->format('Y-m-d'), 'campaigns' => $campaignIds];
+
+                return $this->sku;
             }
         };
         $container->set(OzonPerformanceCampaignClient::class, $fetcher);
@@ -270,7 +353,7 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
     {
         /** @var list<string> $periods */
         $periods = $this->connection($container)->fetchFirstColumn(
-            'SELECT period FROM marketplace_raw_document WHERE company_id = ? AND marketplace_account_id = ? AND report_type = ?',
+            'SELECT period FROM marketplace_raw_document WHERE company_id = ? AND marketplace_account_id = ? AND report_type = ? ORDER BY period',
             [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), $reportType],
         );
 

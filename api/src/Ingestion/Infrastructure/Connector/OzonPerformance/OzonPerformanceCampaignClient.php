@@ -42,6 +42,17 @@ final readonly class OzonPerformanceCampaignClient implements OzonAdvertisingFet
         return $this->http->get($token, '/api/client/statistics/daily/json', self::period($from, $to));
     }
 
+    public function productsSku(string $token, array $campaignIds, \DateTimeImmutable $day): string
+    {
+        // Форма запроса — ровно та, что сняла разведка: поле `campaignIds`,
+        // один день (`dateFrom = dateTo`).
+        return $this->http->post($token, '/api/client/statistics/products/sku', [
+            'campaignIds' => $campaignIds,
+            'dateFrom' => $day->format('Y-m-d'),
+            'dateTo' => $day->format('Y-m-d'),
+        ]);
+    }
+
     /**
      * Даты — днями `Y-m-d`, как их снимал `bin/ozon-performance-fixture.sh`:
      * площадка считает их днями по Москве (ADR-026).

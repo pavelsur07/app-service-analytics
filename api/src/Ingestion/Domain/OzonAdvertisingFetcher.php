@@ -30,4 +30,12 @@ interface OzonAdvertisingFetcher
      * (`GET /api/client/statistics/daily/json`), тело как есть.
      */
     public function daily(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string;
+
+    /**
+     * Кампания × SKU за один день (`POST /api/client/statistics/products/sku`),
+     * тело как есть. Площадка отдаёт только сегодня и вчера.
+     *
+     * @param list<string> $campaignIds не больше `OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST`
+     */
+    public function productsSku(string $token, array $campaignIds, \DateTimeImmutable $day): string;
 }
