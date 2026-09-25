@@ -8,8 +8,10 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
 /**
- * Первая загрузка возвратов компании (ADR-030): раньше классификация
- * T1/T2/P на прошлую дату неполна, и проверка прогноза туда не заходит.
+ * Конец первичной загрузки возвратов компании (ADR-030): последний
+ * возврат, впервые загруженный в течение FIRST_LOAD_WINDOW от самого
+ * первого. До конца этой волны классификация T1/T2/P на прошлую дату
+ * неполна, и проверка прогноза туда не заходит.
  */
 final readonly class BuyoutBacktestStartQuery
 {
@@ -17,12 +19,23 @@ final readonly class BuyoutBacktestStartQuery
     {
     }
 
+    public const string FIRST_LOAD_WINDOW = '48 hours';
+
     public function build(string $companyId): QueryBuilder
     {
+        $window = self::FIRST_LOAD_WINDOW;
+
         return $this->connection->createQueryBuilder()
-            ->select('MIN(first_loaded_at) AS first_returns_loaded_at')
-            ->from('marketplace_return_fact')
-            ->where('company_id = :companyId')
+            ->select('MAX(r.first_loaded_at) AS first_returns_loaded_at')
+            ->from('marketplace_return_fact', 'r')
+            ->where('r.company_id = :companyId')
+            ->andWhere(<<<SQL
+                r.first_loaded_at <= (
+                    SELECT MIN(first_loaded_at) + INTERVAL '{$window}'
+                    FROM marketplace_return_fact
+                    WHERE company_id = :companyId
+                )
+                SQL)
             ->setParameter('companyId', $companyId);
     }
 

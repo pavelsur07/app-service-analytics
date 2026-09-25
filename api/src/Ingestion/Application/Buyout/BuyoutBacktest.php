@@ -79,13 +79,16 @@ final class BuyoutBacktest
     private static function bucket(string $label, array $pairs): BuyoutBacktestBucket
     {
         $forecastErrors = [];
-        $naiveErrors = [];
+        $comparableForecastErrors = [];
+        $comparableNaiveErrors = [];
         foreach ($pairs as $pair) {
-            if (null !== $pair->forecastBps) {
-                $forecastErrors[] = $pair->forecastBps - $pair->actualBps;
+            if (null === $pair->forecastBps) {
+                continue;
             }
+            $forecastErrors[] = $pair->forecastBps - $pair->actualBps;
             if (null !== $pair->naiveBps) {
-                $naiveErrors[] = $pair->naiveBps - $pair->actualBps;
+                $comparableForecastErrors[] = $pair->forecastBps - $pair->actualBps;
+                $comparableNaiveErrors[] = $pair->naiveBps - $pair->actualBps;
             }
         }
 
@@ -95,9 +98,10 @@ final class BuyoutBacktest
             forecastCount: \count($forecastErrors),
             forecastMaeBps: self::meanAbsolute($forecastErrors),
             forecastBiasBps: self::mean($forecastErrors),
-            naiveCount: \count($naiveErrors),
-            naiveMaeBps: self::meanAbsolute($naiveErrors),
-            naiveBiasBps: self::mean($naiveErrors),
+            comparableCount: \count($comparableNaiveErrors),
+            comparableForecastMaeBps: self::meanAbsolute($comparableForecastErrors),
+            comparableNaiveMaeBps: self::meanAbsolute($comparableNaiveErrors),
+            comparableNaiveBiasBps: self::mean($comparableNaiveErrors),
         );
     }
 

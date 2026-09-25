@@ -39,13 +39,16 @@ final class BuyoutBacktestTest extends TestCase
         ], $pairs);
     }
 
-    public function testSummarizesAbsoluteErrorBiasAndMissingForecastsPerHorizonBucket(): void
+    public function testSummarizesErrorsAndComparesWithNaiveOnlyOnCommonPairs(): void
     {
         $buckets = BuyoutBacktest::summarize([
             new BuyoutBacktestPair('2026-09-20', '2026-09-19', 1, 4500, 6000, 4000),
             new BuyoutBacktestPair('2026-09-20', '2026-09-18', 2, 3700, 5000, 4000),
+            // Прогноза нет — пара не входит ни в ошибку прогноза, ни в сравнение.
             new BuyoutBacktestPair('2026-09-20', '2026-09-15', 5, null, 4400, 4200),
+            // Наивной нет — пара в ошибке прогноза, но не в сравнении.
             new BuyoutBacktestPair('2026-09-20', '2026-09-08', 12, 4101, null, 4100),
+            new BuyoutBacktestPair('2026-09-20', '2026-09-09', 11, 5100, null, 4100),
         ]);
 
         self::assertSame(['1–2', '3–5', '6–9', '10–15', 'все'], array_column($buckets, 'label'));
@@ -54,27 +57,31 @@ final class BuyoutBacktestTest extends TestCase
         self::assertSame(2, $short->cohorts);
         self::assertSame(400, $short->forecastMaeBps);
         self::assertSame(100, $short->forecastBiasBps);
-        self::assertSame(1500, $short->naiveMaeBps);
-        self::assertSame(1500, $short->naiveBiasBps);
+        self::assertSame(2, $short->comparableCount);
+        self::assertSame(400, $short->comparableForecastMaeBps);
+        self::assertSame(1500, $short->comparableNaiveMaeBps);
+        self::assertSame(1500, $short->comparableNaiveBiasBps);
 
         self::assertSame(1, $middle->cohorts);
         self::assertSame(0, $middle->forecastCount);
         self::assertNull($middle->forecastMaeBps);
-        self::assertSame(200, $middle->naiveMaeBps);
+        self::assertSame(0, $middle->comparableCount);
+        self::assertNull($middle->comparableNaiveMaeBps);
 
         self::assertSame(0, $empty->cohorts);
         self::assertNull($empty->forecastMaeBps);
-        self::assertNull($empty->naiveMaeBps);
 
-        self::assertSame(1, $long->forecastMaeBps);
-        self::assertSame(0, $long->naiveCount);
+        self::assertSame(2, $long->forecastCount);
+        self::assertSame(501, $long->forecastMaeBps);
+        self::assertSame(0, $long->comparableCount);
+        self::assertNull($long->comparableForecastMaeBps);
 
-        self::assertSame(4, $all->cohorts);
-        self::assertSame(3, $all->forecastCount);
-        self::assertSame(267, $all->forecastMaeBps);
-        self::assertSame(67, $all->forecastBiasBps);
-        self::assertSame(3, $all->naiveCount);
-        self::assertSame(1067, $all->naiveMaeBps);
+        self::assertSame(5, $all->cohorts);
+        self::assertSame(4, $all->forecastCount);
+        self::assertSame(450, $all->forecastMaeBps);
+        self::assertSame(2, $all->comparableCount);
+        self::assertSame(400, $all->comparableForecastMaeBps);
+        self::assertSame(1500, $all->comparableNaiveMaeBps);
     }
 
     private static function row(

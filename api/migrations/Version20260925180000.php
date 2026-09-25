@@ -13,7 +13,7 @@ use Doctrine\Migrations\AbstractMigration;
  * источников «на дату» с фильтром компании внутри; равенство функции
  * на бесконечности и view проверяет интеграционный тест.
  */
-final class Version20260926090000 extends AbstractMigration
+final class Version20260925180000 extends AbstractMigration
 {
     public function getDescription(): string
     {

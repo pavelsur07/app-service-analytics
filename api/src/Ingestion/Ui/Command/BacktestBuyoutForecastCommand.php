@@ -68,18 +68,23 @@ final class BacktestBuyoutForecastCommand extends Command
             \count($report->pairs),
         ));
         $io->table(
-            ['Горизонт, дн.', 'Пар', 'Прогноз: ошибка, п.п.', 'Прогноз: смещение, п.п.', 'Без прогноза', 'Наивная: ошибка, п.п.', 'Наивная: смещение, п.п.'],
+            ['Горизонт, дн.', 'Пар', 'Без прогноза', 'Прогноз: ошибка', 'Прогноз: смещение', 'Сравнимых пар', 'На них прогноз: ошибка', 'На них наивная: ошибка', 'На них наивная: смещение'],
             array_map(static fn (BuyoutBacktestBucket $bucket): array => [
                 $bucket->label,
                 $bucket->cohorts,
+                $bucket->cohorts - $bucket->forecastCount,
                 self::points($bucket->forecastMaeBps),
                 self::points($bucket->forecastBiasBps),
-                $bucket->cohorts - $bucket->forecastCount,
-                self::points($bucket->naiveMaeBps),
-                self::points($bucket->naiveBiasBps),
+                $bucket->comparableCount,
+                self::points($bucket->comparableForecastMaeBps),
+                self::points($bucket->comparableNaiveMaeBps),
+                self::points($bucket->comparableNaiveBiasBps),
             ], $report->buckets),
         );
-        $io->text('Ошибка — средняя абсолютная разница с итоговым фактом дня; смещение со знаком «+» — оценка выше факта. Наивная — выкуп только по известным на дату исходам.');
+        $io->text([
+            'Ошибка — средняя абсолютная разница с итоговым фактом дня, п.п.; смещение со знаком «+» — оценка выше факта.',
+            'Наивная — выкуп только по известным на дату исходам. Её нет, пока на дату ничего не закрыто, поэтому с прогнозом она сравнивается только на сравнимых парах — где есть обе оценки.',
+        ]);
 
         return Command::SUCCESS;
     }

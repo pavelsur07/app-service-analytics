@@ -60,7 +60,7 @@ final class BacktestBuyoutForecastActionTest extends KernelTestCase
         ], $report->pairs);
         self::assertSame(2000, $report->buckets[0]->forecastMaeBps);
         self::assertSame(2000, $report->buckets[0]->forecastBiasBps);
-        self::assertSame(0, $report->buckets[0]->naiveCount);
+        self::assertSame(0, $report->buckets[0]->comparableCount);
     }
 
     public function testRefusesDatesBeforeReturnsWereFirstLoaded(): void
