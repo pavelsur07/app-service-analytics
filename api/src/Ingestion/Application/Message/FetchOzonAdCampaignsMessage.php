@@ -13,6 +13,12 @@ final readonly class FetchOzonAdCampaignsMessage
     public function __construct(
         public string $companyId,
         public string $marketplaceAccountId,
+        /**
+         * День снимка, `Y-m-d` по Москве, — `period` raw-документа.
+         * Задаёт отправитель, а не обработчик: повтор сообщения после
+         * полуночи обязан попасть в тот же документ (CLAUDE.md §4).
+         */
+        public string $day,
     ) {
     }
 }

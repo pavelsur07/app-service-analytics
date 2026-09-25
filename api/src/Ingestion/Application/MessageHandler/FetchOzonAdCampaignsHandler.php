@@ -18,8 +18,9 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Список рекламных кампаний в raw-слой как есть (ADR-026 п. 3). `period` — сегодняшний день по Москве: список
- * описывает кампании на момент запроса. Отказ авторизации — broken
+ * Список рекламных кампаний в raw-слой как есть (ADR-026 п. 3). `period` —
+ * день снимка из сообщения: его задаёт отправитель, и повтор сообщения
+ * после полуночи попадает в тот же документ. Отказ авторизации — broken
  * только у рекламы (ADR-026 п. 1).
  */
 #[AsMessageHandler]
@@ -55,7 +56,7 @@ final readonly class FetchOzonAdCampaignsHandler
             }
 
             $this->brokenLogger->log($target->companyId, $target->marketplaceAccountId, 'advertising', $failure, $target->performanceClientSecret);
-            $this->identityFacade->markOzonAdvertisingBroken($target->companyId, $target->marketplaceAccountId);
+            $this->identityFacade->markOzonAdvertisingBroken($target->companyId, $target->marketplaceAccountId, $target->version);
 
             return;
         }
@@ -64,8 +65,18 @@ final readonly class FetchOzonAdCampaignsHandler
             companyId: Uuid::fromString($target->companyId),
             marketplaceAccountId: Uuid::fromString($target->marketplaceAccountId),
             reportType: MarketplaceReportType::OzonAdCampaigns,
-            period: OzonAdvertisingWindows::today(new \DateTimeImmutable()),
+            period: self::day($message),
             rawBody: $body,
         ));
+    }
+
+    private static function day(FetchOzonAdCampaignsMessage $message): \DateTimeImmutable
+    {
+        $day = \DateTimeImmutable::createFromFormat('!Y-m-d', $message->day, new \DateTimeZone(OzonAdvertisingWindows::TIMEZONE));
+        if (false === $day || $day->format('Y-m-d') !== $message->day) {
+            throw new \InvalidArgumentException('Ozon advertising campaigns day must be a valid Y-m-d date.');
+        }
+
+        return $day;
     }
 }

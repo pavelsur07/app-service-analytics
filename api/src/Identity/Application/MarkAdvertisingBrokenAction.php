@@ -32,11 +32,11 @@ final readonly class MarkAdvertisingBrokenAction
     ) {
     }
 
-    public function __invoke(string $companyId, string $marketplaceAccountId): bool
+    public function __invoke(string $companyId, string $marketplaceAccountId, int $version): bool
     {
         $id = Uuid::fromString($marketplaceAccountId);
 
-        if (!$this->accounts->markAdvertisingBrokenIfActive($companyId, $id)) {
+        if (!$this->accounts->markAdvertisingBrokenIfActive($companyId, $id, $version)) {
             return false;
         }
 

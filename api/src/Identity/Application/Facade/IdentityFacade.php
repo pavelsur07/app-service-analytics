@@ -70,17 +70,20 @@ final class IdentityFacade
             marketplaceAccountId: $account->id()->toRfc4122(),
             performanceClientId: $credentials->get(ReplaceAdvertisingCredentialsAction::PerformanceClientIdKey),
             performanceClientSecret: $credentials->get(ReplaceAdvertisingCredentialsAction::PerformanceClientSecretKey),
+            version: $account->version(),
         );
     }
 
     /**
      * Площадка отказала рекламному ключу (ADR-026 п. 1): в broken — только
      * реклама, письмо называет рекламный ключ. Идемпотентно: повторный
-     * вызов второго письма не порождает.
+     * вызов второго письма не порождает. `$version` — из цели, с которой
+     * запрашивали площадку: ключ, заменённый после этого, не ломается
+     * запоздавшим отказом по старому.
      */
-    public function markOzonAdvertisingBroken(string $companyId, string $marketplaceAccountId): bool
+    public function markOzonAdvertisingBroken(string $companyId, string $marketplaceAccountId, int $version): bool
     {
-        return ($this->markAdvertisingBroken)($companyId, $marketplaceAccountId);
+        return ($this->markAdvertisingBroken)($companyId, $marketplaceAccountId, $version);
     }
 
     /**

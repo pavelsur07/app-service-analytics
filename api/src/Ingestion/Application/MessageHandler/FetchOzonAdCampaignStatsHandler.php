@@ -68,7 +68,7 @@ final readonly class FetchOzonAdCampaignStatsHandler
             }
 
             $this->brokenLogger->log($target->companyId, $target->marketplaceAccountId, 'advertising', $failure, $target->performanceClientSecret);
-            $this->identityFacade->markOzonAdvertisingBroken($target->companyId, $target->marketplaceAccountId);
+            $this->identityFacade->markOzonAdvertisingBroken($target->companyId, $target->marketplaceAccountId, $target->version);
         }
     }
 

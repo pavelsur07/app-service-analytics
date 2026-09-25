@@ -192,15 +192,31 @@ final readonly class ConnectOzonAdvertisingAction
      * Первичная загрузка (ADR-026 п. 4): список кампаний и 12 месяцев
      * расхода назад от дня подключения, кусками по 30 дней. После
      * сохранения ключа, а не до: без сохранённого ключа обработчику нечем
-     * авторизоваться. Сбой отправки ключ не отменяет — окно 45 дней
-     * подберёт ближайший тик, 184 дня — недельный рескан.
+     * авторизоваться.
+     *
+     * Ключ к этому моменту уже сохранён, и отказ очереди его не отменяет:
+     * ответить клиенту ошибкой значило бы сообщить неправду о принятом
+     * ключе. Отказ перехватывается и пишется в журнал уровнем `warning` —
+     * последние 184 дня подберут тик и недельный рескан, а историю глубже
+     * восстанавливает повторный ввод того же ключа: он ставит первичную
+     * загрузку заново, повтор кусков идемпотентен. Секрета в записи нет.
      */
     private function scheduleInitialLoad(string $companyId, string $marketplaceAccountId): void
     {
-        $this->bus->dispatch(new FetchOzonAdCampaignsMessage($companyId, $marketplaceAccountId));
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
 
-        foreach (OzonAdvertisingWindows::initial(OzonAdvertisingWindows::today(new \DateTimeImmutable())) as $chunk) {
-            $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to']));
+        try {
+            $this->bus->dispatch(new FetchOzonAdCampaignsMessage($companyId, $marketplaceAccountId, $today->format('Y-m-d')));
+
+            foreach (OzonAdvertisingWindows::initial($today) as $chunk) {
+                $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to']));
+            }
+        } catch (\Throwable $failure) {
+            $this->logger->warning('Первичная загрузка рекламы не поставлена в очередь — ключ сохранён, история глубже 184 дней потребует повторного ввода ключа', [
+                'company_id' => $companyId,
+                'marketplace_account_id' => $marketplaceAccountId,
+                'exception_class' => $failure::class,
+            ]);
         }
     }
 

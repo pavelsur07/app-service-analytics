@@ -37,8 +37,13 @@ interface MarketplaceAccountRepository
      * что markBrokenIfActive: true только тому вызову, который состояние
      * поменял, — по нему решается, отправлять ли письмо. `state`
      * подключения не трогает: продажи и расходы исправны.
+     *
+     * `$version` — версия подключения (ADR-008), с которой вызывающий
+     * прочитал ключ. Ключ, заменённый после этого, запоздавший отказ
+     * по старому ключу не ломает: версия уже другая, и UPDATE не задевает
+     * строку. Отозванное или сломанное подключение тоже не трогается.
      */
-    public function markAdvertisingBrokenIfActive(string $companyId, Uuid $id): bool;
+    public function markAdvertisingBrokenIfActive(string $companyId, Uuid $id, int $version): bool;
 
     /**
      * Подключение кабинета вместе с записью в журнал, одной транзакцией:

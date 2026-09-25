@@ -16,6 +16,8 @@ final readonly class OzonAdvertisingTarget
         public string $marketplaceAccountId,
         public string $performanceClientId,
         public string $performanceClientSecret,
+        /** Версия подключения (ADR-008), с которой прочитан ключ. */
+        public int $version,
     ) {
     }
 }

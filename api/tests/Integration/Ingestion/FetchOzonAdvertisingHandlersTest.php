@@ -82,12 +82,37 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
 
         $handler = $container->get(FetchOzonAdCampaignsHandler::class);
         \assert($handler instanceof FetchOzonAdCampaignsHandler);
-        $handler(new FetchOzonAdCampaignsMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122()));
+        $handler(new FetchOzonAdCampaignsMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-09-24'));
 
         self::assertSame(
             [$this->fixture('campaign-list.json')],
             $this->rawBodies($container, $account, MarketplaceReportType::OzonAdCampaigns),
         );
+        // День снимка — из сообщения, а не из часов обработчика: повтор
+        // после полуночи попадает в тот же документ (CLAUDE.md §4).
+        self::assertSame(['2026-09-24'], $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdCampaigns));
+    }
+
+    public function testLateRejectionOfAReplacedKeyDoesNotBreakTheNewOne(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $connection = $this->connection($container);
+        $this->fetcher($container, tokenStatus: 401, beforeRejection: static function () use ($connection, $account): void {
+            // Клиент заменил ключ, пока запрос со старым был в пути:
+            // замена поднимает версию подключения (ADR-008).
+            $connection->executeStatement(
+                'UPDATE marketplace_account SET version = version + 1 WHERE company_id = ? AND id = ?',
+                [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
+            );
+        });
+
+        $this->syncStats($container, $account);
+
+        // Отказ пришёл по старому ключу — новый он не ломает и письма
+        // не порождает.
+        self::assertSame(['state' => 'active', 'advertising_state' => 'active'], $this->states($container, $account));
+        self::assertSame(0, $this->warningsContaining($container, 'Письмо о сломанном рекламном ключе'));
     }
 
     public function testRawOfOneCompanyIsNotStoredUnderAnother(): void
@@ -155,9 +180,9 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
     /**
      * @return OzonAdvertisingFetcher&object{calls: int}
      */
-    private function fetcher(ContainerInterface $container, int $tokenStatus = 200): OzonAdvertisingFetcher
+    private function fetcher(ContainerInterface $container, int $tokenStatus = 200, ?\Closure $beforeRejection = null): OzonAdvertisingFetcher
     {
-        $fetcher = new class($tokenStatus, $this->fixture('campaign-list.json'), $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json')) implements OzonAdvertisingFetcher {
+        $fetcher = new class($tokenStatus, $this->fixture('campaign-list.json'), $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json'), $beforeRejection) implements OzonAdvertisingFetcher {
             public int $calls = 0;
 
             public function __construct(
@@ -165,6 +190,7 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
                 private readonly string $campaigns,
                 private readonly string $expense,
                 private readonly string $daily,
+                private readonly ?\Closure $beforeRejection,
             ) {
             }
 
@@ -172,6 +198,9 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
             {
                 ++$this->calls;
                 if (200 !== $this->tokenStatus) {
+                    if (null !== $this->beforeRejection) {
+                        ($this->beforeRejection)();
+                    }
                     // Настоящее исключение symfony/http-client: распознавание
                     // отказа авторизации смотрит на код ответа внутри него.
                     $client = new MockHttpClient(new MockResponse('{"error":"invalid_client"}', ['http_code' => $this->tokenStatus]));

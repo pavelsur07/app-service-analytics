@@ -168,11 +168,12 @@ final readonly class DispatchActiveOzonSyncsAction
      */
     private function dispatchAdvertising(string $companyId, string $marketplaceAccountId, \DateTimeImmutable $now): void
     {
-        $this->bus->dispatch(new FetchOzonAdCampaignsMessage($companyId, $marketplaceAccountId));
+        $today = OzonAdvertisingWindows::today($now);
+        $this->bus->dispatch(new FetchOzonAdCampaignsMessage($companyId, $marketplaceAccountId, $today->format('Y-m-d')));
 
         $deepRescan = $this->isRescanTick($now) && (int) $now->format('N') === $this->adDeepRescanWeekday;
         $chunks = OzonAdvertisingWindows::lastDays(
-            OzonAdvertisingWindows::today($now),
+            $today,
             $deepRescan ? $this->adDeepRescanDays : $this->adWindowDays,
         );
 

@@ -70,7 +70,7 @@ final readonly class DoctrineMarketplaceAccountRepository implements Marketplace
         return $affected > 0;
     }
 
-    public function markAdvertisingBrokenIfActive(string $companyId, Uuid $id): bool
+    public function markAdvertisingBrokenIfActive(string $companyId, Uuid $id, int $version): bool
     {
         // Тот же приём, что у markBrokenIfActive: условие внутри UPDATE,
         // companyId в условии — изоляция арендаторов на уровне SQL.
@@ -78,13 +78,16 @@ final readonly class DoctrineMarketplaceAccountRepository implements Marketplace
             <<<'SQL'
                 UPDATE marketplace_account
                 SET advertising_state = :broken
-                WHERE id = :id AND company_id = :companyId AND advertising_state = :active
+                WHERE id = :id AND company_id = :companyId
+                  AND advertising_state = :active AND state = :accountActive AND version = :version
                 SQL,
             [
                 'broken' => AdvertisingState::Broken->value,
                 'active' => AdvertisingState::Active->value,
+                'accountActive' => MarketplaceAccountState::Active->value,
                 'id' => $id->toRfc4122(),
                 'companyId' => $companyId,
+                'version' => $version,
             ],
         );
 
