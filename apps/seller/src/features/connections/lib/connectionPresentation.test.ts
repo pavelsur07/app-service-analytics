@@ -48,13 +48,22 @@ describe('advertisingPresentation', () => {
     // Отказ рекламного ключа ломает только рекламу (ADR-026): подпись,
     // похожая на «подключение сломано», отправила бы человека чинить
     // исправный ключ Seller API.
-    const broken = advertisingPresentation('broken')
+    const broken = advertisingPresentation('broken', 'active')
 
     expect(broken.tone).toBe('negative')
     expect(broken.explanation).toContain('продажи и расходы грузятся')
   })
 
   it('отсутствие рекламы — нейтральное приглашение, а не ошибка', () => {
-    expect(advertisingPresentation(null).tone).toBe('neutral')
+    expect(advertisingPresentation(null, 'active').tone).toBe('neutral')
+  })
+
+  it('у сломанного подключения не называет рекламу работающей', () => {
+    // Реклама не грузится у сломанного подключения (ADR-026, п. 1),
+    // даже если её собственный ключ исправен.
+    const stopped = advertisingPresentation('active', 'broken')
+
+    expect(stopped.label).toBe('Реклама остановлена')
+    expect(stopped.tone).toBe('warning')
   })
 })

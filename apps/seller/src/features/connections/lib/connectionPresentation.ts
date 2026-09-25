@@ -62,7 +62,20 @@ const ADVERTISING_STATES: Record<string, ConnectionPresentation> = {
 
 export function advertisingPresentation(
   state: string | null,
+  connectionState: string,
 ): ConnectionPresentation {
+  // Состояние подключения главное (ADR-026, п. 1): у сломанного
+  // подключения реклама тоже не грузится, какой бы ключ у неё ни был.
+  // «Реклама подключена» на таком экране была бы неправдой.
+  if (state !== null && connectionState !== 'active') {
+    return {
+      tone: 'warning',
+      label: 'Реклама остановлена',
+      explanation:
+        'Реклама не загружается, пока подключение магазина не работает. Восстановите подключение — реклама продолжит загружаться с тем же ключом.',
+    }
+  }
+
   if (state === null) {
     return {
       tone: 'neutral',

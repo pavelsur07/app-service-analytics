@@ -158,6 +158,44 @@ final class ReplaceAdvertisingCredentialsControllerTest extends WebTestCase
         self::assertSame('active', $this->column($account, 'advertising_state'));
     }
 
+    /**
+     * Снятая разведкой причина — архивные товары: такая кампания просто
+     * не участвует в сверке.
+     */
+    public function testCampaignWithArchivedProductsIsSkipped(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Active);
+        $this->catalog($company, $account, ['555']);
+        $this->stubPerformance(
+            products: '{"error":"Товары перенесены в архив. Для добавления или изменения товаров сначала верните кампанию и товары из архива"}',
+            productsStatus: 400,
+        );
+
+        $this->put($client, $company, $account, ['clientId' => 'perf-id', 'clientSecret' => 'perf-secret', 'version' => 1]);
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+    }
+
+    /**
+     * Любой другой отказ сверку не пропускает: ключ, проверенный
+     * наполовину, не сохраняется.
+     */
+    public function testOtherProductsRefusalIsNotSkipped(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->connection($company, MarketplaceAccountState::Active);
+        $this->catalog($company, $account, ['555']);
+        $this->stubPerformance(products: '{"error":"bad request"}', productsStatus: 400);
+
+        $this->put($client, $company, $account, ['clientId' => 'perf-id', 'clientSecret' => 'perf-secret', 'version' => 1]);
+
+        self::assertSame(503, $client->getResponse()->getStatusCode());
+        self::assertNull($this->column($account, 'advertising_state'));
+    }
+
     public function testConnectionOfAnotherCompanyIsNotTouched(): void
     {
         $client = static::createClient();
@@ -248,13 +286,15 @@ final class ReplaceAdvertisingCredentialsControllerTest extends WebTestCase
         int $tokenStatus = 200,
         int $campaignsStatus = 200,
         string $products = '{"products":[]}',
+        int $productsStatus = 200,
     ): void {
-        static::getContainer()->set(OzonPerformanceCampaignClient::class, new class($tokenStatus, $campaignsStatus, self::CAMPAIGNS, $products) implements OzonAdvertisingFetcher {
+        static::getContainer()->set(OzonPerformanceCampaignClient::class, new class($tokenStatus, $campaignsStatus, self::CAMPAIGNS, $products, $productsStatus) implements OzonAdvertisingFetcher {
             public function __construct(
                 private readonly int $tokenStatus,
                 private readonly int $campaignsStatus,
                 private readonly string $campaigns,
                 private readonly string $products,
+                private readonly int $productsStatus,
             ) {
             }
 
@@ -274,6 +314,12 @@ final class ReplaceAdvertisingCredentialsControllerTest extends WebTestCase
 
             public function campaignProducts(string $token, string $campaignId): string
             {
+                if (200 !== $this->productsStatus) {
+                    return (new MockHttpClient(new MockResponse($this->products, ['http_code' => $this->productsStatus])))
+                        ->request('GET', 'https://api-performance.ozon.ru/api/client/campaign/1/v2/products')
+                        ->getContent();
+                }
+
                 return $this->products;
             }
 

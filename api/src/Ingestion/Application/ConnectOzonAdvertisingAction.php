@@ -119,10 +119,12 @@ final readonly class ConnectOzonAdvertisingAction
             try {
                 $body = $this->fetcher->campaignProducts($token, $campaign->id);
             } catch (ClientExceptionInterface $refused) {
-                // 400 — кампания отказалась отдать товары (архивные товары
-                // у неархивной кампании). Сверке это не мешает: она берёт
-                // SKU там, где они есть. Прочие отказы — как у всей пробы.
-                if (400 === $refused->getResponse()->getStatusCode()) {
+                // Архивные товары у неархивной кампании: 400 с текстом
+                // «Товары перенесены в архив» (снято разведкой). Сверке это
+                // не мешает — она берёт SKU там, где они есть. Любой другой
+                // отказ, в том числе 400 с иной причиной, идёт как у всей
+                // пробы: не угадываем, что он безвреден.
+                if (self::isArchivedProductsRefusal($refused)) {
                     continue;
                 }
 
@@ -132,6 +134,16 @@ final readonly class ConnectOzonAdvertisingAction
         }
 
         return array_values(array_unique($skus));
+    }
+
+    private static function isArchivedProductsRefusal(ClientExceptionInterface $refused): bool
+    {
+        $response = $refused->getResponse();
+        if (400 !== $response->getStatusCode()) {
+            return false;
+        }
+
+        return str_contains(mb_strtolower($response->getContent(false)), 'архив');
     }
 
     /**
