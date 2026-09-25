@@ -36,13 +36,14 @@ final readonly class OrderOzonAdSkuReportHandler
     public const int RATE_LIMIT_RETRY_MS = 60_000;
 
     /**
-     * Попыток заказа на отказах лимита: около минуты каждая — около суток.
-     * Потолок меряет длительность отказа, а не место в очереди: площадка
-     * пропускает примерно один заказ в минуту, и первичная загрузка
-     * с сотней заказов проходит за часы, ни один не упираясь в потолок.
-     * Сутки — это и сброс суточного лимита выгрузок.
+     * Сколько повторять заказ на отказах лимита — по времени от первого
+     * отказа, а не числом попыток: задержка случайна, и число попыток
+     * не равно времени. Потолок меряет длительность отказа, а не место
+     * в очереди: площадка пропускает примерно один заказ в минуту,
+     * и первичная загрузка с сотней заказов проходит за часы. Сутки — это
+     * и сброс суточного лимита выгрузок.
      */
-    public const int MAX_ATTEMPTS = 1_440;
+    public const string GIVE_UP_AFTER = 'PT24H';
 
     /** Разброс задержки повтора: отклонённые заказы не просыпаются одной волной. */
     private const int RETRY_JITTER_MS = 30_000;
@@ -119,14 +120,24 @@ final readonly class OrderOzonAdSkuReportHandler
      */
     private function retryLater(OrderOzonAdSkuReportMessage $message): void
     {
-        if ($message->attempt >= self::MAX_ATTEMPTS) {
-            $this->giveUp($message, 'отказ лимита площадки (429) до потолка попыток');
+        $now = new \DateTimeImmutable();
+        $refusedSince = null === $message->refusedSince ? $now : new \DateTimeImmutable($message->refusedSince);
+        if ($refusedSince->add(new \DateInterval(self::GIVE_UP_AFTER)) <= $now) {
+            $this->giveUp($message, 'отказ лимита площадки (429) дольше суток');
 
             return;
         }
 
         $this->bus->dispatch(
-            new OrderOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $message->to, $message->campaignIds, $message->attempt + 1),
+            new OrderOzonAdSkuReportMessage(
+                $message->companyId,
+                $message->marketplaceAccountId,
+                $message->from,
+                $message->to,
+                $message->campaignIds,
+                $message->attempt + 1,
+                $refusedSince->format(\DateTimeInterface::ATOM),
+            ),
             [new DelayStamp(self::RATE_LIMIT_RETRY_MS - self::RETRY_JITTER_MS + random_int(0, 2 * self::RETRY_JITTER_MS))],
         );
     }

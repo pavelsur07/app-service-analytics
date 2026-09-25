@@ -198,9 +198,11 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         self::assertGreaterThanOrEqual(30_000, $delay);
         self::assertLessThanOrEqual(90_000, $delay);
 
+        self::assertNotNull($retry->refusedSince);
+
         // Постоянный отказ (исчерпан суточный лимит) — не бесконечная
-        // петля, а предупреждение на потолке.
-        $this->order($container, $account, attempt: OrderOzonAdSkuReportHandler::MAX_ATTEMPTS);
+        // петля, а предупреждение, когда отказ длится дольше суток.
+        $this->order($container, $account, attempt: 500, refusedSince: (new \DateTimeImmutable('-25 hours'))->format(\DateTimeInterface::ATOM));
         self::assertCount(1, $this->sentEnvelopes($container, OrderOzonAdSkuReportMessage::class));
         self::assertSame(1, $this->warningsContaining($container, 'SKU-отчёт рекламы Ozon не заказан'));
     }
@@ -431,11 +433,11 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         $handler(new FetchOzonAdCampaignStatsMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), $from, $to, $withReports));
     }
 
-    private function order(ContainerInterface $container, MarketplaceAccount $account, int $attempt = 1): void
+    private function order(ContainerInterface $container, MarketplaceAccount $account, int $attempt = 1, ?string $refusedSince = null): void
     {
         $handler = $container->get(OrderOzonAdSkuReportHandler::class);
         \assert($handler instanceof OrderOzonAdSkuReportHandler);
-        $handler(new OrderOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-25', '2026-09-23', ['14275771', '16017246'], $attempt));
+        $handler(new OrderOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-25', '2026-09-23', ['14275771', '16017246'], $attempt, $refusedSince));
     }
 
     private function check(ContainerInterface $container, MarketplaceAccount $account, int $attempt): void

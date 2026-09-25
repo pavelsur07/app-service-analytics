@@ -21,6 +21,11 @@ final readonly class OrderOzonAdSkuReportMessage
         public array $campaignIds,
         /** Номер попытки заказа, с единицы: растёт на отказах лимита (429). */
         public int $attempt = 1,
+        /**
+         * Момент первого отказа лимита (ATOM); `null` — отказов ещё не было.
+         * Потолок повторов меряется от него по времени, а не числом попыток.
+         */
+        public ?string $refusedSince = null,
     ) {
     }
 }
