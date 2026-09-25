@@ -74,7 +74,9 @@ final class GetDataCoverageController
         $moscow = new \DateTimeZone(self::TIMEZONE);
         $today = (new \DateTimeImmutable('now', $moscow))->setTime(0, 0);
 
-        $month = $request->query->get('month', $today->format('Y-m'));
+        // all(), а не get(): ?month[]=… — тоже неверный месяц (422),
+        // а не исключение InputBag (400).
+        $month = $request->query->all()['month'] ?? $today->format('Y-m');
         $monthStart = \is_string($month) && 1 === preg_match('/\A\d{4}-(0[1-9]|1[0-2])\z/', $month)
             ? \DateTimeImmutable::createFromFormat('!Y-m-d', $month.'-01', $moscow)
             : false;

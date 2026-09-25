@@ -121,6 +121,9 @@ final class DataCoverageControllerTest extends WebTestCase
             $client->request('GET', $base.'?month='.urlencode($month));
             self::assertSame(422, $client->getResponse()->getStatusCode(), $month);
         }
+
+        $client->request('GET', $base.'?month[]=2026-08');
+        self::assertSame(422, $client->getResponse()->getStatusCode());
     }
 
     /**

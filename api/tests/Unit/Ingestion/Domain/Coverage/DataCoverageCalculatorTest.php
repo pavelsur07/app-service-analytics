@@ -76,6 +76,29 @@ final class DataCoverageCalculatorTest extends TestCase
         self::assertSame(3, $coverage->rows[0]->due);
     }
 
+    public function testForwardOnlySourceOwesNothingBeforeItsFirstLoad(): void
+    {
+        // products/sku грузится только за вчера и сегодня: дни до первой
+        // выгрузки — не дыра, а «ещё рано»; после неё — обычные правила.
+        $sources = array_values(array_filter(
+            DataCoverageSource::all(),
+            static fn (DataCoverageSource $source): bool => MarketplaceReportType::OzonAdSkuDay === $source->reportType,
+        ));
+        $coverage = (new DataCoverageCalculator())->calculate(
+            $sources,
+            [$this->document(MarketplaceReportType::OzonAdSkuDay, '2026-09-03', '2026-09-03 10:00')],
+            [],
+            $this->day('2026-09-01'),
+            $this->day('2026-09-05'),
+            [MarketplaceReportType::OzonAdSkuDay => '2026-09-03'],
+        );
+
+        self::assertSame(['pending', 'pending', 'loaded', 'missing', 'missing'], $this->statuses($coverage->rows[0]->statuses, 5));
+
+        $never = (new DataCoverageCalculator())->calculate($sources, [], [], $this->day('2026-09-01'), $this->day('2026-09-05'));
+        self::assertSame(0, $never->rows[0]->due);
+    }
+
     public function testFailureMarksOnlyDaysWithoutData(): void
     {
         // Загружено сильнее ошибки: старое сообщение в failed по дню,

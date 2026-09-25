@@ -35,6 +35,12 @@ final readonly class DataCoverageSource
         public int $rangeDays = 0,
         public int $rangeEndLagDays = 0,
         public bool $advertising = false,
+        /**
+         * Грузится только «на сейчас», задним числом его никто не загружает
+         * (снимки, `products/sku`): дни до первой выгрузки — «ещё рано»,
+         * а не дыра, которая не закроется никогда.
+         */
+        public bool $forwardOnly = false,
     ) {
     }
 
@@ -49,12 +55,12 @@ final readonly class DataCoverageSource
             new self(MarketplaceReportType::OzonPostingFboList, 'Продажи', 'POST /v2/posting/fbo/list', self::KindDay),
             new self(MarketplaceReportType::OzonAccrualByDay, 'Расходы', 'POST /v1/finance/accrual/by-day', self::KindDay),
             new self(MarketplaceReportType::OzonReturnsList, 'Возвраты', 'POST /v1/returns/list', self::KindRange, rangeDays: 90),
-            new self(MarketplaceReportType::OzonProductList, 'Каталог', 'POST /v3/product/list', self::KindSnapshot),
-            new self(MarketplaceReportType::OzonProductInfoList, 'Каталог', 'POST /v3/product/info/list', self::KindSnapshot),
-            new self(MarketplaceReportType::OzonAdCampaigns, 'Реклама', 'GET /api/client/campaign', self::KindSnapshot, advertising: true),
+            new self(MarketplaceReportType::OzonProductList, 'Каталог', 'POST /v3/product/list', self::KindSnapshot, forwardOnly: true),
+            new self(MarketplaceReportType::OzonProductInfoList, 'Каталог', 'POST /v3/product/info/list', self::KindSnapshot, forwardOnly: true),
+            new self(MarketplaceReportType::OzonAdCampaigns, 'Реклама', 'GET /api/client/campaign', self::KindSnapshot, advertising: true, forwardOnly: true),
             new self(MarketplaceReportType::OzonAdExpense, 'Реклама', 'GET /api/client/statistics/expense/json', self::KindRange, rangeDays: 30, advertising: true),
             new self(MarketplaceReportType::OzonAdDaily, 'Реклама', 'GET /api/client/statistics/daily/json', self::KindRange, rangeDays: 30, advertising: true),
-            new self(MarketplaceReportType::OzonAdSkuDay, 'Реклама', 'POST /api/client/statistics/products/sku', self::KindDay, advertising: true),
+            new self(MarketplaceReportType::OzonAdSkuDay, 'Реклама', 'POST /api/client/statistics/products/sku', self::KindDay, advertising: true, forwardOnly: true),
             new self(MarketplaceReportType::OzonAdSkuReport, 'Реклама', 'POST /api/client/statistics/json', self::KindRange, rangeDays: 30, rangeEndLagDays: 2, advertising: true),
             new self(MarketplaceReportType::OzonAdCpoOrders, 'Реклама', 'POST /api/client/statistic/orders/generate/json', self::KindRange, rangeDays: 30, advertising: true),
         ];

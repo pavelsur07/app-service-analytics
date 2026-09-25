@@ -11,6 +11,7 @@ use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage;
+use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Domain\Coverage\CoverageFailure;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonAdReportKind;
@@ -92,11 +93,36 @@ final readonly class FailedLoads
             $message instanceof FetchOzonAdCampaignStatsMessage => [
                 ...$range(MarketplaceReportType::OzonAdExpense, $message->from, $message->to),
                 ...$range(MarketplaceReportType::OzonAdDaily, $message->from, $message->to),
+                ...self::headChunkFailures($message->from, $message->to, $failedOn),
             ],
             $message instanceof OrderOzonAdSkuReportMessage => $range(OzonAdReportKind::rawType($message->reportKind()), $message->from, $message->to),
             $message instanceof CheckOzonAdSkuReportMessage => $range(OzonAdReportKind::rawType($message->reportKind()), $message->from, $message->periodTo()),
             default => [],
         };
+    }
+
+    /**
+     * Головной кусок рекламы — тот, что кончается в последние 30 дней
+     * на момент отказа (`OzonAdvertisingWindows::isHeadChunk`), — грузит
+     * ещё список кампаний (день снимка — конец куска) и `products/sku`
+     * за вчера и сегодня.
+     *
+     * @return list<CoverageFailure>
+     */
+    private static function headChunkFailures(string $from, string $to, \DateTimeImmutable $failedOn): array
+    {
+        $start = self::day($from);
+        $end = self::day($to);
+        if (null === $start || null === $end || !OzonAdvertisingWindows::isHeadChunk($end, $failedOn)) {
+            return [];
+        }
+
+        $yesterday = $end->modify('-1 day');
+
+        return [
+            new CoverageFailure(MarketplaceReportType::OzonAdCampaigns, $end, $end),
+            new CoverageFailure(MarketplaceReportType::OzonAdSkuDay, $yesterday < $start ? $start : $yesterday, $end),
+        ];
     }
 
     private static function day(?string $value): ?\DateTimeImmutable

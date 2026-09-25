@@ -59,12 +59,18 @@ final readonly class BuildDataCoverageAction
             throw new \RuntimeException('Raw documents for the coverage report exceed the safety ceiling.');
         }
 
+        $types = array_map(static fn (DataCoverageSource $source): string => $source->reportType, $sources);
+        $firstPeriods = CoverageDocumentsQuery::mapFirstPeriods(
+            $this->documents->buildFirstPeriods($companyId, $marketplaceAccountId, $types)->executeQuery()->fetchAllAssociative(),
+        );
+
         return $this->calculator->calculate(
             $sources,
             array_map(CoverageDocumentsQuery::mapRow(...), $rows),
             $this->failedLoads->forAccount($companyId, $marketplaceAccountId),
             $monthStart,
             $today,
+            $firstPeriods,
         );
     }
 }

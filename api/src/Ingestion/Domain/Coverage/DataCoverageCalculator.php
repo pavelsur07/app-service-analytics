@@ -7,7 +7,8 @@ namespace App\Ingestion\Domain\Coverage;
 /**
  * Считает отчёт о полноте данных за месяц (чистая функция, без базы).
  *
- * - День в будущем — «ещё рано». У источника с отставанием конца
+ * - День в будущем — «ещё рано». У источника «только на сейчас»
+ *   (`forwardOnly`) «ещё рано» и дни до его первой выгрузки. У источника с отставанием конца
  *   диапазона (`rangeEndLagDays`, SKU-отчёт) «ещё рано» и последние дни
  *   до сегодня: за них отвечает другой эндпоинт (`products/sku`),
  *   и этот их не покроет никогда.
@@ -24,6 +25,7 @@ final class DataCoverageCalculator
      * @param list<DataCoverageSource> $sources
      * @param list<CoverageDocument>   $documents
      * @param list<CoverageFailure>    $failures
+     * @param array<string, string>    $firstPeriods raw-тип → первый `period` за всё время, Y-m-d
      */
     public function calculate(
         array $sources,
@@ -31,6 +33,7 @@ final class DataCoverageCalculator
         array $failures,
         \DateTimeImmutable $monthStart,
         \DateTimeImmutable $today,
+        array $firstPeriods = [],
     ): DataCoverage {
         $days = self::days($monthStart);
 
@@ -39,6 +42,9 @@ final class DataCoverageCalculator
             $covered = $this->coveredDays($source, $documents);
             $failed = $this->failedDays($source, $failures);
             $dueUntil = $today->modify('-'.$source->rangeEndLagDays.' days')->format('Y-m-d');
+            // Источник «только на сейчас» до первой выгрузки не должен ничего;
+            // ни одной выгрузки — не должен ни одного дня.
+            $dueFrom = $source->forwardOnly ? ($firstPeriods[$source->reportType] ?? '9999-12-31') : '0000-01-01';
 
             $statuses = [];
             $received = [];
@@ -46,7 +52,7 @@ final class DataCoverageCalculator
                 $key = $day->format('Y-m-d');
                 $received[] = $covered[$key] ?? null;
                 $statuses[] = match (true) {
-                    $key > $dueUntil => DataCoverageStatus::Pending,
+                    $key > $dueUntil, $key < $dueFrom => DataCoverageStatus::Pending,
                     isset($covered[$key]) => DataCoverageStatus::Loaded,
                     isset($failed[$key]) => DataCoverageStatus::Failed,
                     default => DataCoverageStatus::Missing,

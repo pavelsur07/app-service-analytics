@@ -6,6 +6,7 @@ namespace App\Tests\Unit\Ingestion\Application\Coverage;
 
 use App\Ingestion\Application\Coverage\FailedLoads;
 use App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage;
+use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
@@ -51,6 +52,25 @@ final class FailedLoadsTest extends TestCase
             [[MarketplaceReportType::OzonAdCpoOrders, '2026-08-01', '2026-08-30']],
             $this->ranges(FailedLoads::failuresOf(new CheckOzonAdSkuReportMessage(self::COMPANY, self::ACCOUNT, '2026-08-01', '054cd190-6514-4465-8792-e3e11f396886', 3, OzonAdReportKind::CpoOrders), self::COMPANY, self::ACCOUNT, $failedOn)),
         );
+    }
+
+    public function testFailedHeadChunkAlsoMissesCampaignsAndProductsSku(): void
+    {
+        $failedOn = new \DateTimeImmutable('2026-09-25', new \DateTimeZone('Europe/Moscow'));
+        $head = new FetchOzonAdCampaignStatsMessage(self::COMPANY, self::ACCOUNT, '2026-08-27', '2026-09-25', true);
+        $older = new FetchOzonAdCampaignStatsMessage(self::COMPANY, self::ACCOUNT, '2026-08-12', '2026-08-26', true);
+
+        self::assertSame(
+            [
+                [MarketplaceReportType::OzonAdExpense, '2026-08-27', '2026-09-25'],
+                [MarketplaceReportType::OzonAdDaily, '2026-08-27', '2026-09-25'],
+                [MarketplaceReportType::OzonAdCampaigns, '2026-09-25', '2026-09-25'],
+                [MarketplaceReportType::OzonAdSkuDay, '2026-09-24', '2026-09-25'],
+            ],
+            $this->ranges(FailedLoads::failuresOf($head, self::COMPANY, self::ACCOUNT, $failedOn)),
+        );
+        // Не головной кусок кампаний и products/sku не грузит.
+        self::assertCount(2, FailedLoads::failuresOf($older, self::COMPANY, self::ACCOUNT, $failedOn));
     }
 
     public function testMessagesOfAnotherCompanyOrAccountAreIgnored(): void

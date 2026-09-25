@@ -48,15 +48,19 @@ export function DataCoveragePage() {
     null
   const coverage = useDataCoverage(companyId, accountId, month)
 
-  // Выбранный по умолчанию кабинет — сразу в адрес: ссылка должна
-  // однозначно называть, чей отчёт на экране.
+  // Выбранные по умолчанию кабинет и месяц — сразу в адрес: ссылка должна
+  // однозначно называть, чей и за какой месяц отчёт на экране, и не
+  // «уезжать» на следующий месяц, когда её откроют позже.
   useEffect(() => {
-    if (accountId !== null && params.get('account') !== accountId) {
+    const accountStale = accountId !== null && params.get('account') !== accountId
+    const monthStale = params.get('month') !== month
+    if (accountStale || monthStale) {
       const merged = new URLSearchParams(params)
-      merged.set('account', accountId)
+      if (accountId !== null) merged.set('account', accountId)
+      merged.set('month', month)
       setParams(merged, { replace: true })
     }
-  }, [accountId, params, setParams])
+  }, [accountId, month, params, setParams])
 
   const update = (next: { account?: string; month?: string }) => {
     const merged = new URLSearchParams(params)

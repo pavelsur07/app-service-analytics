@@ -50,6 +50,43 @@ final readonly class CoverageDocumentsQuery
     }
 
     /**
+     * Первый `period` каждого raw-типа кабинета за всё время — с какого дня
+     * источник «только на сейчас» вообще грузится. Строк не больше числа
+     * типов.
+     *
+     * @param list<string> $reportTypes
+     */
+    public function buildFirstPeriods(string $companyId, string $marketplaceAccountId, array $reportTypes): QueryBuilder
+    {
+        return $this->connection->createQueryBuilder()
+            ->select('report_type', 'MIN(period) AS first_period')
+            ->from('marketplace_raw_document')
+            ->where('company_id = :companyId')
+            ->andWhere('marketplace_account_id = :accountId')
+            ->andWhere('report_type IN (:reportTypes)')
+            ->groupBy('report_type')
+            ->setParameter('companyId', $companyId)
+            ->setParameter('accountId', $marketplaceAccountId)
+            ->setParameter('reportTypes', $reportTypes, ArrayParameterType::STRING)
+            ->setMaxResults(\count($reportTypes) + 1);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     *
+     * @return array<string, string>
+     */
+    public static function mapFirstPeriods(array $rows): array
+    {
+        $first = [];
+        foreach ($rows as $row) {
+            $first[self::string($row['report_type'])] = substr(self::string($row['first_period']), 0, 10);
+        }
+
+        return $first;
+    }
+
+    /**
      * @param array<string, mixed> $row
      */
     public static function mapRow(array $row): CoverageDocument
