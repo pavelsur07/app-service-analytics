@@ -6,7 +6,6 @@ namespace App\Ingestion\Application;
 
 use App\Identity\Application\Facade\CredentialsReplacementOutcome;
 use App\Identity\Application\Facade\IdentityFacade;
-use App\Ingestion\Application\Message\FetchOzonAdCampaignsMessage;
 use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
 use App\Ingestion\Domain\OzonAdCampaign;
 use App\Ingestion\Domain\OzonAdCampaignListParser;
@@ -189,8 +188,9 @@ final readonly class ConnectOzonAdvertisingAction
     }
 
     /**
-     * Первичная загрузка (ADR-026 п. 4): список кампаний и 12 месяцев
-     * расхода назад от дня подключения, кусками по 30 дней. После
+     * Первичная загрузка (ADR-026 п. 4): 12 месяцев расхода назад от дня
+     * подключения, кусками по 30 дней; список кампаний сохраняет головной
+     * кусок. После
      * сохранения ключа, а не до: без сохранённого ключа обработчику нечем
      * авторизоваться.
      *
@@ -206,8 +206,6 @@ final readonly class ConnectOzonAdvertisingAction
         $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
 
         try {
-            $this->bus->dispatch(new FetchOzonAdCampaignsMessage($companyId, $marketplaceAccountId, $today->format('Y-m-d')));
-
             foreach (OzonAdvertisingWindows::initial($today) as $chunk) {
                 $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to']));
             }

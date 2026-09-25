@@ -9,7 +9,6 @@ use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Ingestion\Application\DispatchActiveOzonSyncsAction;
-use App\Ingestion\Application\Message\FetchOzonAdCampaignsMessage;
 use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
@@ -43,15 +42,11 @@ final class AdvertisingScheduleTest extends KernelTestCase
 
         $this->action(rescanHour: $this->hourThatIsNotNow(), weekday: $this->weekdayNow())();
 
-        // Список кампаний сохраняет сам свежий кусок перед products/sku;
-        // второй запрос того же метода на тике упирался в лимит (429).
-        self::assertSame(0, $this->campaignLoads($withAds));
         self::assertSame([
             [$this->daysAgo(29), $this->daysAgo(0)],
             [$this->daysAgo(44), $this->daysAgo(30)],
         ], $this->statChunks($withAds));
 
-        self::assertSame(0, $this->campaignLoads($withoutAds));
         self::assertSame([], $this->statChunks($withoutAds));
     }
 
@@ -106,19 +101,6 @@ final class AdvertisingScheduleTest extends KernelTestCase
         }
 
         return $builder->persistWith($companies, $accounts);
-    }
-
-    private function campaignLoads(MarketplaceAccount $account): int
-    {
-        $count = 0;
-        foreach ($this->transport()->getSent() as $envelope) {
-            $message = $envelope->getMessage();
-            if ($message instanceof FetchOzonAdCampaignsMessage && $message->marketplaceAccountId === $account->id()->toRfc4122()) {
-                ++$count;
-            }
-        }
-
-        return $count;
     }
 
     /**

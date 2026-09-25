@@ -60,6 +60,18 @@ final class OzonAdvertisingWindowsTest extends TestCase
         self::assertSame([], $days('2026-08-12', '2026-08-26'));
     }
 
+    public function testOnlyOneChunkOfATickIsTheHead(): void
+    {
+        $today = new \DateTimeImmutable('2026-09-25');
+        $chunks = OzonAdvertisingWindows::lastDays($today, 184);
+
+        $heads = array_filter($chunks, static fn (array $chunk): bool => OzonAdvertisingWindows::isHeadChunk(new \DateTimeImmutable($chunk['to']), $today));
+        self::assertSame([0], array_keys($heads));
+        // Обработан позже на 29 дней — всё ещё головной, на 30 — уже нет.
+        self::assertTrue(OzonAdvertisingWindows::isHeadChunk($today, $today->modify('+29 days')));
+        self::assertFalse(OzonAdvertisingWindows::isHeadChunk($today, $today->modify('+30 days')));
+    }
+
     public function testTodayIsTheMoscowDay(): void
     {
         // 22:30 UTC — уже следующий день по Москве: дни Performance API

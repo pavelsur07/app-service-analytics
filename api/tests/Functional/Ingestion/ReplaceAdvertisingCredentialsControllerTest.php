@@ -13,7 +13,6 @@ use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
-use App\Ingestion\Application\Message\FetchOzonAdCampaignsMessage;
 use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
 use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Ingestion\Domain\OzonAdvertisingFetcher;
@@ -70,20 +69,15 @@ final class ReplaceAdvertisingCredentialsControllerTest extends WebTestCase
         // ключом: иначе реклама молча не грузилась бы до ближайшего тика,
         // а год истории — никогда.
         $chunks = [];
-        $campaignLoads = 0;
         $transport = static::getContainer()->get('messenger.transport.async_ingestion');
         self::assertInstanceOf(InMemoryTransport::class, $transport);
         foreach ($transport->getSent() as $envelope) {
             $message = $envelope->getMessage();
-            if ($message instanceof FetchOzonAdCampaignsMessage && $message->marketplaceAccountId === $account->id()->toRfc4122()) {
-                ++$campaignLoads;
-            }
             if ($message instanceof FetchOzonAdCampaignStatsMessage && $message->marketplaceAccountId === $account->id()->toRfc4122()) {
                 $chunks[] = $message->from;
             }
         }
         $today = new \DateTimeImmutable('now', new \DateTimeZone('Europe/Moscow'));
-        self::assertSame(1, $campaignLoads);
         self::assertSame($today->modify('-12 months')->format('Y-m-d'), $chunks[\count($chunks) - 1] ?? null);
     }
 

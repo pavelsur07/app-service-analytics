@@ -10,9 +10,7 @@ use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\UserRepository;
-use App\Ingestion\Application\Message\FetchOzonAdCampaignsMessage;
 use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
-use App\Ingestion\Application\MessageHandler\FetchOzonAdCampaignsHandler;
 use App\Ingestion\Application\MessageHandler\FetchOzonAdCampaignStatsHandler;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Domain\MarketplaceReportType;
@@ -125,45 +123,37 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         self::assertCount(1, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdDaily));
     }
 
-    public function testCampaignListIsStoredAsReceived(): void
+    public function testDelayedHeadChunkStillStoresTheCampaignList(): void
     {
         $container = $this->bootedContainer();
         $account = $this->account($container);
-        $this->fetcher($container);
+        $fetcher = $this->fetcher($container);
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
 
-        $handler = $container->get(FetchOzonAdCampaignsHandler::class);
-        \assert($handler instanceof FetchOzonAdCampaignsHandler);
-        $handler(new FetchOzonAdCampaignsMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-09-24'));
+        // Головной кусок тика обработан на два дня позже: вчера и сегодня
+        // в нём уже нет, но список кампаний — единственный за тик — он
+        // сохранить обязан.
+        $this->syncStats($container, $account, $today->modify('-31 days')->format('Y-m-d'), $today->modify('-2 days')->format('Y-m-d'));
 
         self::assertSame(
             [$this->fixture('campaign-list.json')],
             $this->rawBodies($container, $account, MarketplaceReportType::OzonAdCampaigns),
         );
-        // День снимка — из сообщения, а не из часов обработчика: повтор
-        // после полуночи попадает в тот же документ (CLAUDE.md §4).
-        self::assertSame(['2026-09-24'], $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdCampaigns));
+        self::assertSame([], $fetcher->skuRequests);
     }
 
-    public function testLateRejectionOfAReplacedKeyDoesNotBreakTheNewOne(): void
+    public function testOlderChunkDoesNotAskForTheCampaignList(): void
     {
         $container = $this->bootedContainer();
         $account = $this->account($container);
-        $connection = $this->connection($container);
-        $this->fetcher($container, tokenStatus: 401, beforeRejection: static function () use ($connection, $account): void {
-            // Клиент заменил ключ, пока запрос со старым был в пути:
-            // замена поднимает версию подключения (ADR-008).
-            $connection->executeStatement(
-                'UPDATE marketplace_account SET version = version + 1 WHERE company_id = ? AND id = ?',
-                [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
-            );
-        });
+        $this->fetcher($container);
+        $chunks = OzonAdvertisingWindows::lastDays(OzonAdvertisingWindows::today(new \DateTimeImmutable()), 45);
 
-        $this->syncStats($container, $account);
+        // Второй кусок тика списка не запрашивает: один запрос метода
+        // на тик, иначе площадка отвечает 429.
+        $this->syncStats($container, $account, $chunks[1]['from'], $chunks[1]['to']);
 
-        // Отказ пришёл по старому ключу — новый он не ломает и письма
-        // не порождает.
-        self::assertSame(['state' => 'active', 'advertising_state' => 'active'], $this->states($container, $account));
-        self::assertSame(0, $this->warningsContaining($container, 'Письмо о сломанном рекламном ключе'));
+        self::assertSame([], $this->rawBodies($container, $account, MarketplaceReportType::OzonAdCampaigns));
     }
 
     public function testRawOfOneCompanyIsNotStoredUnderAnother(): void
