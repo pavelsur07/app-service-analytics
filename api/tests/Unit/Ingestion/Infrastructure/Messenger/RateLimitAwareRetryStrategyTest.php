@@ -63,6 +63,15 @@ final class RateLimitAwareRetryStrategyTest extends TestCase
         self::assertFalse($strategy->isRetryable($envelope, $this->handlerFailure($envelope, $this->http429('3600'))));
     }
 
+    public function testJitterIsCountedAgainstTheDay(): void
+    {
+        $strategy = new RateLimitAwareRetryStrategy();
+        $envelope = $this->envelope(retries: 900, firstFailureAgo: 86_397);
+
+        // Retry-After 1 с плюс разброс до 5 с ушли бы за сутки.
+        self::assertFalse($strategy->isRetryable($envelope, $this->handlerFailure($envelope, $this->http429('1'))));
+    }
+
     public function testFirstFailureSurvivesTheListenersHistoryTruncation(): void
     {
         $strategy = new RateLimitAwareRetryStrategy();

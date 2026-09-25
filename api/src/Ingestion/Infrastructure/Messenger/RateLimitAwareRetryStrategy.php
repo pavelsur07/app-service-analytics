@@ -56,11 +56,12 @@ final readonly class RateLimitAwareRetryStrategy implements RetryStrategyInterfa
 
         // Первая отметка истории — первая неудача: SendFailedMessageForRetryListener
         // при усечении истории сохраняет её явно (withLimitedHistory). Потолок
-        // считается вместе с предстоящим ожиданием — повтор не уходит за сутки.
+        // считается вместе с предстоящим ожиданием и наибольшим разбросом —
+        // повтор не уходит за сутки.
         $first = $message->all(RedeliveryStamp::class)[0] ?? null;
         $elapsed = $first instanceof RedeliveryStamp ? time() - $first->getRedeliveredAt()->getTimestamp() : 0;
 
-        return $elapsed + $wait < self::GIVE_UP_AFTER_SECONDS;
+        return $elapsed + $wait + intdiv(self::JITTER_MS, 1_000) < self::GIVE_UP_AFTER_SECONDS;
     }
 
     public function getWaitingTime(Envelope $message, ?\Throwable $throwable = null): int
