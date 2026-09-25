@@ -232,7 +232,7 @@ final readonly class ConnectOzonAdvertisingAction
 
         try {
             foreach (OzonAdvertisingWindows::initial($today) as $chunk) {
-                $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to'], withReports: true));
+                $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to'], withReports: true), IngestionBackfill::stamps());
             }
         } catch (\Throwable $failure) {
             $this->logger->warning('Первичная загрузка рекламы не поставлена в очередь — ключ сохранён, история глубже 184 дней потребует повторного ввода ключа или консольной команды', [

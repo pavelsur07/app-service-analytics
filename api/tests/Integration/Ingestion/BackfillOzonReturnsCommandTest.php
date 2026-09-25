@@ -84,7 +84,7 @@ final class BackfillOzonReturnsCommandTest extends KernelTestCase
 
     private function transport(): InMemoryTransport
     {
-        $transport = self::getContainer()->get('messenger.transport.async_ingestion');
+        $transport = self::getContainer()->get('messenger.transport.async_backfill');
         self::assertInstanceOf(InMemoryTransport::class, $transport);
 
         return $transport;

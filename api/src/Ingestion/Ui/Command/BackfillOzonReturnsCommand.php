@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Command;
 
+use App\Ingestion\Application\IngestionBackfill;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -77,7 +78,7 @@ final class BackfillOzonReturnsCommand extends Command
                 marketplaceAccountId: $accountId,
                 from: $windowFrom->format('Y-m-d'),
                 to: $windowTo->format('Y-m-d'),
-            ));
+            ), IngestionBackfill::stamps());
             ++$windows;
         }
 

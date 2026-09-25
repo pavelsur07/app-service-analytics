@@ -56,7 +56,10 @@ final class AdvertisingScheduleTest extends KernelTestCase
 
         $this->action(rescanHour: $this->hourNow(), weekday: $this->weekdayNow())();
 
-        $chunks = $this->statChunks($account);
+        // Рескан — история: в очередь истории, не перед тиком остальных
+        // кабинетов (docs/task/ingestion-queue-isolation.md).
+        self::assertSame([], $this->statChunks($account));
+        $chunks = $this->statChunks($account, 'async_backfill');
         self::assertCount(7, $chunks);
         self::assertSame($this->daysAgo(0), $chunks[0][1]);
         self::assertSame($this->daysAgo(183), $chunks[6][0]);
@@ -124,10 +127,10 @@ final class AdvertisingScheduleTest extends KernelTestCase
     /**
      * @return list<array{string, string}>
      */
-    private function statChunks(MarketplaceAccount $account): array
+    private function statChunks(MarketplaceAccount $account, string $transport = 'async_ingestion'): array
     {
         $chunks = [];
-        foreach ($this->transport()->getSent() as $envelope) {
+        foreach ($this->transport($transport)->getSent() as $envelope) {
             $message = $envelope->getMessage();
             if ($message instanceof FetchOzonAdCampaignStatsMessage && $message->marketplaceAccountId === $account->id()->toRfc4122()) {
                 $chunks[] = [$message->from, $message->to];
@@ -153,9 +156,9 @@ final class AdvertisingScheduleTest extends KernelTestCase
         return $flags;
     }
 
-    private function transport(): InMemoryTransport
+    private function transport(string $name = 'async_ingestion'): InMemoryTransport
     {
-        $transport = self::getContainer()->get('messenger.transport.async_ingestion');
+        $transport = self::getContainer()->get('messenger.transport.'.$name);
         self::assertInstanceOf(InMemoryTransport::class, $transport);
 
         return $transport;

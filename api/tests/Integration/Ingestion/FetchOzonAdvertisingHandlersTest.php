@@ -531,7 +531,7 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
      */
     private function sentEnvelopes(ContainerInterface $container, string $class): array
     {
-        $transport = $container->get('messenger.transport.async_ingestion');
+        $transport = $container->get('messenger.transport.async_backfill');
         self::assertInstanceOf(InMemoryTransport::class, $transport);
 
         return array_values(array_filter(
