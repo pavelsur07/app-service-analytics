@@ -50,7 +50,7 @@ final readonly class FailedLoads
                     continue;
                 }
                 foreach (self::failuresOf($failed->message, $companyId, $marketplaceAccountId, $failed->failedOn) as $failure) {
-                    $failures[] = new CoverageFailure($failure->reportType, $failure->from, $failure->to, $failed->failedAt);
+                    $failures[] = $failure;
                 }
             }
 

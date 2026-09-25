@@ -6,8 +6,7 @@ namespace App\Ingestion\Domain\Coverage;
 
 /**
  * Загрузка, лежащая в очереди `failed`: какой raw-тип и за какие дни
- * она должна была загрузить и когда упала (`null` — момент неизвестен:
- * тогда любая выгрузка дня сильнее ошибки).
+ * она должна была загрузить.
  */
 final readonly class CoverageFailure
 {
@@ -15,7 +14,6 @@ final readonly class CoverageFailure
         public string $reportType,
         public \DateTimeImmutable $from,
         public \DateTimeImmutable $to,
-        public ?\DateTimeImmutable $failedAt = null,
     ) {
     }
 }

@@ -124,25 +124,6 @@ final class DataCoverageCalculatorTest extends TestCase
         self::assertSame(['loaded', 'failed', 'missing'], $this->statuses($coverage->rows[0]->statuses, 3));
     }
 
-    public function testFailureAfterThePartialLoadOfTheDayIsAnError(): void
-    {
-        // Каталог сохранил первую страницу в 10:00 и упал в 10:05 — день
-        // не загружен. Повтор в 11:00 после отказа день закрывает.
-        $catalogDay = static fn (string $at): CoverageFailure => new CoverageFailure(
-            MarketplaceReportType::OzonProductList,
-            new \DateTimeImmutable('2026-09-01', new \DateTimeZone('Europe/Moscow')),
-            new \DateTimeImmutable('2026-09-01', new \DateTimeZone('Europe/Moscow')),
-            new \DateTimeImmutable($at, new \DateTimeZone('Europe/Moscow')),
-        );
-        $partial = [$this->document(MarketplaceReportType::OzonProductList, '2026-09-01', '2026-09-01 10:00')];
-
-        $broken = $this->calculate([MarketplaceReportType::OzonProductList], $partial, [$catalogDay('2026-09-01 10:05')], today: '2026-09-01');
-        self::assertSame(['failed'], $this->statuses($broken->rows[0]->statuses, 1));
-
-        $retried = $this->calculate([MarketplaceReportType::OzonProductList], $partial, [$catalogDay('2026-09-01 09:00')], today: '2026-09-01');
-        self::assertSame(['loaded'], $this->statuses($retried->rows[0]->statuses, 1));
-    }
-
     public function testTotalShowsTheWorstStatusOfTheDay(): void
     {
         $coverage = $this->calculate(

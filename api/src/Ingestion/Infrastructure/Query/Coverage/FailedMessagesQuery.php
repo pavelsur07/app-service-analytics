@@ -20,9 +20,10 @@ use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
  *
  * Тело, которое не является корректным UTF-8 (например, текст ошибки
  * площадки обрезан посреди символа), PhpSerializer кладёт в base64 —
- * идентификаторов в нём текстом не видно. Такие тела отбираются все:
- * в base64 нет кавычки, а в сериализованном PHP она есть всегда.
- * Их принадлежность подтверждает тот же разбор.
+ * идентификаторов в нём текстом не видно. Такое тело (в base64 нет
+ * кавычки, а в сериализованном PHP она есть всегда) PostgreSQL
+ * раскодирует и ищет в нём те же идентификаторы: чужие сообщения
+ * не читаются и не расходуют потолок `FailedLoads`.
  */
 final readonly class FailedMessagesQuery
 {
@@ -45,8 +46,14 @@ final readonly class FailedMessagesQuery
             ->select('id', 'body', 'created_at')
             ->from('messenger_messages')
             ->where('queue_name = :failed')
-            ->andWhere("(body LIKE :company AND body LIKE :account) OR body NOT LIKE '%\"%'")
+            ->andWhere(
+                "(body LIKE :company AND body LIKE :account) OR (body NOT LIKE '%\"%'"
+                ." AND position(convert_to(:companyId, 'UTF8') in decode(body, 'base64')) > 0"
+                ." AND position(convert_to(:accountId, 'UTF8') in decode(body, 'base64')) > 0)",
+            )
             ->setParameter('failed', 'failed')
+            ->setParameter('companyId', $companyId)
+            ->setParameter('accountId', $marketplaceAccountId)
             ->setParameter('company', '%'.$companyId.'%')
             ->setParameter('account', '%'.$marketplaceAccountId.'%')
             ->orderBy('id', 'DESC')
@@ -91,9 +98,10 @@ final readonly class FailedMessagesQuery
             return null;
         }
 
-        $failedAt = new \DateTimeImmutable($row['created_at'], new \DateTimeZone('UTC'));
-        $failedOn = $failedAt->setTimezone(new \DateTimeZone(self::TIMEZONE))->setTime(0, 0);
+        $failedOn = (new \DateTimeImmutable($row['created_at'], new \DateTimeZone('UTC')))
+            ->setTimezone(new \DateTimeZone(self::TIMEZONE))
+            ->setTime(0, 0);
 
-        return new FailedMessage($message, $failedOn, $failedAt);
+        return new FailedMessage($message, $failedOn);
     }
 }
