@@ -35,8 +35,8 @@ final readonly class BuyoutForecastQuery
         $trainingSample = self::MIN_TRAINING_QUANTITY;
         $source = <<<SQL
             WITH tenant_outcome AS MATERIALIZED (
-                SELECT company_id, marketplace_account_id, source_row_id,
-                       posting_number, order_number, marketplace_sku,
+                SELECT company_id, marketplace_account_id,
+                       posting_number, marketplace_sku,
                        quantity, business_date, outcome,
                        handed_over_at, resolved_at, is_forecast_eligible,
                        resolution_observed, is_in_flight
