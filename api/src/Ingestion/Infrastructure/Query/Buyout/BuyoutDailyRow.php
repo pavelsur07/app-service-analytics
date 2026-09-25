@@ -16,6 +16,8 @@ final readonly class BuyoutDailyRow
         public ?int $projectedBuyoutQuantity,
         public string $maturityStatus,
         public ?int $inFlightRateBps,
+        /** Выкуп только по известным исходам, без условия зрелости; наружу не отдаётся. */
+        public ?int $knownBuyoutRateBps,
     ) {
     }
 }
