@@ -14,6 +14,7 @@ use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\EventListener\SendFailedMessageForRetryListener;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
+use Symfony\Component\Messenger\Stamp\SentToFailureTransportStamp;
 
 /**
  * Отказ лимита площадки не жжёт повторы очереди (ADR-028): сообщение
@@ -88,6 +89,26 @@ final class RateLimitAwareRetryStrategyTest extends TestCase
         }
 
         self::assertFalse($strategy->isRetryable($envelope, $this->handlerFailure($envelope, $this->http429('60'))));
+    }
+
+    public function testMessageRetriedFromFailedCountsTheDayAgain(): void
+    {
+        $strategy = new RateLimitAwareRetryStrategy();
+
+        // Ушло в failed 10 суток назад (сброс — RedeliveryStamp(0)),
+        // оператор выполнил messenger:failed:retry: первый же 429 — не повод
+        // сразу вернуть сообщение в failed.
+        $justRetried = (new Envelope(new \stdClass()))
+            ->with(new RedeliveryStamp(1, new \DateTimeImmutable('-11 days')))
+            ->with(new SentToFailureTransportStamp('async_ingestion'))
+            ->with(new RedeliveryStamp(0, new \DateTimeImmutable('-10 days')));
+        self::assertTrue($strategy->isRetryable($justRetried, $this->handlerFailure($justRetried, $this->http429('30'))));
+
+        $retriedAnHourAgo = $justRetried->with(new RedeliveryStamp(1, new \DateTimeImmutable('-1 hour')));
+        self::assertTrue($strategy->isRetryable($retriedAnHourAgo, $this->handlerFailure($retriedAnHourAgo, $this->http429('30'))));
+
+        $retriedADayAgo = $justRetried->with(new RedeliveryStamp(1, new \DateTimeImmutable('-25 hours')));
+        self::assertFalse($strategy->isRetryable($retriedADayAgo, $this->handlerFailure($retriedADayAgo, $this->http429('30'))));
     }
 
     public function testOtherFailuresKeepTheUsualFiveRetries(): void
