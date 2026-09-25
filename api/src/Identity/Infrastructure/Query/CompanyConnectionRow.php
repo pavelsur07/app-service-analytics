@@ -15,6 +15,7 @@ final readonly class CompanyConnectionRow
         public string $marketplace,
         public string $externalShopId,
         public string $state,
+        public ?string $advertisingState,
         public string $createdAt,
         /** Версия для оптимистической блокировки (ADR-008): клиент обязан
          * прислать её обратно при изменении. */

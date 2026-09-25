@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { connectionPresentation, reportLabel } from './connectionPresentation'
+import {
+  advertisingPresentation,
+  connectionPresentation,
+  reportLabel,
+} from './connectionPresentation'
 
 describe('connectionPresentation', () => {
   it('называет сломанное подключение тем, что нужно сделать', () => {
@@ -36,5 +40,26 @@ describe('reportLabel', () => {
   it('показывает незнакомый тип как есть', () => {
     // Коннекторов будет больше, и новый тип не повод ломать экран.
     expect(reportLabel('wb_orders')).toBe('wb_orders')
+  })
+})
+
+describe('advertisingPresentation', () => {
+  it('говорит только о ключе и не обещает загрузку', () => {
+    // Загрузки рекламы в этой стадии нет (ADR-026, п. 5): метка,
+    // обещающая «загружается», утверждала бы то, чего нет.
+    for (const state of ['active', 'broken', null]) {
+      expect(advertisingPresentation(state).explanation).not.toMatch(/загруж/)
+    }
+  })
+
+  it('сломанный ключ — отказ с указанием, что заменить', () => {
+    const broken = advertisingPresentation('broken')
+
+    expect(broken.tone).toBe('negative')
+    expect(broken.explanation).toContain('Performance API')
+  })
+
+  it('отсутствие рекламы — нейтральное приглашение, а не ошибка', () => {
+    expect(advertisingPresentation(null).tone).toBe('neutral')
   })
 })

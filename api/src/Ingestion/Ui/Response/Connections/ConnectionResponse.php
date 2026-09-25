@@ -25,6 +25,8 @@ final readonly class ConnectionResponse
         public string $marketplace,
         public string $externalShopId,
         public string $state,
+        /** Реклама (ADR-026): null — не подключена, иначе active или broken. */
+        public ?string $advertisingState,
         public string $createdAt,
         public array $lastLoadedAt,
         /** Версия для оптимистической блокировки (ADR-008): клиент

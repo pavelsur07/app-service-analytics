@@ -42,6 +42,45 @@ export function connectionPresentation(state: string): ConnectionPresentation {
   )
 }
 
+// Рекламный ключ подключения (ADR-026) — своё состояние, отдельное
+// от подключения магазина. Метка говорит только о ключе: загрузка рекламы
+// появляется следующей стадией, и до неё любое «загружается» или
+// «продолжит загружаться» было бы неправдой.
+const ADVERTISING_STATES: Record<string, ConnectionPresentation> = {
+  active: {
+    tone: 'positive',
+    label: 'Рекламный ключ сохранён',
+    explanation: 'Ozon принял рекламный ключ.',
+  },
+  broken: {
+    tone: 'negative',
+    label: 'Нужно заменить рекламный ключ',
+    explanation:
+      'Ozon отклонил рекламный ключ. Выпустите новый ключ Performance API и сохраните его здесь.',
+  },
+}
+
+export function advertisingPresentation(
+  state: string | null,
+): ConnectionPresentation {
+  if (state === null) {
+    return {
+      tone: 'neutral',
+      label: 'Реклама не подключена',
+      explanation:
+        'Рекламный ключ Performance API к этому магазину не добавлен.',
+    }
+  }
+
+  return (
+    ADVERTISING_STATES[state] ?? {
+      tone: 'neutral',
+      label: state,
+      explanation: 'Состояние рекламного ключа неизвестно приложению.',
+    }
+  )
+}
+
 // Что за выгрузка стоит за типом отчёта. Незнакомый тип показывается
 // как есть: коннекторов будет больше, и падать из-за нового имени
 // экран не должен.

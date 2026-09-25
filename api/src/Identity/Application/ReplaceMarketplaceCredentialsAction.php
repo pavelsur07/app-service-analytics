@@ -70,7 +70,16 @@ final readonly class ReplaceMarketplaceCredentialsAction
 
         $previous = $this->fingerprint($account->credentialsCiphertext());
 
-        $encrypted = $this->credentialsEncryptor->encrypt(MarketplaceCredentials::fromArray($credentials));
+        // Слияние, а не замена объекта: в нём лежит и рекламный ключ
+        // (ADR-026, п. 1), и замена ключа Seller API не имеет права
+        // молча его стереть. Пришедшие ключи перекрывают прежние.
+        $current = $this->credentialsEncryptor->decrypt(
+            $account->credentialsCiphertext(),
+            $account->credentialsKeyVersion(),
+        );
+        $encrypted = $this->credentialsEncryptor->encrypt(
+            MarketplaceCredentials::fromArray(array_merge($current->toArray(), $credentials)),
+        );
         $account->replaceCredentials($encrypted->ciphertext, $encrypted->keyVersion);
 
         // Запись ставится до сохранения: фиксирует её тот же flush,

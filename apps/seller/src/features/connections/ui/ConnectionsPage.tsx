@@ -9,11 +9,13 @@ import {
   StatusPanel,
 } from '../../../../../../packages/ui/src'
 import {
+  advertisingPresentation,
   connectionPresentation,
   reportLabel,
 } from '../lib/connectionPresentation'
 import { useConnections } from '../model/useConnections'
 import { onboardingPathToAddAnotherCabinet } from '../../../shared/lib/onboardingIntent'
+import { AdvertisingCredentialsForm } from './AdvertisingCredentialsForm'
 import { DiscardConnectionButton } from './DiscardConnectionButton'
 import { ReplaceCredentialsForm } from './ReplaceCredentialsForm'
 
@@ -131,6 +133,9 @@ export function ConnectionsPage() {
         {query.status === 'success' &&
           query.data.connections.map((connection) => {
             const state = connectionPresentation(connection.state)
+            const advertising = advertisingPresentation(
+              connection.advertisingState ?? null,
+            )
             const loads = Object.entries(connection.lastLoadedAt)
 
             return (
@@ -192,6 +197,25 @@ export function ConnectionsPage() {
                       marketplaceAccountId={connection.id}
                       version={connection.version}
                     />
+                  )}
+
+                  {connection.state !== 'revoked' && (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone={advertising.tone}>
+                          {advertising.label}
+                        </Badge>
+                      </div>
+                      <p className="text-sm">{advertising.explanation}</p>
+                      <AdvertisingCredentialsForm
+                        companyId={companyId}
+                        connected={
+                          (connection.advertisingState ?? null) !== null
+                        }
+                        marketplaceAccountId={connection.id}
+                        version={connection.version}
+                      />
+                    </div>
                   )}
 
                   {/* Видна всегда, независимо от state: сервер сам знает,

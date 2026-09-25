@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Identity\Domain;
 
+use App\Identity\Domain\ValueObject\AdvertisingState;
 use App\Identity\Domain\ValueObject\Marketplace;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use Doctrine\ORM\Mapping as ORM;
@@ -67,6 +68,14 @@ class MarketplaceAccount
 
     #[ORM\Column(length: 16, enumType: MarketplaceAccountState::class)]
     private MarketplaceAccountState $state;
+
+    /**
+     * Реклама подключения (ADR-026, п. 1): NULL — не подключена. Ключи
+     * Performance API лежат в том же зашифрованном объекте, что и ключ
+     * Seller API; здесь только их состояние.
+     */
+    #[ORM\Column(length: 16, nullable: true, enumType: AdvertisingState::class)]
+    private ?AdvertisingState $advertisingState = null;
 
     /**
      * Оптимистическая блокировка (ADR-008, уточнение ADR-011): учётные
@@ -164,6 +173,11 @@ class MarketplaceAccount
         return $this->state;
     }
 
+    public function advertisingState(): ?AdvertisingState
+    {
+        return $this->advertisingState;
+    }
+
     public function version(): int
     {
         return $this->version;
@@ -200,6 +214,27 @@ class MarketplaceAccount
         if (MarketplaceAccountState::Broken === $this->state) {
             $this->state = MarketplaceAccountState::Active;
         }
+    }
+
+    /**
+     * Клиент ввёл или заменил рекламный ключ (ADR-026, п. 1). Шифротекст
+     * уже содержит весь объект учётных данных — ключ Seller API вместе
+     * с рекламным: собрать его без потери первого обязан вызывающий.
+     *
+     * Сломанную рекламу возвращает в работу тем же приёмом, что
+     * replaceCredentials() — подключение: причина broken была в этом
+     * ключе. `state` подключения не трогает: рекламный ключ не чинит
+     * ключ Seller API.
+     */
+    public function connectAdvertising(string $credentialsCiphertext, int $credentialsKeyVersion): void
+    {
+        if (MarketplaceAccountState::Revoked === $this->state) {
+            throw new \DomainException('Отозванное подключение не оживляется рекламным ключом (ADR-011).');
+        }
+
+        $this->credentialsCiphertext = $credentialsCiphertext;
+        $this->credentialsKeyVersion = $credentialsKeyVersion;
+        $this->advertisingState = AdvertisingState::Active;
     }
 
     /**
