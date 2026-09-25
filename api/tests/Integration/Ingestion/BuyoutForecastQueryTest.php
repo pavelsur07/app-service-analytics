@@ -7,6 +7,7 @@ namespace App\Tests\Integration\Ingestion;
 use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use App\Ingestion\Domain\SalesFactRepository;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutDailyQuery;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutForecastQuery;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutForecastRow;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutForecastSummaryQuery;
@@ -192,6 +193,62 @@ final class BuyoutForecastQueryTest extends KernelTestCase
         self::assertSame(0, $row->resolvedQuantity);
         self::assertNull($row->projectedBuyoutQuantity);
         self::assertNull($row->projectedBuyoutRateBps);
+    }
+
+    public function testUnestimatedUnitsAreExcludedUpToTenPercentAndDoNotNullTheSummary(): void
+    {
+        // Штука без оценки — закрытая отмена без истории: исход unknown.
+        $facts = [
+            $this->sale($this->accountId, 'MIXED-PENDING', 'MIXED-PENDING', 'MIXED', 'awaiting_packaging', 19, '2026-08-29'),
+            $this->sale($this->accountId, 'MIXED-UNKNOWN', 'MIXED-UNKNOWN', 'MIXED', 'cancelled', 1, '2026-08-29'),
+            $this->sale($this->accountId, 'MOSTLY-PENDING', 'MOSTLY-PENDING', 'MOSTLY-UNKNOWN', 'awaiting_packaging', 8, '2026-08-29'),
+            $this->sale($this->accountId, 'MOSTLY-UNKNOWN', 'MOSTLY-UNKNOWN', 'MOSTLY-UNKNOWN', 'cancelled', 1, '2026-08-29'),
+        ];
+        $this->sales()->upsertAll($facts);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus($this->accountId, 'MIXED-PENDING', 'MIXED-PENDING', 'awaiting_packaging', '2026-08-29 09:00:00'),
+            $this->postingStatus($this->accountId, 'MIXED-UNKNOWN', 'MIXED-UNKNOWN', 'cancelled', '2026-08-29 10:00:00'),
+            $this->postingStatus($this->accountId, 'MOSTLY-PENDING', 'MOSTLY-PENDING', 'awaiting_packaging', '2026-08-29 09:00:00'),
+            $this->postingStatus($this->accountId, 'MOSTLY-UNKNOWN', 'MOSTLY-UNKNOWN', 'cancelled', '2026-08-29 10:00:00'),
+        ]);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $from = new \DateTimeImmutable('2026-08-29');
+        $asOf = new \DateTimeImmutable('2026-08-30T12:00:00Z');
+        $rows = [];
+        foreach ((new BuyoutForecastQuery($connection))->build($this->companyId->toRfc4122(), $from, $from, $asOf, 50, null)->executeQuery()->fetchAllAssociative() as $rawRow) {
+            $row = BuyoutForecastQuery::mapRow($rawRow);
+            $rows[$row->marketplaceSku] = $row;
+        }
+
+        // 1 из 20 без оценки (5%): ставка по 19 штукам со ставкой кабинета
+        // 80% до передачи — 15,2 / 15,2; количество 15,2 × 20 / 19 = 16.
+        self::assertSame(10000, $rows['MIXED']->projectedBuyoutRateBps);
+        self::assertSame(16, $rows['MIXED']->projectedBuyoutQuantity);
+        // 1 из 9 (11%) — больше порога.
+        self::assertNull($rows['MOSTLY-UNKNOWN']->projectedBuyoutRateBps);
+        self::assertNull($rows['MOSTLY-UNKNOWN']->projectedBuyoutQuantity);
+
+        // Сводка по штукам: 2 из 29 (6,9%) — есть, хотя один SKU без прогноза;
+        // 21,6 × 29 / 27 = 23,2.
+        $summaryRow = (new BuyoutForecastSummaryQuery($connection, new BuyoutForecastQuery($connection)))
+            ->build($this->companyId->toRfc4122(), $from, $from, $asOf)
+            ->executeQuery()
+            ->fetchAssociative();
+        self::assertNotFalse($summaryRow);
+        $summary = BuyoutForecastSummaryQuery::mapRow($summaryRow);
+        self::assertSame(10000, $summary->projectedBuyoutRateBps);
+        self::assertSame(23, $summary->projectedBuyoutQuantity);
+
+        // Дневной ряд считается тем же правилом.
+        $daily = array_map(BuyoutDailyQuery::mapRow(...), (new BuyoutDailyQuery($connection))
+            ->build($this->companyId->toRfc4122(), 'MIXED', $from, $from, $asOf)
+            ->executeQuery()
+            ->fetchAllAssociative());
+        self::assertCount(1, $daily);
+        self::assertSame(10000, $daily[0]->projectedBuyoutRateBps);
+        self::assertSame(16, $daily[0]->projectedBuyoutQuantity);
     }
 
     private function seedTrainingAndCurrentCohort(): void

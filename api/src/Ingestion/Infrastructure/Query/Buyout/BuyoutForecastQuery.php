@@ -16,6 +16,9 @@ final readonly class BuyoutForecastQuery
 {
     public const int MIN_TRAINING_QUANTITY = 30;
 
+    /** ADR-031: агрегат без прогноза, если штук без оценки больше 10% количества. */
+    public const int MAX_UNESTIMATED_BPS = 1000;
+
     public function __construct(private Connection $connection)
     {
     }
@@ -33,6 +36,11 @@ final readonly class BuyoutForecastQuery
         $maturityCtes = BuyoutMaturityQuery::maturityCtes();
         $trainingDays = BuyoutMaturityQuery::trainingDaysCte();
         $trainingSample = self::MIN_TRAINING_QUANTITY;
+        $aggregates = self::forecastAggregatesSql();
+        $quantity = self::projectedQuantitySql('projected_quantity', 'ordered_quantity', 'unestimated_quantity');
+        $rate = self::projectedRateSql('projected_quantity', 'projected_eligible_quantity', 'ordered_quantity', 'unestimated_quantity');
+        $summaryQuantity = self::projectedQuantitySql('SUM(projected_quantity) OVER ()', 'SUM(ordered_quantity) OVER ()', 'SUM(unestimated_quantity) OVER ()');
+        $summaryRate = self::projectedRateSql('SUM(projected_quantity) OVER ()', 'SUM(projected_eligible_quantity) OVER ()', 'SUM(ordered_quantity) OVER ()', 'SUM(unestimated_quantity) OVER ()');
         $source = <<<SQL
             WITH tenant_outcome AS MATERIALIZED (
                 SELECT company_id, marketplace_account_id,
@@ -109,25 +117,7 @@ final readonly class BuyoutForecastQuery
                 SELECT marketplace_sku,
                        SUM(quantity)::bigint AS ordered_quantity,
                        COALESCE(SUM(quantity) FILTER (WHERE outcome IS NOT NULL), 0)::bigint AS resolved_quantity,
-                       BOOL_OR(
-                           outcome IS NULL AND (
-                               NOT is_forecast_eligible
-                               OR (handed_over_at IS NULL AND pre_handover_rate IS NULL)
-                               OR (handed_over_at IS NOT NULL AND post_handover_rate IS NULL)
-                           )
-                       ) AS missing_rate,
-                       SUM(CASE
-                           WHEN outcome = 'D' THEN quantity::numeric
-                           WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN quantity * pre_handover_rate
-                           WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NOT NULL THEN quantity * post_handover_rate
-                           ELSE 0::numeric
-                       END) AS projected_quantity,
-                       SUM(CASE
-                           WHEN outcome IN ('D', 'T2', 'P') THEN quantity::numeric
-                           WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN quantity * pre_handover_eligible_rate
-                           WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NOT NULL THEN quantity::numeric
-                           ELSE 0::numeric
-                       END) AS projected_eligible_quantity
+                       {$aggregates}
                 FROM current_rows
                 GROUP BY marketplace_sku
             )
@@ -135,24 +125,19 @@ final readonly class BuyoutForecastQuery
                 SELECT marketplace_sku,
                        ordered_quantity,
                        resolved_quantity,
-                       CASE WHEN missing_rate THEN NULL ELSE ROUND(projected_quantity)::int END AS projected_buyout_quantity,
-                       CASE WHEN missing_rate THEN NULL ELSE projected_quantity END AS projected_buyout_quantity_exact,
-                       CASE WHEN missing_rate THEN NULL ELSE projected_eligible_quantity END AS projected_eligible_quantity_exact,
-                       CASE WHEN missing_rate OR projected_eligible_quantity = 0 THEN NULL
-                            ELSE ROUND(10000::numeric * projected_quantity / projected_eligible_quantity)::int END AS projected_buyout_rate_bps,
+                       projected_quantity,
+                       projected_eligible_quantity,
+                       unestimated_quantity,
+                       {$quantity} AS projected_buyout_quantity,
+                       {$rate} AS projected_buyout_rate_bps,
                        ROUND(10000::numeric * resolved_quantity / NULLIF(ordered_quantity, 0))::int AS resolution_rate_bps
                 FROM forecast
             )
             SELECT forecast_rows.*,
                    SUM(ordered_quantity) OVER ()::bigint AS summary_ordered_quantity,
                    SUM(resolved_quantity) OVER ()::bigint AS summary_resolved_quantity,
-                   CASE WHEN COUNT(*) FILTER (WHERE projected_buyout_quantity_exact IS NULL) OVER () > 0
-                        THEN NULL ELSE ROUND(SUM(projected_buyout_quantity_exact) OVER ())::int END AS summary_projected_buyout_quantity,
-                   CASE WHEN COUNT(*) FILTER (WHERE projected_buyout_quantity_exact IS NULL) OVER () > 0
-                             OR SUM(projected_eligible_quantity_exact) OVER () = 0
-                        THEN NULL
-                        ELSE ROUND(10000::numeric * SUM(projected_buyout_quantity_exact) OVER () / SUM(projected_eligible_quantity_exact) OVER ())::int
-                   END AS summary_projected_buyout_rate_bps,
+                   {$summaryQuantity} AS summary_projected_buyout_quantity,
+                   {$summaryRate} AS summary_projected_buyout_rate_bps,
                    ROUND(10000::numeric * SUM(resolved_quantity) OVER () / NULLIF(SUM(ordered_quantity) OVER (), 0))::int AS summary_resolution_rate_bps
             FROM forecast_rows
             SQL;
@@ -189,6 +174,64 @@ final readonly class BuyoutForecastQuery
         }
 
         return $query;
+    }
+
+    /**
+     * Суммы по штукам агрегата над current_rows (ADR-031): заказано,
+     * ожидаемые D и ожидаемый знаменатель по штукам с оценкой и количество
+     * штук без оценки. Штука без оценки — без исхода и без права на прогноз
+     * либо без обучающей ставки своей стадии; в суммы прогноза она не входит.
+     */
+    public static function forecastAggregatesSql(): string
+    {
+        return <<<'SQL'
+            COALESCE(SUM(quantity) FILTER (
+                WHERE outcome IS NULL AND (
+                    NOT is_forecast_eligible
+                    OR (handed_over_at IS NULL AND pre_handover_rate IS NULL)
+                    OR (handed_over_at IS NOT NULL AND post_handover_rate IS NULL)
+                )
+            ), 0)::bigint AS unestimated_quantity,
+            COALESCE(SUM(CASE
+                WHEN outcome = 'D' THEN quantity::numeric
+                WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN quantity * pre_handover_rate
+                WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NOT NULL THEN quantity * post_handover_rate
+                ELSE 0::numeric
+            END), 0::numeric) AS projected_quantity,
+            COALESCE(SUM(CASE
+                WHEN outcome IN ('D', 'T2', 'P') THEN quantity::numeric
+                WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN quantity * pre_handover_eligible_rate
+                WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NOT NULL
+                     AND post_handover_rate IS NOT NULL THEN quantity::numeric
+                ELSE 0::numeric
+            END), 0::numeric) AS projected_eligible_quantity
+            SQL;
+    }
+
+    /**
+     * Ставка агрегата по суммам ADR-031: NULL, если штук без оценки больше
+     * порога или ожидаемый знаменатель пуст.
+     */
+    public static function projectedRateSql(string $projected, string $eligible, string $ordered, string $unestimated): string
+    {
+        $limit = self::MAX_UNESTIMATED_BPS;
+
+        return "CASE WHEN {$eligible} > 0 AND 10000 * {$unestimated} <= {$limit} * {$ordered}"
+            ." THEN ROUND(10000::numeric * {$projected} / {$eligible})::int ELSE NULL END";
+    }
+
+    /**
+     * Ожидаемый выкуп в штуках: ожидаемые D штук с оценкой, масштабированные
+     * на всё заказанное количество (ADR-031); NULL при превышении порога.
+     * Пустой ожидаемый знаменатель (все штуки T1 или R) количество не
+     * обнуляет: ожидаемый выкуп тогда 0 штук, NULL только у ставки.
+     */
+    public static function projectedQuantitySql(string $projected, string $ordered, string $unestimated): string
+    {
+        $limit = self::MAX_UNESTIMATED_BPS;
+
+        return "CASE WHEN {$ordered} > {$unestimated} AND 10000 * {$unestimated} <= {$limit} * {$ordered}"
+            ." THEN ROUND({$projected} * {$ordered} / ({$ordered} - {$unestimated}))::int ELSE NULL END";
     }
 
     /**

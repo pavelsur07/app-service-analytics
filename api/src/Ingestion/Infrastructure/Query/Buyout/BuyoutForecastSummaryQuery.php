@@ -24,12 +24,17 @@ final readonly class BuyoutForecastSummaryQuery
     ): QueryBuilder {
         $base = $this->forecast->build($companyId, $from, $to, $asOf, 0, null);
 
+        // ADR-031: сводка — по суммам штук всех SKU, а не по уже
+        // обнулённым строкам SKU, иначе один маленький SKU обнулял бы её.
+        $quantity = BuyoutForecastQuery::projectedQuantitySql('SUM(projected_quantity)', 'SUM(ordered_quantity)', 'SUM(unestimated_quantity)');
+        $rate = BuyoutForecastQuery::projectedRateSql('SUM(projected_quantity)', 'SUM(projected_eligible_quantity)', 'SUM(ordered_quantity)', 'SUM(unestimated_quantity)');
+
         return $this->connection->createQueryBuilder()
             ->select(
                 'COALESCE(SUM(ordered_quantity), 0)::bigint AS ordered_quantity',
                 'COALESCE(SUM(resolved_quantity), 0)::bigint AS resolved_quantity',
-                'CASE WHEN COUNT(*) FILTER (WHERE projected_buyout_quantity_exact IS NULL) > 0 THEN NULL ELSE ROUND(SUM(projected_buyout_quantity_exact))::int END AS projected_buyout_quantity',
-                'CASE WHEN COUNT(*) = 0 OR COUNT(*) FILTER (WHERE projected_buyout_quantity_exact IS NULL) > 0 OR SUM(projected_eligible_quantity_exact) = 0 THEN NULL ELSE ROUND(10000::numeric * SUM(projected_buyout_quantity_exact) / SUM(projected_eligible_quantity_exact))::int END AS projected_buyout_rate_bps',
+                $quantity.' AS projected_buyout_quantity',
+                $rate.' AS projected_buyout_rate_bps',
                 'CASE WHEN COALESCE(SUM(ordered_quantity), 0) = 0 THEN NULL ELSE ROUND(10000::numeric * SUM(resolved_quantity) / SUM(ordered_quantity))::int END AS resolution_rate_bps',
             )
             ->from('('.$base->getSQL().')', 'forecast_summary')
