@@ -38,6 +38,9 @@ final readonly class BuyoutDailyQuery
         $trainingDays = BuyoutMaturityQuery::trainingDaysCte();
         $inFlightWithinLimit = BuyoutMaturityQuery::inFlightWithinLimitSql('quantity', 'is_in_flight');
         $trainingSample = BuyoutForecastQuery::MIN_TRAINING_QUANTITY;
+        $forecastAggregates = BuyoutForecastQuery::forecastAggregatesSql();
+        $projectedRate = BuyoutForecastQuery::projectedRateSql('projected_quantity', 'projected_eligible_quantity', 'ordered_quantity', 'unestimated_quantity');
+        $projectedQuantity = BuyoutForecastQuery::projectedQuantitySql('projected_quantity', 'ordered_quantity', 'unestimated_quantity');
         $source = <<<SQL
             WITH tenant_outcome AS MATERIALIZED (
                 SELECT company_id, marketplace_account_id,
@@ -126,25 +129,7 @@ final readonly class BuyoutDailyQuery
                            )) > current_p95_seconds
                        ) AND {$inFlightWithinLimit} AS mature,
                        COALESCE(SUM(quantity) FILTER (WHERE is_in_flight), 0)::bigint AS in_flight_quantity,
-                       BOOL_OR(
-                           outcome IS NULL AND (
-                               NOT is_forecast_eligible
-                               OR (handed_over_at IS NULL AND pre_handover_rate IS NULL)
-                               OR (handed_over_at IS NOT NULL AND post_handover_rate IS NULL)
-                           )
-                       ) AS missing_rate,
-                       SUM(CASE
-                           WHEN outcome = 'D' THEN quantity::numeric
-                           WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN quantity * pre_handover_rate
-                           WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NOT NULL THEN quantity * post_handover_rate
-                           ELSE 0::numeric
-                       END) AS projected_quantity,
-                       SUM(CASE
-                           WHEN outcome IN ('D', 'T2', 'P') THEN quantity::numeric
-                           WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN quantity * pre_handover_eligible_rate
-                           WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NOT NULL THEN quantity::numeric
-                           ELSE 0::numeric
-                       END) AS projected_eligible_quantity
+                       {$forecastAggregates}
                 FROM current_rows
                 GROUP BY business_date
             )
@@ -155,12 +140,11 @@ final readonly class BuyoutDailyQuery
                    CASE WHEN (d_quantity + t2_quantity + p_quantity) > 0
                         THEN ROUND(10000::numeric * d_quantity / (d_quantity + t2_quantity + p_quantity))::int
                         ELSE NULL END AS known_buyout_rate_bps,
-                   CASE WHEN missing_rate OR projected_eligible_quantity = 0 THEN NULL
-                        ELSE ROUND(10000::numeric * projected_quantity / projected_eligible_quantity)::int END AS projected_buyout_rate_bps,
+                   {$projectedRate} AS projected_buyout_rate_bps,
                    ROUND(10000::numeric * resolved_quantity / NULLIF(ordered_quantity, 0))::int AS resolution_rate_bps,
                    ordered_quantity,
                    resolved_quantity,
-                   CASE WHEN missing_rate THEN NULL ELSE ROUND(projected_quantity)::int END AS projected_buyout_quantity,
+                   {$projectedQuantity} AS projected_buyout_quantity,
                    CASE WHEN mature THEN 'mature' ELSE 'preliminary' END AS maturity_status,
                    ROUND(10000::numeric * in_flight_quantity / NULLIF(ordered_quantity, 0))::int AS in_flight_rate_bps
             FROM daily
