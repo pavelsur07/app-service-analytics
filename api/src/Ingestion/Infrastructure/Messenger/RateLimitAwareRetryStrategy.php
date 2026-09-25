@@ -49,16 +49,18 @@ final readonly class RateLimitAwareRetryStrategy implements RetryStrategyInterfa
 
     public function isRetryable(Envelope $message, ?\Throwable $throwable = null): bool
     {
-        if (null === self::rateLimitedFor($throwable)) {
+        $wait = self::rateLimitedFor($throwable);
+        if (null === $wait) {
             return $this->default->isRetryable($message, $throwable);
         }
 
+        // Первая отметка истории — первая неудача: SendFailedMessageForRetryListener
+        // при усечении истории сохраняет её явно (withLimitedHistory). Потолок
+        // считается вместе с предстоящим ожиданием — повтор не уходит за сутки.
         $first = $message->all(RedeliveryStamp::class)[0] ?? null;
-        if (!$first instanceof RedeliveryStamp) {
-            return true;
-        }
+        $elapsed = $first instanceof RedeliveryStamp ? time() - $first->getRedeliveredAt()->getTimestamp() : 0;
 
-        return time() - $first->getRedeliveredAt()->getTimestamp() < self::GIVE_UP_AFTER_SECONDS;
+        return $elapsed + $wait < self::GIVE_UP_AFTER_SECONDS;
     }
 
     public function getWaitingTime(Envelope $message, ?\Throwable $throwable = null): int

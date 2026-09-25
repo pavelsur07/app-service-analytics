@@ -8,6 +8,7 @@ use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\DependencyInjection\Attribute\AsDecorator;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpClient\DecoratorTrait;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
@@ -43,6 +44,7 @@ final class OzonSellerRateLimitingClient implements HttpClientInterface
         HttpClientInterface $client,
         #[Autowire(service: 'cache.ozon_seller_limit')]
         private readonly CacheItemPoolInterface $pauses,
+        private readonly LockFactory $locks,
     ) {
         $this->client = $client;
     }
@@ -110,18 +112,29 @@ final class OzonSellerRateLimitingClient implements HttpClientInterface
     }
 
     /**
-     * Более длинная пауза не укорачивается более короткой.
+     * Более длинная пауза не укорачивается более короткой. Чтение и запись —
+     * под блокировкой на ключ: два воркера (тик и история, ADR-027) могут
+     * получить ответы по одному кабинету одновременно, и без неё короткая
+     * пауза, записанная последней, затёрла бы длинную. Блокировка — Redis
+     * в проде (`LOCK_DSN`), держится миллисекунды.
      */
     private function pause(string $key, int $seconds): void
     {
-        $until = microtime(true) + $seconds;
-        $item = $this->pauses->getItem($key);
-        $current = $item->isHit() ? $item->get() : null;
-        if ((\is_int($current) || \is_float($current)) && $current >= $until) {
-            return;
-        }
+        $lock = $this->locks->createLock($key, 5.0);
+        $lock->acquire(true);
 
-        $this->pauses->save($item->set($until)->expiresAfter($seconds));
+        try {
+            $until = microtime(true) + $seconds;
+            $item = $this->pauses->getItem($key);
+            $current = $item->isHit() ? $item->get() : null;
+            if ((\is_int($current) || \is_float($current)) && $current >= $until) {
+                return;
+            }
+
+            $this->pauses->save($item->set($until)->expiresAfter($seconds));
+        } finally {
+            $lock->release();
+        }
     }
 
     /**

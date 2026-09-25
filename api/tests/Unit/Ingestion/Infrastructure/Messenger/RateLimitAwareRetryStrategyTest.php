@@ -7,9 +7,11 @@ namespace App\Tests\Unit\Ingestion\Infrastructure\Messenger;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonSellerRateLimited;
 use App\Ingestion\Infrastructure\Messenger\RateLimitAwareRetryStrategy;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\EventListener\SendFailedMessageForRetryListener;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 
@@ -48,6 +50,34 @@ final class RateLimitAwareRetryStrategyTest extends TestCase
         $envelope = $this->envelope(retries: 900, firstFailureAgo: 25 * 3_600);
 
         // Отказ дольше суток — уже не лимит, а сбой: его должно быть видно.
+        self::assertFalse($strategy->isRetryable($envelope, $this->handlerFailure($envelope, $this->http429('60'))));
+    }
+
+    public function testRetryThatWouldLandPastTheDayGoesToFailed(): void
+    {
+        $strategy = new RateLimitAwareRetryStrategy();
+        $envelope = $this->envelope(retries: 700, firstFailureAgo: 23 * 3_600 + 59 * 60);
+
+        // Прошло 23:59, площадка просит ждать ещё час — повтор ушёл бы
+        // за сутки, значит сообщение уходит в failed сейчас.
+        self::assertFalse($strategy->isRetryable($envelope, $this->handlerFailure($envelope, $this->http429('3600'))));
+    }
+
+    public function testFirstFailureSurvivesTheListenersHistoryTruncation(): void
+    {
+        $strategy = new RateLimitAwareRetryStrategy();
+        $listener = new SendFailedMessageForRetryListener(new Container(), new Container(), historySize: 10);
+        $truncate = new \ReflectionMethod($listener, 'withLimitedHistory');
+
+        // Настоящее усечение истории слушателя очереди: после 30 повторов
+        // первая отметка (25 часов назад) остаётся первой.
+        $envelope = (new Envelope(new \stdClass()))->with(new RedeliveryStamp(1, new \DateTimeImmutable('-25 hours')));
+        for ($retry = 2; $retry <= 30; ++$retry) {
+            $next = $truncate->invoke($listener, $envelope, new RedeliveryStamp($retry));
+            self::assertInstanceOf(Envelope::class, $next);
+            $envelope = $next;
+        }
+
         self::assertFalse($strategy->isRetryable($envelope, $this->handlerFailure($envelope, $this->http429('60'))));
     }
 

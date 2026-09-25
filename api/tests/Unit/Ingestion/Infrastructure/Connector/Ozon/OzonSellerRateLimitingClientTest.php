@@ -11,6 +11,8 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 
 /**
@@ -67,6 +69,27 @@ final class OzonSellerRateLimitingClientTest extends TestCase
         $client->request('POST', '/v3/product/list', $this->as('shop-1'));
     }
 
+    public function testShortPauseDoesNotShortenALongOne(): void
+    {
+        $calls = 0;
+        $client = $this->client($calls, [
+            new MockResponse('{}', ['http_code' => 429, 'response_headers' => ['Retry-After' => '600']]),
+        ]);
+        $client->request('POST', '/v2/posting/fbo/list', $this->as('shop-1'));
+
+        // Пауза по Ratelimit-Remaining: 0 из соседнего воркера пришла позже,
+        // но 10 минут, которые попросил Ozon, остаются.
+        $reflection = new \ReflectionMethod($client, 'pause');
+        $reflection->invoke($client, 'ozon_seller_pause.'.hash('sha256', 'shop-1|POST /v2/posting/fbo/list'), 1);
+
+        try {
+            $client->request('POST', '/v2/posting/fbo/list', $this->as('shop-1'));
+            self::fail('Запрос во время паузы ушёл в Ozon.');
+        } catch (OzonSellerRateLimited $paused) {
+            self::assertGreaterThan(500, $paused->retryAfterSeconds);
+        }
+    }
+
     public function testOrdinaryResponseLeavesNoPause(): void
     {
         $calls = 0;
@@ -118,7 +141,7 @@ final class OzonSellerRateLimitingClientTest extends TestCase
             return $response;
         }, 'https://api-seller.ozon.ru');
 
-        return new OzonSellerRateLimitingClient($mock, new ArrayAdapter());
+        return new OzonSellerRateLimitingClient($mock, new ArrayAdapter(), new LockFactory(new InMemoryStore()));
     }
 
     /**
