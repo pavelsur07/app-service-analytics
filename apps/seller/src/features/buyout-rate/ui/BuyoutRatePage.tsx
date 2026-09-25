@@ -14,7 +14,10 @@ import {
   parseBuyoutSort,
   parseBuyoutSortDirection,
 } from '../lib/buyoutParams'
-import { formatRateBps } from '../lib/buyoutStatusPresentation'
+import {
+  forecastCoverageLabel,
+  formatRateBps,
+} from '../lib/buyoutStatusPresentation'
 import { useBuyoutRates } from '../model/useBuyoutRates'
 import { BuyoutRateTable } from './BuyoutRateTable'
 
@@ -177,7 +180,15 @@ export function BuyoutRatePage() {
                   {query.data.summary.projectedBuyoutRateBps === null ||
                   query.data.summary.projectedBuyoutRateBps === undefined
                     ? 'Недостаточно данных для прогноза выкупа'
-                    : `${formatRateBps(query.data.summary.projectedBuyoutRateBps)} прогноз выкупа`}
+                    : [
+                        `${formatRateBps(query.data.summary.projectedBuyoutRateBps)} прогноз выкупа`,
+                        forecastCoverageLabel(
+                          query.data.summary.projectedBuyoutRateBps,
+                          query.data.summary.unestimatedRateBps,
+                        ),
+                      ]
+                        .filter((part) => part !== null)
+                        .join(' ')}
                   {' · '}
                   {formatRateBps(query.data.summary.resolutionRateBps)} заказов
                   разрешилось

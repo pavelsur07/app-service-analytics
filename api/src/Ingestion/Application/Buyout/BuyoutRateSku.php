@@ -28,6 +28,7 @@ final readonly class BuyoutRateSku
         public ?int $t2RateBps,
         public ?int $partialReturnRateBps,
         public string $maturityStatus,
+        public ?int $unestimatedRateBps,
     ) {
     }
 }

@@ -39,6 +39,7 @@ final readonly class BuyoutDailyQuery
         $inFlightWithinLimit = BuyoutMaturityQuery::inFlightWithinLimitSql('quantity', 'is_in_flight');
         $trainingSample = BuyoutForecastQuery::MIN_TRAINING_QUANTITY;
         $forecastAggregates = BuyoutForecastQuery::forecastAggregatesSql();
+        $unestimatedRate = BuyoutForecastQuery::unestimatedRateSql('unestimated_quantity', 'ordered_quantity');
         $handoverCurve = BuyoutForecastQuery::handoverCurveCtes();
         $handoverFactorJoin = BuyoutForecastQuery::handoverFactorJoinSql('o');
         $projectedRate = BuyoutForecastQuery::projectedRateSql('projected_quantity', 'projected_eligible_quantity', 'ordered_quantity', 'unestimated_quantity');
@@ -147,6 +148,7 @@ final readonly class BuyoutDailyQuery
                         ELSE NULL END AS known_buyout_rate_bps,
                    {$projectedRate} AS projected_buyout_rate_bps,
                    ROUND(10000::numeric * resolved_quantity / NULLIF(ordered_quantity, 0))::int AS resolution_rate_bps,
+                   {$unestimatedRate} AS unestimated_rate_bps,
                    ordered_quantity,
                    resolved_quantity,
                    {$projectedQuantity} AS projected_buyout_quantity,
@@ -191,6 +193,7 @@ final readonly class BuyoutDailyQuery
             maturityStatus: self::maturityStatus($row['maturity_status'] ?? null),
             inFlightRateBps: self::nullableInteger($row['in_flight_rate_bps'] ?? null),
             knownBuyoutRateBps: self::nullableInteger($row['known_buyout_rate_bps'] ?? null),
+            unestimatedRateBps: self::nullableInteger($row['unestimated_rate_bps'] ?? null),
         );
     }
 

@@ -6,7 +6,7 @@ namespace App\Ingestion\Ui\Response\Buyout;
 
 use OpenApi\Attributes as OA;
 
-#[OA\Schema(required: ['marketplaceSku', 'offerId', 'name', 'orderedQuantity', 'resolvedQuantity', 'deliveredQuantity', 'actualBuyoutBaseQuantity', 'actualBuyoutRateBps', 'projectedBuyoutQuantity', 'projectedBuyoutRateBps', 't1RateBps', 't2RateBps', 'partialReturnRateBps', 'maturityStatus', 'resolutionRateBps'])]
+#[OA\Schema(required: ['marketplaceSku', 'offerId', 'name', 'orderedQuantity', 'resolvedQuantity', 'deliveredQuantity', 'actualBuyoutBaseQuantity', 'actualBuyoutRateBps', 'projectedBuyoutQuantity', 'projectedBuyoutRateBps', 't1RateBps', 't2RateBps', 'partialReturnRateBps', 'maturityStatus', 'resolutionRateBps', 'unestimatedRateBps'])]
 final readonly class BuyoutRateItemResponse
 {
     public function __construct(
@@ -26,6 +26,8 @@ final readonly class BuyoutRateItemResponse
         #[OA\Property(enum: ['mature', 'preliminary'])]
         public string $maturityStatus,
         public ?int $resolutionRateBps,
+        #[OA\Property(description: 'Доля заказанного количества без оценки прогноза (ADR-031, ADR-033), bps; прогноз построен по остальным')]
+        public ?int $unestimatedRateBps,
     ) {
     }
 }

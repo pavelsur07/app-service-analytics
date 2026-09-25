@@ -22,6 +22,7 @@ const ITEM: BuyoutRateItem = {
   partialReturnRateBps: 291,
   maturityStatus: 'mature',
   resolutionRateBps: 7503,
+  unestimatedRateBps: 0,
 }
 
 describe('таблица выкупа', () => {
@@ -43,6 +44,23 @@ describe('таблица выкупа', () => {
     expect(html).toContain('886 из 1 949 шт')
     expect(html).toContain('Прогноз 50% · ожидается 975 шт')
     expect(html).not.toContain('975 из 2 715 шт')
+  })
+
+  it('называет долю заказов, по которой построен прогноз', () => {
+    const html = renderToStaticMarkup(
+      <BuyoutRateTable
+        companyId="company-1"
+        days={30}
+        direction="desc"
+        expandedSku={null}
+        items={[{ ...ITEM, unestimatedRateBps: 400 }]}
+        onExpandedSkuChange={() => undefined}
+        onSort={() => undefined}
+        sort="ordered"
+      />,
+    )
+
+    expect(html).toContain('Прогноз 50% · по 96% заказов · ожидается')
   })
 
   it('обозначает активную сортировку доступным атрибутом', () => {

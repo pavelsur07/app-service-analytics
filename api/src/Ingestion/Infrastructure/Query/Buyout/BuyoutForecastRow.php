@@ -14,6 +14,7 @@ final readonly class BuyoutForecastRow
         public ?int $projectedBuyoutQuantity,
         public ?int $projectedBuyoutRateBps,
         public int $resolutionRateBps,
+        public ?int $unestimatedRateBps,
     ) {
     }
 }

@@ -701,6 +701,8 @@ export interface components {
             projectedBuyoutQuantity: number | null;
             projectedBuyoutRateBps: number | null;
             resolutionRateBps: number | null;
+            /** @description Доля заказанного количества без оценки прогноза (ADR-031, ADR-033), bps; прогноз построен по остальным */
+            unestimatedRateBps: number | null;
         };
         BuyoutRateItemResponse: {
             marketplaceSku: string;
@@ -719,6 +721,8 @@ export interface components {
             /** @enum {string} */
             maturityStatus: "mature" | "preliminary";
             resolutionRateBps: number | null;
+            /** @description Доля заказанного количества без оценки прогноза (ADR-031, ADR-033), bps; прогноз построен по остальным */
+            unestimatedRateBps: number | null;
         };
         BuyoutRateListResponse: {
             summary: components["schemas"]["BuyoutRateSummaryResponse"];
@@ -797,6 +801,8 @@ export interface components {
             maturityStatus: "mature" | "preliminary";
             /** @description Доля количества в доставке, bps */
             inFlightRateBps: number | null;
+            /** @description Доля заказанного количества без оценки прогноза (ADR-031, ADR-033), bps; прогноз построен по остальным */
+            unestimatedRateBps: number | null;
         };
         BuyoutDailyResponse: {
             marketplaceSku: string;

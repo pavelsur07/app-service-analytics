@@ -226,9 +226,11 @@ final class BuyoutForecastQueryTest extends KernelTestCase
         // 80% до передачи — 15,2 / 15,2; количество 15,2 × 20 / 19 = 16.
         self::assertSame(10000, $rows['MIXED']->projectedBuyoutRateBps);
         self::assertSame(16, $rows['MIXED']->projectedBuyoutQuantity);
+        self::assertSame(500, $rows['MIXED']->unestimatedRateBps);
         // 1 из 9 (11%) — больше порога.
         self::assertNull($rows['MOSTLY-UNKNOWN']->projectedBuyoutRateBps);
         self::assertNull($rows['MOSTLY-UNKNOWN']->projectedBuyoutQuantity);
+        self::assertSame(1111, $rows['MOSTLY-UNKNOWN']->unestimatedRateBps);
 
         // Сводка по штукам: 2 из 29 (6,9%) — есть, хотя один SKU без прогноза;
         // 21,6 × 29 / 27 = 23,2.
@@ -240,6 +242,7 @@ final class BuyoutForecastQueryTest extends KernelTestCase
         $summary = BuyoutForecastSummaryQuery::mapRow($summaryRow);
         self::assertSame(10000, $summary->projectedBuyoutRateBps);
         self::assertSame(23, $summary->projectedBuyoutQuantity);
+        self::assertSame(690, $summary->unestimatedRateBps);
 
         // Дневной ряд считается тем же правилом.
         $daily = array_map(BuyoutDailyQuery::mapRow(...), (new BuyoutDailyQuery($connection))
@@ -249,6 +252,7 @@ final class BuyoutForecastQueryTest extends KernelTestCase
         self::assertCount(1, $daily);
         self::assertSame(10000, $daily[0]->projectedBuyoutRateBps);
         self::assertSame(16, $daily[0]->projectedBuyoutQuantity);
+        self::assertSame(500, $daily[0]->unestimatedRateBps);
     }
 
     public function testHandedOverRateFollowsDaysInTransitCurve(): void

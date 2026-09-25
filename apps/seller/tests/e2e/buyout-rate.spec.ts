@@ -177,6 +177,7 @@ test.describe('buyout rate', () => {
           projectedBuyoutQuantity: 2,
           maturityStatus: 'mature',
           inFlightRateBps: 0,
+          unestimatedRateBps: 0,
         },
         {
           date: moscowDay(19),
@@ -188,6 +189,7 @@ test.describe('buyout rate', () => {
           projectedBuyoutQuantity: 1,
           maturityStatus: 'mature',
           inFlightRateBps: 0,
+          unestimatedRateBps: 0,
         },
       ],
     })

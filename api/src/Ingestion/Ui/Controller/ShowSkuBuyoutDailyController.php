@@ -71,6 +71,7 @@ final class ShowSkuBuyoutDailyController
             projectedBuyoutQuantity: $row->projectedBuyoutQuantity,
             maturityStatus: $row->maturityStatus,
             inFlightRateBps: $row->inFlightRateBps,
+            unestimatedRateBps: $row->unestimatedRateBps,
         );
     }
 

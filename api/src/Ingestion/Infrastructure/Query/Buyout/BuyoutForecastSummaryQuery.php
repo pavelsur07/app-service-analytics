@@ -36,6 +36,7 @@ final readonly class BuyoutForecastSummaryQuery
                 $quantity.' AS projected_buyout_quantity',
                 $rate.' AS projected_buyout_rate_bps',
                 'CASE WHEN COALESCE(SUM(ordered_quantity), 0) = 0 THEN NULL ELSE ROUND(10000::numeric * SUM(resolved_quantity) / SUM(ordered_quantity))::int END AS resolution_rate_bps',
+                BuyoutForecastQuery::unestimatedRateSql('SUM(unestimated_quantity)', 'SUM(ordered_quantity)').' AS unestimated_rate_bps',
             )
             ->from('('.$base->getSQL().')', 'forecast_summary')
             ->setParameters($base->getParameters(), $base->getParameterTypes());
@@ -52,6 +53,7 @@ final readonly class BuyoutForecastSummaryQuery
             projectedBuyoutQuantity: self::nullableInteger($row['projected_buyout_quantity'] ?? null),
             projectedBuyoutRateBps: self::nullableInteger($row['projected_buyout_rate_bps'] ?? null),
             resolutionRateBps: self::nullableInteger($row['resolution_rate_bps'] ?? null),
+            unestimatedRateBps: self::nullableInteger($row['unestimated_rate_bps'] ?? null),
         );
     }
 
@@ -66,6 +68,7 @@ final readonly class BuyoutForecastSummaryQuery
             'projected_buyout_quantity' => $row['summary_projected_buyout_quantity'] ?? null,
             'projected_buyout_rate_bps' => $row['summary_projected_buyout_rate_bps'] ?? null,
             'resolution_rate_bps' => $row['summary_resolution_rate_bps'] ?? null,
+            'unestimated_rate_bps' => $row['summary_unestimated_rate_bps'] ?? null,
         ]);
     }
 
