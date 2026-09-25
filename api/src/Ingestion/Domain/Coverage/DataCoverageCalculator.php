@@ -52,9 +52,13 @@ final class DataCoverageCalculator
                 $key = $day->format('Y-m-d');
                 $received[] = $covered[$key] ?? null;
                 $statuses[] = match (true) {
-                    $key > $dueUntil, $key < $dueFrom => DataCoverageStatus::Pending,
+                    $key > $dueUntil => DataCoverageStatus::Pending,
                     isset($covered[$key]) => DataCoverageStatus::Loaded,
+                    // Упавшая загрузка — ошибка и до первой выгрузки
+                    // источника: иначе источник, падающий с самого
+                    // подключения, прятался бы за «ещё рано».
                     isset($failed[$key]) => DataCoverageStatus::Failed,
+                    $key < $dueFrom => DataCoverageStatus::Pending,
                     default => DataCoverageStatus::Missing,
                 };
             }

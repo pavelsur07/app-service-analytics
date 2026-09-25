@@ -97,6 +97,17 @@ final class DataCoverageCalculatorTest extends TestCase
 
         $never = (new DataCoverageCalculator())->calculate($sources, [], [], $this->day('2026-09-01'), $this->day('2026-09-05'));
         self::assertSame(0, $never->rows[0]->due);
+
+        // Но упавшая загрузка — ошибка и до первой выгрузки: источник,
+        // падающий с самого подключения, не прячется за «ещё рано».
+        $failing = (new DataCoverageCalculator())->calculate(
+            $sources,
+            [],
+            [new CoverageFailure(MarketplaceReportType::OzonAdSkuDay, $this->day('2026-09-04'), $this->day('2026-09-04'))],
+            $this->day('2026-09-01'),
+            $this->day('2026-09-05'),
+        );
+        self::assertSame(['pending', 'pending', 'pending', 'failed', 'pending'], $this->statuses($failing->rows[0]->statuses, 5));
     }
 
     public function testFailureMarksOnlyDaysWithoutData(): void

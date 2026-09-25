@@ -65,12 +65,22 @@ final class FailedLoadsTest extends TestCase
                 [MarketplaceReportType::OzonAdExpense, '2026-08-27', '2026-09-25'],
                 [MarketplaceReportType::OzonAdDaily, '2026-08-27', '2026-09-25'],
                 [MarketplaceReportType::OzonAdCampaigns, '2026-09-25', '2026-09-25'],
-                [MarketplaceReportType::OzonAdSkuDay, '2026-09-24', '2026-09-25'],
+                [MarketplaceReportType::OzonAdSkuDay, '2026-09-25', '2026-09-25'],
+                [MarketplaceReportType::OzonAdSkuDay, '2026-09-24', '2026-09-24'],
             ],
             $this->ranges(FailedLoads::failuresOf($head, self::COMPANY, self::ACCOUNT, $failedOn)),
         );
         // Не головной кусок кампаний и products/sku не грузит.
         self::assertCount(2, FailedLoads::failuresOf($older, self::COMPANY, self::ACCOUNT, $failedOn));
+
+        // Кусок до 24-го, выполненный с отказом 25-го: products/sku — только
+        // за 24-е, сегодня (25-е) в кусок не входит.
+        $late = new FetchOzonAdCampaignStatsMessage(self::COMPANY, self::ACCOUNT, '2026-08-26', '2026-09-24', true);
+        $skuDays = array_values(array_filter(
+            $this->ranges(FailedLoads::failuresOf($late, self::COMPANY, self::ACCOUNT, $failedOn)),
+            static fn (array $range): bool => MarketplaceReportType::OzonAdSkuDay === $range[0],
+        ));
+        self::assertSame([[MarketplaceReportType::OzonAdSkuDay, '2026-09-24', '2026-09-24']], $skuDays);
     }
 
     public function testMessagesOfAnotherCompanyOrAccountAreIgnored(): void

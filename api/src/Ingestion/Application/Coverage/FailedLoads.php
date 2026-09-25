@@ -105,7 +105,8 @@ final readonly class FailedLoads
      * Головной кусок рекламы — тот, что кончается в последние 30 дней
      * на момент отказа (`OzonAdvertisingWindows::isHeadChunk`), — грузит
      * ещё список кампаний (день снимка — конец куска) и `products/sku`
-     * за вчера и сегодня.
+     * за вчера и сегодня на момент выполнения внутри куска
+     * (`OzonAdvertisingWindows::skuDays`); момент выполнения — день отказа.
      *
      * @return list<CoverageFailure>
      */
@@ -117,12 +118,12 @@ final readonly class FailedLoads
             return [];
         }
 
-        $yesterday = $end->modify('-1 day');
+        $failures = [new CoverageFailure(MarketplaceReportType::OzonAdCampaigns, $end, $end)];
+        foreach (OzonAdvertisingWindows::skuDays($start, $end, $failedOn) as $day) {
+            $failures[] = new CoverageFailure(MarketplaceReportType::OzonAdSkuDay, $day, $day);
+        }
 
-        return [
-            new CoverageFailure(MarketplaceReportType::OzonAdCampaigns, $end, $end),
-            new CoverageFailure(MarketplaceReportType::OzonAdSkuDay, $yesterday < $start ? $start : $yesterday, $end),
-        ];
+        return $failures;
     }
 
     private static function day(?string $value): ?\DateTimeImmutable
