@@ -7,7 +7,10 @@ namespace App\Ingestion\Domain\Coverage;
 /**
  * Считает отчёт о полноте данных за месяц (чистая функция, без базы).
  *
- * - День в будущем — «ещё рано».
+ * - День в будущем — «ещё рано». У источника с отставанием конца
+ *   диапазона (`rangeEndLagDays`, SKU-отчёт) «ещё рано» и последние дни
+ *   до сегодня: за них отвечает другой эндпоинт (`products/sku`),
+ *   и этот их не покроет никогда.
  * - Выгрузка покрывает день — «загружено», даже если по этому дню в
  *   `failed` лежит старое сообщение: данные есть, повтор уже не нужен.
  * - Нет выгрузки, но загрузка дня лежит в `failed` — «ошибка».
@@ -30,12 +33,12 @@ final class DataCoverageCalculator
         \DateTimeImmutable $today,
     ): DataCoverage {
         $days = self::days($monthStart);
-        $todayKey = $today->format('Y-m-d');
 
         $rows = [];
         foreach ($sources as $source) {
             $covered = $this->coveredDays($source, $documents);
             $failed = $this->failedDays($source, $failures);
+            $dueUntil = $today->modify('-'.$source->rangeEndLagDays.' days')->format('Y-m-d');
 
             $statuses = [];
             $received = [];
@@ -43,7 +46,7 @@ final class DataCoverageCalculator
                 $key = $day->format('Y-m-d');
                 $received[] = $covered[$key] ?? null;
                 $statuses[] = match (true) {
-                    $key > $todayKey => DataCoverageStatus::Pending,
+                    $key > $dueUntil => DataCoverageStatus::Pending,
                     isset($covered[$key]) => DataCoverageStatus::Loaded,
                     isset($failed[$key]) => DataCoverageStatus::Failed,
                     default => DataCoverageStatus::Missing,

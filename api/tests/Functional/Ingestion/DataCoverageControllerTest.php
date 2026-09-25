@@ -99,6 +99,17 @@ final class DataCoverageControllerTest extends WebTestCase
         self::assertSame('missing', $otherExpenses['statuses'][4]);
     }
 
+    public function testFailedLoadOfAnotherCompanyIsNotShown(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->account($company, advertising: false);
+        // Тот же кабинет, но сообщение чужой компании: сверка идёт по обоим.
+        $this->failed(new FetchOzonExpensesMessage('019fe6ea-0000-7000-8000-00000000c0de', $account->id()->toRfc4122(), '2026-08-05'));
+
+        self::assertSame('missing', $this->coverage($client, $company, $account, '2026-08')['rows'][1]['statuses'][4]);
+    }
+
     public function testMonthIsParsedStrictly(): void
     {
         $client = static::createClient();

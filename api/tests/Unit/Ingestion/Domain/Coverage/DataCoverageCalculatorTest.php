@@ -70,7 +70,10 @@ final class DataCoverageCalculatorTest extends TestCase
             today: '2026-09-05',
         );
 
-        self::assertSame(['loaded', 'loaded', 'loaded', 'missing', 'missing'], $this->statuses($coverage->rows[0]->statuses, 5));
+        // Вчера и сегодня отдаёт products/sku: для SKU-отчёта это не дыра,
+        // а дни, которые он не покроет никогда.
+        self::assertSame(['loaded', 'loaded', 'loaded', 'pending', 'pending'], $this->statuses($coverage->rows[0]->statuses, 5));
+        self::assertSame(3, $coverage->rows[0]->due);
     }
 
     public function testFailureMarksOnlyDaysWithoutData(): void

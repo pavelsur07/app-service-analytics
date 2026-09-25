@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, CircleX, Plug } from 'lucide-react'
+import { useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router'
 import type { components } from '../../../api/schema'
 import {
@@ -46,6 +47,16 @@ export function DataCoveragePage() {
     list[0]?.id ??
     null
   const coverage = useDataCoverage(companyId, accountId, month)
+
+  // Выбранный по умолчанию кабинет — сразу в адрес: ссылка должна
+  // однозначно называть, чей отчёт на экране.
+  useEffect(() => {
+    if (accountId !== null && params.get('account') !== accountId) {
+      const merged = new URLSearchParams(params)
+      merged.set('account', accountId)
+      setParams(merged, { replace: true })
+    }
+  }, [accountId, params, setParams])
 
   const update = (next: { account?: string; month?: string }) => {
     const merged = new URLSearchParams(params)
@@ -121,7 +132,29 @@ export function DataCoveragePage() {
         ))}
       </div>
 
-      {connections.isSuccess && list.length === 0 ? (
+      {connections.isError ? (
+        <Card tone="negative">
+          <StatusPanel
+            action={
+              <Button
+                onClick={() => {
+                  void connections.refetch()
+                }}
+                size="compact"
+                type="button"
+                variant="secondary"
+              >
+                Повторить
+              </Button>
+            }
+            description="Не удалось получить список кабинетов."
+            icon={<CircleX aria-hidden="true" size={20} />}
+            role="alert"
+            title="Ошибка загрузки"
+            tone="negative"
+          />
+        </Card>
+      ) : connections.isSuccess && list.length === 0 ? (
         <Card>
           <StatusPanel
             description="Подключите кабинет Ozon — и здесь появится карта загрузки."

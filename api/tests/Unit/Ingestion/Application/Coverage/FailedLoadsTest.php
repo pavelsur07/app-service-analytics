@@ -41,6 +41,12 @@ final class FailedLoadsTest extends TestCase
             [[MarketplaceReportType::OzonProductList, '2026-09-10', '2026-09-10'], [MarketplaceReportType::OzonProductInfoList, '2026-09-10', '2026-09-10']],
             $this->ranges(FailedLoads::failuresOf(new FetchOzonCatalogMessage(self::COMPANY, self::ACCOUNT), self::COMPANY, self::ACCOUNT, $failedOn)),
         );
+        // Проверка с концом периода — ровно её кусок, не 30 дней.
+        self::assertSame(
+            [[MarketplaceReportType::OzonAdSkuReport, '2026-09-01', '2026-09-15']],
+            $this->ranges(FailedLoads::failuresOf(new CheckOzonAdSkuReportMessage(self::COMPANY, self::ACCOUNT, '2026-09-01', '054cd190-6514-4465-8792-e3e11f396886', 3, null, '2026-09-15'), self::COMPANY, self::ACCOUNT, $failedOn)),
+        );
+        // Стоявшая в очереди до появления конца периода — не длиннее 30 дней.
         self::assertSame(
             [[MarketplaceReportType::OzonAdCpoOrders, '2026-08-01', '2026-08-30']],
             $this->ranges(FailedLoads::failuresOf(new CheckOzonAdSkuReportMessage(self::COMPANY, self::ACCOUNT, '2026-08-01', '054cd190-6514-4465-8792-e3e11f396886', 3, OzonAdReportKind::CpoOrders), self::COMPANY, self::ACCOUNT, $failedOn)),

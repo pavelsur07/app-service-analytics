@@ -5,21 +5,22 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Query\Coverage;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Query\QueryBuilder;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 
 /**
  * Упавшие сообщения кабинета из очереди `failed` — для статуса «ошибка»
  * в отчёте о полноте данных.
  *
- * Очередь — таблица Messenger, колонок компании в ней нет: отбор по тексту
- * тела лишь сужает выборку, а принадлежность решает вызывающий по
- * разобранному сообщению — компания и кабинет сверяются точно
- * (CLAUDE.md §1). Тело разбирает штатный сериализатор очереди; то, что
- * не разбирается (класс сообщения удалён), пропускается.
+ * Очередь — таблица Messenger, колонок компании в ней нет. Компания
+ * и кабинет всё равно стоят в условии запроса (CLAUDE.md §1) — отбором
+ * по тексту тела, — а точную принадлежность подтверждает разобранное
+ * сообщение (`FailedLoads`). Читается пачками по `id` от новых к старым:
+ * ни одно сообщение не отбрасывается молча.
  */
 final readonly class FailedMessagesQuery
 {
-    public const int MAX_MESSAGES = 1_000;
+    public const int BATCH = 500;
 
     private const string TIMEZONE = 'Europe/Moscow';
 
@@ -29,41 +30,66 @@ final readonly class FailedMessagesQuery
     }
 
     /**
-     * @return list<FailedMessage>
+     * Пачка до `BATCH` сообщений с `id` меньше `$beforeId` (`null` — с самого
+     * нового).
      */
-    public function forAccount(string $marketplaceAccountId): array
+    public function build(string $companyId, string $marketplaceAccountId, ?int $beforeId): QueryBuilder
     {
-        $rows = $this->connection->createQueryBuilder()
-            ->select('body', 'created_at')
+        $query = $this->connection->createQueryBuilder()
+            ->select('id', 'body', 'created_at')
             ->from('messenger_messages')
             ->where('queue_name = :failed')
+            ->andWhere('body LIKE :company')
             ->andWhere('body LIKE :account')
             ->setParameter('failed', 'failed')
+            ->setParameter('company', '%'.$companyId.'%')
             ->setParameter('account', '%'.$marketplaceAccountId.'%')
             ->orderBy('id', 'DESC')
-            ->setMaxResults(self::MAX_MESSAGES)
-            ->executeQuery()
-            ->fetchAllAssociative();
+            ->setMaxResults(self::BATCH);
 
-        $serializer = new PhpSerializer();
-        $messages = [];
-        foreach ($rows as $row) {
-            if (!\is_string($row['body']) || !\is_string($row['created_at'])) {
-                continue;
-            }
-            try {
-                // PhpSerializer читает только тело: заголовки ему не нужны.
-                $message = $serializer->decode(['body' => $row['body']])->getMessage();
-            } catch (\Throwable) {
-                continue;
-            }
-
-            $failedOn = (new \DateTimeImmutable($row['created_at'], new \DateTimeZone('UTC')))
-                ->setTimezone(new \DateTimeZone(self::TIMEZONE))
-                ->setTime(0, 0);
-            $messages[] = new FailedMessage($message, $failedOn);
+        if (null !== $beforeId) {
+            $query->andWhere('id < :before')->setParameter('before', $beforeId);
         }
 
-        return $messages;
+        return $query;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    public static function id(array $row): int
+    {
+        $id = $row['id'] ?? null;
+        if (!\is_int($id) && !(\is_string($id) && ctype_digit($id))) {
+            throw new \UnexpectedValueException('Failed message row has no id.');
+        }
+
+        return (int) $id;
+    }
+
+    /**
+     * Разобранное сообщение строки; `null`, если тело не разбирается
+     * (класс сообщения удалён) — в отчёт такое не попадает.
+     *
+     * @param array<string, mixed> $row
+     */
+    public static function decode(array $row): ?FailedMessage
+    {
+        if (!\is_string($row['body'] ?? null) || !\is_string($row['created_at'] ?? null)) {
+            return null;
+        }
+
+        try {
+            // PhpSerializer читает только тело: заголовки ему не нужны.
+            $message = (new PhpSerializer())->decode(['body' => $row['body']])->getMessage();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $failedOn = (new \DateTimeImmutable($row['created_at'], new \DateTimeZone('UTC')))
+            ->setTimezone(new \DateTimeZone(self::TIMEZONE))
+            ->setTime(0, 0);
+
+        return new FailedMessage($message, $failedOn);
     }
 }

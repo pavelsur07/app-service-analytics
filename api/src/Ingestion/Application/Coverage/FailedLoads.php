@@ -25,6 +25,9 @@ final readonly class FailedLoads
 {
     private const string TIMEZONE = 'Europe/Moscow';
 
+    /** Потолок чтения очереди `failed` на отчёт: 40 пачек по 500. */
+    private const int MAX_BATCHES = 40;
+
     public function __construct(
         private FailedMessagesQuery $failedMessages,
     ) {
@@ -36,13 +39,29 @@ final readonly class FailedLoads
     public function forAccount(string $companyId, string $marketplaceAccountId): array
     {
         $failures = [];
-        foreach ($this->failedMessages->forAccount($marketplaceAccountId) as $failed) {
-            foreach (self::failuresOf($failed->message, $companyId, $marketplaceAccountId, $failed->failedOn) as $failure) {
-                $failures[] = $failure;
+        $before = null;
+        for ($batch = 0; $batch < self::MAX_BATCHES; ++$batch) {
+            $rows = $this->failedMessages->build($companyId, $marketplaceAccountId, $before)->executeQuery()->fetchAllAssociative();
+            foreach ($rows as $row) {
+                $before = FailedMessagesQuery::id($row);
+                $failed = FailedMessagesQuery::decode($row);
+                if (null === $failed) {
+                    continue;
+                }
+                foreach (self::failuresOf($failed->message, $companyId, $marketplaceAccountId, $failed->failedOn) as $failure) {
+                    $failures[] = $failure;
+                }
+            }
+
+            if (\count($rows) < FailedMessagesQuery::BATCH) {
+                return $failures;
             }
         }
 
-        return $failures;
+        // Громко, не тихая обрезка: десятки тысяч упавших загрузок одного
+        // кабинета — авария, и отчёт без части ошибок показал бы их «нет
+        // данных» вместо «ошибка».
+        throw new \RuntimeException('Failed messages of the account exceed the safety ceiling of the coverage report.');
     }
 
     /**
@@ -75,12 +94,7 @@ final readonly class FailedLoads
                 ...$range(MarketplaceReportType::OzonAdDaily, $message->from, $message->to),
             ],
             $message instanceof OrderOzonAdSkuReportMessage => $range(OzonAdReportKind::rawType($message->reportKind()), $message->from, $message->to),
-            // У проверки отчёта только начало периода; кусок — не длиннее 30 дней.
-            $message instanceof CheckOzonAdSkuReportMessage => $range(
-                OzonAdReportKind::rawType($message->reportKind()),
-                $message->from,
-                self::day($message->from)?->modify('+29 days')->format('Y-m-d'),
-            ),
+            $message instanceof CheckOzonAdSkuReportMessage => $range(OzonAdReportKind::rawType($message->reportKind()), $message->from, $message->periodTo()),
             default => [],
         };
     }
