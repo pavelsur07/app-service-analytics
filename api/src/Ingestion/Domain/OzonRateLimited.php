@@ -20,14 +20,32 @@ final class OzonRateLimited
 
     public static function is(\Throwable $failure): bool
     {
+        return 429 === self::statusOf($failure);
+    }
+
+    /**
+     * Код отказа 4xx из исключения клиента; `null` для сетевых сбоев и 5xx —
+     * у них исход неизвестен, и решение о повторе остаётся за очередью.
+     */
+    public static function clientErrorStatus(\Throwable $failure): ?int
+    {
+        $status = self::statusOf($failure);
+
+        return null !== $status && $status >= 400 && $status < 500 ? $status : null;
+    }
+
+    private static function statusOf(\Throwable $failure): ?int
+    {
         if (!$failure instanceof HttpClientException || !method_exists($failure, 'getResponse')) {
-            return false;
+            return null;
         }
 
         try {
-            return 429 === $failure->getResponse()->getStatusCode();
+            $status = $failure->getResponse()->getStatusCode();
         } catch (\Throwable) {
-            return false;
+            return null;
         }
+
+        return \is_int($status) ? $status : null;
     }
 }

@@ -16,7 +16,6 @@ use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonRateLimited;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
-use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Uid\Uuid;
@@ -86,7 +85,11 @@ final readonly class CheckOzonAdSkuReportHandler
             }
         } catch (\Throwable $failure) {
             if (OzonRateLimited::is($failure)) {
-                throw new RecoverableMessageHandlingException("Ozon refused the SKU report check by rate limit for account {$message->marketplaceAccountId}.", previous: $failure, retryDelay: OrderOzonAdSkuReportHandler::RATE_LIMIT_RETRY_MS);
+                // Отказ лимита считается проверкой: потолок тот же,
+                // бесконечной петли нет.
+                $this->checkAgain($message, 'отказ лимита площадки (429)');
+
+                return;
             }
             if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
                 throw $failure;
@@ -104,8 +107,13 @@ final readonly class CheckOzonAdSkuReportHandler
             return;
         }
 
+        $this->checkAgain($message, 'отчёт не сформирован');
+    }
+
+    private function checkAgain(CheckOzonAdSkuReportMessage $message, string $reason): void
+    {
         if ($message->attempt >= self::MAX_ATTEMPTS) {
-            $this->giveUp($message, 'исчерпан потолок проверок');
+            $this->giveUp($message, "исчерпан потолок проверок: {$reason}");
 
             return;
         }

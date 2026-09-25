@@ -32,7 +32,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Uid\Uuid;
@@ -176,7 +175,7 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         self::assertSame(30_000, $envelopes[0]->last(DelayStamp::class)?->getDelay());
     }
 
-    public function testRateLimitedOrderIsRetriedLaterWithoutSpendingAttempts(): void
+    public function testRateLimitedOrderIsRetriedLaterWithinACeiling(): void
     {
         $container = $this->bootedContainer();
         $account = $this->account($container);
@@ -184,9 +183,37 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         $fetcher->failOrdersWith($this->httpFailure(429));
 
         // У кабинета уже формируется отчёт — площадка держит «один
-        // одновременно» сама, мы просто повторяем позже.
-        $this->expectException(RecoverableMessageHandlingException::class);
+        // одновременно» сама, мы повторяем через минуту новым сообщением.
         $this->order($container, $account);
+
+        $retries = $this->sentEnvelopes($container, OrderOzonAdSkuReportMessage::class);
+        self::assertCount(1, $retries);
+        $retry = $retries[0]->getMessage();
+        self::assertInstanceOf(OrderOzonAdSkuReportMessage::class, $retry);
+        self::assertSame(2, $retry->attempt);
+        self::assertSame(60_000, $retries[0]->last(DelayStamp::class)?->getDelay());
+
+        // Постоянный отказ (исчерпан суточный лимит) — не бесконечная
+        // петля, а предупреждение на потолке.
+        $this->order($container, $account, attempt: OrderOzonAdSkuReportHandler::MAX_ATTEMPTS);
+        self::assertCount(1, $this->sentEnvelopes($container, OrderOzonAdSkuReportMessage::class));
+        self::assertSame(1, $this->warningsContaining($container, 'SKU-отчёт рекламы Ozon не заказан'));
+    }
+
+    public function testRejectedOrderGivesUpVisiblyWithoutRetry(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+        $fetcher->failOrdersWith($this->httpFailure(400));
+
+        // Период глубже истории отчёта и подобное: повтор ответа
+        // не изменит, отказ виден в журнале, очередь им не засоряется.
+        $this->order($container, $account);
+
+        self::assertSame([], $this->sentEnvelopes($container, OrderOzonAdSkuReportMessage::class));
+        self::assertSame([], $this->sentEnvelopes($container, CheckOzonAdSkuReportMessage::class));
+        self::assertSame(1, $this->warningsContaining($container, 'SKU-отчёт рекламы Ozon не заказан'));
     }
 
     public function testReadyReportIsStoredAsReceived(): void
@@ -399,11 +426,11 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         $handler(new FetchOzonAdCampaignStatsMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), $from, $to, $withReports));
     }
 
-    private function order(ContainerInterface $container, MarketplaceAccount $account): void
+    private function order(ContainerInterface $container, MarketplaceAccount $account, int $attempt = 1): void
     {
         $handler = $container->get(OrderOzonAdSkuReportHandler::class);
         \assert($handler instanceof OrderOzonAdSkuReportHandler);
-        $handler(new OrderOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-25', '2026-09-23', ['14275771', '16017246']));
+        $handler(new OrderOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-25', '2026-09-23', ['14275771', '16017246'], $attempt));
     }
 
     private function check(ContainerInterface $container, MarketplaceAccount $account, int $attempt): void

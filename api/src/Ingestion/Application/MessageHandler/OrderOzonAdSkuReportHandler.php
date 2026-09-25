@@ -14,7 +14,6 @@ use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonRateLimited;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
-use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 
@@ -24,9 +23,10 @@ use Symfony\Component\Messenger\Stamp\DelayStamp;
  * это минута занятого воркера на каждый отчёт.
  *
  * Из ответа читается только UUID. Отказ лимита (429) — в том числе
- * «у кабинета уже формируется отчёт» — повторяется через минуту и попыток
- * очереди не расходует. Повторная доставка сообщения закажет отчёт ещё
- * раз: это цена схемы без таблиц, лишняя выгрузка из суточного лимита.
+ * «у кабинета уже формируется отчёт» — повторяется через минуту с потолком
+ * попыток; прочий отказ 4xx — предупреждение в журнал. Повторная доставка
+ * сообщения закажет отчёт ещё раз: это согласованное отступление
+ * от CLAUDE.md §4 (ADR-026 п. 4), лишняя выгрузка из суточного лимита.
  */
 #[AsMessageHandler]
 final readonly class OrderOzonAdSkuReportHandler
@@ -34,6 +34,9 @@ final readonly class OrderOzonAdSkuReportHandler
     public const int FIRST_CHECK_DELAY_MS = 30_000;
 
     public const int RATE_LIMIT_RETRY_MS = 60_000;
+
+    /** Попыток заказа на отказах лимита: раз в минуту — около часа. */
+    public const int MAX_ATTEMPTS = 60;
 
     public function __construct(
         private IdentityFacade $identityFacade,
@@ -69,23 +72,70 @@ final readonly class OrderOzonAdSkuReportHandler
             $token = $this->client->token($target->performanceClientId, $target->performanceClientSecret);
             $body = $this->client->orderSkuReport($token, $message->campaignIds, $from, $to);
         } catch (\Throwable $failure) {
+            if (OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
+                $this->brokenLogger->log($target->companyId, $target->marketplaceAccountId, 'advertising', $failure, $target->performanceClientSecret);
+                $this->identityFacade->markOzonAdvertisingBroken($target->companyId, $target->marketplaceAccountId, $target->version);
+
+                return;
+            }
             if (OzonRateLimited::is($failure)) {
-                throw new RecoverableMessageHandlingException("Ozon refused the SKU report order by rate limit for account {$message->marketplaceAccountId}.", previous: $failure, retryDelay: self::RATE_LIMIT_RETRY_MS);
+                $this->retryLater($message);
+
+                return;
             }
-            if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
-                throw $failure;
+            $status = OzonRateLimited::clientErrorStatus($failure);
+            if (null !== $status) {
+                // Отказ площадки 4xx — заказ точно не состоялся, и повтор
+                // того же запроса ответ не изменит (например, период
+                // глубже истории отчёта).
+                $this->giveUp($message, "площадка отклонила заказ: HTTP {$status}");
+
+                return;
             }
 
-            $this->brokenLogger->log($target->companyId, $target->marketplaceAccountId, 'advertising', $failure, $target->performanceClientSecret);
-            $this->identityFacade->markOzonAdvertisingBroken($target->companyId, $target->marketplaceAccountId, $target->version);
-
-            return;
+            throw $failure;
         }
 
         $this->bus->dispatch(
             new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, self::uuid($body), 1),
             [new DelayStamp(self::FIRST_CHECK_DELAY_MS)],
         );
+    }
+
+    /**
+     * Отказ лимита — в том числе «у кабинета уже формируется отчёт» —
+     * повторяется через минуту новым сообщением, а не исключением очереди:
+     * у повтора есть потолок, и постоянный отказ (исчерпан суточный лимит)
+     * заканчивается предупреждением, а не бесконечной петлёй.
+     */
+    private function retryLater(OrderOzonAdSkuReportMessage $message): void
+    {
+        if ($message->attempt >= self::MAX_ATTEMPTS) {
+            $this->giveUp($message, 'отказ лимита площадки (429) до потолка попыток');
+
+            return;
+        }
+
+        $this->bus->dispatch(
+            new OrderOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $message->to, $message->campaignIds, $message->attempt + 1),
+            [new DelayStamp(self::RATE_LIMIT_RETRY_MS)],
+        );
+    }
+
+    /**
+     * Сигнал, а не тишина: незаказанный отчёт виден в журнале уровнем
+     * `warning` (порог prod-журнала).
+     */
+    private function giveUp(OrderOzonAdSkuReportMessage $message, string $reason): void
+    {
+        $this->logger->warning('SKU-отчёт рекламы Ozon не заказан', [
+            'company_id' => $message->companyId,
+            'marketplace_account_id' => $message->marketplaceAccountId,
+            'period_from' => $message->from,
+            'period_to' => $message->to,
+            'attempt' => $message->attempt,
+            'reason' => $reason,
+        ]);
     }
 
     private static function uuid(string $body): string

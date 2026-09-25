@@ -19,6 +19,8 @@ final readonly class OrderOzonAdSkuReportMessage
         public string $from,
         public string $to,
         public array $campaignIds,
+        /** Номер попытки заказа, с единицы: растёт на отказах лимита (429). */
+        public int $attempt = 1,
     ) {
     }
 }

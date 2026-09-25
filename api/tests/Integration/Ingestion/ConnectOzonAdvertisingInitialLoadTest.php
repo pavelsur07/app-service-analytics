@@ -12,6 +12,7 @@ use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\UserRepository;
 use App\Ingestion\Application\ConnectAdvertisingResult;
 use App\Ingestion\Application\ConnectOzonAdvertisingAction;
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonAdCampaignListParser;
 use App\Ingestion\Domain\OzonAdCampaignProductsParser;
 use App\Ingestion\Domain\OzonAdvertisingFetcher;
@@ -19,6 +20,7 @@ use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkuMatchQuery;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
+use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
 use Monolog\Handler\TestHandler;
@@ -78,6 +80,7 @@ final class ConnectOzonAdvertisingInitialLoadTest extends KernelTestCase
                     throw new \RuntimeException('Транспорт очереди недоступен.');
                 }
             },
+            MarketplaceRawDocumentBuilder::repository($container),
         );
 
         $result = $action(
@@ -97,6 +100,13 @@ final class ConnectOzonAdvertisingInitialLoadTest extends KernelTestCase
             [$company->id()->toRfc4122(), $account->id()->toRfc4122()],
         ));
         self::assertTrue($log->hasWarningThatContains('Первичная загрузка рекламы не поставлена в очередь'));
+        // Список кампаний из пробы сохранён до постановки кусков: по нему
+        // куски первичной загрузки заказывают SKU-отчёты, не запрашивая
+        // его заново.
+        self::assertEquals(1, $connection->fetchOne(
+            'SELECT count(*) FROM marketplace_raw_document WHERE company_id = ? AND marketplace_account_id = ? AND report_type = ?',
+            [$company->id()->toRfc4122(), $account->id()->toRfc4122(), MarketplaceReportType::OzonAdCampaigns],
+        ));
         foreach ($log->getRecords() as $record) {
             self::assertStringNotContainsString('perf-secret', json_encode($record->context, \JSON_THROW_ON_ERROR));
         }

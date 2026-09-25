@@ -7,6 +7,9 @@ namespace App\Ingestion\Application;
 use App\Identity\Application\Facade\CredentialsReplacementOutcome;
 use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
+use App\Ingestion\Domain\MarketplaceRawDocument;
+use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonAdCampaign;
 use App\Ingestion\Domain\OzonAdCampaignListParser;
 use App\Ingestion\Domain\OzonAdCampaignProductsParser;
@@ -15,6 +18,7 @@ use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkuMatchQuery;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
 
@@ -57,6 +61,7 @@ final readonly class ConnectOzonAdvertisingAction
         private IdentityFacade $identityFacade,
         private LoggerInterface $logger,
         private MessageBusInterface $bus,
+        private MarketplaceRawDocumentRepository $rawDocuments,
     ) {
     }
 
@@ -74,7 +79,8 @@ final readonly class ConnectOzonAdvertisingAction
 
         try {
             $token = $this->fetcher->token($performanceClientId, $performanceClientSecret);
-            $campaigns = $this->campaignParser->parse($this->fetcher->campaigns($token));
+            $campaignList = $this->fetcher->campaigns($token);
+            $campaigns = $this->campaignParser->parse($campaignList);
             $skus = $this->probedSkus($token, $campaigns);
         } catch (\Throwable $failure) {
             return $this->classifyProbeFailure($failure, $performanceClientId);
@@ -93,7 +99,7 @@ final readonly class ConnectOzonAdvertisingAction
             $actorUserId,
         );
         if (CredentialsReplacementOutcome::Replaced === $outcome) {
-            $this->scheduleInitialLoad($companyId, $marketplaceAccountId);
+            $this->scheduleInitialLoad($companyId, $marketplaceAccountId, $campaignList);
         }
 
         return match ($outcome) {
@@ -200,16 +206,27 @@ final readonly class ConnectOzonAdvertisingAction
      * восстанавливает повторный ввод того же ключа: он ставит первичную
      * загрузку заново, повтор кусков идемпотентен. Секрета в записи нет.
      */
-    private function scheduleInitialLoad(string $companyId, string $marketplaceAccountId): void
+    private function scheduleInitialLoad(string $companyId, string $marketplaceAccountId, string $campaignList): void
     {
         $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
 
         try {
+            // Список кампаний из пробы — сразу в raw: по нему куски первичной
+            // загрузки заказывают SKU-отчёты, и ни одному не придётся
+            // запрашивать его заново (лимит площадки, 429).
+            $this->rawDocuments->add(MarketplaceRawDocument::capture(
+                companyId: Uuid::fromString($companyId),
+                marketplaceAccountId: Uuid::fromString($marketplaceAccountId),
+                reportType: MarketplaceReportType::OzonAdCampaigns,
+                period: $today,
+                rawBody: $campaignList,
+            ));
+
             foreach (OzonAdvertisingWindows::initial($today) as $chunk) {
                 $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to'], withReports: true));
             }
         } catch (\Throwable $failure) {
-            $this->logger->warning('Первичная загрузка рекламы не поставлена в очередь — ключ сохранён, история глубже 184 дней потребует повторного ввода ключа', [
+            $this->logger->warning('Первичная загрузка рекламы не поставлена в очередь — ключ сохранён, история глубже 184 дней потребует повторного ввода ключа или консольной команды', [
                 'company_id' => $companyId,
                 'marketplace_account_id' => $marketplaceAccountId,
                 'exception_class' => $failure::class,
