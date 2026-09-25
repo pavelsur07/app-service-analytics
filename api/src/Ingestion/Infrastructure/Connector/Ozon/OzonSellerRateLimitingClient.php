@@ -7,6 +7,7 @@ namespace App\Ingestion\Infrastructure\Connector\Ozon;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\DependencyInjection\Attribute\AsDecorator;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
 use Symfony\Component\HttpClient\DecoratorTrait;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -23,8 +24,9 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  * - 429 — пауза для пары «Client-Id + метод» на `Retry-After` секунд
  *   (нет заголовка — 60).
  * - `Ratelimit-Remaining: 0` — пауза на секунду, не дожидаясь 429.
- * - Перед запросом пауза проверяется: пока она идёт, запрос в Ozon
- *   не уходит — `OzonSellerRateLimited`. Иначе после первого 429 остальные
+ * - Перед запросом пауза проверяется: короткую (до 5 секунд) обёртка
+ *   пережидает сама, длинная — запрос в Ozon не уходит,
+ *   `OzonSellerRateLimited`. Иначе после первого 429 остальные
  *   сообщения того же кабинета долбили бы метод одинаковыми запросами,
  *   а за это Ozon ограничивает доступ к Seller API без предупреждения.
  *
@@ -36,17 +38,34 @@ final class OzonSellerRateLimitingClient implements HttpClientInterface
 {
     use DecoratorTrait;
 
+    /** @var \Closure(int): void */
+    private readonly \Closure $sleep;
+
     private const int DEFAULT_RETRY_AFTER_SECONDS = 60;
 
     private const int MAX_RETRY_AFTER_SECONDS = 3_600;
 
+    /**
+     * Паузу не длиннее этой обёртка пережидает сама, не бросая исключения.
+     * Постраничная выгрузка (возвраты, расходы по курсору, каталог) иначе
+     * обрывалась бы посреди на `Ratelimit-Remaining: 0` и начиналась
+     * с первой страницы — те же запросы по кругу.
+     */
+    private const int MAX_INLINE_WAIT_SECONDS = 5;
+
     public function __construct(
+        #[AutowireDecorated]
         HttpClientInterface $client,
         #[Autowire(service: 'cache.ozon_seller_limit')]
         private readonly CacheItemPoolInterface $pauses,
         private readonly LockFactory $locks,
+        /* @var \Closure(int): void|null подмена ожидания в тестах */
+        ?\Closure $sleep = null,
     ) {
         $this->client = $client;
+        $this->sleep = $sleep ?? static function (int $seconds): void {
+            sleep($seconds);
+        };
     }
 
     /**
@@ -58,6 +77,10 @@ final class OzonSellerRateLimitingClient implements HttpClientInterface
         $key = self::key(self::clientId($options), $method, $path);
 
         $remaining = $this->pauseRemaining($key);
+        if (null !== $remaining && $remaining <= self::MAX_INLINE_WAIT_SECONDS) {
+            ($this->sleep)($remaining);
+            $remaining = $this->pauseRemaining($key);
+        }
         if (null !== $remaining) {
             throw new OzonSellerRateLimited($remaining, $method, $path);
         }

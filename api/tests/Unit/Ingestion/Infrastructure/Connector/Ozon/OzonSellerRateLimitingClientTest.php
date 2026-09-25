@@ -58,15 +58,46 @@ final class OzonSellerRateLimitingClientTest extends TestCase
         self::assertSame(3, $calls);
     }
 
-    public function testExhaustedRemainingPausesBeforeA429(): void
+    public function testExhaustedRemainingIsWaitedOutWithoutBreakingThePage(): void
     {
         $calls = 0;
-        $client = $this->client($calls, [new MockResponse('{}', ['response_headers' => ['Ratelimit-Remaining' => '0']])]);
+        $slept = [];
+        $pauses = new ArrayAdapter();
+        $client = $this->client($calls, [
+            new MockResponse('{}', ['response_headers' => ['Ratelimit-Remaining' => '0']]),
+            new MockResponse('{}'),
+        ], $pauses, static function (int $seconds) use (&$slept, $pauses): void {
+            $slept[] = $seconds;
+            $pauses->clear();
+        });
+
+        $client->request('POST', '/v1/returns/list', $this->as('shop-1'));
+        // Следующая страница той же выгрузки: секунду переждали, запрос ушёл —
+        // выгрузка не обрывается и не начинается с первой страницы.
+        $client->request('POST', '/v1/returns/list', $this->as('shop-1'));
+
+        self::assertSame([1], $slept);
+        self::assertSame(2, $calls);
+    }
+
+    public function testLongPauseIsNotWaitedInsideTheRequest(): void
+    {
+        $calls = 0;
+        $slept = [];
+        $client = $this->client($calls, [
+            new MockResponse('{}', ['http_code' => 429, 'response_headers' => ['Retry-After' => '30']]),
+        ], null, static function (int $seconds) use (&$slept): void {
+            $slept[] = $seconds;
+        });
 
         $client->request('POST', '/v3/product/list', $this->as('shop-1'));
 
-        $this->expectException(OzonSellerRateLimited::class);
-        $client->request('POST', '/v3/product/list', $this->as('shop-1'));
+        try {
+            $client->request('POST', '/v3/product/list', $this->as('shop-1'));
+            self::fail('Запрос во время паузы ушёл в Ozon.');
+        } catch (OzonSellerRateLimited) {
+        }
+        self::assertSame([], $slept);
     }
 
     public function testShortPauseDoesNotShortenALongOne(): void
@@ -129,9 +160,10 @@ final class OzonSellerRateLimitingClientTest extends TestCase
     }
 
     /**
-     * @param list<MockResponse> $responses
+     * @param list<MockResponse>         $responses
+     * @param (\Closure(int): void)|null $sleep
      */
-    private function client(int &$calls, array $responses): OzonSellerRateLimitingClient
+    private function client(int &$calls, array $responses, ?ArrayAdapter $pauses = null, ?\Closure $sleep = null): OzonSellerRateLimitingClient
     {
         $mock = new MockHttpClient(static function () use (&$calls, &$responses): MockResponse {
             ++$calls;
@@ -141,7 +173,14 @@ final class OzonSellerRateLimitingClientTest extends TestCase
             return $response;
         }, 'https://api-seller.ozon.ru');
 
-        return new OzonSellerRateLimitingClient($mock, new ArrayAdapter(), new LockFactory(new InMemoryStore()));
+        return new OzonSellerRateLimitingClient(
+            $mock,
+            $pauses ?? new ArrayAdapter(),
+            new LockFactory(new InMemoryStore()),
+            $sleep ?? static function (int $seconds): void {
+                self::fail("Короткая пауза неожиданно пережидается: {$seconds} с.");
+            },
+        );
     }
 
     /**
