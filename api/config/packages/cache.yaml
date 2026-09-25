@@ -19,3 +19,18 @@ framework:
             cache.rate_limiter:
                 adapter: cache.adapter.redis
                 provider: '%env(REDIS_URL)%'
+            # Паузы лимита Seller API (ADR-028): общие для всех воркеров
+            # и веб-процесса, поэтому Redis, а не память процесса.
+            cache.ozon_seller_limit:
+                adapter: cache.adapter.redis
+                provider: '%env(REDIS_URL)%'
+
+when@test:
+    framework:
+        cache:
+            pools:
+                # Пауза лимита не должна переживать тест: в памяти процесса,
+                # а не в общем Redis.
+                cache.ozon_seller_limit:
+                    adapter: cache.adapter.array
+                    provider: ~
