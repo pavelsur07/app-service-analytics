@@ -64,6 +64,7 @@ final class ListConnectionsController
                 marketplace: $view->marketplace,
                 externalShopId: $view->externalShopId,
                 state: $view->state,
+                advertisingState: $view->advertisingState,
                 createdAt: $view->createdAt,
                 lastLoadedAt: $view->lastLoadedAt,
                 version: $view->version,

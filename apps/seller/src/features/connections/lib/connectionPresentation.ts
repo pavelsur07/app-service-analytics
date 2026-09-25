@@ -42,6 +42,45 @@ export function connectionPresentation(state: string): ConnectionPresentation {
   )
 }
 
+// Реклама подключения (ADR-026) — своё состояние: отказ рекламного ключа
+// ломает только рекламу, продажи и расходы продолжают грузиться. Подпись
+// говорит именно это, иначе «нужно переподключить» прочиталось бы как
+// поломка всего магазина.
+const ADVERTISING_STATES: Record<string, ConnectionPresentation> = {
+  active: {
+    tone: 'positive',
+    label: 'Реклама подключена',
+    explanation: 'Статистика рекламных кампаний загружается по расписанию.',
+  },
+  broken: {
+    tone: 'negative',
+    label: 'Нужно заменить рекламный ключ',
+    explanation:
+      'Ozon отклонил рекламный ключ. Загрузка рекламы остановлена, продажи и расходы грузятся как прежде. Выпустите новый ключ Performance API и сохраните его здесь.',
+  },
+}
+
+export function advertisingPresentation(
+  state: string | null,
+): ConnectionPresentation {
+  if (state === null) {
+    return {
+      tone: 'neutral',
+      label: 'Реклама не подключена',
+      explanation:
+        'Добавьте ключ Performance API, чтобы видеть расход по кампаниям и товарам.',
+    }
+  }
+
+  return (
+    ADVERTISING_STATES[state] ?? {
+      tone: 'neutral',
+      label: state,
+      explanation: 'Состояние рекламы неизвестно приложению.',
+    }
+  )
+}
+
 // Что за выгрузка стоит за типом отчёта. Незнакомый тип показывается
 // как есть: коннекторов будет больше, и падать из-за нового имени
 // экран не должен.

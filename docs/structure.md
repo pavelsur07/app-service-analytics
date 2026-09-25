@@ -306,13 +306,19 @@ Ingestion дополнительно:
 | Себестоимость (`ListingCosts`) | `CorrectListingCostAction`, `ListListingCostsAction`, `ListingCostsPage`, `SetListingCostAction` | `ListingCost*` | `ListingCost*` |
 | Товары (`Listings`) | — | `ListingSnapshot*`, `CompanySku*` | `CompanySkuListResponse` |
 | Продажи (`Sales`) | — | `SalesFactList*`, `SkuSalesSummary*` | `SalesFactList*`, `SkuSales*` |
-| Подключения (`Connections`) | — | — | `ConnectedAccountResponse`, `ConnectionResponse`, `ConnectionsResponse`, `ReplacedCredentialsResponse` |
+| Подключения (`Connections`) | — | — | `ConnectedAccountResponse`, `ConnectedAdvertisingResponse`, `ConnectionResponse`, `ConnectionsResponse`, `ReplacedCredentialsResponse` |
 
 ```
 Ingestion/Infrastructure/Connector/
 ├── Wildberries/
-└── Ozon/
+├── Ozon/                 Seller API (api-seller.ozon.ru)
+└── OzonPerformance/      рекламный API (api-performance.ozon.ru, ADR-026)
 ```
+
+`OzonPerformance/OzonPerformanceHttp` — единственная точка вызова
+рекламного API: все клиенты этой папки ходят через него, и только по
+его списку разрешённых путей (docs/patterns.md, «Ключ внешнего API
+с правом записи»).
 
 **Тела сырых документов (ADR-024, этап 2)** пишет и читает
 `Persistence/DoctrineMarketplaceRawDocumentRepository`: при

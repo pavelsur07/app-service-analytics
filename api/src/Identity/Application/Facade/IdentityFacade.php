@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Identity\Application\Facade;
 
 use App\Identity\Application\MarkMarketplaceAccountBrokenAction;
+use App\Identity\Application\ReplaceAdvertisingCredentialsAction;
 use App\Identity\Application\ReplaceMarketplaceCredentialsAction;
 use App\Identity\Domain\AuditAction;
 use App\Identity\Domain\AuditRecord;
@@ -37,7 +38,38 @@ final class IdentityFacade
         private readonly CompanyConnectionsQuery $connections,
         private readonly ReplaceMarketplaceCredentialsAction $replaceCredentials,
         private readonly AuditRecordRepository $auditRecords,
+        private readonly ReplaceAdvertisingCredentialsAction $replaceAdvertisingCredentials,
     ) {
+    }
+
+    /**
+     * Ввод или замена рекламного ключа Performance API (ADR-026, п. 1).
+     * Ключ обязан быть проверен площадкой до вызова — тем же правилом,
+     * что у replaceMarketplaceCredentials(). Ключ Seller API подключения
+     * при этом сохраняется: объект учётных данных дополняется, а не
+     * заменяется.
+     */
+    public function replaceAdvertisingCredentials(
+        string $companyId,
+        string $marketplaceAccountId,
+        string $performanceClientId,
+        string $performanceClientSecret,
+        int $expectedVersion,
+        string $actorUserId,
+    ): CredentialsReplacementOutcome {
+        return match (($this->replaceAdvertisingCredentials)(
+            $companyId,
+            Uuid::fromString($marketplaceAccountId),
+            $performanceClientId,
+            $performanceClientSecret,
+            $expectedVersion,
+            Uuid::fromString($actorUserId),
+        )) {
+            ReplaceCredentialsOutcome::Replaced => CredentialsReplacementOutcome::Replaced,
+            ReplaceCredentialsOutcome::NotFound => CredentialsReplacementOutcome::NotFound,
+            ReplaceCredentialsOutcome::Revoked => CredentialsReplacementOutcome::Revoked,
+            ReplaceCredentialsOutcome::VersionConflict => CredentialsReplacementOutcome::VersionConflict,
+        };
     }
 
     /**
@@ -101,6 +133,7 @@ final class IdentityFacade
                     marketplace: $connection->marketplace,
                     externalShopId: $connection->externalShopId,
                     state: $connection->state,
+                    advertisingState: $connection->advertisingState,
                     createdAt: $connection->createdAt,
                     version: $connection->version,
                 );

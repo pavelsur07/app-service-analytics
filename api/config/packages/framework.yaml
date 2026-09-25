@@ -55,6 +55,14 @@ framework:
         scoped_clients:
             ozon.client:
                 base_uri: '%env(OZON_API_BASE_URL)%'
+            # Рекламный API Ozon (ADR-026): отдельный хост и отдельные
+            # ключи. Потолок запроса — 60 секунд: очередь асинхронных
+            # отчётов опирается на него, держа TTL блокировки шага больше
+            # (ADR-026, п. 5). Какие пути вообще можно вызвать, решает
+            # OzonPerformanceHttp, а не этот клиент.
+            ozon_performance.client:
+                base_uri: '%env(OZON_PERFORMANCE_API_BASE_URL)%'
+                max_duration: 60.0
             # Stage 2 регистрации ждёт результат SmartCaptcha в этом же
             # запросе: один короткий вызов без повторов, иначе пользователь
             # может получить ответ на уже неактуальный captcha token.

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { connectionPresentation, reportLabel } from './connectionPresentation'
+import {
+  advertisingPresentation,
+  connectionPresentation,
+  reportLabel,
+} from './connectionPresentation'
 
 describe('connectionPresentation', () => {
   it('называет сломанное подключение тем, что нужно сделать', () => {
@@ -36,5 +40,21 @@ describe('reportLabel', () => {
   it('показывает незнакомый тип как есть', () => {
     // Коннекторов будет больше, и новый тип не повод ломать экран.
     expect(reportLabel('wb_orders')).toBe('wb_orders')
+  })
+})
+
+describe('advertisingPresentation', () => {
+  it('сломанную рекламу не выдаёт за поломку магазина', () => {
+    // Отказ рекламного ключа ломает только рекламу (ADR-026): подпись,
+    // похожая на «подключение сломано», отправила бы человека чинить
+    // исправный ключ Seller API.
+    const broken = advertisingPresentation('broken')
+
+    expect(broken.tone).toBe('negative')
+    expect(broken.explanation).toContain('продажи и расходы грузятся')
+  })
+
+  it('отсутствие рекламы — нейтральное приглашение, а не ошибка', () => {
+    expect(advertisingPresentation(null).tone).toBe('neutral')
   })
 })

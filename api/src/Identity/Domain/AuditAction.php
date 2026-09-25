@@ -17,6 +17,9 @@ final class AuditAction
 {
     public const string MarketplaceCredentialsReplaced = 'marketplace_account.credentials_replaced';
 
+    /** Рекламный ключ Performance API введён или заменён (ADR-026). */
+    public const string MarketplaceAdvertisingCredentialsReplaced = 'marketplace_account.advertising_credentials_replaced';
+
     /** Подключение кабинета при онбординге (ADR-021). */
     public const string MarketplaceAccountConnected = 'marketplace_account.connected';
 

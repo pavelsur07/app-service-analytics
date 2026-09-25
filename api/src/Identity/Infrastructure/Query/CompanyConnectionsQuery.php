@@ -35,7 +35,7 @@ final readonly class CompanyConnectionsQuery
     public function build(string $companyId): QueryBuilder
     {
         return $this->connection->createQueryBuilder()
-            ->select('id', 'marketplace', 'external_shop_id', 'state', 'created_at', 'version')
+            ->select('id', 'marketplace', 'external_shop_id', 'state', 'advertising_state', 'created_at', 'version')
             ->from('marketplace_account')
             ->where('company_id = :companyId')
             ->setParameter('companyId', $companyId)
@@ -56,6 +56,7 @@ final readonly class CompanyConnectionsQuery
             marketplace: self::stringValue($row['marketplace']),
             externalShopId: self::stringValue($row['external_shop_id']),
             state: self::stringValue($row['state']),
+            advertisingState: null === $row['advertising_state'] ? null : self::stringValue($row['advertising_state']),
             createdAt: self::isoUtc($row['created_at']),
             version: self::intValue($row['version']),
         );

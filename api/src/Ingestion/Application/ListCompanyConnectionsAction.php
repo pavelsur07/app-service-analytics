@@ -45,6 +45,7 @@ final readonly class ListCompanyConnectionsAction
                 marketplace: $connection->marketplace,
                 externalShopId: $connection->externalShopId,
                 state: $connection->state,
+                advertisingState: $connection->advertisingState,
                 createdAt: $connection->createdAt,
                 lastLoadedAt: $freshness[$connection->id] ?? [],
                 version: $connection->version,
