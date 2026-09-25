@@ -67,6 +67,12 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
         self::assertContains(FetchOzonPostingsMessage::class, $dispatched);
         self::assertContains(FetchOzonExpensesMessage::class, $dispatched);
 
+        // Месяц нового кабинета — история: в своей очереди и своём воркере,
+        // а не перед тиком остальных кабинетов (docs/task/ingestion-queue-isolation.md).
+        $tick = static::getContainer()->get('messenger.transport.async_ingestion');
+        self::assertInstanceOf(InMemoryTransport::class, $tick);
+        self::assertSame([], [...$tick->getSent()]);
+
         // Возвраты принимают диапазон, а не один день: ровно одно
         // сообщение на весь месяц, не по одному на день, и его границы —
         // первый и последний день окна, а не перепутанные local от/до.
@@ -335,7 +341,7 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
     /** @return list<string> */
     private function dispatchedMessages(): array
     {
-        $transport = static::getContainer()->get('messenger.transport.async_ingestion');
+        $transport = static::getContainer()->get('messenger.transport.async_backfill');
         self::assertInstanceOf(InMemoryTransport::class, $transport);
 
         return array_values(array_map(
@@ -357,7 +363,7 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
      */
     private function dispatchedMessagesOf(string $class): array
     {
-        $transport = static::getContainer()->get('messenger.transport.async_ingestion');
+        $transport = static::getContainer()->get('messenger.transport.async_backfill');
         self::assertInstanceOf(InMemoryTransport::class, $transport);
 
         $messages = [];

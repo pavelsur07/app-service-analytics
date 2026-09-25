@@ -243,17 +243,19 @@ final readonly class ConnectOzonAccountAction
 
     /**
      * Ступень 1 (ADR-021): текущий месяц, сразу, вперёд остальных.
+     * Очередь истории (`IngestionBackfill`): её разбирает свой воркер, так
+     * что месяц нового кабинета идёт сразу и не встаёт перед тиком остальных.
      * Каталог — снимок текущего состояния, глубины у него нет, поэтому
      * одним сообщением.
      */
     private function scheduleInitialBackfill(string $companyId, string $accountId): void
     {
-        $this->bus->dispatch(new FetchOzonCatalogMessage($companyId, $accountId));
+        $this->bus->dispatch(new FetchOzonCatalogMessage($companyId, $accountId), IngestionBackfill::stamps());
 
         $businessDates = InitialBackfillWindow::businessDates(new \DateTimeImmutable());
         foreach ($businessDates as $businessDate) {
-            $this->bus->dispatch(new FetchOzonPostingsMessage($companyId, $accountId, $businessDate));
-            $this->bus->dispatch(new FetchOzonExpensesMessage($companyId, $accountId, $businessDate));
+            $this->bus->dispatch(new FetchOzonPostingsMessage($companyId, $accountId, $businessDate), IngestionBackfill::stamps());
+            $this->bus->dispatch(new FetchOzonExpensesMessage($companyId, $accountId, $businessDate), IngestionBackfill::stamps());
         }
 
         // Возвраты принимают диапазон, а не один день (FetchOzonReturnsMessage:
@@ -263,7 +265,7 @@ final readonly class ConnectOzonAccountAction
         $first = $businessDates[0] ?? null;
         $last = $businessDates[\count($businessDates) - 1] ?? null;
         if (null !== $first && null !== $last) {
-            $this->bus->dispatch(new FetchOzonReturnsMessage($companyId, $accountId, $first, $last));
+            $this->bus->dispatch(new FetchOzonReturnsMessage($companyId, $accountId, $first, $last), IngestionBackfill::stamps());
         }
     }
 }

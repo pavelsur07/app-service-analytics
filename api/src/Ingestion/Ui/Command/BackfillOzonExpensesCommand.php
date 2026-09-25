@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Command;
 
+use App\Ingestion\Application\IngestionBackfill;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -108,7 +109,7 @@ final class BackfillOzonExpensesCommand extends Command
                 companyId: $companyId,
                 marketplaceAccountId: $marketplaceAccountId,
                 accrualDate: $day->format('Y-m-d'),
-            ));
+            ), IngestionBackfill::stamps());
         }
 
         $io->success(\sprintf('Поставлено %d дней (%s … %s) для подключения %s.', $days, $rawFrom, $rawTo, $marketplaceAccountId));

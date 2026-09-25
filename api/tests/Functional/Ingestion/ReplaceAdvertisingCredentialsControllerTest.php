@@ -69,7 +69,7 @@ final class ReplaceAdvertisingCredentialsControllerTest extends WebTestCase
         // ключом: иначе реклама молча не грузилась бы до ближайшего тика,
         // а год истории — никогда.
         $chunks = [];
-        $transport = static::getContainer()->get('messenger.transport.async_ingestion');
+        $transport = static::getContainer()->get('messenger.transport.async_backfill');
         self::assertInstanceOf(InMemoryTransport::class, $transport);
         foreach ($transport->getSent() as $envelope) {
             $message = $envelope->getMessage();

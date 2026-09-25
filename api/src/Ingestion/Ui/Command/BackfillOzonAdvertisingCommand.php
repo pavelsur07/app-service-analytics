@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Command;
 
+use App\Ingestion\Application\IngestionBackfill;
 use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -81,7 +82,7 @@ final class BackfillOzonAdvertisingCommand extends Command
 
         $chunks = OzonAdvertisingWindows::between($from, $to);
         foreach ($chunks as $chunk) {
-            $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to'], withReports: true));
+            $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to'], withReports: true), IngestionBackfill::stamps());
         }
 
         $io->success(\sprintf('Поставлено %d кусков (%s … %s) для подключения %s.', \count($chunks), $rawFrom, $rawTo, $marketplaceAccountId));

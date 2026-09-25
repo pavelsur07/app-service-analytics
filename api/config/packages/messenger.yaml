@@ -65,6 +65,23 @@ framework:
             #
             # async_ingestion намеренно остаётся на «default»: там лежат
             # сообщения в работе, и переименование очереди осиротило бы их.
+            # История: первичные загрузки, консольные доборы, недельный рескан
+            # рекламы и асинхронные отчёты рекламы (docs/task/ingestion-queue-isolation.md).
+            # Отдельная очередь той же таблицы, чтобы годовая загрузка одного
+            # кабинета не вставала перед свежими сообщениями тика остальных.
+            # Одно и то же сообщение бывает и тиком, и историей, поэтому сюда
+            # его направляет отправитель (IngestionBackfill::stamp()), а не
+            # маршрут; маршрутом целиком — только отчёты рекламы, они фоновые
+            # по природе.
+            async_backfill:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: backfill
+                retry_strategy:
+                    max_retries: 5
+                    delay: 30000
+                    multiplier: 3
+                    max_delay: 600000
             async_calc:
                 dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
                 options:
@@ -112,8 +129,8 @@ framework:
             App\Ingestion\Application\Message\FetchOzonExpensesMessage: async_ingestion
             App\Ingestion\Application\Message\FetchOzonReturnsMessage: async_ingestion
             App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage: async_ingestion
-            App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage: async_ingestion
-            App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage: async_ingestion
+            App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage: async_backfill
+            App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage: async_backfill
             Symfony\Component\Mailer\Messenger\SendEmailMessage: async_ingestion
 
 # in-memory вместо doctrine-транспорта — тестируем факт и содержимое
@@ -124,6 +141,7 @@ when@test:
         messenger:
             transports:
                 async_ingestion: 'in-memory://'
+                async_backfill: 'in-memory://'
                 # По той же причине, что и выше: сохранение отказавшего
                 # сообщения проверяется тем, что транспорт задан
                 # (FailedMessagesAreKeptTest), а не тем, что строка легла

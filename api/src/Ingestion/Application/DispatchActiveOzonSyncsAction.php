@@ -182,7 +182,12 @@ final readonly class DispatchActiveOzonSyncsAction
         foreach ($chunks as $chunk) {
             // SKU-отчёты — раз в сутки и в рескане, не на каждом тике
             // (ADR-026 п. 4): каждый пересчёт окна — заказ отчёта.
-            $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to'], $this->isRescanTick($now)));
+            $this->bus->dispatch(
+                new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to'], $this->isRescanTick($now)),
+                // Глубокий рескан — история: в очередь истории, чтобы семь
+                // кусков не вставали перед тиком остальных кабинетов.
+                $deepRescan ? IngestionBackfill::stamps() : [],
+            );
         }
     }
 
