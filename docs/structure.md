@@ -320,12 +320,11 @@ Ingestion/Infrastructure/Connector/
 его списку разрешённых путей (docs/patterns.md, «Ключ внешнего API
 с правом записи»).
 
-Реклама грузится только в raw (ADR-026 п. 3): сообщения
-`FetchOzonAdCampaignsMessage` и `FetchOzonAdCampaignStatsMessage` (кусок
-≤ 30 дней), обработчики в `Application/MessageHandler/`, периоды —
-`Application/OzonAdvertisingWindows`. Raw-типы `ozon_ad_campaigns`,
-`ozon_ad_expense`, `ozon_ad_daily`, `ozon_ad_sku_day` (SKU за вчера
-и сегодня — из того же обработчика куска).
+Реклама грузится только в raw (ADR-026 п. 3): сообщение
+`FetchOzonAdCampaignStatsMessage` (кусок ≤ 30 дней), обработчик
+в `Application/MessageHandler/`, периоды — `Application/OzonAdvertisingWindows`.
+Raw-типы `ozon_ad_expense`, `ozon_ad_daily`; головной кусок ещё
+`ozon_ad_campaigns` и `ozon_ad_sku_day` (SKU за вчера и сегодня).
 
 **Тела сырых документов (ADR-024, этап 2)** пишет и читает
 `Persistence/DoctrineMarketplaceRawDocumentRepository`: при

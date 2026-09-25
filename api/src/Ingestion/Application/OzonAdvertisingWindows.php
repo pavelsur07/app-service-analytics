@@ -65,6 +65,18 @@ final class OzonAdvertisingWindows
     }
 
     /**
+     * Головной кусок — тот, что кончается в последние `CHUNK_DAYS` дней.
+     * Такой кусок один в каждом тике, рескане и первичной загрузке: следующий
+     * за ним кончается на `CHUNK_DAYS` дней раньше. Признак переживает
+     * задержку очереди до `CHUNK_DAYS - 1` дней — головной кусок стареет,
+     * но остальные остаются старше его.
+     */
+    public static function isHeadChunk(\DateTimeImmutable $to, \DateTimeImmutable $today): bool
+    {
+        return $to->format('Y-m-d') >= $today->modify('-'.(self::CHUNK_DAYS - 1).' days')->format('Y-m-d');
+    }
+
+    /**
      * Дни куска, которые отдаёт `products/sku`: вчера и сегодня,
      * от нового к старому.
      *

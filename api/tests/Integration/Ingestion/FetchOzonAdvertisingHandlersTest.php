@@ -10,9 +10,7 @@ use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\UserRepository;
-use App\Ingestion\Application\Message\FetchOzonAdCampaignsMessage;
 use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
-use App\Ingestion\Application\MessageHandler\FetchOzonAdCampaignsHandler;
 use App\Ingestion\Application\MessageHandler\FetchOzonAdCampaignStatsHandler;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Domain\MarketplaceReportType;
@@ -125,23 +123,44 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         self::assertCount(1, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdDaily));
     }
 
-    public function testCampaignListIsStoredAsReceived(): void
+    public function testDelayedHeadChunkStillStoresTheCampaignList(): void
     {
         $container = $this->bootedContainer();
         $account = $this->account($container);
-        $this->fetcher($container);
+        $fetcher = $this->fetcher($container);
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
 
-        $handler = $container->get(FetchOzonAdCampaignsHandler::class);
-        \assert($handler instanceof FetchOzonAdCampaignsHandler);
-        $handler(new FetchOzonAdCampaignsMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-09-24'));
+        // Головной кусок тика обработан на два дня позже: вчера и сегодня
+        // в нём уже нет, но список кампаний — единственный за тик — он
+        // сохранить обязан.
+        $this->syncStats($container, $account, $today->modify('-31 days')->format('Y-m-d'), $today->modify('-2 days')->format('Y-m-d'));
 
         self::assertSame(
             [$this->fixture('campaign-list.json')],
             $this->rawBodies($container, $account, MarketplaceReportType::OzonAdCampaigns),
         );
-        // День снимка — из сообщения, а не из часов обработчика: повтор
-        // после полуночи попадает в тот же документ (CLAUDE.md §4).
-        self::assertSame(['2026-09-24'], $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdCampaigns));
+        // День снимка — последний день куска из сообщения, а не часы
+        // обработчика: повтор после полуночи попадает в тот же документ
+        // (CLAUDE.md §4).
+        self::assertSame(
+            [$today->modify('-2 days')->format('Y-m-d')],
+            $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdCampaigns),
+        );
+        self::assertSame([], $fetcher->skuRequests);
+    }
+
+    public function testOlderChunkDoesNotAskForTheCampaignList(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $this->fetcher($container);
+        $chunks = OzonAdvertisingWindows::lastDays(OzonAdvertisingWindows::today(new \DateTimeImmutable()), 45);
+
+        // Второй кусок тика списка не запрашивает: один запрос метода
+        // на тик, иначе площадка отвечает 429.
+        $this->syncStats($container, $account, $chunks[1]['from'], $chunks[1]['to']);
+
+        self::assertSame([], $this->rawBodies($container, $account, MarketplaceReportType::OzonAdCampaigns));
     }
 
     public function testLateRejectionOfAReplacedKeyDoesNotBreakTheNewOne(): void

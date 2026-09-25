@@ -24,8 +24,10 @@ use Symfony\Component\Uid\Uuid;
  * и `daily` (статистика кампаний за день) за один период сохраняются
  * как есть, каждый своим типом raw-документа (ADR-026 п. 3).
  *
- * Если в кусок попадают вчера или сегодня, после них тот же обработчик
- * снимает `products/sku` за каждый из этих дней (ADR-026 п. 4): другого
+ * Головной кусок (кончается в последние 30 дней) после них сохраняет
+ * список кампаний — это единственная его загрузка на тике. Если в кусок
+ * попадают вчера или сегодня, по этому списку снимается `products/sku`
+ * за каждый из этих дней (ADR-026 п. 4): другого
  * синхронного способа получить SKU-разбивку свежих дней нет. Кампании —
  * все неархивные типа `SKU` из списка кампаний, пачками не больше десяти;
  * у других типов списка товаров нет. Нет таких кампаний — запроса нет:
@@ -73,9 +75,9 @@ final readonly class FetchOzonAdCampaignStatsHandler
             $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdExpense, $from, $this->client->expense($token, $from, $to));
             $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdDaily, $from, $this->client->daily($token, $from, $to));
 
-            $skuDays = OzonAdvertisingWindows::skuDays($from, $to, OzonAdvertisingWindows::today(new \DateTimeImmutable()));
-            if ([] !== $skuDays) {
-                $this->captureSkuDays($companyId, $accountId, $token, $to, $skuDays);
+            $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+            if (OzonAdvertisingWindows::isHeadChunk($to, $today)) {
+                $this->captureCampaignsAndSku($companyId, $accountId, $token, $to, OzonAdvertisingWindows::skuDays($from, $to, $today));
             }
         } catch (\Throwable $failure) {
             if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
@@ -101,14 +103,18 @@ final readonly class FetchOzonAdCampaignStatsHandler
     /**
      * @param list<\DateTimeImmutable> $days
      */
-    private function captureSkuDays(Uuid $companyId, Uuid $accountId, string $token, \DateTimeImmutable $to, array $days): void
+    private function captureCampaignsAndSku(Uuid $companyId, Uuid $accountId, string $token, \DateTimeImmutable $to, array $days): void
     {
-        // Сначала raw, потом разбор (ADR-006): список, по которому выбраны
-        // кампании запроса, сохраняется как есть. `period` — последний день
+        // Список кампаний снимает только головной кусок — один запрос
+        // метода на тик: второй одновременный упирался в лимит площадки (429).
+        // Сначала raw, потом разбор (ADR-006). `period` — последний день
         // куска из сообщения, а не часы обработчика: повтор после полуночи
         // попадает в тот же документ.
         $campaigns = $this->client->campaigns($token);
         $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdCampaigns, $to, $campaigns);
+        if ([] === $days) {
+            return;
+        }
 
         $campaignIds = array_values(array_map(
             static fn (OzonAdCampaign $campaign): string => $campaign->id,
