@@ -19,6 +19,9 @@ final readonly class BuyoutForecastQuery
     /** ADR-031: агрегат без прогноза, если штук без оценки больше 10% количества. */
     public const int MAX_UNESTIMATED_BPS = 1000;
 
+    /** ADR-032: кривая поправки по дням в пути после передачи — до срока созревания. */
+    public const int HANDOVER_CURVE_DAYS = 15;
+
     public function __construct(private Connection $connection)
     {
     }
@@ -37,6 +40,8 @@ final readonly class BuyoutForecastQuery
         $trainingDays = BuyoutMaturityQuery::trainingDaysCte();
         $trainingSample = self::MIN_TRAINING_QUANTITY;
         $aggregates = self::forecastAggregatesSql();
+        $handoverCurve = self::handoverCurveCtes();
+        $handoverFactorJoin = self::handoverFactorJoinSql('o');
         $quantity = self::projectedQuantitySql('projected_quantity', 'ordered_quantity', 'unestimated_quantity');
         $rate = self::projectedRateSql('projected_quantity', 'projected_eligible_quantity', 'ordered_quantity', 'unestimated_quantity');
         $summaryQuantity = self::projectedQuantitySql('SUM(projected_quantity) OVER ()', 'SUM(ordered_quantity) OVER ()', 'SUM(unestimated_quantity) OVER ()');
@@ -81,6 +86,7 @@ final readonly class BuyoutForecastQuery
                 FROM training_rows
                 GROUP BY marketplace_account_id
             ),
+            {$handoverCurve},
             current_rows AS (
                 SELECT o.*,
                        CASE
@@ -103,13 +109,15 @@ final readonly class BuyoutForecastQuery
                            WHEN a.sample_quantity >= {$trainingSample}
                                THEN a.d_quantity::numeric / NULLIF(a.d_quantity + a.t2_quantity + a.p_quantity, 0)
                            ELSE NULL
-                       END AS post_handover_rate
+                       END AS post_handover_rate,
+                       COALESCE(hf.factor, 1::numeric) AS handover_factor
                 FROM tenant_outcome o
                 LEFT JOIN sku_training s
                   ON s.marketplace_account_id = o.marketplace_account_id
                  AND s.marketplace_sku = o.marketplace_sku
                 LEFT JOIN account_training a
                   ON a.marketplace_account_id = o.marketplace_account_id
+                {$handoverFactorJoin}
                 WHERE o.business_date >= :from
                   AND o.business_date <= :to
             ),
@@ -195,7 +203,11 @@ final readonly class BuyoutForecastQuery
             COALESCE(SUM(CASE
                 WHEN outcome = 'D' THEN quantity::numeric
                 WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN quantity * pre_handover_rate
-                WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NOT NULL THEN quantity * post_handover_rate
+                WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NOT NULL
+                     -- LEAST пропускает NULL: без ставки произведение обязано
+                     -- остаться NULL, иначе штука без оценки дала бы выкуп целиком.
+                     THEN quantity * CASE WHEN post_handover_rate IS NULL THEN NULL
+                                          ELSE LEAST(1::numeric, post_handover_rate * handover_factor) END
                 ELSE 0::numeric
             END), 0::numeric) AS projected_quantity,
             COALESCE(SUM(CASE
@@ -205,6 +217,65 @@ final readonly class BuyoutForecastQuery
                      AND post_handover_rate IS NOT NULL THEN quantity::numeric
                 ELSE 0::numeric
             END), 0::numeric) AS projected_eligible_quantity
+            SQL;
+    }
+
+    /**
+     * CTE `handover_curve` и `handover_factor` над `training_rows` (ADR-032).
+     * handover_curve — выкуп D/(D+T2+P) среди закрытых штук окна, которые
+     * закрылись позже, чем через e полных дней после передачи.
+     * handover_factor — поправка кабинета для e = 0..HANDOVER_CURVE_DAYS:
+     * выкуп ближайшей точки не позже e с выборкой не меньше
+     * MIN_TRAINING_QUANTITY, делённый на выкуп в точке 0; без точки 0
+     * с достаточной выборкой поправки нет.
+     */
+    public static function handoverCurveCtes(): string
+    {
+        $days = self::HANDOVER_CURVE_DAYS;
+        $sample = self::MIN_TRAINING_QUANTITY;
+
+        return <<<SQL
+            handover_curve AS (
+                SELECT t.marketplace_account_id, e.elapsed_days,
+                       SUM(t.quantity)::bigint AS sample_quantity,
+                       COALESCE(SUM(t.quantity) FILTER (WHERE t.outcome = 'D'), 0)::numeric / SUM(t.quantity) AS buyout_rate
+                FROM training_rows t
+                CROSS JOIN generate_series(0, {$days}) AS e(elapsed_days)
+                WHERE t.outcome IN ('D', 'T2', 'P')
+                  AND t.handed_over_at IS NOT NULL
+                  AND t.resolved_at IS NOT NULL
+                  AND t.resolution_observed
+                  AND EXTRACT(EPOCH FROM (t.resolved_at - t.handed_over_at)) > e.elapsed_days * 86400
+                GROUP BY t.marketplace_account_id, e.elapsed_days
+            ),
+            handover_factor AS (
+                SELECT DISTINCT ON (base.marketplace_account_id, e.elapsed_days)
+                       base.marketplace_account_id, e.elapsed_days,
+                       point.buyout_rate / NULLIF(base.buyout_rate, 0) AS factor
+                FROM handover_curve base
+                CROSS JOIN generate_series(0, {$days}) AS e(elapsed_days)
+                JOIN handover_curve point
+                  ON point.marketplace_account_id = base.marketplace_account_id
+                 AND point.elapsed_days <= e.elapsed_days
+                 AND point.sample_quantity >= {$sample}
+                WHERE base.elapsed_days = 0
+                  AND base.sample_quantity >= {$sample}
+                ORDER BY base.marketplace_account_id, e.elapsed_days, point.elapsed_days DESC
+            )
+            SQL;
+    }
+
+    /** LEFT JOIN поправки ADR-032 по полным дням от передачи штуки до :asOf. */
+    public static function handoverFactorJoinSql(string $alias): string
+    {
+        $days = self::HANDOVER_CURVE_DAYS;
+
+        return <<<SQL
+            LEFT JOIN handover_factor hf
+              ON hf.marketplace_account_id = {$alias}.marketplace_account_id
+             AND hf.elapsed_days = LEAST({$days}, GREATEST(0, FLOOR(
+                     EXTRACT(EPOCH FROM (:asOf::timestamp - {$alias}.handed_over_at)) / 86400
+                 )))::int
             SQL;
     }
 

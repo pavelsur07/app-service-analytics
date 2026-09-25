@@ -251,6 +251,96 @@ final class BuyoutForecastQueryTest extends KernelTestCase
         self::assertSame(16, $daily[0]->projectedBuyoutQuantity);
     }
 
+    public function testHandedOverRateFollowsDaysInTransitCurve(): void
+    {
+        // Медленная часть обучения: 10 D и 30 T2, закрыты через 5 дней
+        // 1 час после передачи. Вместе с 24 быстрыми D из setUp:
+        // выкуп(0) = 34/64, выкуп(1..5) = 10/40, дальше — откат к 5.
+        $facts = [];
+        $statuses = [];
+        for ($index = 1; $index <= 40; ++$index) {
+            $posting = 'SLOW-'.$index;
+            $terminal = $index <= 10 ? 'delivered' : 'cancelled';
+            $facts[] = $this->sale($this->accountId, $posting, $posting, 'SLOW', $terminal, 1, '2026-08-01');
+            $statuses[] = $this->postingStatus($this->accountId, $posting, $posting, 'delivering', '2026-08-01 10:00:00');
+            $statuses[] = $this->postingStatus($this->accountId, $posting, $posting, $terminal, '2026-08-06 11:00:00');
+        }
+        // В пути на дату прогноза: 3 дня 1 час и 2 часа после передачи.
+        $facts[] = $this->sale($this->accountId, 'IN-TRANSIT-LONG', 'IN-TRANSIT-LONG', 'IN-TRANSIT-LONG', 'delivering', 10, '2026-08-27');
+        $statuses[] = $this->postingStatus($this->accountId, 'IN-TRANSIT-LONG', 'IN-TRANSIT-LONG', 'delivering', '2026-08-27 11:00:00');
+        $facts[] = $this->sale($this->accountId, 'IN-TRANSIT-FRESH', 'IN-TRANSIT-FRESH', 'IN-TRANSIT-FRESH', 'delivering', 10, '2026-08-30');
+        $statuses[] = $this->postingStatus($this->accountId, 'IN-TRANSIT-FRESH', 'IN-TRANSIT-FRESH', 'delivering', '2026-08-30 10:00:00');
+        $this->sales()->upsertAll($facts);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), $statuses);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $rows = [];
+        foreach ((new BuyoutForecastQuery($connection))->build(
+            $this->companyId->toRfc4122(),
+            new \DateTimeImmutable('2026-08-27'),
+            new \DateTimeImmutable('2026-08-30'),
+            new \DateTimeImmutable('2026-08-30T12:00:00Z'),
+            50,
+            null,
+        )->executeQuery()->fetchAllAssociative() as $rawRow) {
+            $row = BuyoutForecastQuery::mapRow($rawRow);
+            $rows[$row->marketplaceSku] = $row;
+        }
+
+        // Только что переданная: ставка кабинета после передачи 34/64.
+        self::assertSame(5313, $rows['IN-TRANSIT-FRESH']->projectedBuyoutRateBps);
+        self::assertSame(5, $rows['IN-TRANSIT-FRESH']->projectedBuyoutQuantity);
+        // 3 дня в пути: 34/64 × (10/40) / (34/64) = 25%.
+        self::assertSame(2500, $rows['IN-TRANSIT-LONG']->projectedBuyoutRateBps);
+        self::assertSame(3, $rows['IN-TRANSIT-LONG']->projectedBuyoutQuantity);
+
+        // Дневной ряд считается той же кривой.
+        $daily = array_map(BuyoutDailyQuery::mapRow(...), (new BuyoutDailyQuery($connection))
+            ->build($this->companyId->toRfc4122(), 'IN-TRANSIT-LONG', new \DateTimeImmutable('2026-08-27'), new \DateTimeImmutable('2026-08-27'), new \DateTimeImmutable('2026-08-30T12:00:00Z'))
+            ->executeQuery()
+            ->fetchAllAssociative());
+        self::assertCount(1, $daily);
+        self::assertSame(2500, $daily[0]->projectedBuyoutRateBps);
+    }
+
+    public function testHandedOverUnitWithoutRateAddsNoExpectedBuyout(): void
+    {
+        // Кабинет, обучение которого — одни T1: ставка до передачи 0,
+        // ставки после передачи нет (D + T2 + P = 0).
+        $account = Uuid::v7();
+        $facts = [];
+        $statuses = [];
+        $returns = [];
+        for ($index = 1; $index <= 30; ++$index) {
+            $posting = 'ONLY-T1-'.$index;
+            $facts[] = $this->sale($account, $posting, $posting, 'ONLY-T1-TRAIN', 'cancelled', 1, '2026-08-01');
+            $statuses[] = $this->postingStatus($account, $posting, $posting, 'awaiting_packaging', '2026-08-02 00:00:00');
+            $statuses[] = $this->postingStatus($account, $posting, $posting, 'cancelled', '2026-08-02 01:00:00');
+            $returns[] = MarketplaceReturnFactBuilder::aMarketplaceReturnFact()
+                ->withCompanyId($this->companyId)
+                ->withMarketplaceAccountId($account)
+                ->withSourceRowId('RET-'.$posting)
+                ->withPostingNumber($posting)
+                ->withOrderNumber($posting)
+                ->withMarketplaceSku('ONLY-T1-TRAIN')
+                ->withReturnReasonName('Покупатель отменил заказ')
+                ->build();
+        }
+        // 19 штук до передачи (ставка 0) и 1 после передачи без ставки — 5%.
+        $facts[] = $this->sale($account, 'ONLY-T1-PENDING', 'ONLY-T1-PENDING', 'ONLY-T1', 'awaiting_packaging', 19, '2026-08-30');
+        $statuses[] = $this->postingStatus($account, 'ONLY-T1-PENDING', 'ONLY-T1-PENDING', 'awaiting_packaging', '2026-08-30 09:00:00');
+        $facts[] = $this->sale($account, 'ONLY-T1-SHIPPED', 'ONLY-T1-SHIPPED', 'ONLY-T1', 'delivering', 1, '2026-08-30');
+        $statuses[] = $this->postingStatus($account, 'ONLY-T1-SHIPPED', 'ONLY-T1-SHIPPED', 'delivering', '2026-08-30 09:00:00');
+        $this->sales()->upsertAll($facts);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), $statuses);
+        $this->returns()->upsertAll($returns);
+
+        $row = $this->rows()['ONLY-T1'];
+        self::assertSame(0, $row->projectedBuyoutQuantity);
+        self::assertNull($row->projectedBuyoutRateBps);
+    }
+
     private function seedTrainingAndCurrentCohort(): void
     {
         $facts = [];
