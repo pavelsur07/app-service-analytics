@@ -29,6 +29,19 @@ final class MarketplaceReportType
 
     public const string OzonReturnsList = 'ozon_returns_list';
 
+    /**
+     * Реклама Ozon, Performance API (ADR-026 п. 3): список кампаний,
+     * расход кампаний за день и статистика кампаний за день. Расход
+     * и статистика — два типа,
+     * а не один: это два ответа площадки. Контроль свежести сторожит
+     * `OzonAdExpense`.
+     */
+    public const string OzonAdCampaigns = 'ozon_ad_campaigns';
+
+    public const string OzonAdExpense = 'ozon_ad_expense';
+
+    public const string OzonAdDaily = 'ozon_ad_daily';
+
     private function __construct()
     {
     }

@@ -111,6 +111,8 @@ framework:
             App\Ingestion\Application\Message\FetchOzonCatalogMessage: async_ingestion
             App\Ingestion\Application\Message\FetchOzonExpensesMessage: async_ingestion
             App\Ingestion\Application\Message\FetchOzonReturnsMessage: async_ingestion
+            App\Ingestion\Application\Message\FetchOzonAdCampaignsMessage: async_ingestion
+            App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage: async_ingestion
             Symfony\Component\Mailer\Messenger\SendEmailMessage: async_ingestion
 
 # in-memory вместо doctrine-транспорта — тестируем факт и содержимое

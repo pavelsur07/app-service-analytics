@@ -112,6 +112,64 @@ final readonly class MailMarketplaceAccountBrokenNotifier implements Marketplace
 
     public function accountBroken(string $companyId, MarketplaceAccount $account): void
     {
+        // Название площадки — из самого подключения, не константой в тексте:
+        // интерфейс общий, и со вторым коннектором письмо про Ozon ушло бы
+        // клиенту Wildberries.
+        $marketplace = ucfirst($account->marketplace()->value);
+        $shop = $account->externalShopId();
+
+        $this->send(
+            $companyId,
+            $account,
+            "Conwix: подключение {$marketplace} перестало работать",
+            "Площадка отклонила ключи подключения (магазин {$shop}).\n"
+            ."Синхронизация остановлена, данные не удалены — история\n"
+            ."остаётся на месте и продолжит обновляться после починки.\n\n"
+            ."Что произошло: {$marketplace} ответил отказом в авторизации.\n"
+            ."Обычно это значит, что ключ доступа отозван или перевыпущен\n"
+            ."в кабинете продавца.\n\n"
+            ."Что сделать: выпустите новый ключ в кабинете {$marketplace}\n"
+            ."(Настройки → API-ключи) и замените его сами на экране\n"
+            ."«Подключения» в Conwix — займёт пару минут. Не получилось —\n"
+            ."напишите нам, поможем.\n\n"
+            ."Пока подключение не восстановлено, цифры в приложении\n"
+            ."остаются на дате последней успешной синхронизации.\n",
+            'о сломанном подключении',
+        );
+    }
+
+    /**
+     * Реклама — отдельный ключ со своим состоянием (ADR-026 п. 1): письмо
+     * называет именно рекламный ключ и прямо говорит, что продажи и расходы
+     * грузятся дальше. Иначе клиент пошёл бы менять исправный ключ
+     * Seller API.
+     */
+    public function advertisingBroken(string $companyId, MarketplaceAccount $account): void
+    {
+        $shop = $account->externalShopId();
+
+        $this->send(
+            $companyId,
+            $account,
+            'Conwix: рекламный ключ Ozon перестал работать',
+            "Ozon отклонил рекламный ключ Performance API (магазин {$shop}).\n"
+            ."Загрузка рекламы остановлена. Продажи и расходы грузятся\n"
+            ."как прежде: основной ключ подключения исправен.\n"
+            ."Загруженные данные рекламы не удалены.\n\n"
+            ."Что сделать: выпустите новый ключ Performance API\n"
+            ."в рекламном кабинете Ozon и введите его на экране\n"
+            ."«Подключения» в Conwix. Не получилось — напишите нам, поможем.\n",
+            'о сломанном рекламном ключе',
+        );
+    }
+
+    /**
+     * Общая отправка обоих писем: получатели, перехват отказа и запись
+     * в журнал — одни и те же (см. докблок класса), различаются только
+     * тема, текст и предмет в сообщении журнала.
+     */
+    private function send(string $companyId, MarketplaceAccount $account, string $subject, string $text, string $about): void
+    {
         $marketplaceAccountId = $account->id()->toRfc4122();
         $shop = $account->externalShopId();
 
@@ -123,40 +181,22 @@ final readonly class MailMarketplaceAccountBrokenNotifier implements Marketplace
             // перехода в broken сорвало бы обработчик очереди тем же
             // способом, что и отказ отправки ниже. Молчать всё равно
             // нельзя — фиксируем случай записью, а не пропуском.
-            $this->log('warning', 'У компании нет ни одного участника — письмо о сломанном подключении отправить некому', $companyId, $marketplaceAccountId, $shop, 0);
+            $this->log('warning', "У компании нет ни одного участника — письмо {$about} отправить некому", $companyId, $marketplaceAccountId, $shop, 0);
 
             return;
         }
-
-        // Название площадки — из самого подключения, не константой в тексте:
-        // интерфейс общий, и со вторым коннектором письмо про Ozon ушло бы
-        // клиенту Wildberries.
-        $marketplace = ucfirst($account->marketplace()->value);
 
         try {
             $this->mailer->send(
                 (new Email())
                     ->to(...$recipients)
-                    ->subject("Conwix: подключение {$marketplace} перестало работать")
-                    ->text(
-                        "Площадка отклонила ключи подключения (магазин {$shop}).\n"
-                        ."Синхронизация остановлена, данные не удалены — история\n"
-                        ."остаётся на месте и продолжит обновляться после починки.\n\n"
-                        ."Что произошло: {$marketplace} ответил отказом в авторизации.\n"
-                        ."Обычно это значит, что ключ доступа отозван или перевыпущен\n"
-                        ."в кабинете продавца.\n\n"
-                        ."Что сделать: выпустите новый ключ в кабинете {$marketplace}\n"
-                        ."(Настройки → API-ключи) и замените его сами на экране\n"
-                        ."«Подключения» в Conwix — займёт пару минут. Не получилось —\n"
-                        ."напишите нам, поможем.\n\n"
-                        ."Пока подключение не восстановлено, цифры в приложении\n"
-                        ."остаются на дате последней успешной синхронизации.\n"
-                    ),
+                    ->subject($subject)
+                    ->text($text),
             );
         } catch (\Throwable $failure) {
             $this->log(
                 'warning',
-                'Не удалось отправить письмо о сломанном подключении',
+                "Не удалось отправить письмо {$about}",
                 $companyId,
                 $marketplaceAccountId,
                 $shop,
@@ -167,7 +207,7 @@ final readonly class MailMarketplaceAccountBrokenNotifier implements Marketplace
             return;
         }
 
-        $this->log('warning', 'Письмо о сломанном подключении отправлено', $companyId, $marketplaceAccountId, $shop, \count($recipients));
+        $this->log('warning', "Письмо {$about} отправлено", $companyId, $marketplaceAccountId, $shop, \count($recipients));
     }
 
     /**

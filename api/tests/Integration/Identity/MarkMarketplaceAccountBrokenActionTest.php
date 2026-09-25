@@ -171,6 +171,11 @@ final class MarkMarketplaceAccountBrokenActionTest extends KernelTestCase
                 return $this->inner->markBrokenIfActive($companyId, $id);
             }
 
+            public function markAdvertisingBrokenIfActive(string $companyId, \Symfony\Component\Uid\Uuid $id, int $version): bool
+            {
+                return $this->inner->markAdvertisingBrokenIfActive($companyId, $id, $version);
+            }
+
             public function tryConnect(MarketplaceAccount $account, \App\Identity\Domain\AuditRecord $trail): bool
             {
                 return $this->inner->tryConnect($account, $trail);
@@ -281,6 +286,11 @@ final class MarkMarketplaceAccountBrokenActionTest extends KernelTestCase
             public function accountBroken(string $companyId, MarketplaceAccount $account): void
             {
                 $this->notified[] = $account->id()->toRfc4122();
+            }
+
+            public function advertisingBroken(string $companyId, MarketplaceAccount $account): void
+            {
+                $this->notified[] = 'advertising:'.$account->id()->toRfc4122();
             }
         };
     }

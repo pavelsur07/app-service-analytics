@@ -15,6 +15,12 @@ final readonly class OzonAccountRef
     public function __construct(
         public string $companyId,
         public string $marketplaceAccountId,
+        /**
+         * Рекламный ключ подключён и исправен (ADR-026 п. 1). Планировщик
+         * ставит загрузку рекламы и контроль её свежести только таким
+         * подключениям: кабинет без рекламы не должен выглядеть сломанным.
+         */
+        public bool $advertisingActive,
     ) {
     }
 }

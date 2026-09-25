@@ -45,7 +45,7 @@ describe('reportLabel', () => {
 
 describe('advertisingPresentation', () => {
   it('говорит только о ключе и не обещает загрузку', () => {
-    // Загрузки рекламы в этой стадии нет (ADR-026, п. 5): метка,
+    // Загрузки рекламы в этой стадии нет (ADR-026, п. 4): метка,
     // обещающая «загружается», утверждала бы то, чего нет.
     for (const state of ['active', 'broken', null]) {
       expect(advertisingPresentation(state).explanation).not.toMatch(/загруж/)

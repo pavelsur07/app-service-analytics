@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Ingestion\Application;
 
 use App\Identity\Application\Facade\IdentityScheduleFacade;
+use App\Ingestion\Application\Message\FetchOzonAdCampaignsMessage;
+use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
@@ -94,6 +96,17 @@ final readonly class DispatchActiveOzonSyncsAction
         private int $returnWindowDays = 3,
         private int $returnRescanDays = 90,
         private int $rescanHour = 3,
+        /**
+         * Реклама (ADR-026 п. 4): расход и статистика кампаний следуют
+         * ADR-006 буквально — окно 45 дней на каждом тике; кусок стоит
+         * одного запроса, и довода сужать окно, как у расходов `by-day`,
+         * нет. Глубокий рескан — раз в неделю, в `rescanHour`, за 184 дня
+         * скользящим окном: предыдущий квартал целиком в любой день
+         * текущего. Он заменяет окно тика, а не добавляется к нему.
+         */
+        private int $adWindowDays = 45,
+        private int $adDeepRescanDays = 184,
+        private int $adDeepRescanWeekday = 1,
     ) {
     }
 
@@ -130,6 +143,10 @@ final readonly class DispatchActiveOzonSyncsAction
                 ));
             }
 
+            if ($target->advertisingActive) {
+                $this->dispatchAdvertising($target->companyId, $target->marketplaceAccountId, $today);
+            }
+
             $this->bus->dispatch(new FetchOzonReturnsMessage(
                 companyId: $target->companyId,
                 marketplaceAccountId: $target->marketplaceAccountId,
@@ -142,6 +159,27 @@ final readonly class DispatchActiveOzonSyncsAction
         // тем, сколько кабинетов он обошёл, и это число не должно
         // меняться от того, что у подключения появилась вторая задача.
         return \count($targets);
+    }
+
+    /**
+     * Только подключениям с `advertising_state = active` (ADR-026 п. 4):
+     * список кампаний и расход кусками по 30 дней — два куска на окно
+     * 45 дней, семь — на глубокий рескан.
+     */
+    private function dispatchAdvertising(string $companyId, string $marketplaceAccountId, \DateTimeImmutable $now): void
+    {
+        $today = OzonAdvertisingWindows::today($now);
+        $this->bus->dispatch(new FetchOzonAdCampaignsMessage($companyId, $marketplaceAccountId, $today->format('Y-m-d')));
+
+        $deepRescan = $this->isRescanTick($now) && (int) $now->format('N') === $this->adDeepRescanWeekday;
+        $chunks = OzonAdvertisingWindows::lastDays(
+            $today,
+            $deepRescan ? $this->adDeepRescanDays : $this->adWindowDays,
+        );
+
+        foreach ($chunks as $chunk) {
+            $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to']));
+        }
     }
 
     /**

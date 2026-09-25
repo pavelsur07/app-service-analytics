@@ -26,6 +26,7 @@ final class MarketplaceAccountBuilder
     private string $credentialsCiphertext = 'stub-ciphertext';
     private int $credentialsKeyVersion = 1;
     private MarketplaceAccountState $state = MarketplaceAccountState::Active;
+    private bool $advertisingConnected = false;
 
     private function __construct()
     {
@@ -93,6 +94,20 @@ final class MarketplaceAccountBuilder
         return $clone;
     }
 
+    /**
+     * Реклама подключена (`advertising_state = active`, ADR-026 п. 1).
+     * Сами ключи Performance кладутся в учётные данные отдельно —
+     * через withPlaintextCredentials(), как и ключ Seller API: builder
+     * не решает за тест, что лежит в зашифрованном объекте.
+     */
+    public function withAdvertisingConnected(): self
+    {
+        $clone = clone $this;
+        $clone->advertisingConnected = true;
+
+        return $clone;
+    }
+
     public function build(): MarketplaceAccount
     {
         $company = $this->company ?? CompanyBuilder::aCompany()->build();
@@ -135,6 +150,12 @@ final class MarketplaceAccountBuilder
      */
     private function applyState(MarketplaceAccount $account): void
     {
+        // Реклама — до отзыва: connectAdvertising() отказывает отозванному
+        // подключению, а builder описывает состояние, пришедшее к отзыву.
+        if ($this->advertisingConnected) {
+            $account->connectAdvertising($this->credentialsCiphertext, $this->credentialsKeyVersion);
+        }
+
         match ($this->state) {
             MarketplaceAccountState::Active => null,
             MarketplaceAccountState::Broken => $account->markBroken(),

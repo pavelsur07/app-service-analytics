@@ -96,6 +96,45 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         self::assertSame([], $mailer->messages);
     }
 
+    public function testAdvertisingIsWatchedOnlyWhereItIsConnected(): void
+    {
+        $container = $this->bootedContainer();
+        $withAds = $this->activeAccount($container, advertising: true);
+        $withoutAds = $this->activeAccount($container);
+
+        foreach ([$withAds, $withoutAds] as $account) {
+            $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
+            $this->uploaded($container, $account, MarketplaceReportType::OzonAccrualByDay);
+        }
+
+        $mailer = $this->recordingMailer();
+        $alerted = ($this->action($container, $mailer))();
+
+        // ADR-026 п. 4: реклама сторожится только там, где её ключ
+        // подключён и исправен. Кабинет без рекламы сломанным выглядеть
+        // не должен, а вставшая реклама у подключённого — должна.
+        self::assertSame([$this->key($withAds, MarketplaceReportType::OzonAdExpense)], $alerted);
+
+        $email = $mailer->messages[0] ?? null;
+        self::assertInstanceOf(Email::class, $email);
+        self::assertStringContainsString($withAds->id()->toRfc4122().' — реклама', (string) $email->getTextBody());
+    }
+
+    public function testFreshAdvertisingUploadIsSilent(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container, advertising: true);
+
+        $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
+        $this->uploaded($container, $account, MarketplaceReportType::OzonAccrualByDay);
+        $this->uploaded($container, $account, MarketplaceReportType::OzonAdExpense);
+
+        $mailer = $this->recordingMailer();
+
+        self::assertSame([], ($this->action($container, $mailer))());
+        self::assertSame([], $mailer->messages);
+    }
+
     public function testCatalogUploadDoesNotCountAsFreshness(): void
     {
         $container = $this->bootedContainer();
@@ -188,16 +227,21 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         );
     }
 
-    private function activeAccount(ContainerInterface $container): MarketplaceAccount
+    private function activeAccount(ContainerInterface $container, bool $advertising = false): MarketplaceAccount
     {
         /** @var CompanyRepository $companies */
         $companies = $container->get(CompanyRepository::class);
         /** @var MarketplaceAccountRepository $marketplaceAccounts */
         $marketplaceAccounts = $container->get(MarketplaceAccountRepository::class);
 
-        return MarketplaceAccountBuilder::aMarketplaceAccount()
+        $builder = MarketplaceAccountBuilder::aMarketplaceAccount()
             ->withCompany(CompanyBuilder::aCompany()->persistWith($companies))
-            ->persistWith($companies, $marketplaceAccounts);
+            ->withExternalShopId('shop-'.bin2hex(random_bytes(4)));
+        if ($advertising) {
+            $builder = $builder->withAdvertisingConnected();
+        }
+
+        return $builder->persistWith($companies, $marketplaceAccounts);
     }
 
     private function key(MarketplaceAccount $account, string $reportType): string

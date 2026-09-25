@@ -6,6 +6,8 @@ namespace App\Ingestion\Application;
 
 use App\Identity\Application\Facade\CredentialsReplacementOutcome;
 use App\Identity\Application\Facade\IdentityFacade;
+use App\Ingestion\Application\Message\FetchOzonAdCampaignsMessage;
+use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
 use App\Ingestion\Domain\OzonAdCampaign;
 use App\Ingestion\Domain\OzonAdCampaignListParser;
 use App\Ingestion\Domain\OzonAdCampaignProductsParser;
@@ -13,6 +15,7 @@ use App\Ingestion\Domain\OzonAdvertisingFetcher;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkuMatchQuery;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
 
@@ -54,6 +57,7 @@ final readonly class ConnectOzonAdvertisingAction
         private AccountCatalogSkuMatchQuery $catalogMatch,
         private IdentityFacade $identityFacade,
         private LoggerInterface $logger,
+        private MessageBusInterface $bus,
     ) {
     }
 
@@ -81,14 +85,19 @@ final readonly class ConnectOzonAdvertisingAction
             return ConnectAdvertisingResult::WrongCabinet;
         }
 
-        return match ($this->identityFacade->replaceAdvertisingCredentials(
+        $outcome = $this->identityFacade->replaceAdvertisingCredentials(
             $companyId,
             $marketplaceAccountId,
             $performanceClientId,
             $performanceClientSecret,
             $expectedVersion,
             $actorUserId,
-        )) {
+        );
+        if (CredentialsReplacementOutcome::Replaced === $outcome) {
+            $this->scheduleInitialLoad($companyId, $marketplaceAccountId);
+        }
+
+        return match ($outcome) {
             CredentialsReplacementOutcome::Replaced => ConnectAdvertisingResult::Connected,
             CredentialsReplacementOutcome::NotFound => ConnectAdvertisingResult::NotFound,
             CredentialsReplacementOutcome::Revoked => ConnectAdvertisingResult::Revoked,
@@ -177,6 +186,38 @@ final readonly class ConnectOzonAdvertisingAction
         ]);
 
         return ConnectAdvertisingResult::Unavailable;
+    }
+
+    /**
+     * Первичная загрузка (ADR-026 п. 4): список кампаний и 12 месяцев
+     * расхода назад от дня подключения, кусками по 30 дней. После
+     * сохранения ключа, а не до: без сохранённого ключа обработчику нечем
+     * авторизоваться.
+     *
+     * Ключ к этому моменту уже сохранён, и отказ очереди его не отменяет:
+     * ответить клиенту ошибкой значило бы сообщить неправду о принятом
+     * ключе. Отказ перехватывается и пишется в журнал уровнем `warning` —
+     * последние 184 дня подберут тик и недельный рескан, а историю глубже
+     * восстанавливает повторный ввод того же ключа: он ставит первичную
+     * загрузку заново, повтор кусков идемпотентен. Секрета в записи нет.
+     */
+    private function scheduleInitialLoad(string $companyId, string $marketplaceAccountId): void
+    {
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+
+        try {
+            $this->bus->dispatch(new FetchOzonAdCampaignsMessage($companyId, $marketplaceAccountId, $today->format('Y-m-d')));
+
+            foreach (OzonAdvertisingWindows::initial($today) as $chunk) {
+                $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to']));
+            }
+        } catch (\Throwable $failure) {
+            $this->logger->warning('Первичная загрузка рекламы не поставлена в очередь — ключ сохранён, история глубже 184 дней потребует повторного ввода ключа', [
+                'company_id' => $companyId,
+                'marketplace_account_id' => $marketplaceAccountId,
+                'exception_class' => $failure::class,
+            ]);
+        }
     }
 
     private function connectionExists(string $companyId, string $marketplaceAccountId): bool

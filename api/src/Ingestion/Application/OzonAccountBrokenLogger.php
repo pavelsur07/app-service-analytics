@@ -99,9 +99,12 @@ final readonly class OzonAccountBrokenLogger
     }
 
     /**
-     * @param 'products'|'sales'|'expenses'|'returns' $scope область
-     *                                                       синхронизации — тот же словарь, что у проб ключей
-     *                                                       (`ConnectOzonAccountAction::classifyProbeFailure()`)
+     * `advertising` — отказ рекламного ключа (ADR-026 п. 1): в broken
+     * переходит только реклама, и сообщение записи говорит именно это.
+     *
+     * @param 'products'|'sales'|'expenses'|'returns'|'advertising' $scope область
+     *                                                                     синхронизации — тот же словарь, что у проб ключей
+     *                                                                     (`ConnectOzonAccountAction::classifyProbeFailure()`)
      */
     public function log(
         string $companyId,
@@ -111,7 +114,10 @@ final readonly class OzonAccountBrokenLogger
         string $apiKey,
     ): void {
         try {
-            $this->logger->warning('Ozon отклонил авторизацию — подключение переводится в broken', [
+            $message = 'advertising' === $scope
+                ? 'Ozon отклонил рекламный ключ — реклама переводится в broken'
+                : 'Ozon отклонил авторизацию — подключение переводится в broken';
+            $this->logger->warning($message, [
                 'scope' => $scope,
                 'status_code' => $this->statusCodeOf($failure),
                 'response_body' => $this->redactedBodyOf($failure, $apiKey),

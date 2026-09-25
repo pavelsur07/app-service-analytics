@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Identity\Application\Facade;
 
+use App\Identity\Application\MarkAdvertisingBrokenAction;
 use App\Identity\Application\MarkMarketplaceAccountBrokenAction;
 use App\Identity\Application\ReplaceAdvertisingCredentialsAction;
 use App\Identity\Application\ReplaceMarketplaceCredentialsAction;
@@ -15,6 +16,7 @@ use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\ReplaceCredentialsOutcome;
+use App\Identity\Domain\ValueObject\AdvertisingState;
 use App\Identity\Domain\ValueObject\Marketplace;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Identity\Domain\ValueObject\MarketplaceCredentials;
@@ -39,7 +41,49 @@ final class IdentityFacade
         private readonly ReplaceMarketplaceCredentialsAction $replaceCredentials,
         private readonly AuditRecordRepository $auditRecords,
         private readonly ReplaceAdvertisingCredentialsAction $replaceAdvertisingCredentials,
+        private readonly MarkAdvertisingBrokenAction $markAdvertisingBroken,
     ) {
+    }
+
+    /**
+     * Цель рекламной синхронизации (ADR-026 п. 1): расшифрованный рекламный
+     * ключ только при `state = active` и `advertising_state = active`.
+     * Отозванное или сломанное подключение останавливает и рекламу;
+     * сломанная реклама не останавливает подключение.
+     */
+    public function findOzonAdvertisingTarget(string $companyId, string $marketplaceAccountId): ?OzonAdvertisingTarget
+    {
+        $account = $this->marketplaceAccounts->get($companyId, Uuid::fromString($marketplaceAccountId));
+        if (null === $account
+            || MarketplaceAccountState::Active !== $account->state()
+            || AdvertisingState::Active !== $account->advertisingState()) {
+            return null;
+        }
+
+        $credentials = $this->credentialsEncryptor->decrypt(
+            $account->credentialsCiphertext(),
+            $account->credentialsKeyVersion(),
+        );
+
+        return new OzonAdvertisingTarget(
+            companyId: $account->companyId()->toRfc4122(),
+            marketplaceAccountId: $account->id()->toRfc4122(),
+            performanceClientId: $credentials->get(ReplaceAdvertisingCredentialsAction::PerformanceClientIdKey),
+            performanceClientSecret: $credentials->get(ReplaceAdvertisingCredentialsAction::PerformanceClientSecretKey),
+            version: $account->version(),
+        );
+    }
+
+    /**
+     * Площадка отказала рекламному ключу (ADR-026 п. 1): в broken — только
+     * реклама, письмо называет рекламный ключ. Идемпотентно: повторный
+     * вызов второго письма не порождает. `$version` — из цели, с которой
+     * запрашивали площадку: ключ, заменённый после этого, не ломается
+     * запоздавшим отказом по старому.
+     */
+    public function markOzonAdvertisingBroken(string $companyId, string $marketplaceAccountId, int $version): bool
+    {
+        return ($this->markAdvertisingBroken)($companyId, $marketplaceAccountId, $version);
     }
 
     /**
