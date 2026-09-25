@@ -68,7 +68,7 @@ export function advertisingPresentation(
       tone: 'neutral',
       label: 'Реклама не подключена',
       explanation:
-        'Добавьте ключ Performance API, чтобы видеть расход по кампаниям и товарам.',
+        'Рекламный ключ Performance API к этому магазину не добавлен.',
     }
   }
 
