@@ -117,7 +117,7 @@ export function SkuBuyoutDaily({
               Прогноз
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-3 w-5 rounded-sm bg-surface-sunken" />
+              <span className="h-3 w-5 rounded-sm bg-border-default" />
               Не созрел
             </span>
           </div>
@@ -175,12 +175,14 @@ export function SkuBuyoutDaily({
               />
               {unmatured.map((range) => (
                 <ReferenceArea
-                  fill="var(--color-surface-sunken)"
+                  fill="var(--color-border-default)"
                   fillOpacity={1}
                   ifOverflow="hidden"
                   key={range.start}
                   x1={range.start - 0.5}
                   x2={range.end + 0.5}
+                  y1={0}
+                  y2={10000}
                 />
               ))}
               <XAxis

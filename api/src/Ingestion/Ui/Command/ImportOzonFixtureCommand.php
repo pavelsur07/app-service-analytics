@@ -14,6 +14,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Uid\Uuid;
@@ -51,7 +52,11 @@ final class ImportOzonFixtureCommand extends Command
             ->addArgument('companyId', InputArgument::REQUIRED)
             ->addArgument('marketplaceAccountId', InputArgument::REQUIRED)
             ->addArgument('businessDate', InputArgument::REQUIRED, 'Бизнес-дата периода, Y-m-d')
-            ->addArgument('fixturePath', InputArgument::REQUIRED, 'Путь к JSON-файлу с ответом Ozon');
+            ->addArgument('fixturePath', InputArgument::REQUIRED, 'Путь к JSON-файлу с ответом Ozon')
+            // Срок созревания (ADR-029) меряется по моменту наблюдения:
+            // сценарию нужна история, растянутая во времени, а не вся
+            // «увиденная» в секунду засева.
+            ->addOption('observed-at', null, InputOption::VALUE_REQUIRED, 'Момент получения сырья, ISO 8601; по умолчанию — сейчас');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -78,7 +83,16 @@ final class ImportOzonFixtureCommand extends Command
         $marketplaceAccountId = Uuid::fromString($marketplaceAccountIdArgument);
         $period = new \DateTimeImmutable($businessDate);
 
-        $observedAt = new \DateTimeImmutable();
+        $observedAtOption = $input->getOption('observed-at');
+        try {
+            $observedAt = \is_string($observedAtOption)
+                ? new \DateTimeImmutable($observedAtOption)
+                : new \DateTimeImmutable();
+        } catch (\Exception) {
+            $io->error('observed-at должен быть датой-временем ISO 8601.');
+
+            return Command::FAILURE;
+        }
         $rawDocument = MarketplaceRawDocument::capture(
             companyId: $companyId,
             marketplaceAccountId: $marketplaceAccountId,

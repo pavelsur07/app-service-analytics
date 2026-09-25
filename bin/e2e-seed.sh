@@ -126,56 +126,56 @@ sed -E "s/2026-08-(11|12|13|14|15|16)/$synthetic_date/g" \
     api/tests/Fixtures/Marketplace/ozon/ozon-buyout-returns.json \
     > "$fixture_dir/returns.json"
 
-# 30 пар handover -> terminal дают измеренный p95=0 для сквозной проверки
-# mature actual-series. Первая строка — вторая дата SKU 100002; остальные
-# лежат вне 30-дневного отчёта и служат только maturity sample.
-jq -n --arg maturity "$maturity_date" --arg current "$second_synthetic_date" '
-  {result: [range(1; 31) as $i |
-    ($i == 1) as $target |
-    (if $target then 100002 else 990000 end) as $sku |
-    (if $target then $current else $maturity end) as $day |
-    {
-      order_number: "E2E-MAT-\($i)",
-      posting_number: "E2E-MAT-\($i)-1",
-      status: "delivering",
-      substatus: "posting_on_way_to_city",
-      cancel_reason_id: 0,
-      in_process_at: "\($day)T08:05:00Z",
-      products: [{sku: $sku, quantity: 1}],
-      financial_data: {products: [{product_id: $sku, price: 100, commission_amount: 0}]}
-    }
-  ]}
-' > "$fixture_dir/maturity-before.json"
+# Выборка срока созревания (ADR-029): 30 отправлений вне 30-дневного
+# отчёта и одно — вторая дата SKU 100002. Срок меряется по моменту
+# наблюдения, поэтому каждая пара «в пути -> получено» импортируется
+# с наблюдением в день своего заказа, до конца дня по Москве: p95 = 0,
+# и прошедшие дни зрелые. Засев «всё увидено сейчас» дал бы срок в
+# 40 дней и незрелый месяц.
+postings_fixture() {
+    jq -n --arg day "$1" --arg sku "$2" --arg status "$3" --arg substatus "$4" \
+        --argjson from "$5" --argjson to "$6" '
+      {result: [range($from; $to + 1) as $i | {
+        order_number: "E2E-MAT-\($i)",
+        posting_number: "E2E-MAT-\($i)-1",
+        status: $status,
+        substatus: $substatus,
+        cancel_reason_id: 0,
+        in_process_at: "\($day)T08:05:00Z",
+        products: [{sku: ($sku | tonumber), quantity: 1}],
+        financial_data: {products: [{product_id: ($sku | tonumber), price: 100, commission_amount: 0}]}
+      }]}
+    '
+}
 
-jq -n --arg maturity "$maturity_date" --arg current "$second_synthetic_date" '
-  {result: [range(1; 31) as $i |
-    ($i == 1) as $target |
-    (if $target then 100002 else 990000 end) as $sku |
-    (if $target then $current else $maturity end) as $day |
-    {
-      order_number: "E2E-MAT-\($i)",
-      posting_number: "E2E-MAT-\($i)-1",
-      status: "delivered",
-      substatus: "posting_received",
-      cancel_reason_id: 0,
-      in_process_at: "\($day)T08:05:00Z",
-      products: [{sku: $sku, quantity: 1}],
-      financial_data: {products: [{product_id: $sku, price: 100, commission_amount: 0}]}
-    }
-  ]}
-' > "$fixture_dir/maturity-after.json"
+postings_fixture "$second_synthetic_date" 100002 delivering posting_on_way_to_city 1 1 > "$fixture_dir/target-before.json"
+postings_fixture "$second_synthetic_date" 100002 delivered posting_received 1 1 > "$fixture_dir/target-after.json"
+postings_fixture "$maturity_date" 990000 delivering posting_on_way_to_city 2 31 > "$fixture_dir/maturity-before.json"
+postings_fixture "$maturity_date" 990000 delivered posting_received 2 31 > "$fixture_dir/maturity-after.json"
 
 docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-fixture \
     "$company_id" "$account_id" "$historical_date" \
     "$fixture_container_dir/posting-history.json"
 
 docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-fixture \
+    --observed-at="${maturity_date}T10:00:00Z" \
     "$company_id" "$account_id" "$maturity_date" \
     "$fixture_container_dir/maturity-before.json"
 
 docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-fixture \
+    --observed-at="${maturity_date}T11:00:00Z" \
     "$company_id" "$account_id" "$maturity_date" \
     "$fixture_container_dir/maturity-after.json"
+
+docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-fixture \
+    --observed-at="${second_synthetic_date}T10:00:00Z" \
+    "$company_id" "$account_id" "$second_synthetic_date" \
+    "$fixture_container_dir/target-before.json"
+
+docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-fixture \
+    --observed-at="${second_synthetic_date}T11:00:00Z" \
+    "$company_id" "$account_id" "$second_synthetic_date" \
+    "$fixture_container_dir/target-after.json"
 
 # Две последовательные фикстуры одного набора заказов дают настоящую
 # status history (в пути raw -> parser -> writer), а не подготовленные
@@ -183,10 +183,12 @@ docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-fixture
 # quantity > 1 и mixed order. Июльская фикстура выше оставляет больше
 # 50 SKU в 90-дневном окне, чтобы E2E проходил keyset next/previous.
 docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-fixture \
+    --observed-at="${synthetic_date}T10:00:00Z" \
     "$company_id" "$account_id" "$synthetic_date" \
     "$fixture_container_dir/posting-before.json"
 
 docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-fixture \
+    --observed-at="${synthetic_date}T11:00:00Z" \
     "$company_id" "$account_id" "$synthetic_date" \
     "$fixture_container_dir/posting-after.json"
 
