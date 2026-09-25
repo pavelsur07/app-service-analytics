@@ -20,6 +20,11 @@ final readonly class CheckOzonAdSkuReportMessage
         public int $attempt,
         /** Вид отчёта (`OzonAdReportKind`); `null` — SKU-отчёт. */
         public ?string $kind = null,
+        /**
+         * Конец периода отчёта, Y-m-d. `null` у сообщений, стоявших
+         * в очереди до появления поля, — читать через `periodTo()`.
+         */
+        public ?string $to = null,
     ) {
     }
 
@@ -32,5 +37,21 @@ final readonly class CheckOzonAdSkuReportMessage
     public function reportKind(): string
     {
         return OzonAdReportKind::of($this->kind ?? null);
+    }
+
+    /**
+     * Конец периода отчёта. У сообщений без поля — начало плюс 29 дней:
+     * кусок не длиннее 30 дней, точнее без поля не узнать.
+     */
+    public function periodTo(): string
+    {
+        $to = $this->to ?? null;
+        if (null !== $to) {
+            return $to;
+        }
+
+        $from = \DateTimeImmutable::createFromFormat('!Y-m-d', $this->from);
+
+        return false === $from ? $this->from : $from->modify('+29 days')->format('Y-m-d');
     }
 }

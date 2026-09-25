@@ -469,6 +469,12 @@ apps/seller/
 
 Фичи создаются по мере появления экранов. Пустых папок нет.
 
+`features/coverage` — отчёт о полноте данных (`/coverage`): тепловая карта
+«эндпоинт Ozon × день месяца» по кабинету. Бэкенд — модуль Ingestion:
+расчёт в `Domain/Coverage` (чистая функция), чтение raw-слоя
+в `Infrastructure/Query/Coverage/CoverageDocumentsQuery`, упавшие загрузки —
+`FailedMessagesQuery` (очередь `failed`) и `Application/Coverage/FailedLoads`.
+
 **Текущее состояние.** Первая настоящая фича — `features/ingestion/`
 (список продаж Ozon), вместе с ней появились `app/` (роутер,
 `QueryClientProvider`) и остальные обязательные единственности `shared/`.

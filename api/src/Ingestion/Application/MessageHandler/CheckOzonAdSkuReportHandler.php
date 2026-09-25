@@ -119,7 +119,7 @@ final readonly class CheckOzonAdSkuReportHandler
         }
 
         $this->bus->dispatch(
-            new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $message->uuid, $message->attempt + 1, $message->reportKind()),
+            new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $message->uuid, $message->attempt + 1, $message->reportKind(), $message->periodTo()),
             [new DelayStamp(min(OrderOzonAdSkuReportHandler::FIRST_CHECK_DELAY_MS * $message->attempt, self::MAX_DELAY_MS))],
         );
     }

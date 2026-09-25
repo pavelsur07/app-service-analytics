@@ -260,6 +260,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/connections/{marketplaceAccountId}/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_connection_coverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/buyout-rate": {
         parameters: {
             query?: never;
@@ -656,6 +672,28 @@ export interface components {
             name: string;
             /** @description Состояние подключения */
             state: string;
+        };
+        DataCoverageRowResponse: {
+            /** raw-тип; у строки «Итого» — `total` */
+            key: string;
+            section: string;
+            /** метод и путь Ozon; у строки «Итого» — пусто */
+            endpoint: string;
+            statuses: ("loaded" | "missing" | "failed" | "pending")[];
+            lastReceivedAt: (string | null)[];
+            /** загружено дней из тех, что уже должны быть загружены */
+            covered: number;
+            /** дней, которые уже должны быть загружены */
+            due: number;
+        };
+        DataCoverageResponse: {
+            /** месяц отчёта, Y-m */
+            month: string;
+            /** сегодняшний день по Москве, Y-m-d */
+            today: string;
+            days: string[];
+            total: components["schemas"]["DataCoverageRowResponse"];
+            rows: components["schemas"]["DataCoverageRowResponse"][];
         };
         BuyoutRateSummaryResponse: {
             orderedQuantity: number;
@@ -1614,6 +1652,59 @@ export interface operations {
             };
             /** @description У подключения есть загруженные документы — удалить нельзя, только заменить ключ */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_connection_coverage: {
+        parameters: {
+            query?: {
+                /** @description Месяц отчёта, Y-m; по умолчанию текущий (по Москве) */
+                month?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+                marketplaceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Покрытие дней месяца выгрузками по эндпоинтам */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataCoverageResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Подключение не найдено в этой компании */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректный месяц */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
