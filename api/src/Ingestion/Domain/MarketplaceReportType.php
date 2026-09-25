@@ -54,6 +54,13 @@ final class MarketplaceReportType
      */
     public const string OzonAdSkuReport = 'ozon_ad_sku_report';
 
+    /**
+     * Асинхронный отчёт заказов «Оплаты за заказ» по организации;
+     * `period` — начало периода отчёта. Форма строки неизвестна —
+     * хранится как есть.
+     */
+    public const string OzonAdCpoOrders = 'ozon_ad_cpo_orders';
+
     private function __construct()
     {
     }

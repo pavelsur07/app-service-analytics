@@ -145,6 +145,11 @@ final class ConnectOzonAdvertisingInitialLoadTest extends KernelTestCase
                 throw new \LogicException('Проба ключа отчёты не заказывает.');
             }
 
+            public function orderCpoOrdersReport(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string
+            {
+                throw new \LogicException('Проба ключа отчёты не заказывает.');
+            }
+
             public function reportState(string $token, string $uuid): string
             {
                 throw new \LogicException('Проба ключа отчёты не заказывает.');

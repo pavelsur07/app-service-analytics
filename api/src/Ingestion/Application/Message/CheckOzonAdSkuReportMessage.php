@@ -16,6 +16,8 @@ final readonly class CheckOzonAdSkuReportMessage
         public string $from,
         public string $uuid,
         public int $attempt,
+        /** Вид отчёта (`OzonAdReportKind`); `null` — SKU-отчёт. */
+        public ?string $kind = null,
     ) {
     }
 }

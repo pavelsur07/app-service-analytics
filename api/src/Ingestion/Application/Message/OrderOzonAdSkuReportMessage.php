@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Ingestion\Application\Message;
 
 /**
- * Заказать асинхронный SKU-отчёт за `[from, to]` (`Y-m-d` по Москве)
- * по пачке кампаний не больше десяти (ADR-026 п. 4).
+ * Заказать асинхронный отчёт рекламы за `[from, to]` (`Y-m-d` по Москве)
+ * (ADR-026 п. 4): SKU-отчёт — по пачке кампаний не больше десяти, отчёт
+ * заказов «Оплаты за заказ» — по всей организации, без кампаний. Имя
+ * класса осталось от первого вида: сообщения уже ходят по очереди.
  */
 final readonly class OrderOzonAdSkuReportMessage
 {
@@ -26,6 +28,8 @@ final readonly class OrderOzonAdSkuReportMessage
          * Потолок повторов меряется от него по времени, а не числом попыток.
          */
         public ?string $refusedSince = null,
+        /** Вид отчёта (`OzonAdReportKind`); `null` — SKU-отчёт. */
+        public ?string $kind = null,
     ) {
     }
 }

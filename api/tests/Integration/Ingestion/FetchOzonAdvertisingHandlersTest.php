@@ -18,6 +18,7 @@ use App\Ingestion\Application\MessageHandler\FetchOzonAdCampaignStatsHandler;
 use App\Ingestion\Application\MessageHandler\OrderOzonAdSkuReportHandler;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Domain\OzonAdReportKind;
 use App\Ingestion\Infrastructure\Connector\OzonPerformance\OzonPerformanceCampaignClient;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
@@ -128,7 +129,8 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         // Вчера и сегодня отдаёт products/sku; отчёт — за остальные дни
         // куска (ADR-026 п. 4), по всем неархивным кампаниям типа SKU,
         // не больше десяти в заказе.
-        $orders = $this->sent($container, OrderOzonAdSkuReportMessage::class);
+        $all = $this->sent($container, OrderOzonAdSkuReportMessage::class);
+        $orders = array_values(array_filter($all, static fn (OrderOzonAdSkuReportMessage $order): bool => OzonAdReportKind::Sku === OzonAdReportKind::of($order->kind)));
         self::assertNotSame([], $orders);
         $campaigns = [];
         foreach ($orders as $order) {
@@ -138,6 +140,12 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
             $campaigns = [...$campaigns, ...$order->campaignIds];
         }
         self::assertSame($this->activeSkuCampaignIds(), $campaigns);
+
+        // Заказы «Оплаты за заказ» — один отчёт по всей организации
+        // за весь кусок, без кампаний: products/sku для них нет.
+        $cpo = array_values(array_filter($all, static fn (OrderOzonAdSkuReportMessage $order): bool => OzonAdReportKind::CpoOrders === $order->kind));
+        self::assertCount(1, $cpo);
+        self::assertSame([$chunk['from'], $chunk['to'], []], [$cpo[0]->from, $cpo[0]->to, $cpo[0]->campaignIds]);
         // Список кампаний запрошен один раз — головным куском; заказ
         // берёт его из raw, а не вторым запросом (лимит 429).
         self::assertSame(1, $fetcher->campaignCalls);
@@ -175,6 +183,35 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         self::assertSame(30_000, $envelopes[0]->last(DelayStamp::class)?->getDelay());
     }
 
+    public function testOrdersReportIsOrderedForTheWholeOrganisationAndStoredAsReceived(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+
+        $handler = $container->get(OrderOzonAdSkuReportHandler::class);
+        \assert($handler instanceof OrderOzonAdSkuReportHandler);
+        $handler(new OrderOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-25', '2026-09-24', [], kind: OzonAdReportKind::CpoOrders));
+
+        self::assertSame([['from' => '2026-08-25', 'to' => '2026-09-24']], $fetcher->cpoOrders);
+        self::assertSame([], $fetcher->reportOrders);
+        $checks = $this->sent($container, CheckOzonAdSkuReportMessage::class);
+        self::assertCount(1, $checks);
+        self::assertSame(OzonAdReportKind::CpoOrders, $checks[0]->kind);
+
+        // Готовый отчёт — в raw своего типа, как есть: форма строки
+        // неизвестна, разбора нет (ADR-026 п. 4).
+        $check = $container->get(CheckOzonAdSkuReportHandler::class);
+        \assert($check instanceof CheckOzonAdSkuReportHandler);
+        $check($checks[0]);
+
+        self::assertSame(
+            [$this->fixture('statistics-json-many-2026-08-25.json')],
+            $this->rawBodies($container, $account, MarketplaceReportType::OzonAdCpoOrders),
+        );
+        self::assertSame([], $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuReport));
+    }
+
     public function testRateLimitedOrderIsRetriedLaterWithinACeiling(): void
     {
         $container = $this->bootedContainer();
@@ -204,7 +241,7 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         // петля, а предупреждение, когда отказ длится дольше суток.
         $this->order($container, $account, attempt: 500, refusedSince: (new \DateTimeImmutable('-25 hours'))->format(\DateTimeInterface::ATOM));
         self::assertCount(1, $this->sentEnvelopes($container, OrderOzonAdSkuReportMessage::class));
-        self::assertSame(1, $this->warningsContaining($container, 'SKU-отчёт рекламы Ozon не заказан'));
+        self::assertSame(1, $this->warningsContaining($container, 'Отчёт рекламы Ozon не заказан'));
     }
 
     public function testRejectedOrderGivesUpVisiblyWithoutRetry(): void
@@ -220,7 +257,7 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
 
         self::assertSame([], $this->sentEnvelopes($container, OrderOzonAdSkuReportMessage::class));
         self::assertSame([], $this->sentEnvelopes($container, CheckOzonAdSkuReportMessage::class));
-        self::assertSame(1, $this->warningsContaining($container, 'SKU-отчёт рекламы Ozon не заказан'));
+        self::assertSame(1, $this->warningsContaining($container, 'Отчёт рекламы Ozon не заказан'));
     }
 
     public function testReadyReportIsStoredAsReceived(): void
@@ -270,7 +307,7 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         $this->check($container, $account, attempt: 1);
 
         self::assertSame([], $this->sent($container, CheckOzonAdSkuReportMessage::class));
-        self::assertSame(2, $this->warningsContaining($container, 'SKU-отчёт рекламы Ozon не загружен'));
+        self::assertSame(2, $this->warningsContaining($container, 'Отчёт рекламы Ozon не загружен'));
     }
 
     public function testRepeatedChunkDoesNotDuplicateRaw(): void

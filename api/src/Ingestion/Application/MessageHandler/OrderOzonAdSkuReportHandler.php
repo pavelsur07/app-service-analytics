@@ -9,6 +9,7 @@ use App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage;
 use App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonAdvertisingWindows;
+use App\Ingestion\Domain\OzonAdReportKind;
 use App\Ingestion\Domain\OzonAdvertisingFetcher;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonRateLimited;
@@ -18,7 +19,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 
 /**
- * Заказ асинхронного SKU-отчёта (ADR-026 п. 4): заказать и поставить
+ * Заказ асинхронного отчёта рекламы — SKU-отчёта или отчёта заказов
+ * «Оплаты за заказ» (ADR-026 п. 4): заказать и поставить
  * проверку с UUID через 30 секунд. Ждать готовности здесь нельзя —
  * это минута занятого воркера на каждый отчёт.
  *
@@ -62,15 +64,17 @@ final readonly class OrderOzonAdSkuReportHandler
         $timezone = new \DateTimeZone(OzonAdvertisingWindows::TIMEZONE);
         $from = \DateTimeImmutable::createFromFormat('!Y-m-d', $message->from, $timezone);
         $to = \DateTimeImmutable::createFromFormat('!Y-m-d', $message->to, $timezone);
-        if (false === $from || false === $to || $to < $from
-            || [] === $message->campaignIds
-            || \count($message->campaignIds) > OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST) {
-            throw new \InvalidArgumentException('Ozon SKU report order needs valid dates and 1..10 campaigns.');
+        $kind = OzonAdReportKind::of($message->kind);
+        $campaignsValid = OzonAdReportKind::Sku === $kind
+            ? [] !== $message->campaignIds && \count($message->campaignIds) <= OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST
+            : [] === $message->campaignIds;
+        if (false === $from || false === $to || $to < $from || !$campaignsValid) {
+            throw new \InvalidArgumentException('Ozon advertising report order needs valid dates; SKU reports 1..10 campaigns, orders reports none.');
         }
 
         $target = $this->identityFacade->findOzonAdvertisingTarget($message->companyId, $message->marketplaceAccountId);
         if (null === $target) {
-            $this->logger->info('Реклама подключения не активна — заказ SKU-отчёта пропущен', [
+            $this->logger->info('Реклама подключения не активна — заказ отчёта пропущен', [
                 'company_id' => $message->companyId,
                 'marketplace_account_id' => $message->marketplaceAccountId,
             ]);
@@ -80,7 +84,9 @@ final readonly class OrderOzonAdSkuReportHandler
 
         try {
             $token = $this->client->token($target->performanceClientId, $target->performanceClientSecret);
-            $body = $this->client->orderSkuReport($token, $message->campaignIds, $from, $to);
+            $body = OzonAdReportKind::Sku === $kind
+                ? $this->client->orderSkuReport($token, $message->campaignIds, $from, $to)
+                : $this->client->orderCpoOrdersReport($token, $from, $to);
         } catch (\Throwable $failure) {
             if (OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
                 $this->brokenLogger->log($target->companyId, $target->marketplaceAccountId, 'advertising', $failure, $target->performanceClientSecret);
@@ -107,7 +113,7 @@ final readonly class OrderOzonAdSkuReportHandler
         }
 
         $this->bus->dispatch(
-            new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, self::uuid($body), 1),
+            new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, self::uuid($body), 1, $kind),
             [new DelayStamp(self::FIRST_CHECK_DELAY_MS)],
         );
     }
@@ -137,6 +143,7 @@ final readonly class OrderOzonAdSkuReportHandler
                 $message->campaignIds,
                 $message->attempt + 1,
                 $refusedSince->format(\DateTimeInterface::ATOM),
+                $message->kind,
             ),
             [new DelayStamp(self::RATE_LIMIT_RETRY_MS - self::RETRY_JITTER_MS + random_int(0, 2 * self::RETRY_JITTER_MS))],
         );
@@ -148,7 +155,8 @@ final readonly class OrderOzonAdSkuReportHandler
      */
     private function giveUp(OrderOzonAdSkuReportMessage $message, string $reason): void
     {
-        $this->logger->warning('SKU-отчёт рекламы Ozon не заказан', [
+        $this->logger->warning('Отчёт рекламы Ozon не заказан', [
+            'kind' => OzonAdReportKind::of($message->kind),
             'company_id' => $message->companyId,
             'marketplace_account_id' => $message->marketplaceAccountId,
             'period_from' => $message->from,

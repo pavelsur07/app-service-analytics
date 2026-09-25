@@ -79,8 +79,8 @@ ADR-007 «с первого дня», и ограничение по адрес�
       есть неархивные кампании типа `SKU` (иначе запроса нет, ADR-026 п. 4);
       самый ранний `period`
       у `ozon_ad_expense` — около года назад (первичная загрузка, ADR-026 п. 4).
-- [ ] Через час после ввода — `ozon_ad_sku_report` по кускам первичной
-      загрузки; в журнале `worker-ingestion` нет «SKU-отчёт рекламы Ozon
+- [ ] Через час после ввода — `ozon_ad_sku_report` и `ozon_ad_cpo_orders`
+      по кускам первичной загрузки; в журнале `worker-ingestion` нет «Отчёт рекламы Ozon
       не загружен» и «не заказан» (или причина понятна — глубина истории).
 - [ ] `messenger:failed:show` без сообщений `FetchOzonAd*`, `OrderOzonAdSkuReport*`,
       `CheckOzonAdSkuReport*`.

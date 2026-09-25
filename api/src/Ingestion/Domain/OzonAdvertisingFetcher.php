@@ -48,6 +48,13 @@ interface OzonAdvertisingFetcher
     public function orderSkuReport(string $token, array $campaignIds, \DateTimeImmutable $from, \DateTimeImmutable $to): string;
 
     /**
+     * Заказ асинхронного отчёта заказов «Оплаты за заказ» по организации
+     * за дни `[from, to]` (`POST /api/client/statistic/orders/generate/json`),
+     * тело ответа как есть — в нём UUID.
+     */
+    public function orderCpoOrdersReport(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string;
+
+    /**
      * Состояние заказанного отчёта (`GET /api/client/statistics/{UUID}`).
      */
     public function reportState(string $token, string $uuid): string;
