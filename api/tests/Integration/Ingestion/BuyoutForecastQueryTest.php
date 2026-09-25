@@ -304,6 +304,43 @@ final class BuyoutForecastQueryTest extends KernelTestCase
         self::assertSame(2500, $daily[0]->projectedBuyoutRateBps);
     }
 
+    public function testHandedOverUnitWithoutRateAddsNoExpectedBuyout(): void
+    {
+        // Кабинет, обучение которого — одни T1: ставка до передачи 0,
+        // ставки после передачи нет (D + T2 + P = 0).
+        $account = Uuid::v7();
+        $facts = [];
+        $statuses = [];
+        $returns = [];
+        for ($index = 1; $index <= 30; ++$index) {
+            $posting = 'ONLY-T1-'.$index;
+            $facts[] = $this->sale($account, $posting, $posting, 'ONLY-T1-TRAIN', 'cancelled', 1, '2026-08-01');
+            $statuses[] = $this->postingStatus($account, $posting, $posting, 'awaiting_packaging', '2026-08-02 00:00:00');
+            $statuses[] = $this->postingStatus($account, $posting, $posting, 'cancelled', '2026-08-02 01:00:00');
+            $returns[] = MarketplaceReturnFactBuilder::aMarketplaceReturnFact()
+                ->withCompanyId($this->companyId)
+                ->withMarketplaceAccountId($account)
+                ->withSourceRowId('RET-'.$posting)
+                ->withPostingNumber($posting)
+                ->withOrderNumber($posting)
+                ->withMarketplaceSku('ONLY-T1-TRAIN')
+                ->withReturnReasonName('Покупатель отменил заказ')
+                ->build();
+        }
+        // 19 штук до передачи (ставка 0) и 1 после передачи без ставки — 5%.
+        $facts[] = $this->sale($account, 'ONLY-T1-PENDING', 'ONLY-T1-PENDING', 'ONLY-T1', 'awaiting_packaging', 19, '2026-08-30');
+        $statuses[] = $this->postingStatus($account, 'ONLY-T1-PENDING', 'ONLY-T1-PENDING', 'awaiting_packaging', '2026-08-30 09:00:00');
+        $facts[] = $this->sale($account, 'ONLY-T1-SHIPPED', 'ONLY-T1-SHIPPED', 'ONLY-T1', 'delivering', 1, '2026-08-30');
+        $statuses[] = $this->postingStatus($account, 'ONLY-T1-SHIPPED', 'ONLY-T1-SHIPPED', 'delivering', '2026-08-30 09:00:00');
+        $this->sales()->upsertAll($facts);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), $statuses);
+        $this->returns()->upsertAll($returns);
+
+        $row = $this->rows()['ONLY-T1'];
+        self::assertSame(0, $row->projectedBuyoutQuantity);
+        self::assertNull($row->projectedBuyoutRateBps);
+    }
+
     private function seedTrainingAndCurrentCohort(): void
     {
         $facts = [];

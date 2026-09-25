@@ -204,7 +204,10 @@ final readonly class BuyoutForecastQuery
                 WHEN outcome = 'D' THEN quantity::numeric
                 WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN quantity * pre_handover_rate
                 WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NOT NULL
-                     THEN quantity * LEAST(1::numeric, post_handover_rate * handover_factor)
+                     -- LEAST пропускает NULL: без ставки произведение обязано
+                     -- остаться NULL, иначе штука без оценки дала бы выкуп целиком.
+                     THEN quantity * CASE WHEN post_handover_rate IS NULL THEN NULL
+                                          ELSE LEAST(1::numeric, post_handover_rate * handover_factor) END
                 ELSE 0::numeric
             END), 0::numeric) AS projected_quantity,
             COALESCE(SUM(CASE
