@@ -43,7 +43,9 @@ final class AdvertisingScheduleTest extends KernelTestCase
 
         $this->action(rescanHour: $this->hourThatIsNotNow(), weekday: $this->weekdayNow())();
 
-        self::assertSame(1, $this->campaignLoads($withAds));
+        // Список кампаний сохраняет сам свежий кусок перед products/sku;
+        // второй запрос того же метода на тике упирался в лимит (429).
+        self::assertSame(0, $this->campaignLoads($withAds));
         self::assertSame([
             [$this->daysAgo(29), $this->daysAgo(0)],
             [$this->daysAgo(44), $this->daysAgo(30)],

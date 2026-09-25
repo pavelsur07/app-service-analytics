@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Ingestion\Application;
 
 use App\Identity\Application\Facade\IdentityScheduleFacade;
-use App\Ingestion\Application\Message\FetchOzonAdCampaignsMessage;
 use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
@@ -163,13 +162,16 @@ final readonly class DispatchActiveOzonSyncsAction
 
     /**
      * Только подключениям с `advertising_state = active` (ADR-026 п. 4):
-     * список кампаний и расход кусками по 30 дней — два куска на окно
-     * 45 дней, семь — на глубокий рескан.
+     * расход кусками по 30 дней — два куска на окно 45 дней, семь —
+     * на глубокий рескан.
+     *
+     * Отдельной загрузки списка кампаний на тике нет: кусок с сегодняшним
+     * днём сам сохраняет список в raw перед `products/sku`. Второй
+     * одновременный запрос того же метода упирался в лимит площадки (429).
      */
     private function dispatchAdvertising(string $companyId, string $marketplaceAccountId, \DateTimeImmutable $now): void
     {
         $today = OzonAdvertisingWindows::today($now);
-        $this->bus->dispatch(new FetchOzonAdCampaignsMessage($companyId, $marketplaceAccountId, $today->format('Y-m-d')));
 
         $deepRescan = $this->isRescanTick($now) && (int) $now->format('N') === $this->adDeepRescanWeekday;
         $chunks = OzonAdvertisingWindows::lastDays(
