@@ -95,6 +95,30 @@ final class OzonAdvertisingWindows
     }
 
     /**
+     * Период SKU-отчёта для куска: кусок без вчера и сегодня — их отдаёт
+     * `products/sku`. `null`, если в куске других дней нет.
+     *
+     * @return array{\DateTimeImmutable, \DateTimeImmutable}|null
+     */
+    public static function skuReportPeriod(\DateTimeImmutable $from, \DateTimeImmutable $to, \DateTimeImmutable $today): ?array
+    {
+        $dayBeforeYesterday = $today->modify('-2 days');
+        $end = $to->format('Y-m-d') > $dayBeforeYesterday->format('Y-m-d') ? $dayBeforeYesterday : $to;
+
+        return $end->format('Y-m-d') < $from->format('Y-m-d') ? null : [$from, $end];
+    }
+
+    /**
+     * Период `[from, to]` включительно кусками, от нового к старому.
+     *
+     * @return list<array{from: string, to: string}>
+     */
+    public static function between(\DateTimeImmutable $from, \DateTimeImmutable $to): array
+    {
+        return self::chunks($from, $to);
+    }
+
+    /**
      * @return list<array{from: string, to: string}>
      */
     private static function chunks(\DateTimeImmutable $from, \DateTimeImmutable $to): array

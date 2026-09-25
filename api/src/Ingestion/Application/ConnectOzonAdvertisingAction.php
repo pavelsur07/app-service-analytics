@@ -189,9 +189,8 @@ final readonly class ConnectOzonAdvertisingAction
 
     /**
      * Первичная загрузка (ADR-026 п. 4): 12 месяцев расхода назад от дня
-     * подключения, кусками по 30 дней; список кампаний сохраняет головной
-     * кусок. После
-     * сохранения ключа, а не до: без сохранённого ключа обработчику нечем
+     * подключения, кусками по 30 дней, с SKU-отчётами; список кампаний
+     * сохраняет головной кусок. После сохранения ключа, а не до: без сохранённого ключа обработчику нечем
      * авторизоваться.
      *
      * Ключ к этому моменту уже сохранён, и отказ очереди его не отменяет:
@@ -207,7 +206,7 @@ final readonly class ConnectOzonAdvertisingAction
 
         try {
             foreach (OzonAdvertisingWindows::initial($today) as $chunk) {
-                $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to']));
+                $this->bus->dispatch(new FetchOzonAdCampaignStatsMessage($companyId, $marketplaceAccountId, $chunk['from'], $chunk['to'], withReports: true));
             }
         } catch (\Throwable $failure) {
             $this->logger->warning('Первичная загрузка рекламы не поставлена в очередь — ключ сохранён, история глубже 184 дней потребует повторного ввода ключа', [

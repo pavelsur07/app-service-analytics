@@ -48,6 +48,12 @@ final class MarketplaceReportType
      */
     public const string OzonAdSkuDay = 'ozon_ad_sku_day';
 
+    /**
+     * Асинхронный отчёт кампания × SKU × день (`statistics/json`) за дни
+     * раньше вчерашнего; `period` — начало периода отчёта.
+     */
+    public const string OzonAdSkuReport = 'ozon_ad_sku_report';
+
     private function __construct()
     {
     }

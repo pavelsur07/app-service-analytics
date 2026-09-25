@@ -10,23 +10,31 @@ use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\UserRepository;
+use App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage;
 use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
+use App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage;
+use App\Ingestion\Application\MessageHandler\CheckOzonAdSkuReportHandler;
 use App\Ingestion\Application\MessageHandler\FetchOzonAdCampaignStatsHandler;
+use App\Ingestion\Application\MessageHandler\OrderOzonAdSkuReportHandler;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Domain\MarketplaceReportType;
-use App\Ingestion\Domain\OzonAdvertisingFetcher;
 use App\Ingestion\Infrastructure\Connector\OzonPerformance\OzonPerformanceCampaignClient;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use App\Tests\Support\Builder\UserBuilder;
+use App\Tests\Support\Fake\FakeOzonAdvertisingFetcher;
 use Doctrine\DBAL\Connection;
 use Monolog\Handler\TestHandler;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
+use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -106,6 +114,129 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         $this->syncStats($container, $account);
 
         self::assertSame([], $fetcher->skuRequests);
+    }
+
+    public function testDailyChunkOrdersSkuReportsWithoutYesterdayAndToday(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+        $chunk = OzonAdvertisingWindows::lastDays($today, 30)[0];
+
+        $this->syncStats($container, $account, $chunk['from'], $chunk['to'], withReports: true);
+
+        // Вчера и сегодня отдаёт products/sku; отчёт — за остальные дни
+        // куска (ADR-026 п. 4), по всем неархивным кампаниям типа SKU,
+        // не больше десяти в заказе.
+        $orders = $this->sent($container, OrderOzonAdSkuReportMessage::class);
+        self::assertNotSame([], $orders);
+        $campaigns = [];
+        foreach ($orders as $order) {
+            self::assertSame($chunk['from'], $order->from);
+            self::assertSame($today->modify('-2 days')->format('Y-m-d'), $order->to);
+            self::assertLessThanOrEqual(10, \count($order->campaignIds));
+            $campaigns = [...$campaigns, ...$order->campaignIds];
+        }
+        self::assertSame($this->activeSkuCampaignIds(), $campaigns);
+        // Список кампаний запрошен один раз — головным куском; заказ
+        // берёт его из raw, а не вторым запросом (лимит 429).
+        self::assertSame(1, $fetcher->campaignCalls);
+    }
+
+    public function testOrdinaryTickChunkOrdersNoReports(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $this->fetcher($container);
+        $chunk = OzonAdvertisingWindows::lastDays(OzonAdvertisingWindows::today(new \DateTimeImmutable()), 30)[0];
+
+        $this->syncStats($container, $account, $chunk['from'], $chunk['to']);
+
+        self::assertSame([], $this->sent($container, OrderOzonAdSkuReportMessage::class));
+    }
+
+    public function testOrderedReportIsCheckedLaterByItsUuid(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+
+        $this->order($container, $account);
+
+        self::assertCount(1, $fetcher->reportOrders);
+        $envelopes = $this->sentEnvelopes($container, CheckOzonAdSkuReportMessage::class);
+        self::assertCount(1, $envelopes);
+        $check = $envelopes[0]->getMessage();
+        self::assertInstanceOf(CheckOzonAdSkuReportMessage::class, $check);
+        // UUID — из снятого ответа на заказ; проверка — не сразу, а через
+        // 30 секунд: воркер не ждёт отчёт, пока тот формируется.
+        self::assertSame('054cd190-6514-4465-8792-e3e11f396886', $check->uuid);
+        self::assertSame(1, $check->attempt);
+        self::assertSame(30_000, $envelopes[0]->last(DelayStamp::class)?->getDelay());
+    }
+
+    public function testRateLimitedOrderIsRetriedLaterWithoutSpendingAttempts(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+        $fetcher->failOrdersWith($this->httpFailure(429));
+
+        // У кабинета уже формируется отчёт — площадка держит «один
+        // одновременно» сама, мы просто повторяем позже.
+        $this->expectException(RecoverableMessageHandlingException::class);
+        $this->order($container, $account);
+    }
+
+    public function testReadyReportIsStoredAsReceived(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $this->fetcher($container);
+
+        $this->check($container, $account, attempt: 1);
+
+        self::assertSame(
+            [$this->fixture('statistics-json-many-2026-08-25.json')],
+            $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuReport),
+        );
+        self::assertSame(['2026-08-25'], $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdSkuReport));
+        self::assertSame([], $this->sent($container, CheckOzonAdSkuReportMessage::class));
+    }
+
+    public function testNotReadyReportIsCheckedAgain(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+        $fetcher->reportStates(['IN_PROGRESS']);
+
+        $this->check($container, $account, attempt: 3);
+
+        $checks = $this->sentEnvelopes($container, CheckOzonAdSkuReportMessage::class);
+        self::assertCount(1, $checks);
+        $next = $checks[0]->getMessage();
+        self::assertInstanceOf(CheckOzonAdSkuReportMessage::class, $next);
+        self::assertSame(4, $next->attempt);
+        self::assertSame(90_000, $checks[0]->last(DelayStamp::class)?->getDelay());
+        self::assertSame([], $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuReport));
+    }
+
+    public function testCheckCeilingAndPlatformErrorGiveUpVisibly(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+        $fetcher->reportStates(['IN_PROGRESS', 'ERROR']);
+
+        // Потолок проверок и ERROR площадки — не тишина, а предупреждение
+        // в журнал; отчёт не загружен, новой проверки нет.
+        $this->check($container, $account, attempt: CheckOzonAdSkuReportHandler::MAX_ATTEMPTS);
+        $this->check($container, $account, attempt: 1);
+
+        self::assertSame([], $this->sent($container, CheckOzonAdSkuReportMessage::class));
+        self::assertSame(2, $this->warningsContaining($container, 'SKU-отчёт рекламы Ozon не загружен'));
     }
 
     public function testRepeatedChunkDoesNotDuplicateRaw(): void
@@ -261,77 +392,79 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         return $ids;
     }
 
-    private function syncStats(ContainerInterface $container, MarketplaceAccount $account, string $from = '2026-08-25', string $to = '2026-09-23'): void
+    private function syncStats(ContainerInterface $container, MarketplaceAccount $account, string $from = '2026-08-25', string $to = '2026-09-23', bool $withReports = false): void
     {
         $handler = $container->get(FetchOzonAdCampaignStatsHandler::class);
         \assert($handler instanceof FetchOzonAdCampaignStatsHandler);
-        $handler(new FetchOzonAdCampaignStatsMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), $from, $to));
+        $handler(new FetchOzonAdCampaignStatsMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), $from, $to, $withReports));
+    }
+
+    private function order(ContainerInterface $container, MarketplaceAccount $account): void
+    {
+        $handler = $container->get(OrderOzonAdSkuReportHandler::class);
+        \assert($handler instanceof OrderOzonAdSkuReportHandler);
+        $handler(new OrderOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-25', '2026-09-23', ['14275771', '16017246']));
+    }
+
+    private function check(ContainerInterface $container, MarketplaceAccount $account, int $attempt): void
+    {
+        $handler = $container->get(CheckOzonAdSkuReportHandler::class);
+        \assert($handler instanceof CheckOzonAdSkuReportHandler);
+        $handler(new CheckOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-25', '054cd190-6514-4465-8792-e3e11f396886', $attempt));
     }
 
     /**
-     * @return OzonAdvertisingFetcher&object{calls: int, skuRequests: list<array{day: string, campaigns: list<string>}>}
+     * @template T of object
+     *
+     * @param class-string<T> $class
+     *
+     * @return list<Envelope>
      */
-    private function fetcher(ContainerInterface $container, int $tokenStatus = 200, ?\Closure $beforeRejection = null): OzonAdvertisingFetcher
+    private function sentEnvelopes(ContainerInterface $container, string $class): array
     {
-        $fetcher = new class($tokenStatus, $this->fixture('campaign-list.json'), $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json'), $beforeRejection, $this->fixture('statistics-products-sku-2026-09-23.json')) implements OzonAdvertisingFetcher {
-            public int $calls = 0;
+        $transport = $container->get('messenger.transport.async_ingestion');
+        self::assertInstanceOf(InMemoryTransport::class, $transport);
 
-            public function __construct(
-                private readonly int $tokenStatus,
-                private readonly string $campaigns,
-                private readonly string $expense,
-                private readonly string $daily,
-                private readonly ?\Closure $beforeRejection,
-                private readonly string $sku,
-            ) {
-            }
+        return array_values(array_filter(
+            [...$transport->getSent()],
+            static fn (Envelope $envelope): bool => $envelope->getMessage() instanceof $class,
+        ));
+    }
 
-            public function token(string $clientId, string $clientSecret): string
-            {
-                ++$this->calls;
-                if (200 !== $this->tokenStatus) {
-                    if (null !== $this->beforeRejection) {
-                        ($this->beforeRejection)();
-                    }
-                    // Настоящее исключение symfony/http-client: распознавание
-                    // отказа авторизации смотрит на код ответа внутри него.
-                    $client = new MockHttpClient(new MockResponse('{"error":"invalid_client"}', ['http_code' => $this->tokenStatus]));
-                    $client->request('POST', 'https://api-performance.ozon.ru/api/client/token')->getContent();
-                }
+    /**
+     * @template T of object
+     *
+     * @param class-string<T> $class
+     *
+     * @return list<T>
+     */
+    private function sent(ContainerInterface $container, string $class): array
+    {
+        $messages = [];
+        foreach ($this->sentEnvelopes($container, $class) as $envelope) {
+            $message = $envelope->getMessage();
+            \assert($message instanceof $class);
+            $messages[] = $message;
+        }
 
-                return 'jwt';
-            }
+        return $messages;
+    }
 
-            public function campaigns(string $token): string
-            {
-                return $this->campaigns;
-            }
+    private function httpFailure(int $status): \Throwable
+    {
+        $client = new MockHttpClient(new MockResponse('{}', ['http_code' => $status]));
+        try {
+            $client->request('POST', 'https://api-performance.ozon.ru/api/client/statistics/json')->getContent();
+        } catch (\Throwable $failure) {
+            return $failure;
+        }
 
-            public function campaignProducts(string $token, string $campaignId): string
-            {
-                throw new \LogicException('Загрузка рекламы товары кампаний не запрашивает.');
-            }
+        throw new \LogicException('Ответ с кодом ошибки обязан бросить исключение.');
+    }
 
-            public function expense(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string
-            {
-                return $this->expense;
-            }
-
-            public function daily(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string
-            {
-                return $this->daily;
-            }
-
-            /** @var list<array{day: string, campaigns: list<string>}> */
-            public array $skuRequests = [];
-
-            public function productsSku(string $token, array $campaignIds, \DateTimeImmutable $day): string
-            {
-                $this->skuRequests[] = ['day' => $day->format('Y-m-d'), 'campaigns' => $campaignIds];
-
-                return $this->sku;
-            }
-        };
+    private function fetcher(ContainerInterface $container, int $tokenStatus = 200, ?\Closure $beforeRejection = null): FakeOzonAdvertisingFetcher
+    {
+        $fetcher = new FakeOzonAdvertisingFetcher($tokenStatus, $this->fixture('campaign-list.json'), $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json'), $beforeRejection, $this->fixture('statistics-products-sku-2026-09-23.json'), $this->fixture('statistics-json-many-2026-08-25-request.json'), $this->fixture('statistics-json-many-2026-08-25.json'));
         $container->set(OzonPerformanceCampaignClient::class, $fetcher);
 
         return $fetcher;

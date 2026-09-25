@@ -27,6 +27,12 @@ interface MarketplaceRawDocumentRepository
     public function body(string $companyId, Uuid $marketplaceAccountId, Uuid $id): string;
 
     /**
+     * Байты последнего полученного документа этого типа у подключения;
+     * `null`, если такого ещё нет. Company-scoped, как и `body()`.
+     */
+    public function latestBody(string $companyId, Uuid $marketplaceAccountId, string $reportType): ?string;
+
+    /**
      * Признак «подключение хоть что-то загрузило» (удаление неиспользованных
      * подключений). Идёт по префиксу (company_id, marketplace_account_id)
      * существующего idx_marketplace_raw_document_ozon_history — новый

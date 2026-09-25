@@ -103,6 +103,20 @@ final readonly class DoctrineMarketplaceRawDocumentRepository implements Marketp
         return $this->rawDocumentBody->read($companyId, $row);
     }
 
+    public function latestBody(string $companyId, Uuid $marketplaceAccountId, string $reportType): ?string
+    {
+        $row = $this->connection->fetchAssociative(
+            'SELECT '.RawDocumentBody::COLUMNS.' FROM marketplace_raw_document WHERE company_id = :companyId AND marketplace_account_id = :marketplaceAccountId AND report_type = :reportType ORDER BY received_at DESC, id DESC LIMIT 1',
+            [
+                'companyId' => $companyId,
+                'marketplaceAccountId' => $marketplaceAccountId->toRfc4122(),
+                'reportType' => $reportType,
+            ],
+        );
+
+        return false === $row ? null : $this->rawDocumentBody->read($companyId, $row);
+    }
+
     /**
      * @return array{null, string, int}
      */

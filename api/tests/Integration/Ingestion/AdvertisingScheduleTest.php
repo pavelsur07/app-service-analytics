@@ -62,6 +62,24 @@ final class AdvertisingScheduleTest extends KernelTestCase
         self::assertSame($this->daysAgo(183), $chunks[6][0]);
     }
 
+    public function testSkuReportsAreOrderedOnlyOnTheDailyTick(): void
+    {
+        $account = $this->account(advertising: true);
+
+        // Каждый пересчёт окна SKU-отчётов — заказ отчёта; поэтому раз
+        // в сутки, а не на каждом тике (ADR-026 п. 4).
+        $this->action(rescanHour: $this->hourThatIsNotNow(), weekday: $this->weekdayNow())();
+        self::assertSame([false, false], $this->reportFlags($account));
+    }
+
+    public function testDailyTickChunksCarryTheReportsFlag(): void
+    {
+        $account = $this->account(advertising: true);
+
+        $this->action(rescanHour: $this->hourNow(), weekday: $this->weekdayNow() % 7 + 1)();
+        self::assertSame([true, true], $this->reportFlags($account));
+    }
+
     public function testDailyRescanHourOnAnotherWeekdayKeepsTheTickWindow(): void
     {
         $account = $this->account(advertising: true);
@@ -117,6 +135,22 @@ final class AdvertisingScheduleTest extends KernelTestCase
         }
 
         return $chunks;
+    }
+
+    /**
+     * @return list<bool>
+     */
+    private function reportFlags(MarketplaceAccount $account): array
+    {
+        $flags = [];
+        foreach ($this->transport()->getSent() as $envelope) {
+            $message = $envelope->getMessage();
+            if ($message instanceof FetchOzonAdCampaignStatsMessage && $message->marketplaceAccountId === $account->id()->toRfc4122()) {
+                $flags[] = true === $message->withReports;
+            }
+        }
+
+        return $flags;
     }
 
     private function transport(): InMemoryTransport

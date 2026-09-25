@@ -72,6 +72,18 @@ final class OzonAdvertisingWindowsTest extends TestCase
         self::assertFalse(OzonAdvertisingWindows::isHeadChunk($today, $today->modify('+30 days')));
     }
 
+    public function testSkuReportPeriodLeavesYesterdayAndTodayToProductsSku(): void
+    {
+        $today = new \DateTimeImmutable('2026-09-25');
+        $period = static fn (string $from, string $to): ?array => ($p = OzonAdvertisingWindows::skuReportPeriod(new \DateTimeImmutable($from), new \DateTimeImmutable($to), $today)) === null
+            ? null
+            : [$p[0]->format('Y-m-d'), $p[1]->format('Y-m-d')];
+
+        self::assertSame(['2026-08-27', '2026-09-23'], $period('2026-08-27', '2026-09-25'));
+        self::assertSame(['2026-08-12', '2026-08-26'], $period('2026-08-12', '2026-08-26'));
+        self::assertNull($period('2026-09-24', '2026-09-25'));
+    }
+
     public function testTodayIsTheMoscowDay(): void
     {
         // 22:30 UTC — уже следующий день по Москве: дни Performance API
