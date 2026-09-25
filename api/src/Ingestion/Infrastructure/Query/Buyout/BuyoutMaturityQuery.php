@@ -115,9 +115,9 @@ final readonly class BuyoutMaturityQuery
     private static function postingIntervalsSql(string $source): string
     {
         return <<<SQL
-            SELECT DISTINCT company_id, marketplace_account_id, posting_number,
+            SELECT company_id, marketplace_account_id, posting_number,
                    GREATEST(0, EXTRACT(EPOCH FROM (
-                       resolved_at - ((business_date + 1)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')
+                       MIN(resolved_at) - ((MIN(business_date) + 1)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')
                    )))::bigint AS duration_seconds
             FROM {$source}
             WHERE outcome IS NOT NULL
@@ -125,6 +125,7 @@ final readonly class BuyoutMaturityQuery
               AND resolved_at IS NOT NULL
               AND resolution_observed
               AND resolved_at <= :asOf
+            GROUP BY company_id, marketplace_account_id, posting_number
             SQL;
     }
 

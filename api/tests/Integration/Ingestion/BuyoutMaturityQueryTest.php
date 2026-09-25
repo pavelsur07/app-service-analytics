@@ -86,6 +86,29 @@ final class BuyoutMaturityQueryTest extends KernelTestCase
         self::assertSame(3 * 3600, $maturity->p90Seconds);
     }
 
+    public function testCountsPostingOnceEvenIfItsRowsCarryDifferentBusinessDates(): void
+    {
+        $this->deliveredPosting('SPLIT', 5);
+        $this->sales()->upsertAll([
+            SalesFactBuilder::aSalesFact()
+                ->withCompanyId($this->companyId)
+                ->withMarketplaceAccountId($this->accountId)
+                ->withSourceRowId('SPLIT|SKU-SECOND')
+                ->withPostingNumber('SPLIT')
+                ->withOrderNumber('ORDER-SPLIT')
+                ->withMarketplaceSku('SKU-SECOND')
+                ->withStatus('delivered')
+                ->withBusinessDate(new \DateTimeImmutable('2026-06-30'))
+                ->build(),
+        ]);
+
+        $maturity = $this->maturity($this->accountId);
+
+        self::assertSame(1, $maturity->sampleSize);
+        // Срок — от конца самого раннего дня posting: 2026-06-30 21:00 UTC.
+        self::assertSame(29 * 3600, $maturity->p50Seconds);
+    }
+
     public function testAsOfRepresentsTheSameInstantRegardlessOfInputTimezone(): void
     {
         /** @var Connection $connection */
