@@ -7,6 +7,7 @@ import {
   Puzzle,
   Tag,
   TrendingUp,
+  CalendarCheck,
 } from 'lucide-react'
 import { NavLink } from 'react-router'
 
@@ -46,6 +47,7 @@ const ITEMS = [
   { to: 'prices', label: 'Цены и соинвест', icon: TrendingDown },
   { to: 'extension', label: 'Расширение', icon: Puzzle },
   { to: 'connections', label: 'Подключения', icon: Plug },
+  { to: 'coverage', label: 'Полнота данных', icon: CalendarCheck },
 ] as const
 
 export function Sidebar() {

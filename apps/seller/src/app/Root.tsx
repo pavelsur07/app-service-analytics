@@ -9,6 +9,7 @@ import { LoginPage } from '../features/auth/ui/LoginPage'
 import { OnboardingStartPage } from '../features/onboarding/ui/OnboardingStartPage'
 import { ResendConfirmationPage } from '../features/auth/ui/ResendConfirmationPage'
 import { ConnectionsPage } from '../features/connections/ui/ConnectionsPage'
+import { DataCoveragePage } from '../features/coverage/ui/DataCoveragePage'
 import { ListingCostsPage } from '../features/costs/ui/ListingCostsPage'
 import { PriceOverviewPage } from '../features/price-monitoring/ui/PriceOverviewPage'
 import { ExtensionConnectPage } from '../features/extension/ui/ExtensionConnectPage'
@@ -65,6 +66,7 @@ const router = createBrowserRouter([
       { path: 'redemption', element: <BuyoutRatePage /> },
       { path: 'extension', element: <ExtensionConnectPage /> },
       { path: 'connections', element: <ConnectionsPage /> },
+      { path: 'coverage', element: <DataCoveragePage /> },
       { path: 'unit-economics', element: <UnitEconomicsPage /> },
       { path: 'costs', element: <ListingCostsPage /> },
       // Адрес про предметную область, а не про модуль (docs/structure.md):
