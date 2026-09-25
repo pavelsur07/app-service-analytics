@@ -324,7 +324,8 @@ Ingestion/Infrastructure/Connector/
 `FetchOzonAdCampaignsMessage` и `FetchOzonAdCampaignStatsMessage` (кусок
 ≤ 30 дней), обработчики в `Application/MessageHandler/`, периоды —
 `Application/OzonAdvertisingWindows`. Raw-типы `ozon_ad_campaigns`,
-`ozon_ad_expense`, `ozon_ad_daily`.
+`ozon_ad_expense`, `ozon_ad_daily`, `ozon_ad_sku_day` (SKU за вчера
+и сегодня — из того же обработчика куска).
 
 **Тела сырых документов (ADR-024, этап 2)** пишет и читает
 `Persistence/DoctrineMarketplaceRawDocumentRepository`: при

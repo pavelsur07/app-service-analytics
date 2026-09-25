@@ -11,6 +11,8 @@ use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Domain\OzonAdCampaign;
+use App\Ingestion\Domain\OzonAdCampaignListParser;
 use App\Ingestion\Domain\OzonAdvertisingFetcher;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use Psr\Log\LoggerInterface;
@@ -21,6 +23,13 @@ use Symfony\Component\Uid\Uuid;
  * Кусок рекламы в raw-слой: ответы `expense` (расход кампаний за день)
  * и `daily` (статистика кампаний за день) за один период сохраняются
  * как есть, каждый своим типом raw-документа (ADR-026 п. 3).
+ *
+ * Если в кусок попадают вчера или сегодня, после них тот же обработчик
+ * снимает `products/sku` за каждый из этих дней (ADR-026 п. 4): другого
+ * синхронного способа получить SKU-разбивку свежих дней нет. Кампании —
+ * все неархивные типа `SKU` из списка кампаний, пачками не больше десяти;
+ * у других типов списка товаров нет. Нет таких кампаний — запроса нет:
+ * пустой список площадка отклоняет.
  *
  * Отказ авторизации переводит в broken только рекламу
  * (`markOzonAdvertisingBroken`), подключение продолжает грузить продажи
@@ -37,6 +46,7 @@ final readonly class FetchOzonAdCampaignStatsHandler
         private OzonAccountBrokenLogger $brokenLogger,
         private OzonAdvertisingFetcher $client,
         private MarketplaceRawDocumentRepository $rawDocuments,
+        private OzonAdCampaignListParser $campaignParser,
         private LoggerInterface $logger,
     ) {
     }
@@ -62,6 +72,11 @@ final readonly class FetchOzonAdCampaignStatsHandler
             $token = $this->client->token($target->performanceClientId, $target->performanceClientSecret);
             $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdExpense, $from, $this->client->expense($token, $from, $to));
             $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdDaily, $from, $this->client->daily($token, $from, $to));
+
+            $skuDays = OzonAdvertisingWindows::skuDays($from, $to, OzonAdvertisingWindows::today(new \DateTimeImmutable()));
+            if ([] !== $skuDays) {
+                $this->captureSkuDays($companyId, $accountId, $token, $skuDays);
+            }
         } catch (\Throwable $failure) {
             if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
                 throw $failure;
@@ -81,6 +96,27 @@ final readonly class FetchOzonAdCampaignStatsHandler
             period: $period,
             rawBody: $body,
         ));
+    }
+
+    /**
+     * @param list<\DateTimeImmutable> $days
+     */
+    private function captureSkuDays(Uuid $companyId, Uuid $accountId, string $token, array $days): void
+    {
+        $campaignIds = array_values(array_map(
+            static fn (OzonAdCampaign $campaign): string => $campaign->id,
+            array_filter(
+                $this->campaignParser->parse($this->client->campaigns($token)),
+                static fn (OzonAdCampaign $campaign): bool => OzonAdCampaign::StateArchived !== $campaign->state
+                    && OzonAdCampaign::TypeSku === $campaign->advObjectType,
+            ),
+        ));
+
+        foreach ($days as $day) {
+            foreach (array_chunk($campaignIds, OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST) as $batch) {
+                $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdSkuDay, $day, $this->client->productsSku($token, $batch, $day));
+            }
+        }
     }
 
     /**

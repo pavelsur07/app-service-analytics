@@ -333,6 +333,11 @@ final class ReplaceAdvertisingCredentialsControllerTest extends WebTestCase
                 throw new \LogicException('Проба ключа статистику не запрашивает.');
             }
 
+            public function productsSku(string $token, array $campaignIds, \DateTimeImmutable $day): string
+            {
+                throw new \LogicException('Проба ключа статистику не запрашивает.');
+            }
+
             public function daily(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string
             {
                 throw new \LogicException('Проба ключа статистику не запрашивает.');

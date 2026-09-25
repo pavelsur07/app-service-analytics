@@ -20,6 +20,12 @@ final class OzonAdvertisingWindows
 
     public const int CHUNK_DAYS = 30;
 
+    /**
+     * Кампаний в одном запросе `products/sku`. Проверено разведкой на пяти;
+     * десять — тот же потолок, что у асинхронного отчёта.
+     */
+    public const int SKU_CAMPAIGNS_PER_REQUEST = 10;
+
     /** Первичная загрузка при подключении ключа — 12 месяцев назад. */
     public const int INITIAL_MONTHS = 12;
 
@@ -56,6 +62,24 @@ final class OzonAdvertisingWindows
     public static function initial(\DateTimeImmutable $today): array
     {
         return self::chunks($today->modify('-'.self::INITIAL_MONTHS.' months'), $today);
+    }
+
+    /**
+     * Дни куска, которые отдаёт `products/sku`: вчера и сегодня,
+     * от нового к старому.
+     *
+     * @return list<\DateTimeImmutable>
+     */
+    public static function skuDays(\DateTimeImmutable $from, \DateTimeImmutable $to, \DateTimeImmutable $today): array
+    {
+        $days = [];
+        foreach ([$today, $today->modify('-1 day')] as $day) {
+            if ($day->format('Y-m-d') >= $from->format('Y-m-d') && $day->format('Y-m-d') <= $to->format('Y-m-d')) {
+                $days[] = $day;
+            }
+        }
+
+        return $days;
     }
 
     /**

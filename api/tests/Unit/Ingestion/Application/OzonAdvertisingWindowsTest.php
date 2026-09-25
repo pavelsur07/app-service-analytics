@@ -44,6 +44,22 @@ final class OzonAdvertisingWindowsTest extends TestCase
         $this->assertContiguousAndShort($chunks);
     }
 
+    public function testSkuDaysAreTodayAndYesterdayInsideTheChunk(): void
+    {
+        $today = new \DateTimeImmutable('2026-09-25');
+
+        $days = static fn (string $from, string $to): array => array_map(
+            static fn (\DateTimeImmutable $day): string => $day->format('Y-m-d'),
+            OzonAdvertisingWindows::skuDays(new \DateTimeImmutable($from), new \DateTimeImmutable($to), $today),
+        );
+
+        self::assertSame(['2026-09-25', '2026-09-24'], $days('2026-08-27', '2026-09-25'));
+        // Кусок кончается вчерашним днём (обработан после полуночи):
+        // сегодняшнего дня в нём нет, и спрашивать его нельзя.
+        self::assertSame(['2026-09-24'], $days('2026-08-26', '2026-09-24'));
+        self::assertSame([], $days('2026-08-12', '2026-08-26'));
+    }
+
     public function testTodayIsTheMoscowDay(): void
     {
         // 22:30 UTC — уже следующий день по Москве: дни Performance API

@@ -42,6 +42,12 @@ final class MarketplaceReportType
 
     public const string OzonAdDaily = 'ozon_ad_daily';
 
+    /**
+     * Кампания × SKU за один день (`products/sku`) — только сегодня
+     * и вчера; более ранние дни метод не отдаёт.
+     */
+    public const string OzonAdSkuDay = 'ozon_ad_sku_day';
+
     private function __construct()
     {
     }
