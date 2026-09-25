@@ -44,34 +44,22 @@ describe('reportLabel', () => {
 })
 
 describe('advertisingPresentation', () => {
-  it('сломанную рекламу не выдаёт за поломку магазина', () => {
-    // Отказ рекламного ключа ломает только рекламу (ADR-026): подпись,
-    // похожая на «подключение сломано», отправила бы человека чинить
-    // исправный ключ Seller API.
-    const broken = advertisingPresentation('broken', 'active')
+  it('говорит только о ключе и не обещает загрузку', () => {
+    // Загрузки рекламы в этой стадии нет (ADR-026, п. 5): метка,
+    // обещающая «загружается», утверждала бы то, чего нет.
+    for (const state of ['active', 'broken', null]) {
+      expect(advertisingPresentation(state).explanation).not.toMatch(/загруж/)
+    }
+  })
+
+  it('сломанный ключ — отказ с указанием, что заменить', () => {
+    const broken = advertisingPresentation('broken')
 
     expect(broken.tone).toBe('negative')
-    expect(broken.explanation).toContain('продажи и расходы грузятся')
+    expect(broken.explanation).toContain('Performance API')
   })
 
   it('отсутствие рекламы — нейтральное приглашение, а не ошибка', () => {
-    expect(advertisingPresentation(null, 'active').tone).toBe('neutral')
-  })
-
-  it('у сломанного подключения не называет рекламу работающей', () => {
-    // Реклама не грузится у сломанного подключения (ADR-026, п. 1),
-    // даже если её собственный ключ исправен.
-    const stopped = advertisingPresentation('active', 'broken')
-
-    expect(stopped.label).toBe('Реклама остановлена')
-    expect(stopped.tone).toBe('warning')
-  })
-
-  it('сломанный рекламный ключ видно и при сломанном подключении', () => {
-    // Восстановить подключение магазина мало — ключ рекламы всё равно
-    // придётся заменить, и экран обязан это сказать.
-    expect(advertisingPresentation('broken', 'broken').label).toBe(
-      'Нужно заменить рекламный ключ',
-    )
+    expect(advertisingPresentation(null).tone).toBe('neutral')
   })
 })

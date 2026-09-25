@@ -135,7 +135,6 @@ export function ConnectionsPage() {
             const state = connectionPresentation(connection.state)
             const advertising = advertisingPresentation(
               connection.advertisingState ?? null,
-              connection.state,
             )
             const loads = Object.entries(connection.lastLoadedAt)
 
