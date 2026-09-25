@@ -26,7 +26,7 @@ final readonly class BuyoutRateItemResponse
         #[OA\Property(enum: ['mature', 'preliminary'])]
         public string $maturityStatus,
         public ?int $resolutionRateBps,
-        #[OA\Property(description: 'Доля заказанного количества без оценки прогноза (ADR-031), bps; прогноз построен по остальным')]
+        #[OA\Property(description: 'Доля заказанного количества без оценки прогноза (ADR-031, ADR-033), bps; прогноз построен по остальным')]
         public ?int $unestimatedRateBps,
     ) {
     }

@@ -15,7 +15,7 @@ final readonly class BuyoutRateSummaryResponse
         public ?int $projectedBuyoutQuantity,
         public ?int $projectedBuyoutRateBps,
         public ?int $resolutionRateBps,
-        #[OA\Property(description: 'Доля заказанного количества без оценки прогноза (ADR-031), bps; прогноз построен по остальным')]
+        #[OA\Property(description: 'Доля заказанного количества без оценки прогноза (ADR-031, ADR-033), bps; прогноз построен по остальным')]
         public ?int $unestimatedRateBps,
     ) {
     }

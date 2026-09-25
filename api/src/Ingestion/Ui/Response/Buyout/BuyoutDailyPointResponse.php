@@ -21,7 +21,7 @@ final readonly class BuyoutDailyPointResponse
         public string $maturityStatus,
         #[OA\Property(description: 'Доля количества в доставке, bps')]
         public ?int $inFlightRateBps,
-        #[OA\Property(description: 'Доля заказанного количества без оценки прогноза (ADR-031), bps; прогноз построен по остальным')]
+        #[OA\Property(description: 'Доля заказанного количества без оценки прогноза (ADR-031, ADR-033), bps; прогноз построен по остальным')]
         public ?int $unestimatedRateBps,
     ) {
     }
