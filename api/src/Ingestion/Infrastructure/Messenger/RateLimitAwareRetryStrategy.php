@@ -11,7 +11,6 @@ use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Retry\MultiplierRetryStrategy;
 use Symfony\Component\Messenger\Retry\RetryStrategyInterface;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
-use Symfony\Component\Messenger\Stamp\SentToFailureTransportStamp;
 use Symfony\Contracts\HttpClient\Exception\HttpExceptionInterface;
 
 /**
@@ -55,10 +54,12 @@ final readonly class RateLimitAwareRetryStrategy implements RetryStrategyInterfa
             return $this->default->isRetryable($message, $throwable);
         }
 
-        // Потолок считается вместе с предстоящим ожиданием и наибольшим
-        // разбросом — повтор не уходит за сутки.
-        $first = self::firstFailureOfCurrentRun($message);
-        $elapsed = null === $first ? 0 : time() - $first->getTimestamp();
+        // Первая отметка истории — первая неудача: слушатель повторов при
+        // усечении истории сохраняет её явно (withLimitedHistory). Потолок
+        // считается вместе с предстоящим ожиданием и наибольшим разбросом —
+        // повтор не уходит за сутки.
+        $first = $message->all(RedeliveryStamp::class)[0] ?? null;
+        $elapsed = $first instanceof RedeliveryStamp ? time() - $first->getRedeliveredAt()->getTimestamp() : 0;
 
         return $elapsed + $wait + intdiv(self::JITTER_MS, 1_000) < self::GIVE_UP_AFTER_SECONDS;
     }
@@ -71,42 +72,6 @@ final readonly class RateLimitAwareRetryStrategy implements RetryStrategyInterfa
         }
 
         return $seconds * 1_000 + random_int(0, self::JITTER_MS);
-    }
-
-    /**
-     * Первая неудача текущего захода сообщения.
-     *
-     * Первая отметка истории — первая неудача: слушатель повторов при
-     * усечении истории сохраняет её явно (`withLimitedHistory`). Но отправка
-     * в `failed` добавляет сброс — `RedeliveryStamp(0)`, — и после
-     * `messenger:failed:retry` сутки считаются заново, от первой неудачи
-     * после сброса; нет её — неудача первая, прошло ноль. Если сброс срезало
-     * усечение истории, а сообщение побывало в `failed`, все сохранённые
-     * отметки кроме первой — уже после сброса: берётся вторая.
-     */
-    private static function firstFailureOfCurrentRun(Envelope $message): ?\DateTimeInterface
-    {
-        $stamps = array_values(array_filter(
-            $message->all(RedeliveryStamp::class),
-            static fn (object $stamp): bool => $stamp instanceof RedeliveryStamp,
-        ));
-
-        $reset = null;
-        foreach ($stamps as $index => $stamp) {
-            if (0 === $stamp->getRetryCount()) {
-                $reset = $index;
-            }
-        }
-
-        if (null !== $reset) {
-            return ($stamps[$reset + 1] ?? null)?->getRedeliveredAt();
-        }
-
-        if (null !== $message->last(SentToFailureTransportStamp::class)) {
-            return ($stamps[1] ?? $stamps[0] ?? null)?->getRedeliveredAt();
-        }
-
-        return ($stamps[0] ?? null)?->getRedeliveredAt();
     }
 
     /**
