@@ -53,6 +53,7 @@ final readonly class IdentityScheduleFacade
         return new OzonAccountRef(
             companyId: $row->companyId,
             marketplaceAccountId: $row->marketplaceAccountId,
+            advertisingActive: $row->advertisingActive,
         );
     }
 }

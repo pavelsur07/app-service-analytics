@@ -18,4 +18,16 @@ interface OzonAdvertisingFetcher
     public function campaigns(string $token): string;
 
     public function campaignProducts(string $token, string $campaignId): string;
+
+    /**
+     * Расход кампаний за дни `[from, to]` включительно
+     * (`GET /api/client/statistics/expense/json`), тело как есть.
+     */
+    public function expense(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string;
+
+    /**
+     * Статистика кампаний за дни `[from, to]` включительно
+     * (`GET /api/client/statistics/daily/json`), тело как есть.
+     */
+    public function daily(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string;
 }

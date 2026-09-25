@@ -33,6 +33,14 @@ interface MarketplaceAccountRepository
     public function markBrokenIfActive(string $companyId, Uuid $id): bool;
 
     /**
+     * Реклама → broken условным UPDATE (ADR-026 п. 1), тем же приёмом,
+     * что markBrokenIfActive: true только тому вызову, который состояние
+     * поменял, — по нему решается, отправлять ли письмо. `state`
+     * подключения не трогает: продажи и расходы исправны.
+     */
+    public function markAdvertisingBrokenIfActive(string $companyId, Uuid $id): bool;
+
+    /**
      * Подключение кабинета вместе с записью в журнал, одной транзакцией:
      * строка подключения без аудит-записи — строка, о происхождении которой
      * спросить будет не у кого (ADR-011).

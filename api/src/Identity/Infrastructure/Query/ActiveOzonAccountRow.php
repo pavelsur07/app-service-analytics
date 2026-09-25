@@ -9,6 +9,7 @@ final readonly class ActiveOzonAccountRow
     public function __construct(
         public string $companyId,
         public string $marketplaceAccountId,
+        public bool $advertisingActive,
     ) {
     }
 }

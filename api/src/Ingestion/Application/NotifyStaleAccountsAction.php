@@ -71,6 +71,16 @@ final readonly class NotifyStaleAccountsAction
         MarketplaceReportType::OzonAccrualByDay => 'расходы',
     ];
 
+    /**
+     * Реклама (ADR-026 п. 4) — только у подключений с
+     * `advertising_state = active`: кабинет без рекламы не должен выглядеть
+     * сломанным. Сторожится расход кампаний — выгрузка, которая идёт на
+     * каждом тике.
+     */
+    private const array ADVERTISING_REPORTS = [
+        MarketplaceReportType::OzonAdExpense => 'реклама',
+    ];
+
     public function __construct(
         private IdentityScheduleFacade $identitySchedule,
         private RecentlyIngestedAccountsQuery $recentlyIngested,
@@ -118,7 +128,8 @@ final readonly class NotifyStaleAccountsAction
             // Каждая отслеживаемая выгрузка проверяется своей отметкой:
             // подключение бывает наполовину живым, и «данные по нему
             // идут» — не ответ на вопрос «идут ли расходы».
-            foreach (self::WATCHED_REPORTS as $reportType => $label) {
+            $watched = $target->advertisingActive ? self::WATCHED_REPORTS + self::ADVERTISING_REPORTS : self::WATCHED_REPORTS;
+            foreach ($watched as $reportType => $label) {
                 $key = RecentlyIngestedAccountsQuery::key($target->companyId, $target->marketplaceAccountId, $reportType);
                 if (isset($fresh[$key])) {
                     continue;
@@ -162,11 +173,11 @@ final readonly class NotifyStaleAccountsAction
      */
     private function freshKeys(\DateTimeImmutable $now): array
     {
-        $rows = $this->recentlyIngested->build($now->sub(new \DateInterval(self::STALE_AFTER)), array_keys(self::WATCHED_REPORTS))
+        $rows = $this->recentlyIngested->build($now->sub(new \DateInterval(self::STALE_AFTER)), array_keys(self::WATCHED_REPORTS + self::ADVERTISING_REPORTS))
             ->executeQuery()
             ->fetchAllAssociative();
 
-        $ceiling = RecentlyIngestedAccountsQuery::MAX_ACCOUNTS * \count(self::WATCHED_REPORTS);
+        $ceiling = RecentlyIngestedAccountsQuery::MAX_ACCOUNTS * \count(self::WATCHED_REPORTS + self::ADVERTISING_REPORTS);
         if (\count($rows) > $ceiling) {
             // Тот же приём, что в IdentityScheduleFacade: тихая обрезка
             // до потолка объявила бы часть исправных подключений

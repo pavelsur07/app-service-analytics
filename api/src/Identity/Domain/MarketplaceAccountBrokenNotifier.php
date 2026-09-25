@@ -21,4 +21,10 @@ interface MarketplaceAccountBrokenNotifier
      * ищутся в границах компании, не по всей базе.
      */
     public function accountBroken(string $companyId, MarketplaceAccount $account): void;
+
+    /**
+     * Сломан только рекламный ключ (ADR-026 п. 1): подключение исправно,
+     * письмо называет, что именно переподключить.
+     */
+    public function advertisingBroken(string $companyId, MarketplaceAccount $account): void;
 }

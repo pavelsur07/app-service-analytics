@@ -13,6 +13,8 @@ use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
+use App\Ingestion\Application\Message\FetchOzonAdCampaignsMessage;
+use App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage;
 use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Ingestion\Domain\OzonAdvertisingFetcher;
 use App\Ingestion\Infrastructure\Connector\OzonPerformance\OzonPerformanceCampaignClient;
@@ -27,6 +29,7 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
  * Ввод рекламного ключа (ADR-026, п. 1) через HTTP. Сквозь HTTP — потому
@@ -62,6 +65,26 @@ final class ReplaceAdvertisingCredentialsControllerTest extends WebTestCase
             'performance_client_id' => 'perf@advertising.performance.ozon.ru',
             'performance_client_secret' => 'perf-secret',
         ], $this->credentials($account));
+
+        // Первичная загрузка (ADR-026 п. 4) ставится вместе с принятым
+        // ключом: иначе реклама молча не грузилась бы до ближайшего тика,
+        // а год истории — никогда.
+        $chunks = [];
+        $campaignLoads = 0;
+        $transport = static::getContainer()->get('messenger.transport.async_ingestion');
+        self::assertInstanceOf(InMemoryTransport::class, $transport);
+        foreach ($transport->getSent() as $envelope) {
+            $message = $envelope->getMessage();
+            if ($message instanceof FetchOzonAdCampaignsMessage && $message->marketplaceAccountId === $account->id()->toRfc4122()) {
+                ++$campaignLoads;
+            }
+            if ($message instanceof FetchOzonAdCampaignStatsMessage && $message->marketplaceAccountId === $account->id()->toRfc4122()) {
+                $chunks[] = $message->from;
+            }
+        }
+        $today = new \DateTimeImmutable('now', new \DateTimeZone('Europe/Moscow'));
+        self::assertSame(1, $campaignLoads);
+        self::assertSame($today->modify('-12 months')->format('Y-m-d'), $chunks[\count($chunks) - 1] ?? null);
     }
 
     public function testSellerKeyReplacementKeepsTheAdvertisingKey(): void
@@ -303,6 +326,16 @@ final class ReplaceAdvertisingCredentialsControllerTest extends WebTestCase
                 $this->respond($this->tokenStatus);
 
                 return 'jwt';
+            }
+
+            public function expense(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string
+            {
+                throw new \LogicException('Проба ключа статистику не запрашивает.');
+            }
+
+            public function daily(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string
+            {
+                throw new \LogicException('Проба ключа статистику не запрашивает.');
             }
 
             public function campaigns(string $token): string

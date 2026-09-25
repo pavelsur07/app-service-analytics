@@ -9,6 +9,7 @@ use App\Identity\Domain\AuditRecord;
 use App\Identity\Domain\DiscardAccountOutcome;
 use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
+use App\Identity\Domain\ValueObject\AdvertisingState;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -61,6 +62,27 @@ final readonly class DoctrineMarketplaceAccountRepository implements Marketplace
             [
                 'broken' => MarketplaceAccountState::Broken->value,
                 'active' => MarketplaceAccountState::Active->value,
+                'id' => $id->toRfc4122(),
+                'companyId' => $companyId,
+            ],
+        );
+
+        return $affected > 0;
+    }
+
+    public function markAdvertisingBrokenIfActive(string $companyId, Uuid $id): bool
+    {
+        // Тот же приём, что у markBrokenIfActive: условие внутри UPDATE,
+        // companyId в условии — изоляция арендаторов на уровне SQL.
+        $affected = $this->entityManager->getConnection()->executeStatement(
+            <<<'SQL'
+                UPDATE marketplace_account
+                SET advertising_state = :broken
+                WHERE id = :id AND company_id = :companyId AND advertising_state = :active
+                SQL,
+            [
+                'broken' => AdvertisingState::Broken->value,
+                'active' => AdvertisingState::Active->value,
                 'id' => $id->toRfc4122(),
                 'companyId' => $companyId,
             ],
