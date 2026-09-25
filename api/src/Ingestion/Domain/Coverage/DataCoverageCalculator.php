@@ -53,7 +53,11 @@ final class DataCoverageCalculator
                 $received[] = $covered[$key] ?? null;
                 $statuses[] = match (true) {
                     $key > $dueUntil => DataCoverageStatus::Pending,
-                    isset($covered[$key]) => DataCoverageStatus::Loaded,
+                    // Выгрузка сильнее ошибки, если она не старше отказа:
+                    // повтор, прошедший позже, закрыл день. Выгрузка раньше
+                    // отказа — часть страниц до падения (каталог, пачка
+                    // кампаний), день не загружен.
+                    isset($covered[$key]) && !self::failedAfter($failed[$key] ?? null, $covered[$key]) => DataCoverageStatus::Loaded,
                     // Упавшая загрузка — ошибка и до первой выгрузки
                     // источника: иначе источник, падающий с самого
                     // подключения, прятался бы за «ещё рано».
@@ -105,9 +109,19 @@ final class DataCoverageCalculator
     }
 
     /**
+     * Отказ дня позже выгрузки. `false` — отказа нет или его момент неизвестен.
+     */
+    private static function failedAfter(\DateTimeImmutable|bool|null $failedAt, \DateTimeImmutable $receivedAt): bool
+    {
+        return $failedAt instanceof \DateTimeImmutable && $failedAt > $receivedAt;
+    }
+
+    /**
+     * День → самый поздний известный момент отказа (`true` — момент неизвестен).
+     *
      * @param list<CoverageFailure> $failures
      *
-     * @return array<string, true>
+     * @return array<string, \DateTimeImmutable|true>
      */
     private function failedDays(DataCoverageSource $source, array $failures): array
     {
@@ -118,7 +132,13 @@ final class DataCoverageCalculator
             }
 
             for ($day = $failure->from; $day <= $failure->to; $day = $day->modify('+1 day')) {
-                $failed[$day->format('Y-m-d')] = true;
+                $key = $day->format('Y-m-d');
+                $known = $failed[$key] ?? true;
+                if (null !== $failure->failedAt && (true === $known || $known < $failure->failedAt)) {
+                    $failed[$key] = $failure->failedAt;
+                } else {
+                    $failed[$key] = $known;
+                }
             }
         }
 

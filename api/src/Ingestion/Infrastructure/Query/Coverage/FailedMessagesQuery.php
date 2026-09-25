@@ -17,6 +17,12 @@ use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
  * по тексту тела, — а точную принадлежность подтверждает разобранное
  * сообщение (`FailedLoads`). Читается пачками по `id` от новых к старым:
  * ни одно сообщение не отбрасывается молча.
+ *
+ * Тело, которое не является корректным UTF-8 (например, текст ошибки
+ * площадки обрезан посреди символа), PhpSerializer кладёт в base64 —
+ * идентификаторов в нём текстом не видно. Такие тела отбираются все:
+ * в base64 нет кавычки, а в сериализованном PHP она есть всегда.
+ * Их принадлежность подтверждает тот же разбор.
  */
 final readonly class FailedMessagesQuery
 {
@@ -39,8 +45,7 @@ final readonly class FailedMessagesQuery
             ->select('id', 'body', 'created_at')
             ->from('messenger_messages')
             ->where('queue_name = :failed')
-            ->andWhere('body LIKE :company')
-            ->andWhere('body LIKE :account')
+            ->andWhere("(body LIKE :company AND body LIKE :account) OR body NOT LIKE '%\"%'")
             ->setParameter('failed', 'failed')
             ->setParameter('company', '%'.$companyId.'%')
             ->setParameter('account', '%'.$marketplaceAccountId.'%')
@@ -86,10 +91,9 @@ final readonly class FailedMessagesQuery
             return null;
         }
 
-        $failedOn = (new \DateTimeImmutable($row['created_at'], new \DateTimeZone('UTC')))
-            ->setTimezone(new \DateTimeZone(self::TIMEZONE))
-            ->setTime(0, 0);
+        $failedAt = new \DateTimeImmutable($row['created_at'], new \DateTimeZone('UTC'));
+        $failedOn = $failedAt->setTimezone(new \DateTimeZone(self::TIMEZONE))->setTime(0, 0);
 
-        return new FailedMessage($message, $failedOn);
+        return new FailedMessage($message, $failedOn, $failedAt);
     }
 }

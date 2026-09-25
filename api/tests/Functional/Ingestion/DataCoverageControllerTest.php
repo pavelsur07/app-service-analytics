@@ -22,6 +22,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Stamp\ErrorDetailsStamp;
+use Symfony\Component\Messenger\Stamp\StampInterface;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 
 /**
@@ -110,6 +112,24 @@ final class DataCoverageControllerTest extends WebTestCase
         self::assertSame('missing', $this->coverage($client, $company, $account, '2026-08')['rows'][1]['statuses'][4]);
     }
 
+    public function testFailedLoadWithBase64BodyIsStillShown(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->account($company, advertising: false);
+        // Текст ошибки, обрезанный посреди кириллицы, — не UTF-8: PhpSerializer
+        // кладёт такое тело в base64, и идентификаторов в нём текстом не видно.
+        $broken = new ErrorDetailsStamp(\RuntimeException::class, 0, "Ozon ответил \xD0");
+        $this->failed(new FetchOzonExpensesMessage($company->id()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-05'), $broken);
+        $this->failed(new FetchOzonExpensesMessage('019fe6ea-0000-7000-8000-00000000c0de', $account->id()->toRfc4122(), '2026-08-06'), $broken);
+
+        $statuses = $this->coverage($client, $company, $account, '2026-08')['rows'][1]['statuses'];
+
+        self::assertSame('failed', $statuses[4]);
+        // Чужое сообщение из base64 отсекает та же сверка после разбора.
+        self::assertSame('missing', $statuses[5]);
+    }
+
     public function testMonthIsParsedStrictly(): void
     {
         $client = static::createClient();
@@ -145,9 +165,9 @@ final class DataCoverageControllerTest extends WebTestCase
     /**
      * Сообщение в том виде, в каком его кладёт в `failed` очередь.
      */
-    private function failed(object $message): void
+    private function failed(object $message, StampInterface ...$stamps): void
     {
-        $encoded = (new PhpSerializer())->encode(new Envelope($message));
+        $encoded = (new PhpSerializer())->encode(new Envelope($message, $stamps));
         $connection = static::getContainer()->get(Connection::class);
         self::assertInstanceOf(Connection::class, $connection);
         $connection->insert('messenger_messages', [
