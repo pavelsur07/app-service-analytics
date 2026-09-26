@@ -27,8 +27,29 @@ const STATUS_ICON = {
   neutral: Circle,
 }
 
-const HEADINGS = ['Дата', 'SKU', 'Статус', 'Кол-во', 'Сумма', 'Комиссия']
-const SKELETON_WIDTHS = ['w-20', 'w-24', 'w-28', 'w-12', 'w-24', 'w-20']
+const HEADINGS = [
+  'Дата',
+  'SKU',
+  'Статус',
+  'Склад отгрузки',
+  'Город доставки',
+  'Кол-во',
+  'Сумма',
+  'Комиссия',
+]
+const SKELETON_WIDTHS = [
+  'w-20',
+  'w-24',
+  'w-28',
+  'w-32',
+  'w-28',
+  'w-12',
+  'w-24',
+  'w-20',
+]
+// Числовые колонки выравниваются вправо, начиная с «Кол-во».
+const FIRST_NUMERIC_COLUMN = 5
+const EMPTY_VALUE = '—'
 
 function TableFrame({
   children,
@@ -55,13 +76,13 @@ function TableFrame({
 export function SalesFactsTableSkeleton() {
   return (
     <TableFrame>
-      <table aria-busy="true" className="min-w-4xl w-full text-left">
+      <table aria-busy="true" className="min-w-5xl w-full text-left">
         <caption className="sr-only">Загрузка операций продаж</caption>
         <thead>
           <tr className="bg-surface-sunken text-xs font-semibold text-text-secondary">
             {HEADINGS.map((heading, index) => (
               <th
-                className={`border-b border-border-default px-3 py-2 ${index >= 3 ? 'text-right' : ''}`}
+                className={`border-b border-border-default px-3 py-2 ${index >= FIRST_NUMERIC_COLUMN ? 'text-right' : ''}`}
                 key={heading}
               >
                 {heading}
@@ -78,7 +99,7 @@ export function SalesFactsTableSkeleton() {
                   key={`${row}-${HEADINGS[index]}`}
                 >
                   <span
-                    className={`block h-3 animate-shimmer rounded bg-border-subtle ${index >= 3 ? 'ml-auto' : ''} ${width}`}
+                    className={`block h-3 animate-shimmer rounded bg-border-subtle ${index >= FIRST_NUMERIC_COLUMN ? 'ml-auto' : ''} ${width}`}
                   />
                 </td>
               ))}
@@ -126,12 +147,18 @@ export function SalesFactsTable({
 
   return (
     <TableFrame count={items.length}>
-      <table className="min-w-4xl w-full text-left">
+      <table className="min-w-5xl w-full text-left">
         <thead>
           <tr className="bg-surface-sunken text-xs font-semibold text-text-secondary">
             <th className="border-b border-border-default px-3 py-2">Дата</th>
             <th className="border-b border-border-default px-3 py-2">SKU</th>
             <th className="border-b border-border-default px-3 py-2">Статус</th>
+            <th className="border-b border-border-default px-3 py-2">
+              Склад отгрузки
+            </th>
+            <th className="border-b border-border-default px-3 py-2">
+              Город доставки
+            </th>
             <th className="border-b border-border-default px-3 py-2 text-right">
               Кол-во
             </th>
@@ -161,6 +188,12 @@ export function SalesFactsTable({
                     <StatusIcon aria-hidden="true" size={16} />
                     {status.label}
                   </Badge>
+                </td>
+                <td className="border-b border-border-subtle px-3 py-1.5 text-text-secondary">
+                  {item.warehouseName ?? EMPTY_VALUE}
+                </td>
+                <td className="border-b border-border-subtle px-3 py-1.5 text-text-primary">
+                  {item.deliveryCity ?? EMPTY_VALUE}
                 </td>
                 <td className="border-b border-border-subtle px-3 py-1.5 text-right text-text-primary">
                   {item.quantity}

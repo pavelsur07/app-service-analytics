@@ -227,4 +227,81 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
         self::assertSame('BACKFILL-1', $row['posting_number']);
         self::assertSame('BACKFILL', $row['order_number']);
     }
+
+    public function testLaterFilledDeliveryCityUpdatesRowButKeepsFirstLoadedAt(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $writer = new DoctrineSalesFactWriter($connection);
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $base = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId('GEO-1|SKU-1');
+
+        $writer->upsertAll([$base->withDeliveryCity(null)->build()]);
+        $firstLoadedAt = $connection->fetchOne(
+            'SELECT first_loaded_at FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$companyId->toRfc4122(), $accountId->toRfc4122(), 'GEO-1|SKU-1'],
+        );
+
+        // Площадка дозаполнила город в перевыпущенном ответе (ADR-006).
+        $writer->upsertAll([$base->withDeliveryCity('Брянск')->build()]);
+        // Повтор того же ответа — идемпотентен.
+        $writer->upsertAll([$base->withDeliveryCity('Брянск')->build()]);
+
+        $row = $connection->fetchAssociative(
+            'SELECT first_loaded_at, warehouse_id, warehouse_name, delivery_city FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$companyId->toRfc4122(), $accountId->toRfc4122(), 'GEO-1|SKU-1'],
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame('Брянск', $row['delivery_city']);
+        self::assertSame(1020000115166000, $row['warehouse_id']);
+        self::assertSame('ЖУКОВСКИЙ_РФЦ', $row['warehouse_name']);
+        self::assertSame($firstLoadedAt, $row['first_loaded_at']);
+    }
+
+    public function testBackfillFillsOnlyMissingDeliveryAttributes(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $writer = new DoctrineSalesFactWriter($connection);
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $base = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId('GEO-BACKFILL-1|SKU-1');
+
+        // Строка загружена до появления колонок: склада нет, город — уже
+        // свежий из текущей синхронизации.
+        $writer->upsertAll([
+            $base->withStatus('delivered')->withWarehouse(null, null)->withDeliveryCity('Брянск')->build(),
+        ]);
+
+        $writer->backfillLinks($companyId->toRfc4122(), [
+            $base
+                ->withStatus('awaiting_packaging')
+                ->withWarehouse(42, 'СТАРЫЙ_РФЦ')
+                ->withDeliveryCity('Старый город')
+                ->build(),
+        ]);
+
+        $row = $connection->fetchAssociative(
+            'SELECT status, warehouse_id, warehouse_name, delivery_city FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$companyId->toRfc4122(), $accountId->toRfc4122(), 'GEO-BACKFILL-1|SKU-1'],
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame('delivered', $row['status']);
+        self::assertSame(42, $row['warehouse_id']);
+        self::assertSame('СТАРЫЙ_РФЦ', $row['warehouse_name']);
+        self::assertSame('Брянск', $row['delivery_city']);
+    }
 }

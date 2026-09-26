@@ -3440,6 +3440,18 @@
                     },
                     "currency": {
                         "type": "string"
+                    },
+                    "warehouseId": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "warehouseName": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "deliveryCity": {
+                        "type": "string",
+                        "nullable": true
                     }
                 },
                 "type": "object"

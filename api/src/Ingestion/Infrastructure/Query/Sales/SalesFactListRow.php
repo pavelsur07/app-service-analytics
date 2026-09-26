@@ -20,6 +20,9 @@ final readonly class SalesFactListRow
         public int $amountMinor,
         public int $commissionAmountMinor,
         public string $currency,
+        public ?int $warehouseId,
+        public ?string $warehouseName,
+        public ?string $deliveryCity,
     ) {
     }
 }

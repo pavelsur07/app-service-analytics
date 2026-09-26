@@ -59,6 +59,20 @@ class SalesFact
     #[ORM\Column]
     private int $quantity;
 
+    // Атрибуты доставки из analytics_data Ozon — только для показа,
+    // по ним не фильтруют, поэтому индексов нет. warehouse_id — id склада
+    // площадки (до ~1e15), а не ссылка на нашу сущность.
+    #[ORM\Column(type: 'bigint', nullable: true)]
+    private ?int $warehouseId;
+
+    // text, не varchar(N): длина названия — не наш инвариант, и слишком
+    // длинное значение не должно ронять вставку всего пакета фактов.
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $warehouseName;
+
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $deliveryCity;
+
     #[ORM\Column(type: 'money_minor_amount')]
     private int $amountMinor;
 
@@ -92,6 +106,9 @@ class SalesFact
         ?string $postingNumber,
         ?string $orderNumber,
         int $quantity,
+        ?int $warehouseId,
+        ?string $warehouseName,
+        ?string $deliveryCity,
         Money $amount,
         Money $commissionAmount,
         Uuid $rawDocumentId,
@@ -108,6 +125,9 @@ class SalesFact
         $this->postingNumber = $postingNumber;
         $this->orderNumber = $orderNumber;
         $this->quantity = $quantity;
+        $this->warehouseId = $warehouseId;
+        $this->warehouseName = $warehouseName;
+        $this->deliveryCity = $deliveryCity;
         $this->amountMinor = $amount->minorAmount();
         $this->commissionAmountMinor = $commissionAmount->minorAmount();
         $this->currency = $amount->currency();
@@ -136,6 +156,9 @@ class SalesFact
         Uuid $rawDocumentId,
         ?string $postingNumber = null,
         ?string $orderNumber = null,
+        ?int $warehouseId = null,
+        ?string $warehouseName = null,
+        ?string $deliveryCity = null,
     ): self {
         if ($quantity <= 0) {
             throw new \InvalidArgumentException('Sales fact quantity must be positive.');
@@ -155,10 +178,23 @@ class SalesFact
             $postingNumber,
             $orderNumber,
             $quantity,
+            $warehouseId,
+            $warehouseName,
+            $deliveryCity,
             $amount,
             $commissionAmount,
             $rawDocumentId,
-            self::computeRowHash($status, $quantity, $amount, $commissionAmount, $postingNumber, $orderNumber),
+            self::computeRowHash(
+                $status,
+                $quantity,
+                $amount,
+                $commissionAmount,
+                $postingNumber,
+                $orderNumber,
+                $warehouseId,
+                $warehouseName,
+                $deliveryCity,
+            ),
             $now,
             $now,
         );
@@ -169,6 +205,10 @@ class SalesFact
      * изменяемые поля: суммы, количество, статус. Ключевые/неизменяемые
      * поля исключены намеренно (ADR-006: суррогат/ключ строится из полей,
      * не меняющихся при корректировке).
+     *
+     * Атрибуты доставки входят сюда: у части отправлений Ozon отдаёт
+     * пустой city и может заполнить его позже — такое изменение обязано
+     * обновить факт (ADR-006), а не потеряться за неизменным хэшем.
      */
     private static function computeRowHash(
         string $status,
@@ -177,6 +217,9 @@ class SalesFact
         Money $commissionAmount,
         ?string $postingNumber,
         ?string $orderNumber,
+        ?int $warehouseId,
+        ?string $warehouseName,
+        ?string $deliveryCity,
     ): string {
         return hash('sha256', implode('|', [
             $status,
@@ -185,6 +228,9 @@ class SalesFact
             $commissionAmount->minorAmount(),
             $postingNumber ?? '<null>',
             $orderNumber ?? '<null>',
+            $warehouseId ?? '<null>',
+            $warehouseName ?? '<null>',
+            $deliveryCity ?? '<null>',
         ]));
     }
 
@@ -231,6 +277,21 @@ class SalesFact
     public function orderNumber(): ?string
     {
         return $this->orderNumber;
+    }
+
+    public function warehouseId(): ?int
+    {
+        return $this->warehouseId;
+    }
+
+    public function warehouseName(): ?string
+    {
+        return $this->warehouseName;
+    }
+
+    public function deliveryCity(): ?string
+    {
+        return $this->deliveryCity;
     }
 
     public function amount(): Money

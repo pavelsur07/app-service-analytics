@@ -21,6 +21,9 @@ final readonly class SalesFactListItemResponse
         public int $amountMinor,
         public int $commissionAmountMinor,
         public string $currency,
+        public ?int $warehouseId,
+        public ?string $warehouseName,
+        public ?string $deliveryCity,
     ) {
     }
 }
