@@ -17,7 +17,10 @@
 set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-DIR=${OZON_FIXTURE_DIR:-"$ROOT/api/tests/Fixtures/Marketplace/ozon/stocks"}
+# Каждый запуск — свой подкаталог: повтор в тот же день (после 429 и т. п.)
+# не оставляет рядом хвостовых страниц прошлого прогона.
+RUN=$(date +%F-%H%M%S)
+DIR="${OZON_FIXTURE_DIR:-"$ROOT/api/tests/Fixtures/Marketplace/ozon/stocks"}/$RUN"
 STAMP=$(date +%F)
 WORK=$(mktemp -d)
 DRY_RUN=false
@@ -189,6 +192,17 @@ for chunk in "$WORK"/sku-chunk-*; do
     TARGET="$DIR/analytics-stocks-$STAMP-page-$page_number.json"
     BODY=$(jq -R -s -c 'split("\n") | map(select(length > 0)) | {skus: .}' "$chunk")
     request '/v1/analytics/stocks' "$BODY" "$TARGET" '(.items | type) == "array"'
+    if [[ "$DRY_RUN" != true ]]; then
+        # Пагинация метода неизвестна: печатаем то, по чему видно усечение
+        # ответа, — число строк и ключи верхнего уровня кроме items.
+        sent=$(grep -c . "$chunk")
+        rows=$(jq '.items | length' "$TARGET")
+        extra=$(jq -c 'del(.items) | keys' "$TARGET")
+        printf '  пачка %s: SKU отправлено %s, строк получено %s, прочие ключи %s\n' "$page_number" "$sent" "$rows" "$extra"
+        if [[ "$extra" != '[]' ]] || ((rows > 0 && rows % 100 == 0)); then
+            printf '  ВНИМАНИЕ: ответ может быть усечён или иметь продолжение — сообщите агенту.\n' >&2
+        fi
+    fi
 done
 
 # 4. Справочник кластеров и их складов.
