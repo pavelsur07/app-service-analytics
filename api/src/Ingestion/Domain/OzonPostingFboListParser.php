@@ -66,7 +66,8 @@ final class OzonPostingFboListParser
         // план-факт по определению сверяется с текущим планом, а не
         // с историческим, задержка на цикл доставки делала бы свежие
         // данные пустыми.
-        $businessDate = (new \DateTimeImmutable($inProcessAt))
+        $orderedAt = (new \DateTimeImmutable($inProcessAt))->setTimezone(new \DateTimeZone('UTC'));
+        $businessDate = $orderedAt
             ->setTimezone($timezone)
             ->setTime(0, 0);
 
@@ -137,6 +138,7 @@ final class OzonPostingFboListParser
                 deliveryCity: $deliveryCity,
                 clusterFrom: $clusterFrom,
                 clusterTo: $clusterTo,
+                orderedAt: $orderedAt,
             );
         }
 

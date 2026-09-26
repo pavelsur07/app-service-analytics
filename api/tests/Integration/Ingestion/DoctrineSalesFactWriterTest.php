@@ -506,4 +506,38 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
         self::assertSame('Омск', $row['cluster_from']);
         self::assertSame('Омск', $row['cluster_to']);
     }
+
+    public function testOrderMomentIsFilledByBackfillAndKeptByUpsert(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $writer = new DoctrineSalesFactWriter($connection);
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $key = [$companyId->toRfc4122(), $accountId->toRfc4122(), 'ORDERED-1|SKU-1'];
+        $base = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId('ORDERED-1|SKU-1');
+        $orderedAt = new \DateTimeImmutable('2026-07-10 08:15:00', new \DateTimeZone('UTC'));
+
+        // Строка, загруженная до появления колонки.
+        $writer->upsertAll([$base->withOrderedAt(null)->build()]);
+        $writer->backfillLinks($companyId->toRfc4122(), [
+            $base->withOrderedAt($orderedAt)->withRawDocumentId(Uuid::v7())->build(),
+        ]);
+        // Повтор синхронизации того же ответа — без изменений.
+        $writer->upsertAll([$base->withOrderedAt($orderedAt)->build()]);
+
+        $row = $connection->fetchAssociative(
+            'SELECT ordered_at, status FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            $key,
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame('2026-07-10 08:15:00', $row['ordered_at']);
+        self::assertSame('delivered', $row['status']);
+    }
 }

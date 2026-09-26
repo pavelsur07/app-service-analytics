@@ -110,6 +110,32 @@ final class OzonPostingFboListParserTest extends TestCase
         self::assertSame('Дальний Восток', $facts[1]->clusterTo());
     }
 
+    public function testKeepsOrderMomentInUtcWhileBusinessDateCrossesMidnight(): void
+    {
+        $fixtureBody = file_get_contents(self::FIXTURE);
+        self::assertIsString($fixtureBody);
+
+        $fact = (new OzonPostingFboListParser())->parse($fixtureBody, Uuid::v7(), Uuid::v7(), Uuid::v7())[0];
+
+        // in_process_at = 2026-06-30T21:01:11Z: бизнес-дата по Москве уже
+        // 1 июля, а момент заказа остаётся точным и в UTC.
+        self::assertSame('2026-07-01', $fact->businessDate()->format('Y-m-d'));
+        self::assertNotNull($fact->orderedAt());
+        self::assertSame('2026-06-30 21:01:11 +00:00', $fact->orderedAt()->format('Y-m-d H:i:s P'));
+    }
+
+    public function testOrderMomentIsOutsideRowHash(): void
+    {
+        $base = SalesFactBuilder::aSalesFact();
+
+        // Неизменен: его отсутствие у старых строк не должно выглядеть
+        // для upsert как изменение факта.
+        self::assertSame(
+            $base->withOrderedAt(null)->build()->rowHash(),
+            $base->withOrderedAt(new \DateTimeImmutable('2026-07-01 10:00:00'))->build()->rowHash(),
+        );
+    }
+
     public function testMissingOrEmptyClustersBecomeNull(): void
     {
         $body = json_encode(['result' => [[
