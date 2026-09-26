@@ -469,4 +469,41 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
         self::assertSame($current->rowHash(), $row['row_hash']);
         self::assertSame($currentRawId->toRfc4122(), $row['raw_document_id']);
     }
+
+    /**
+     * Пустое поле в снимке текущей версии не стирает значение, которым
+     * пустое заполнил другой снимок: итог не зависит от порядка обхода raw.
+     */
+    public function testEmptyAttributeInCurrentVersionRawDoesNotEraseFilledValue(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $writer = new DoctrineSalesFactWriter($connection);
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $currentRawId = Uuid::v7();
+        $base = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId('CL-EMPTY-1|SKU-1');
+        $currentWithEmptyCity = $base->withRawDocumentId($currentRawId)->withDeliveryCity(null)->withClusters(null, null);
+
+        $writer->upsertAll([$currentWithEmptyCity->build()]);
+        $writer->backfillLinks($companyId->toRfc4122(), [
+            $base->withRawDocumentId(Uuid::v7())->withDeliveryCity('Уфа')->withClusters('Омск', 'Омск')->build(),
+        ]);
+        $writer->backfillLinks($companyId->toRfc4122(), [$currentWithEmptyCity->build()]);
+
+        $row = $connection->fetchAssociative(
+            'SELECT delivery_city, cluster_from, cluster_to FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$companyId->toRfc4122(), $accountId->toRfc4122(), 'CL-EMPTY-1|SKU-1'],
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame('Уфа', $row['delivery_city']);
+        self::assertSame('Омск', $row['cluster_from']);
+        self::assertSame('Омск', $row['cluster_to']);
+    }
 }

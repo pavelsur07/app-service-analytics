@@ -66,9 +66,11 @@
   `normalize`, геттеры, два сегмента в `computeRowHash`.
 - `OzonPostingFboListParser`: `financial_data.cluster_from/to` тем же
   `optionalNonEmptyString`; отсутствие → NULL без исключения.
-- `DoctrineSalesFactWriter`: колонки в обоих upsert; `backfillLinksChunk`
-  дополняет пустые кластеры через `COALESCE`, `SNAPSHOT_MATCHES_EXCLUDED`
-  получает два условия.
+- `DoctrineSalesFactWriter`: колонки в обоих upsert. Бэкфилл берёт
+  склад, город и кластеры из raw текущей версии строки
+  (`raw_document_id`): его непустое значение побеждает, пустое ничего не
+  стирает, прочие снимки только заполняют пустое. `row_hash` переводится,
+  когда итоговая строка совпадает со снимком во всех полях хэша.
 - Миграция: две колонки `ADD`, рабочий `down()`, докблок с порядком
   бэкфилла и SQL-проверкой хэша (формула дополняется двумя сегментами).
 - `SalesFactBuilder`: умолчания из фикстуры и `withClusters()`.

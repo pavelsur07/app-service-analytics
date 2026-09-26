@@ -30,12 +30,13 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
 
     /**
      * Атрибуты, которые у одного отправления могут различаться между
-     * снимками (переназначение склада, дозаполненный город). Значение берётся
-     * из того raw, из которого получена текущая версия строки
-     * (raw_document_id, прослеживаемость ADR-006): оно согласовано с её
-     * статусом и суммами. Другие снимки только заполняют пустое — иначе
-     * обход raw по возрастанию оставил бы значение первого снимка,
-     * а не актуальное.
+     * снимками (переназначение склада, дозаполненный город). Непустое
+     * значение из того raw, из которого получена текущая версия строки
+     * (raw_document_id, прослеживаемость ADR-006), побеждает: оно согласовано
+     * с её статусом и суммами. Пустое в нём ничего не стирает, а любой
+     * другой снимок только заполняет пустое. Итог не зависит от порядка
+     * обхода raw: иначе обход по возрастанию оставил бы значение первого
+     * снимка или стёр заполненное пустым полем текущего.
      */
     private const array BACKFILL_SNAPSHOT_COLUMNS = [
         'warehouse_id',
@@ -218,7 +219,7 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             $final[$column] = "COALESCE(sales_fact.{$column}, EXCLUDED.{$column})";
         }
         foreach (self::BACKFILL_SNAPSHOT_COLUMNS as $column) {
-            $final[$column] = 'CASE WHEN '.self::SAME_RAW." THEN EXCLUDED.{$column} "
+            $final[$column] = 'CASE WHEN '.self::SAME_RAW." THEN COALESCE(EXCLUDED.{$column}, sales_fact.{$column}) "
                 ."ELSE COALESCE(sales_fact.{$column}, EXCLUDED.{$column}) END";
         }
 
@@ -237,7 +238,7 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
         $matches = implode(' AND ', $snapshotMatches);
         $sameRawChanges = [];
         foreach (self::BACKFILL_SNAPSHOT_COLUMNS as $column) {
-            $sameRawChanges[] = "sales_fact.{$column} IS DISTINCT FROM EXCLUDED.{$column}";
+            $sameRawChanges[] = "(EXCLUDED.{$column} IS NOT NULL AND sales_fact.{$column} IS DISTINCT FROM EXCLUDED.{$column})";
         }
 
         array_unshift($set, "row_hash = CASE WHEN {$matches} THEN EXCLUDED.row_hash ELSE sales_fact.row_hash END");
