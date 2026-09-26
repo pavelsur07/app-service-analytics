@@ -73,7 +73,6 @@ docker compose exec -T postgres psql -U app -d app -q \
     -c "DELETE FROM marketplace_return_fact WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM marketplace_expense_fact WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM marketplace_posting_status WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
-    -c "DELETE FROM buyout_outcome WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM marketplace_listing_cost WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM marketplace_listing_price WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM marketplace_listing WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \

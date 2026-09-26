@@ -6,6 +6,7 @@ namespace App\Ingestion\Infrastructure\Storage;
 
 use AsyncAws\Core\Exception\Http\ClientException;
 use AsyncAws\Core\Exception\Http\HttpException;
+use AsyncAws\S3\Exception\BucketAlreadyExistsException;
 use AsyncAws\S3\Exception\BucketAlreadyOwnedByYouException;
 use AsyncAws\S3\S3Client;
 use Symfony\Component\Uid\Uuid;
@@ -70,10 +71,20 @@ final readonly class S3RawStorageHealthCheck
 
         // Создать и перехватить «уже ваш», а не спросить заранее: waiter
         // bucketExists() не отличает «нет бакета» от «нет доступа».
-        // «Существует, но чужой» (BucketAlreadyExists) — ошибка и остаётся ею.
         try {
             $this->s3->createBucket(['Bucket' => $this->rawStorageBucket])->resolve();
         } catch (BucketAlreadyOwnedByYouException) {
+            return false;
+        } catch (BucketAlreadyExistsException $exception) {
+            // SeaweedFS песочницы отвечает так и на свой бакет. «Существует,
+            // но чужой» по-прежнему ошибка: чтение списка чужого бакета
+            // отказывает, и исходное исключение уходит наружу.
+            try {
+                $this->s3->listObjectsV2(['Bucket' => $this->rawStorageBucket, 'MaxKeys' => 1])->resolve();
+            } catch (\Throwable) {
+                throw $exception;
+            }
+
             return false;
         }
 
