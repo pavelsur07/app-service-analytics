@@ -149,6 +149,19 @@ final class BuildLocalizationReportActionTest extends KernelTestCase
         self::assertSame(['100', '200'], array_map(static fn ($s): string => $s->marketplaceSku, $report->skus));
     }
 
+    public function testClusterServedOnlyFromElsewhereShowsZeroNotUnknown(): void
+    {
+        // Всё везли издалека и ничего ещё не начислено: это 0%, а не
+        // «нет данных» — именно такой кластер отчёт и должен показать.
+        $this->sale('P-K1', '500', 10, self::MOSCOW, 'Калининград');
+
+        $cluster = $this->build()->clusters[0];
+
+        self::assertSame('Калининград', $cluster->clusterTo);
+        self::assertSame(0, $cluster->metrics->localShareBps);
+        self::assertSame(0, $cluster->metrics->chargedShareBps);
+    }
+
     public function testEmptyPeriodReturnsZeroSummaryInsteadOfFailing(): void
     {
         $report = $this->build();

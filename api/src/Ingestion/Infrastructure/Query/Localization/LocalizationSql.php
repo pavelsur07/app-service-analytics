@@ -111,9 +111,9 @@ final class LocalizationSql
             ROUND(SUM(forward_cost_minor) FILTER (WHERE has_clusters AND NOT is_local)::numeric
                   / NULLIF(SUM(quantity) FILTER (WHERE has_clusters AND NOT is_local AND forward_cost_minor IS NOT NULL), 0))::bigint
                 AS nonlocal_forward_cost_per_unit_minor,
-            ROUND(10000::numeric * SUM(quantity) FILTER (WHERE is_local)
+            ROUND(10000::numeric * COALESCE(SUM(quantity) FILTER (WHERE is_local), 0)
                   / NULLIF(SUM(quantity) FILTER (WHERE has_clusters), 0))::int AS local_share_bps,
-            ROUND(10000::numeric * SUM(quantity) FILTER (WHERE forward_cost_minor IS NOT NULL)
+            ROUND(10000::numeric * COALESCE(SUM(quantity) FILTER (WHERE forward_cost_minor IS NOT NULL), 0)
                   / NULLIF(SUM(quantity) FILTER (WHERE counted), 0))::int AS charged_share_bps,
             SUM(reverse_cost_minor)::bigint AS reverse_cost_minor,
             MIN(currency_min) AS currency_min,

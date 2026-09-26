@@ -302,6 +302,7 @@ Ingestion дополнительно:
 | Сценарий | `Application` | `Infrastructure/Query` | `Ui/Response` |
 |---|---|---|---|
 | Выкуп (`Buyout`) | `BuildBuyoutDailySeriesAction`, `BuildBuyoutRateReportAction`, `BuyoutRateReport`, `BuyoutRateSku`, `BuyoutRateSummary` | `Buyout*`, `UnclassifiedOzonBuyout*`, `OzonPostingRawHistory*` | `Buyout*` |
+| Локализация (`Localization`) | `BuildLocalizationReportAction`, `LocalizationReport` | `Localization*` | `Localization*` |
 | Юнит-экономика (`UnitEconomics`) | `BuildUnitEconomicsAction`, `UnitEconomicsExpense`, `UnitEconomicsReport`, `UnitEconomicsSku` | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |
 | Себестоимость (`ListingCosts`) | `CorrectListingCostAction`, `ListListingCostsAction`, `ListingCostsPage`, `SetListingCostAction` | `ListingCost*` | `ListingCost*` |
 | Товары (`Listings`) | — | `ListingSnapshot*`, `CompanySku*` | `CompanySkuListResponse` |
@@ -454,6 +455,11 @@ apps/seller/
 `apps/seller/src/features/buyout-rate/`: `model` содержит API hooks, `lib` —
 форматирование и параметры периода, `ui` — таблицу и раскрываемую daily-серию.
 
+Отчёт «Локализация» — `apps/seller/src/features/localization/` (`/localization`):
+доля локальных продаж по кластерам Ozon и логистика на штуку. Бэкенд —
+`Ingestion/Infrastructure/Query/Localization`, план и определения —
+`docs/plan/ozon-localization-report.md`.
+
 Внутри фичи — `ui/`, `model/` (хуки и запросы), `lib/` (чистые функции).
 Три папки, не больше.
 
@@ -464,8 +470,9 @@ apps/seller/
 «price-monitoring» ничего не говорит.
 
 **`shared/` содержит ровно то, что правила проекта делают обязательно
-единственным:** хелпер ключей кэша с `companyId`, форматирование денег,
-разбор ошибок API. Папка и есть механизм обеспечения единственности.
+единственным:** хелпер ключей кэша с `companyId`, форматирование денег
+и долей из basis points (значение посчитал бэкенд, компонент только
+показывает его — одинаково на всех экранах), разбор ошибок API. Папка и есть механизм обеспечения единственности.
 
 Фичи создаются по мере появления экранов. Пустых папок нет.
 
