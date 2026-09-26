@@ -15,7 +15,10 @@ import {
   LOCALIZATION_WINDOWS,
   localizationSearchWithCursor,
   localizationSearchWithDays,
+  localizationSearchWithView,
+  type LocalizationView,
   parseLocalizationDays,
+  parseLocalizationView,
 } from '../lib/localizationParams'
 import {
   type LocalizationReportResponse,
@@ -30,6 +33,11 @@ import {
 // целиком, а длинный хвост с малыми штуками уходит на следующие страницы.
 const PAGE_SIZE = 20
 
+const TABS: { view: LocalizationView; label: string }[] = [
+  { view: 'clusters', label: 'Кластеры доставки' },
+  { view: 'items', label: 'Что куда довезти' },
+]
+
 interface CursorStack {
   key: string
   cursors: (string | null)[]
@@ -40,6 +48,7 @@ export function LocalizationPage() {
   const { companyId } = useParams<{ companyId: string }>()
   const [search, setSearch] = useSearchParams()
   const days = parseLocalizationDays(search.get('days'))
+  const view = parseLocalizationView(search.get('view'))
   const rawCursor = search.get('cursor')
   const cursor = rawCursor === '' ? null : rawCursor
   const viewKey = `${companyId ?? ''}:${days}`
@@ -199,64 +208,98 @@ export function LocalizationPage() {
       ) : null}
 
       {query.status === 'success' && query.data.summary.quantity > 0 ? (
-        <>
-          <div className="overflow-hidden rounded-xl border border-border-default bg-surface-raised shadow-card">
-            <div className="flex flex-wrap items-center gap-3 border-b border-border-default px-4 py-3">
-              <span className="font-semibold">Кластеры доставки</span>
-              {query.data.clustersTruncated ? (
-                <span className="text-xs text-text-muted">
-                  показаны крупнейшие {query.data.clusters.length}
-                </span>
-              ) : null}
-            </div>
-            <LocalizationClusterTable items={query.data.clusters} />
+        <div className="overflow-hidden rounded-xl border border-border-default bg-surface-raised shadow-card">
+          <div
+            aria-label="Отчёт"
+            className="flex flex-wrap items-center gap-1 border-b border-border-default px-4 py-3"
+            role="tablist"
+          >
+            {TABS.map((tab) => (
+              <Button
+                aria-controls={`localization-panel-${tab.view}`}
+                aria-selected={tab.view === view}
+                id={`localization-tab-${tab.view}`}
+                key={tab.view}
+                onClick={() => {
+                  setSearch(localizationSearchWithView(search, tab.view), {
+                    replace: true,
+                  })
+                }}
+                role="tab"
+                size="compact"
+                type="button"
+                variant={tab.view === view ? 'primary' : 'ghost'}
+              >
+                {tab.label}
+              </Button>
+            ))}
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-border-default bg-surface-raised shadow-card">
-            <div className="flex flex-col gap-0.5 border-b border-border-default px-4 py-3">
-              <span className="font-semibold">Что куда довезти</span>
-              <span className="text-xs text-text-muted">
-                Товары по кластерам доставки, сверху — больше всего штук,
-                приехавших из другого кластера.
-              </span>
+          {view === 'clusters' ? (
+            <div
+              aria-labelledby="localization-tab-clusters"
+              id="localization-panel-clusters"
+              role="tabpanel"
+            >
+              {query.data.clustersTruncated ? (
+                <div className="border-b border-border-default px-4 py-2">
+                  <span className="text-xs text-text-muted">
+                    показаны крупнейшие {query.data.clusters.length}
+                  </span>
+                </div>
+              ) : null}
+              <LocalizationClusterTable items={query.data.clusters} />
             </div>
-            <LocalizationSkuTable items={query.data.items} />
-            <div className="flex items-center justify-end gap-2 border-t border-border-default px-4 py-2">
-              <Button
-                disabled={cursors.length <= 1}
-                onClick={() => {
-                  const previous = cursors.slice(0, -1)
-                  setStack({ key: viewKey, cursors: previous })
-                  writeCursor(previous.at(-1) ?? null)
-                }}
-                size="compact"
-                type="button"
-                variant="secondary"
-              >
-                <ChevronLeft aria-hidden="true" size={16} />
-                Назад
-              </Button>
-              <Button
-                disabled={nextCursor === null}
-                onClick={() => {
-                  if (nextCursor !== null) {
-                    setStack({
-                      key: viewKey,
-                      cursors: [...cursors, nextCursor],
-                    })
-                    writeCursor(nextCursor)
-                  }
-                }}
-                size="compact"
-                type="button"
-                variant="secondary"
-              >
-                Дальше
-                <ChevronRight aria-hidden="true" size={16} />
-              </Button>
+          ) : (
+            <div
+              aria-labelledby="localization-tab-items"
+              id="localization-panel-items"
+              role="tabpanel"
+            >
+              <div className="border-b border-border-default px-4 py-2">
+                <span className="text-xs text-text-muted">
+                  Товары по кластерам доставки, сверху — больше всего штук,
+                  приехавших из другого кластера.
+                </span>
+              </div>
+              <LocalizationSkuTable items={query.data.items} />
+              <div className="flex items-center justify-end gap-2 border-t border-border-default px-4 py-2">
+                <Button
+                  disabled={cursors.length <= 1}
+                  onClick={() => {
+                    const previous = cursors.slice(0, -1)
+                    setStack({ key: viewKey, cursors: previous })
+                    writeCursor(previous.at(-1) ?? null)
+                  }}
+                  size="compact"
+                  type="button"
+                  variant="secondary"
+                >
+                  <ChevronLeft aria-hidden="true" size={16} />
+                  Назад
+                </Button>
+                <Button
+                  disabled={nextCursor === null}
+                  onClick={() => {
+                    if (nextCursor !== null) {
+                      setStack({
+                        key: viewKey,
+                        cursors: [...cursors, nextCursor],
+                      })
+                      writeCursor(nextCursor)
+                    }
+                  }}
+                  size="compact"
+                  type="button"
+                  variant="secondary"
+                >
+                  Дальше
+                  <ChevronRight aria-hidden="true" size={16} />
+                </Button>
+              </div>
             </div>
-          </div>
-        </>
+          )}
+        </div>
       ) : null}
     </section>
   )
