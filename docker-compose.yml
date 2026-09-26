@@ -10,9 +10,13 @@ services:
       - "--entrypoints.web.address=:80"
       - "--api.dashboard=true"
       - "--api.insecure=true"
+    # Порты хоста меняются через /.env (не в git), если 80 или 8080 уже
+    # заняты, например системным nginx: TRAEFIK_HTTP_PORT=8081 — тогда
+    # браузер открывает app.conwix.localhost:8081. Контейнеры ходят друг
+    # к другу по *.conwix.internal и от этих портов не зависят.
     ports:
-      - "80:80"
-      - "8080:8080"
+      - "${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_DASHBOARD_PORT:-8080}:8080"
     volumes:
       - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
 
