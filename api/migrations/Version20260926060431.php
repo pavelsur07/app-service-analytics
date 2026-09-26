@@ -26,8 +26,21 @@ use Doctrine\Migrations\AbstractMigration;
  * как мнимую корректировку задним числом (ADR-006). Если синхронизация
  * успела раньше — последствие только это разовое обновление
  * last_updated_at, данные не портятся.
- * Проверка: у строк окна, чей raw содержит analytics_data, warehouse_name
- * заполнен; повторный бэкфилл сообщает те же counts и ничего не меняет.
+ * Проверка после бэкфилла — по БД, не по выводу команды (facts в нём —
+ * разобранные строки, а не изменённые): число строк окна, чей row_hash
+ * расходится с пересчитанным по текущей формуле SalesFact::computeRowHash,
+ * должно быть 0. Окно — ночной рескан отправлений (postingRescanDays = 30
+ * в DispatchActiveOzonSyncsAction), самый широкий из тиков. Ненулевой
+ * остаток — строки, чей текущий снимок не нашёлся в raw диапазона:
+ * расширить --from или принять их разовое обновление.
+ *
+ *   SELECT count(*) FROM sales_fact
+ *   WHERE business_date >= current_date - 30
+ *     AND row_hash <> encode(sha256(convert_to(concat_ws('|',
+ *         status, quantity, amount_minor, commission_amount_minor,
+ *         COALESCE(posting_number, '<null>'), COALESCE(order_number, '<null>'),
+ *         COALESCE(warehouse_id::text, '<null>'), COALESCE(warehouse_name, '<null>'),
+ *         COALESCE(delivery_city, '<null>')), 'UTF8')), 'hex');
  *
  * down() рабочий: колонки восстанавливаются из raw той же командой.
  */
