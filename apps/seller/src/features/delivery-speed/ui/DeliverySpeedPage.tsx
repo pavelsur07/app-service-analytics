@@ -9,7 +9,10 @@ import {
   DELIVERY_SPEED_WINDOWS,
   deliverySpeedSearchWithCursor,
   deliverySpeedSearchWithDays,
+  deliverySpeedSearchWithView,
+  type DeliverySpeedView,
   parseDeliverySpeedDays,
+  parseDeliverySpeedView,
 } from '../lib/deliverySpeedParams'
 import {
   type DeliverySpeedReportResponse,
@@ -27,6 +30,13 @@ import {
 const PAGE_SIZE = 20
 const QUANTITY = new Intl.NumberFormat('ru-RU')
 
+const TABS: { view: DeliverySpeedView; label: string }[] = [
+  { view: 'clusters', label: 'Где раскладка стоит дороже всего' },
+  { view: 'items', label: 'Что довезти первым' },
+  { view: 'buyout', label: 'Выкуп по скорости доставки' },
+  { view: 'routes', label: 'Маршруты' },
+]
+
 interface CursorStack {
   key: string
   cursors: (string | null)[]
@@ -37,6 +47,7 @@ export function DeliverySpeedPage() {
   const { companyId } = useParams<{ companyId: string }>()
   const [search, setSearch] = useSearchParams()
   const days = parseDeliverySpeedDays(search.get('days'))
+  const view = parseDeliverySpeedView(search.get('view'))
   const rawCursor = search.get('cursor')
   const cursor = rawCursor === '' ? null : rawCursor
   const viewKey = `${companyId ?? ''}:${days}`
@@ -189,82 +200,114 @@ export function DeliverySpeedPage() {
         <>
           <Summary report={query.data} />
 
-          <Section
-            hint="Сколько лишних дней в сумме прождали покупатели, потому что товар везли из другого кластера: нелокальные доставки × разница медиан."
-            title="Где раскладка стоит дороже всего"
-            truncated={query.data.clustersTruncated}
-          >
-            <DeliverySpeedClusterTable items={query.data.clusters} />
-          </Section>
-
           <div className="overflow-hidden rounded-xl border border-border-default bg-surface-raised shadow-card">
-            <div className="flex flex-col gap-0.5 border-b border-border-default px-4 py-3">
-              <span className="font-semibold">Что довезти первым</span>
-              <span className="text-xs text-text-muted">
-                Товары по кластерам доставки, сверху — больше всего лишних дней
-                ожидания.
-              </span>
-            </div>
-            {query.data.items.length === 0 && cursors.length <= 1 ? (
-              <p className="px-4 py-6 text-sm text-text-muted">
-                Пока не с чем сравнивать: потеря считается в кластере, где
-                доставлено не меньше {query.data.definitions.minPostings}{' '}
-                локальных и {query.data.definitions.minPostings} нелокальных
-                заказов.
-              </p>
-            ) : (
-              <DeliverySpeedSkuTable items={query.data.items} />
-            )}
-            <div className="flex items-center justify-end gap-2 border-t border-border-default px-4 py-2">
-              <Button
-                disabled={cursors.length <= 1}
-                onClick={() => {
-                  const previous = cursors.slice(0, -1)
-                  setStack({ key: viewKey, cursors: previous })
-                  writeCursor(previous.at(-1) ?? null)
-                }}
-                size="compact"
-                type="button"
-                variant="secondary"
-              >
-                <ChevronLeft aria-hidden="true" size={16} />
-                Назад
-              </Button>
-              <Button
-                disabled={nextCursor === null}
-                onClick={() => {
-                  if (nextCursor !== null) {
-                    setStack({
-                      key: viewKey,
-                      cursors: [...cursors, nextCursor],
+            <div
+              aria-label="Отчёт"
+              className="flex flex-wrap items-center gap-1 border-b border-border-default px-4 py-3"
+              role="tablist"
+            >
+              {TABS.map((tab) => (
+                <Button
+                  aria-controls={`delivery-speed-panel-${tab.view}`}
+                  aria-selected={tab.view === view}
+                  id={`delivery-speed-tab-${tab.view}`}
+                  key={tab.view}
+                  onClick={() => {
+                    setSearch(deliverySpeedSearchWithView(search, tab.view), {
+                      replace: true,
                     })
-                    writeCursor(nextCursor)
-                  }
-                }}
-                size="compact"
-                type="button"
-                variant="secondary"
-              >
-                Дальше
-                <ChevronRight aria-hidden="true" size={16} />
-              </Button>
+                  }}
+                  role="tab"
+                  size="compact"
+                  type="button"
+                  variant={tab.view === view ? 'primary' : 'ghost'}
+                >
+                  {tab.label}
+                </Button>
+              ))}
             </div>
+
+            {view === 'clusters' ? (
+              <Panel
+                hint="Сколько лишних дней в сумме прождали покупатели, потому что товар везли из другого кластера: нелокальные доставки × разница медиан."
+                truncated={query.data.clustersTruncated}
+                view="clusters"
+              >
+                <DeliverySpeedClusterTable items={query.data.clusters} />
+              </Panel>
+            ) : null}
+
+            {view === 'items' ? (
+              <Panel
+                hint="Товары по кластерам доставки, сверху — больше всего лишних дней ожидания."
+                view="items"
+              >
+                {query.data.items.length === 0 && cursors.length <= 1 ? (
+                  <p className="px-4 py-6 text-sm text-text-muted">
+                    Пока не с чем сравнивать: потеря считается в кластере, где
+                    доставлено не меньше {query.data.definitions.minPostings}{' '}
+                    локальных и {query.data.definitions.minPostings} нелокальных
+                    заказов.
+                  </p>
+                ) : (
+                  <DeliverySpeedSkuTable items={query.data.items} />
+                )}
+                <div className="flex items-center justify-end gap-2 border-t border-border-default px-4 py-2">
+                  <Button
+                    disabled={cursors.length <= 1}
+                    onClick={() => {
+                      const previous = cursors.slice(0, -1)
+                      setStack({ key: viewKey, cursors: previous })
+                      writeCursor(previous.at(-1) ?? null)
+                    }}
+                    size="compact"
+                    type="button"
+                    variant="secondary"
+                  >
+                    <ChevronLeft aria-hidden="true" size={16} />
+                    Назад
+                  </Button>
+                  <Button
+                    disabled={nextCursor === null}
+                    onClick={() => {
+                      if (nextCursor !== null) {
+                        setStack({
+                          key: viewKey,
+                          cursors: [...cursors, nextCursor],
+                        })
+                        writeCursor(nextCursor)
+                      }
+                    }}
+                    size="compact"
+                    type="button"
+                    variant="secondary"
+                  >
+                    Дальше
+                    <ChevronRight aria-hidden="true" size={16} />
+                  </Button>
+                </div>
+              </Panel>
+            ) : null}
+
+            {view === 'buyout' ? (
+              <Panel
+                hint="Процент выкупа у заказов, доехавших за разное время."
+                view="buyout"
+              >
+                <DeliverySpeedBuyoutTable items={query.data.buyoutBySpeed} />
+              </Panel>
+            ) : null}
+
+            {view === 'routes' ? (
+              <Panel
+                hint="Кластер отгрузки → кластер доставки."
+                truncated={query.data.routesTruncated}
+                view="routes"
+              >
+                <DeliverySpeedRouteTable items={query.data.routes} />
+              </Panel>
+            ) : null}
           </div>
-
-          <Section
-            hint="Процент выкупа у заказов, доехавших за разное время."
-            title="Выкуп по скорости доставки"
-          >
-            <DeliverySpeedBuyoutTable items={query.data.buyoutBySpeed} />
-          </Section>
-
-          <Section
-            hint="Кластер отгрузки → кластер доставки."
-            title="Маршруты"
-            truncated={query.data.routesTruncated}
-          >
-            <DeliverySpeedRouteTable items={query.data.routes} />
-          </Section>
         </>
       ) : null}
     </section>
@@ -300,21 +343,24 @@ function Summary({ report }: { report: DeliverySpeedReportResponse }) {
   )
 }
 
-function Section({
-  title,
+function Panel({
+  view,
   hint,
   truncated,
   children,
 }: {
-  title: string
+  view: DeliverySpeedView
   hint: string
   truncated?: boolean
   children: ReactNode
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-border-default bg-surface-raised shadow-card">
-      <div className="flex flex-col gap-0.5 border-b border-border-default px-4 py-3">
-        <span className="font-semibold">{title}</span>
+    <div
+      aria-labelledby={`delivery-speed-tab-${view}`}
+      id={`delivery-speed-panel-${view}`}
+      role="tabpanel"
+    >
+      <div className="border-b border-border-default px-4 py-2">
         <span className="text-xs text-text-muted">
           {hint}
           {truncated === true ? ' Показаны крупнейшие 50.' : ''}
