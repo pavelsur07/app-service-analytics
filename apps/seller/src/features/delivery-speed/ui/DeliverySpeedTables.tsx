@@ -1,10 +1,10 @@
 import { Badge } from '../../../../../../packages/ui/src'
 import type { components } from '../../../api/schema'
 import { formatBasisPoints } from '../../../shared/lib/formatBasisPoints'
+import { formatLostTime } from '../../../shared/lib/formatLostTime'
 import {
   formatBucket,
   formatDuration,
-  formatLostTime,
   NO_DATA,
 } from '../lib/deliverySpeedFormat'
 
