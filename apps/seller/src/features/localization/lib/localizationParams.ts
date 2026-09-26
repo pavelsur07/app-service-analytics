@@ -44,3 +44,25 @@ export function localizationSearchWithCursor(
 
   return next
 }
+
+// Вкладка — в адресе, как и период: ссылка на «что куда довезти»
+// открывает именно её, а не первую вкладку.
+const LOCALIZATION_VIEWS = ['clusters', 'items'] as const
+
+export type LocalizationView = (typeof LOCALIZATION_VIEWS)[number]
+
+const DEFAULT_VIEW: LocalizationView = 'clusters'
+
+export function parseLocalizationView(raw: string | null): LocalizationView {
+  return LOCALIZATION_VIEWS.find((view) => view === raw) ?? DEFAULT_VIEW
+}
+
+export function localizationSearchWithView(
+  current: URLSearchParams,
+  view: LocalizationView,
+): URLSearchParams {
+  const next = new URLSearchParams(current)
+  next.set('view', view)
+
+  return next
+}
