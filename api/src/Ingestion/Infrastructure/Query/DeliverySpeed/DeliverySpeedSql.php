@@ -129,14 +129,15 @@ final class DeliverySpeedSql
     /**
      * Потерянные часы ожидания группы: нелокальные прибывшие отправления ×
      * max(0, медиана нелокальных − медиана локальных). Считаются, только
-     * когда обе медианы опираются на MIN_POSTINGS отправлений.
+     * когда обе медианы опираются на MIN_POSTINGS отправлений. Округление
+     * вверх: положительная потеря — хотя бы час, ноль — только честный ноль.
      */
     public static function lostHours(string $alias): string
     {
         $min = self::MIN_POSTINGS;
 
         return "CASE WHEN {$alias}.local_arrived_postings >= {$min} AND {$alias}.nonlocal_arrived_postings >= {$min}"
-            ." THEN ROUND({$alias}.nonlocal_arrived_postings::numeric"
+            ." THEN CEIL({$alias}.nonlocal_arrived_postings::numeric"
             ." * GREATEST(0, {$alias}.median_nonlocal_seconds - {$alias}.median_local_seconds) / 3600)::bigint END";
     }
 

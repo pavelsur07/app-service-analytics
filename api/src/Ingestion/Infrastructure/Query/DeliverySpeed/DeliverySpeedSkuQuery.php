@@ -68,7 +68,7 @@ final readonly class DeliverySpeedSkuQuery
                 GROUP BY l.marketplace_sku, t.cluster_to
             )
             SELECT b.*, g.median_local_seconds, g.median_nonlocal_seconds,
-                   ROUND(b.nonlocal_arrived_postings::numeric * g.gap_seconds / 3600)::bigint AS lost_hours
+                   CEIL(b.nonlocal_arrived_postings::numeric * g.gap_seconds / 3600)::bigint AS lost_hours
             FROM by_sku b
             JOIN cluster_gap g ON g.cluster_to = b.cluster_to
             WHERE g.gap_seconds > 0 AND b.nonlocal_arrived_postings > 0

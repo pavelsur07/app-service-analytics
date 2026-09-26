@@ -69,13 +69,13 @@ final class BuildDeliverySpeedReportActionTest extends KernelTestCase
 
         $report = $this->build();
 
-        // 10 × (369 000 − 193 950) / 3600 = 486,25 → 486.
+        // 10 × (369 000 − 193 950) / 3600 = 486,25 → 487 (вверх).
         self::assertSame(self::OMSK, $report->clusters[0]->clusterTo);
-        self::assertSame(486, $report->clusters[0]->lostHours);
+        self::assertSame(487, $report->clusters[0]->lostHours);
 
         self::assertCount(1, $report->skus);
         self::assertSame('NONLOCAL', $report->skus[0]->marketplaceSku);
-        self::assertSame(486, $report->skus[0]->lostHours);
+        self::assertSame(487, $report->skus[0]->lostHours);
         self::assertSame(193_950, $report->skus[0]->clusterMedianLocalSeconds);
         self::assertSame(369_000, $report->skus[0]->clusterMedianNonlocalSeconds);
 
@@ -195,11 +195,11 @@ final class BuildDeliverySpeedReportActionTest extends KernelTestCase
 
         $first = $this->build(limit: 1);
         self::assertSame(['NONLOCAL'], array_map(static fn ($r): string => $r->marketplaceSku, $first->skus));
-        self::assertSame(486, $first->skus[0]->lostHours);
+        self::assertSame(487, $first->skus[0]->lostHours);
         self::assertNotNull($first->nextCursor);
 
         $second = $this->build(limit: 1, cursor: $first->nextCursor);
-        // 3 × 175 050 / 3600 = 145,875 → 146.
+        // 3 × 175 050 / 3600 = 145,875 → 146 (вверх).
         self::assertSame(['NONLOCAL2'], array_map(static fn ($r): string => $r->marketplaceSku, $second->skus));
         self::assertSame(146, $second->skus[0]->lostHours);
         self::assertNull($second->nextCursor);
