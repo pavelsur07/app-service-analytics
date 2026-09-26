@@ -11,9 +11,14 @@ use App\Ingestion\Infrastructure\Query\DeliverySpeed\DeliverySpeedSql;
  * (docs/plan/ozon-stock-placement-report.md, решение 6; ADR-034).
  * Все деления — в PostgreSQL на numeric, штуки — целые; float нет.
  *
- * - Остаток — последний полный снимок каждого подключения, сумма складов
- *   кластера (ПВЗ входят).
- * - Спрос — продажи по кластеру доставки за DEMAND_WINDOW_DAYS без
+ * - Остаток — последний полный снимок каждого подключения не старше
+ *   вчерашнего (снимок раз в сутки), сумма складов кластера (ПВЗ входят).
+ *   Остаток известен только для SKU из requested_skus этого снимка:
+ *   иначе отсутствие строки — «неизвестно», а не ноль (ADR-034), и строка
+ *   получает статус unknown_stock без рекомендации. Подключение без свежего
+ *   снимка своих SKU не подтверждает — месячный остаток за текущий не идёт.
+ * - Спрос — продажи по кластеру доставки за DEMAND_WINDOW_DAYS полных
+ *   дней, заканчивая вчерашним (сегодняшний ещё не закончился), без
  *   отменённых. Поправка на дефицит — дни, когда полный снимок показывает
  *   ноль (SKU в запросе дня, строк с остатком в кластере нет), исключаются
  *   из знаменателя; только когда полных дней снимков — все DEMAND_WINDOW_DAYS,
@@ -38,7 +43,7 @@ final class StockPlacementSql
     public const int MAX_LEAD_DAYS = 60;
 
     /** Порядок статусов в ответе и допустимые значения фильтра. */
-    public const array STATUSES = ['deficit', 'normal', 'surplus', 'insufficient_data', 'no_sales'];
+    public const array STATUSES = ['deficit', 'normal', 'surplus', 'insufficient_data', 'no_sales', 'unknown_stock'];
 
     /**
      * CTE до `measured` включительно. Параметры: :companyId, :today,
@@ -52,7 +57,7 @@ final class StockPlacementSql
                 FROM stock_snapshot_run
                 WHERE company_id = :companyId
                   AND started_at IS NOT NULL
-                  AND snapshot_date BETWEEN :demandFrom AND :today
+                  AND snapshot_date BETWEEN :demandFrom AND :windowEnd
             ),
             complete_days AS (
                 SELECT snapshot_date
@@ -65,8 +70,17 @@ final class StockPlacementSql
                 FROM stock_snapshot_run
                 WHERE company_id = :companyId
                   AND started_at IS NOT NULL
-                  AND snapshot_date <= :today
+                  AND snapshot_date BETWEEN :recentFrom AND :today
                 ORDER BY marketplace_account_id, snapshot_date DESC
+            ),
+            current_requested AS (
+                SELECT DISTINCT sku.value AS marketplace_sku
+                FROM last_run lr
+                JOIN stock_snapshot_run r
+                  ON r.company_id = :companyId
+                 AND r.marketplace_account_id = lr.marketplace_account_id
+                 AND r.snapshot_date = lr.snapshot_date
+                CROSS JOIN LATERAL jsonb_array_elements_text(r.requested_skus) AS sku(value)
             ),
             stock_now AS (
                 SELECT f.marketplace_sku, f.cluster_name AS cluster,
@@ -86,7 +100,7 @@ final class StockPlacementSql
                 SELECT marketplace_sku, cluster_to AS cluster, SUM(quantity)::bigint AS sold
                 FROM sales_fact
                 WHERE company_id = :companyId
-                  AND business_date BETWEEN :demandFrom AND :today
+                  AND business_date BETWEEN :demandFrom AND :windowEnd
                   AND status <> 'cancelled'
                   AND cluster_to IS NOT NULL
                 GROUP BY marketplace_sku, cluster_to
@@ -121,6 +135,7 @@ final class StockPlacementSql
             pairs AS (
                 SELECT COALESCE(s.marketplace_sku, d.marketplace_sku) AS marketplace_sku,
                        COALESCE(s.cluster, d.cluster) AS cluster,
+                       (s.marketplace_sku IS NOT NULL OR cr.marketplace_sku IS NOT NULL) AS stock_known,
                        COALESCE(s.available, 0) AS available,
                        COALESCE(s.transit, 0) AS transit,
                        COALESCE(s.requested, 0) AS requested,
@@ -130,6 +145,8 @@ final class StockPlacementSql
                 FULL OUTER JOIN demand_sales d
                   ON d.marketplace_sku = s.marketplace_sku
                  AND d.cluster = s.cluster
+                LEFT JOIN current_requested cr
+                  ON cr.marketplace_sku = COALESCE(s.marketplace_sku, d.marketplace_sku)
             ),
             measured AS (
                 SELECT p.*,
@@ -157,14 +174,17 @@ final class StockPlacementSql
     public static function rowSelect(): string
     {
         return <<<'SQL'
-            m.marketplace_sku, m.cluster, m.available, m.transit, m.requested, m.sold,
+            m.marketplace_sku, m.cluster, m.stock_known,
+            CASE WHEN m.stock_known THEN m.available END AS available,
+            m.transit, m.requested, m.sold,
             m.zero_days, m.correction_applied, m.abc_class, m.ads_cluster, m.idc_cluster,
             ROUND(m.demand * 1000)::bigint AS demand_milli_per_day,
-            CASE WHEN m.demand > 0 THEN FLOOR(m.available / m.demand)::int END AS cover_days,
-            CASE WHEN m.sold >= :minSales::int
+            CASE WHEN m.stock_known AND m.demand > 0 THEN FLOOR(m.available / m.demand)::int END AS cover_days,
+            CASE WHEN m.stock_known AND m.sold >= :minSales::int
                  THEN GREATEST(0, CEIL(m.demand * (:targetDays::int + :leadDays::int) - m.available - m.transit - m.requested))::bigint
             END AS recommended,
-            CASE WHEN m.sold = 0 THEN 'no_sales'
+            CASE WHEN NOT m.stock_known THEN 'unknown_stock'
+                 WHEN m.sold = 0 THEN 'no_sales'
                  WHEN m.sold < :minSales::int THEN 'insufficient_data'
                  WHEN m.available / m.demand < :leadDays::int THEN 'deficit'
                  WHEN m.available / m.demand > :surplusFactor::int * :targetDays::int THEN 'surplus'
@@ -180,7 +200,9 @@ final class StockPlacementSql
         return [
             'companyId' => $companyId,
             'today' => $today->format('Y-m-d'),
-            'demandFrom' => $today->modify('-'.(self::DEMAND_WINDOW_DAYS - 1).' days')->format('Y-m-d'),
+            'recentFrom' => $today->modify('-1 day')->format('Y-m-d'),
+            'windowEnd' => $today->modify('-1 day')->format('Y-m-d'),
+            'demandFrom' => $today->modify('-'.self::DEMAND_WINDOW_DAYS.' days')->format('Y-m-d'),
             'windowDays' => self::DEMAND_WINDOW_DAYS,
             'minSales' => self::MIN_SALES,
             'abcA' => self::ABC_A_BPS,

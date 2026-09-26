@@ -78,7 +78,9 @@ final class BuildStockPlacementReportActionTest extends KernelTestCase
         $report = $this->build();
 
         self::assertSame(self::TODAY, $report->snapshotDate);
-        self::assertSame(1, $report->completeSnapshotDays);
+        // Сегодняшний снимок — остаток «сейчас», но в окно спроса (до
+        // вчера) не входит.
+        self::assertSame(0, $report->completeSnapshotDays);
         self::assertFalse($report->correctionApplied);
         self::assertSame(1, $report->deficitPositions);
         self::assertSame(30, $report->deficitUnits);
@@ -97,9 +99,9 @@ final class BuildStockPlacementReportActionTest extends KernelTestCase
     {
         // 28 полных снимков подряд; SKU E был в запросе каждый день,
         // а остаток в кластере — только первые 14 дней.
-        for ($i = 27; $i >= 0; --$i) {
+        for ($i = 28; $i >= 1; --$i) {
             $day = (new \DateTimeImmutable(self::TODAY))->modify("-{$i} days")->format('Y-m-d');
-            $this->snapshot($day, $i >= 14 ? [$this->stock('E', 1, day: $day)] : [], ['E']);
+            $this->snapshot($day, $i > 14 ? [$this->stock('E', 1, day: $day)] : [], ['E']);
         }
         $this->sales('E', 14);
 
@@ -139,18 +141,63 @@ final class BuildStockPlacementReportActionTest extends KernelTestCase
         self::assertSame(['B'], array_map(static fn ($r): string => $r->marketplaceSku, $second->items));
     }
 
-    public function testNoSnapshotYetStillShowsDemand(): void
+    public function testWithoutAFreshSnapshotStockIsUnknownNotZero(): void
     {
+        // Последний полный снимок — пять дней назад: подключение перестало
+        // снимать остатки. Его остаток за текущий не идёт (ADR-034).
+        $day = (new \DateTimeImmutable(self::TODAY))->modify('-5 days')->format('Y-m-d');
+        $this->snapshot($day, [$this->stock('A', 40, day: $day)]);
         $this->sales('A', 28);
 
         $report = $this->build();
 
         self::assertNull($report->snapshotDate);
-        self::assertSame(0, $report->completeSnapshotDays);
+        self::assertSame(1, $report->unknownPositions);
         $a = $this->bySku($report->items)['A'];
-        self::assertSame(0, $a->available);
-        self::assertSame('deficit', $a->status);
-        self::assertSame(35, $a->recommended);
+        self::assertSame('unknown_stock', $a->status);
+        self::assertNull($a->available);
+        self::assertNull($a->recommended);
+    }
+
+    public function testSkuOutsideTheSnapshotRequestIsUnknownNotZero(): void
+    {
+        // Свежий снимок есть, но F в его запросе не было (товар появился
+        // в каталоге позже) — отсутствие строки не ноль.
+        $this->snapshot(self::TODAY, [$this->stock('A', 5)]);
+        $this->sales('F', 20);
+
+        $f = $this->bySku($this->build()->items)['F'];
+
+        self::assertSame('unknown_stock', $f->status);
+        self::assertNull($f->available);
+    }
+
+    public function testTodaysSalesAreNotDemand(): void
+    {
+        $this->snapshot(self::TODAY, [$this->stock('A', 5)]);
+        /** @var SalesFactRepository $repository */
+        $repository = self::getContainer()->get(SalesFactRepository::class);
+        $repository->upsertAll([SalesFactBuilder::aSalesFact()->withCompanyId($this->companyId)->withMarketplaceAccountId($this->accountId)
+            ->withSourceRowId('TODAY-1|A')->withPostingNumber('TODAY-1')->withMarketplaceSku('A')->withQuantity(50)
+            ->withBusinessDate(new \DateTimeImmutable(self::TODAY))->withClusters('Москва, МО и Дальние регионы', self::OMSK)->build()]);
+
+        self::assertSame(0, $this->bySku($this->build()->items)['A']->sold);
+    }
+
+    public function testStatusFilterHoldsAcrossPages(): void
+    {
+        $this->snapshot(self::TODAY, [$this->stock('A', 5), $this->stock('G', 1), $this->stock('B', 100)]);
+        $this->sales('A', 28);
+        $this->sales('G', 28);
+        $this->sales('B', 14);
+
+        $first = $this->build(limit: 1, status: 'deficit');
+        self::assertNotNull($first->nextCursor);
+        $second = $this->build(limit: 1, cursor: $first->nextCursor, status: 'deficit');
+
+        $seen = array_map(static fn ($r): string => $r->status, [...$first->items, ...$second->items]);
+        self::assertSame(['deficit', 'deficit'], $seen);
+        self::assertNull($second->nextCursor);
     }
 
     private function seedScenario(): void
@@ -214,19 +261,21 @@ final class BuildStockPlacementReportActionTest extends KernelTestCase
                 ->withPostingNumber($posting)
                 ->withMarketplaceSku($sku)
                 ->withStatus($status)
-                ->withBusinessDate((new \DateTimeImmutable(self::TODAY))->modify('-'.($i % 28).' days'))
+                // Полные дни окна: вчера и 27 дней до него — сегодняшний
+                // день ещё не закончился и в спрос не входит.
+                ->withBusinessDate((new \DateTimeImmutable(self::TODAY))->modify('-'.(1 + $i % 28).' days'))
                 ->withClusters('Москва, МО и Дальние регионы', self::OMSK)
                 ->build();
         }
         $repository->upsertAll($facts);
     }
 
-    private function build(int $limit = 50, ?StockPlacementCursor $cursor = null): StockPlacementReport
+    private function build(int $limit = 50, ?StockPlacementCursor $cursor = null, ?string $status = null): StockPlacementReport
     {
         /** @var BuildStockPlacementReportAction $action */
         $action = self::getContainer()->get(BuildStockPlacementReportAction::class);
 
-        return $action($this->companyId->toRfc4122(), new \DateTimeImmutable(self::TODAY), 28, 7, null, $limit, $cursor);
+        return $action($this->companyId->toRfc4122(), new \DateTimeImmutable(self::TODAY), 28, 7, $status, $limit, $cursor);
     }
 
     /**

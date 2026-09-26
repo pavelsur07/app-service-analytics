@@ -22,14 +22,17 @@ final readonly class StockPlacementSummaryQuery
     {
         $source = 'WITH '.StockPlacementSql::placementCte()
             .', rows_ AS (SELECT '.StockPlacementSql::rowSelect().' FROM measured m)'
-            .' SELECT (SELECT MAX(snapshot_date) FROM last_run) AS snapshot_date,'
+            // Самый старый из использованных снимков: свежесть отчёта —
+            // по худшему подключению, а не по лучшему.
+            .' SELECT (SELECT MIN(snapshot_date) FROM last_run) AS snapshot_date,'
             .' (SELECT complete_days FROM correction) AS complete_days,'
             .' (SELECT applied FROM correction) AS correction_applied,'
             ." COUNT(*) FILTER (WHERE status = 'deficit')::bigint AS deficit_positions,"
             ." COALESCE(SUM(recommended) FILTER (WHERE status = 'deficit'), 0)::bigint AS deficit_units,"
             ." COUNT(*) FILTER (WHERE status = 'surplus')::bigint AS surplus_positions,"
             .' COALESCE(SUM(recommended), 0)::bigint AS recommended_units,'
-            .' COUNT(*) FILTER (WHERE recommended > 0)::bigint AS recommended_positions'
+            .' COUNT(*) FILTER (WHERE recommended > 0)::bigint AS recommended_positions,'
+            ." COUNT(*) FILTER (WHERE status = 'unknown_stock')::bigint AS unknown_positions"
             .' FROM rows_';
 
         return $this->connection->createQueryBuilder()

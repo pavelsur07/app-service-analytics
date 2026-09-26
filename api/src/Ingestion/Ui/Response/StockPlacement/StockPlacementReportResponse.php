@@ -8,7 +8,7 @@ use OpenApi\Attributes as OA;
 
 #[OA\Schema(required: [
     'today', 'definitions', 'snapshotDate', 'completeSnapshotDays', 'correctionApplied', 'deficitPositions',
-    'deficitUnits', 'surplusPositions', 'recommendedPositions', 'recommendedUnits', 'items', 'nextCursor',
+    'deficitUnits', 'surplusPositions', 'recommendedPositions', 'recommendedUnits', 'unknownPositions', 'items', 'nextCursor',
 ])]
 final readonly class StockPlacementReportResponse
 {
@@ -18,7 +18,7 @@ final readonly class StockPlacementReportResponse
     public function __construct(
         public string $today,
         public StockPlacementDefinitionsResponse $definitions,
-        /** Дата последнего полного снимка; null — снимков ещё нет. */
+        /** Самый старый из использованных свежих снимков (не старше вчера); null — свежих нет. */
         public ?string $snapshotDate,
         public int $completeSnapshotDays,
         /** Поправка на дефицит применена: полных снимков — все дни окна спроса. */
@@ -28,6 +28,7 @@ final readonly class StockPlacementReportResponse
         public int $surplusPositions,
         public int $recommendedPositions,
         public int $recommendedUnits,
+        public int $unknownPositions,
         public array $items,
         public ?string $nextCursor,
     ) {

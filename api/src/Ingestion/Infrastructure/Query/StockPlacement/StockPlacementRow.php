@@ -11,7 +11,7 @@ final readonly class StockPlacementRow
         public ?string $offerId,
         public ?string $name,
         public string $cluster,
-        public int $available,
+        public ?int $available,
         public int $transit,
         public int $requested,
         public int $sold,

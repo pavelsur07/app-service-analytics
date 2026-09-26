@@ -2039,7 +2039,8 @@
                                 "normal",
                                 "surplus",
                                 "insufficient_data",
-                                "no_sales"
+                                "no_sales",
+                                "unknown_stock"
                             ]
                         }
                     },
@@ -4505,7 +4506,7 @@
                     "stockBasis": {
                         "type": "string",
                         "enum": [
-                            "latest_complete_snapshot_including_pickup_points"
+                            "latest_complete_snapshot_since_yesterday_including_pickup_points"
                         ]
                     }
                 },
@@ -4547,7 +4548,9 @@
                         "type": "string"
                     },
                     "available": {
-                        "type": "integer"
+                        "title": "null \u2014 \u043e\u0441\u0442\u0430\u0442\u043e\u043a \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u0435\u043d: SKU \u043d\u0435 \u0431\u044b\u043b\u043e \u0432 \u0437\u0430\u043f\u0440\u043e\u0441\u0435 \u0441\u0432\u0435\u0436\u0435\u0433\u043e \u043f\u043e\u043b\u043d\u043e\u0433\u043e \u0441\u043d\u0438\u043c\u043a\u0430 (ADR-034).",
+                        "type": "integer",
+                        "nullable": true
                     },
                     "transit": {
                         "type": "integer"
@@ -4576,7 +4579,8 @@
                             "normal",
                             "surplus",
                             "insufficient_data",
-                            "no_sales"
+                            "no_sales",
+                            "unknown_stock"
                         ]
                     },
                     "abcClass": {
@@ -4618,6 +4622,7 @@
                     "surplusPositions",
                     "recommendedPositions",
                     "recommendedUnits",
+                    "unknownPositions",
                     "items",
                     "nextCursor"
                 ],
@@ -4629,7 +4634,7 @@
                         "$ref": "#/components/schemas/StockPlacementDefinitionsResponse"
                     },
                     "snapshotDate": {
-                        "title": "\u0414\u0430\u0442\u0430 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0435\u0433\u043e \u043f\u043e\u043b\u043d\u043e\u0433\u043e \u0441\u043d\u0438\u043c\u043a\u0430; null \u2014 \u0441\u043d\u0438\u043c\u043a\u043e\u0432 \u0435\u0449\u0451 \u043d\u0435\u0442.",
+                        "title": "\u0421\u0430\u043c\u044b\u0439 \u0441\u0442\u0430\u0440\u044b\u0439 \u0438\u0437 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u043d\u044b\u0445 \u0441\u0432\u0435\u0436\u0438\u0445 \u0441\u043d\u0438\u043c\u043a\u043e\u0432 (\u043d\u0435 \u0441\u0442\u0430\u0440\u0448\u0435 \u0432\u0447\u0435\u0440\u0430); null \u2014 \u0441\u0432\u0435\u0436\u0438\u0445 \u043d\u0435\u0442.",
                         "type": "string",
                         "nullable": true
                     },
@@ -4653,6 +4658,9 @@
                         "type": "integer"
                     },
                     "recommendedUnits": {
+                        "type": "integer"
+                    },
+                    "unknownPositions": {
                         "type": "integer"
                     },
                     "items": {

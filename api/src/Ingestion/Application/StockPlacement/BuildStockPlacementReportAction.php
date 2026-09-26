@@ -58,6 +58,7 @@ final readonly class BuildStockPlacementReportAction
                 surplusPositions: StockPlacementQuery::int($summary['surplus_positions']),
                 recommendedPositions: StockPlacementQuery::int($summary['recommended_positions']),
                 recommendedUnits: StockPlacementQuery::int($summary['recommended_units']),
+                unknownPositions: StockPlacementQuery::int($summary['unknown_positions']),
                 items: $items,
                 nextCursor: $last instanceof StockPlacementRow
                     ? new StockPlacementCursor($today->format('Y-m-d'), $targetDays, $leadDays, $status, $last->priority, $last->recommended ?? -1, $last->marketplaceSku, $last->cluster)

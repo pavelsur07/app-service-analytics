@@ -1027,14 +1027,15 @@ export interface components {
             /** @enum {string} */
             demandBasis: "delivery_cluster_sales_excluding_cancelled";
             /** @enum {string} */
-            stockBasis: "latest_complete_snapshot_including_pickup_points";
+            stockBasis: "latest_complete_snapshot_since_yesterday_including_pickup_points";
         };
         StockPlacementItemResponse: {
             marketplaceSku: string;
             offerId: string | null;
             name: string | null;
             cluster: string;
-            available: number;
+            /** null — остаток неизвестен: SKU не было в запросе свежего полного снимка (ADR-034). */
+            available: number | null;
             transit: number;
             requested: number;
             sold: number;
@@ -1042,7 +1043,7 @@ export interface components {
             coverDays: number | null;
             recommended: number | null;
             /** @enum {string} */
-            status: "deficit" | "normal" | "surplus" | "insufficient_data" | "no_sales";
+            status: "deficit" | "normal" | "surplus" | "insufficient_data" | "no_sales" | "unknown_stock";
             /** @enum {string} */
             abcClass: "A" | "B" | "C";
             zeroDays: number;
@@ -1054,7 +1055,7 @@ export interface components {
         StockPlacementReportResponse: {
             today: string;
             definitions: components["schemas"]["StockPlacementDefinitionsResponse"];
-            /** Дата последнего полного снимка; null — снимков ещё нет. */
+            /** Самый старый из использованных свежих снимков (не старше вчера); null — свежих нет. */
             snapshotDate: string | null;
             completeSnapshotDays: number;
             /** Поправка на дефицит применена: полных снимков — все дни окна спроса. */
@@ -1064,6 +1065,7 @@ export interface components {
             surplusPositions: number;
             recommendedPositions: number;
             recommendedUnits: number;
+            unknownPositions: number;
             items: components["schemas"]["StockPlacementItemResponse"][];
             nextCursor: string | null;
         };
@@ -2542,7 +2544,7 @@ export interface operations {
             query?: {
                 target_days?: number;
                 lead_days?: number;
-                status?: "deficit" | "normal" | "surplus" | "insufficient_data" | "no_sales";
+                status?: "deficit" | "normal" | "surplus" | "insufficient_data" | "no_sales" | "unknown_stock";
                 limit?: number;
                 cursor?: string;
             };

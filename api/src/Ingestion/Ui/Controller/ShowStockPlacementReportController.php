@@ -97,7 +97,7 @@ final class ShowStockPlacementReportController
                 abcABps: StockPlacementSql::ABC_A_BPS,
                 abcBBps: StockPlacementSql::ABC_B_BPS,
                 demandBasis: 'delivery_cluster_sales_excluding_cancelled',
-                stockBasis: 'latest_complete_snapshot_including_pickup_points',
+                stockBasis: 'latest_complete_snapshot_since_yesterday_including_pickup_points',
             ),
             snapshotDate: $report->snapshotDate,
             completeSnapshotDays: $report->completeSnapshotDays,
@@ -107,6 +107,7 @@ final class ShowStockPlacementReportController
             surplusPositions: $report->surplusPositions,
             recommendedPositions: $report->recommendedPositions,
             recommendedUnits: $report->recommendedUnits,
+            unknownPositions: $report->unknownPositions,
             items: array_map(
                 static fn (StockPlacementRow $row): StockPlacementItemResponse => new StockPlacementItemResponse(
                     marketplaceSku: $row->marketplaceSku,

@@ -23,14 +23,15 @@ final readonly class StockPlacementItemResponse
         public ?string $offerId,
         public ?string $name,
         public string $cluster,
-        public int $available,
+        /** null — остаток неизвестен: SKU не было в запросе свежего полного снимка (ADR-034). */
+        public ?int $available,
         public int $transit,
         public int $requested,
         public int $sold,
         public int $demandMilliPerDay,
         public ?int $coverDays,
         public ?int $recommended,
-        #[OA\Property(enum: ['deficit', 'normal', 'surplus', 'insufficient_data', 'no_sales'])]
+        #[OA\Property(enum: ['deficit', 'normal', 'surplus', 'insufficient_data', 'no_sales', 'unknown_stock'])]
         public string $status,
         #[OA\Property(enum: ['A', 'B', 'C'])]
         public string $abcClass,

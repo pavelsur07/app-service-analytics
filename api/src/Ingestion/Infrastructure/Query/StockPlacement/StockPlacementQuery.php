@@ -84,7 +84,7 @@ final readonly class StockPlacementQuery
             offerId: self::nullableString($row['offer_id']),
             name: self::nullableString($row['name']),
             cluster: self::string($row['cluster']),
-            available: self::int($row['available']),
+            available: self::nullableInt($row['available']),
             transit: self::int($row['transit']),
             requested: self::int($row['requested']),
             sold: self::int($row['sold']),

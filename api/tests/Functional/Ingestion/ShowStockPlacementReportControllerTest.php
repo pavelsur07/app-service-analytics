@@ -34,6 +34,7 @@ final class ShowStockPlacementReportControllerTest extends WebTestCase
 
         $this->sale(Uuid::v7(), 'FOREIGN-1', 40, $today);
         $this->sale($companyId, 'OWN-1', 3, $today);
+        // Снимка остатков нет — остаток неизвестен, но спрос виден.
 
         $client->request('GET', '/api/companies/'.$companyId->toRfc4122().'/stock-placement?days=30');
 

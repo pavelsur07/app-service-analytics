@@ -23,7 +23,7 @@ final readonly class StockPlacementDefinitionsResponse
         public int $abcBBps,
         #[OA\Property(enum: ['delivery_cluster_sales_excluding_cancelled'])]
         public string $demandBasis,
-        #[OA\Property(enum: ['latest_complete_snapshot_including_pickup_points'])]
+        #[OA\Property(enum: ['latest_complete_snapshot_since_yesterday_including_pickup_points'])]
         public string $stockBasis,
     ) {
     }
