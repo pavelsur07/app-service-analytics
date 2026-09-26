@@ -773,6 +773,9 @@ export interface components {
             amountMinor: number;
             commissionAmountMinor: number;
             currency: string;
+            warehouseId?: number | null;
+            warehouseName?: string | null;
+            deliveryCity?: string | null;
         };
         SalesFactListResponse: {
             items: components["schemas"]["SalesFactListItemResponse"][];

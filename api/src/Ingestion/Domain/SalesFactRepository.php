@@ -17,8 +17,12 @@ interface SalesFactRepository
     public function upsertAll(array $facts): void;
 
     /**
-     * Восстанавливает отсутствующие posting/order links из исторического raw,
-     * не откатывая mutable snapshot уже существующей sales_fact.
+     * Восстанавливает отсутствующие posting/order links и атрибуты доставки
+     * (склад, город) из исторического raw: заполняет только пустые колонки,
+     * не откатывая mutable snapshot уже существующей sales_fact. row_hash
+     * переписывается только когда строка совпадает с историческим фактом
+     * во всех хэшируемых полях — тогда это пересчёт по текущей формуле,
+     * а не откат.
      *
      * @param list<SalesFact> $facts
      */

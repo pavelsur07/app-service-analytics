@@ -38,6 +38,9 @@ final readonly class SalesFactListQuery
                 'amount_minor',
                 'commission_amount_minor',
                 'currency',
+                'warehouse_id',
+                'warehouse_name',
+                'delivery_city',
             )
             ->from('sales_fact')
             ->where('company_id = :companyId')
@@ -75,6 +78,9 @@ final readonly class SalesFactListQuery
             amountMinor: self::intValue($row['amount_minor']),
             commissionAmountMinor: self::intValue($row['commission_amount_minor']),
             currency: self::stringValue($row['currency']),
+            warehouseId: null === $row['warehouse_id'] ? null : self::intValue($row['warehouse_id']),
+            warehouseName: null === $row['warehouse_name'] ? null : self::stringValue($row['warehouse_name']),
+            deliveryCity: null === $row['delivery_city'] ? null : self::stringValue($row['delivery_city']),
         );
     }
 

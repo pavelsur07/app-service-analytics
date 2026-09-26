@@ -98,6 +98,9 @@ final class ListSalesFactsController
                 amountMinor: $row->amountMinor,
                 commissionAmountMinor: $row->commissionAmountMinor,
                 currency: $row->currency,
+                warehouseId: $row->warehouseId,
+                warehouseName: $row->warehouseName,
+                deliveryCity: $row->deliveryCity,
             ),
             $rows,
         );

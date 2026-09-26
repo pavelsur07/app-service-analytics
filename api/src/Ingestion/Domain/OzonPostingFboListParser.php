@@ -84,6 +84,15 @@ final class OzonPostingFboListParser
             }
         }
 
+        // Атрибуты доставки нужны только для показа: их отсутствие или
+        // неожиданный тип дают NULL, а не исключение — иначе из-за
+        // подписи на экране потерялись бы суммы и статусы отправления.
+        $analytics = $posting['analytics_data'] ?? null;
+        $analytics = \is_array($analytics) ? $analytics : [];
+        $warehouseId = self::optionalPositiveInt($analytics, 'warehouse_id');
+        $warehouseName = self::optionalNonEmptyString($analytics, 'warehouse_name');
+        $deliveryCity = self::optionalNonEmptyString($analytics, 'city');
+
         $products = $posting['products'] ?? [];
         if (!\is_array($products)) {
             throw new \UnexpectedValueException("Posting {$postingNumber}: \"products\" must be an array.");
@@ -121,6 +130,9 @@ final class OzonPostingFboListParser
                 rawDocumentId: $rawDocumentId,
                 postingNumber: $postingNumber,
                 orderNumber: $orderNumber,
+                warehouseId: $warehouseId,
+                warehouseName: $warehouseName,
+                deliveryCity: $deliveryCity,
             );
         }
 
@@ -155,6 +167,30 @@ final class OzonPostingFboListParser
         }
 
         return (string) $value;
+    }
+
+    /**
+     * @param array<array-key, mixed> $data
+     */
+    private static function optionalNonEmptyString(array $data, string $key): ?string
+    {
+        $value = $data[$key] ?? null;
+        if (!\is_string($value)) {
+            return null;
+        }
+        $value = trim($value);
+
+        return '' === $value ? null : $value;
+    }
+
+    /**
+     * @param array<array-key, mixed> $data
+     */
+    private static function optionalPositiveInt(array $data, string $key): ?int
+    {
+        $value = $data[$key] ?? null;
+
+        return \is_int($value) && $value > 0 ? $value : null;
     }
 
     /**

@@ -81,6 +81,100 @@ final class OzonPostingFboListParserTest extends TestCase
         self::assertEquals(Money::ofMinor(-115_296, 'RUB'), $fact->commissionAmount());
     }
 
+    public function testMapsDeliveryAttributesFromAnalyticsData(): void
+    {
+        $fixtureBody = file_get_contents(self::FIXTURE);
+        self::assertIsString($fixtureBody);
+
+        $facts = (new OzonPostingFboListParser())->parse($fixtureBody, Uuid::v7(), Uuid::v7(), Uuid::v7());
+
+        self::assertSame(1020000115166000, $facts[0]->warehouseId());
+        self::assertSame('ЖУКОВСКИЙ_РФЦ', $facts[0]->warehouseName());
+        self::assertSame('Брянск', $facts[0]->deliveryCity());
+        self::assertSame('ОМСК_РФЦ', $facts[1]->warehouseName());
+        self::assertSame('Комсомольск-на-Амуре', $facts[1]->deliveryCity());
+    }
+
+    public function testEmptyCityInFixtureBecomesNull(): void
+    {
+        $fixtureBody = file_get_contents(self::FIXTURE);
+        self::assertIsString($fixtureBody);
+
+        $facts = (new OzonPostingFboListParser())->parse($fixtureBody, Uuid::v7(), Uuid::v7(), Uuid::v7());
+
+        // 36806293-0563-1 в боевом ответе пришёл с city = "".
+        $fact = array_values(array_filter(
+            $facts,
+            static fn ($fact): bool => '36806293-0563-1' === $fact->postingNumber(),
+        ))[0];
+        self::assertNull($fact->deliveryCity());
+        self::assertNotNull($fact->warehouseName());
+    }
+
+    public function testCopiesDeliveryAttributesToEveryProductOfThePosting(): void
+    {
+        $facts = (new OzonPostingFboListParser())->parse(
+            self::postingBody(['warehouse_id' => 42, 'warehouse_name' => 'КАЗАНЬ_РФЦ', 'city' => 'Уфа']),
+            Uuid::v7(),
+            Uuid::v7(),
+            Uuid::v7(),
+        );
+
+        self::assertCount(2, $facts);
+        foreach ($facts as $fact) {
+            self::assertSame(42, $fact->warehouseId());
+            self::assertSame('КАЗАНЬ_РФЦ', $fact->warehouseName());
+            self::assertSame('Уфа', $fact->deliveryCity());
+        }
+    }
+
+    /**
+     * Атрибуты доставки — только для показа: их отсутствие или чужой тип
+     * не должны терять суммы и статусы отправления.
+     *
+     * @param array<string, mixed>|null $analytics
+     */
+    #[DataProvider('unusableAnalyticsData')]
+    public function testUnusableAnalyticsDataYieldsNullsWithoutFailing(?array $analytics): void
+    {
+        $facts = (new OzonPostingFboListParser())->parse(
+            self::postingBody($analytics),
+            Uuid::v7(),
+            Uuid::v7(),
+            Uuid::v7(),
+        );
+
+        self::assertCount(2, $facts);
+        self::assertNull($facts[0]->warehouseId());
+        self::assertNull($facts[0]->warehouseName());
+        self::assertNull($facts[0]->deliveryCity());
+    }
+
+    /**
+     * @return iterable<string, array{array<string, mixed>|null}>
+     */
+    public static function unusableAnalyticsData(): iterable
+    {
+        yield 'no analytics_data' => [null];
+        yield 'empty values' => [['warehouse_id' => 0, 'warehouse_name' => '  ', 'city' => '']];
+        yield 'foreign types' => [['warehouse_id' => '42', 'warehouse_name' => 7, 'city' => ['x']]];
+    }
+
+    public function testChangedDeliveryCityChangesRowHash(): void
+    {
+        $parser = new OzonPostingFboListParser();
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $rawDocumentId = Uuid::v7();
+
+        $withoutCity = $parser->parse(self::postingBody(['city' => '']), $companyId, $accountId, $rawDocumentId);
+        $withCity = $parser->parse(self::postingBody(['city' => 'Уфа']), $companyId, $accountId, $rawDocumentId);
+
+        // Ozon дозаполняет город задним числом — детектор изменений ADR-006
+        // обязан это увидеть, иначе upsert оставит строку без города.
+        self::assertNotSame($withoutCity[0]->rowHash(), $withCity[0]->rowHash());
+    }
+
     public function testThrowsOnMissingResultKey(): void
     {
         $parser = new OzonPostingFboListParser();
@@ -171,5 +265,30 @@ final class OzonPostingFboListParserTest extends TestCase
     {
         yield 'zero' => [0];
         yield 'negative' => [-1];
+    }
+
+    /**
+     * Отправление из двух товаров; analytics_data = null — ключа нет вовсе.
+     *
+     * @param array<string, mixed>|null $analytics
+     */
+    private static function postingBody(?array $analytics): string
+    {
+        $posting = [
+            'posting_number' => 'P-GEO-1',
+            'order_number' => 'P-GEO',
+            'status' => 'delivered',
+            'in_process_at' => '2026-07-01T09:00:00Z',
+            'products' => [['sku' => 111, 'quantity' => 1], ['sku' => 222, 'quantity' => 1]],
+            'financial_data' => ['products' => [
+                ['product_id' => 111, 'price' => 100, 'commission_amount' => -10],
+                ['product_id' => 222, 'price' => 200, 'commission_amount' => -20],
+            ]],
+        ];
+        if (null !== $analytics) {
+            $posting['analytics_data'] = $analytics;
+        }
+
+        return json_encode(['result' => [$posting]], \JSON_THROW_ON_ERROR);
     }
 }

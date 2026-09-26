@@ -21,7 +21,7 @@ use Symfony\Component\Uid\Uuid;
 
 #[AsCommand(
     name: 'app:ingestion:backfill-ozon-posting-statuses',
-    description: 'Восстанавливает status history и sales links из сохранённых raw Ozon',
+    description: 'Восстанавливает status history, sales links и атрибуты доставки из сохранённых raw Ozon',
 )]
 final class BackfillOzonPostingStatusesCommand extends Command
 {

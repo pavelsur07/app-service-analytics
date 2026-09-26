@@ -23,6 +23,9 @@ final class SalesFactBuilder
     private ?string $postingNumber = '40705738-0407-1';
     private ?string $orderNumber = '40705738-0407';
     private int $quantity = 1;
+    private ?int $warehouseId = 1020000115166000;
+    private ?string $warehouseName = 'ЖУКОВСКИЙ_РФЦ';
+    private ?string $deliveryCity = 'Брянск';
     private Money $amount;
     private Money $commissionAmount;
     private Uuid $rawDocumentId;
@@ -98,6 +101,23 @@ final class SalesFactBuilder
         return $clone;
     }
 
+    public function withWarehouse(?int $warehouseId, ?string $warehouseName): self
+    {
+        $clone = clone $this;
+        $clone->warehouseId = $warehouseId;
+        $clone->warehouseName = $warehouseName;
+
+        return $clone;
+    }
+
+    public function withDeliveryCity(?string $deliveryCity): self
+    {
+        $clone = clone $this;
+        $clone->deliveryCity = $deliveryCity;
+
+        return $clone;
+    }
+
     /**
      * Дата в часовом поясе площадки (ADR-009). Задаётся снаружи, потому что
      * попадание в окно расчёта — то, что проверяет тест, и билдер не должен
@@ -158,6 +178,9 @@ final class SalesFactBuilder
             rawDocumentId: $this->rawDocumentId,
             postingNumber: $this->postingNumber,
             orderNumber: $this->orderNumber,
+            warehouseId: $this->warehouseId,
+            warehouseName: $this->warehouseName,
+            deliveryCity: $this->deliveryCity,
         );
     }
 
