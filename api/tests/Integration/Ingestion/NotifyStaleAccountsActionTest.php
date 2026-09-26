@@ -171,6 +171,21 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         self::assertSame([], ($this->action($container, $this->recordingMailer()))());
     }
 
+    public function testLongConnectedCabinetIsNotAskedForStocksRightAfterTheyBecameRequired(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container);
+        $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
+        $this->uploaded($container, $account, MarketplaceReportType::OzonAccrualByDay);
+
+        // Кабинет подключён три дня назад, а снимок остатков стал
+        // обязательным два часа назад: первого ночного прогона ещё не было,
+        // и тревога была бы ложной (#193).
+        $alerted = ($this->action($container, $this->recordingMailer(), snapshotsRequiredSince: new \DateTimeImmutable('-2 hours')))();
+
+        self::assertSame([], $alerted);
+    }
+
     public function testStockFreshnessComesFromCompleteRunsNotRaw(): void
     {
         $container = $this->bootedContainer();
@@ -257,7 +272,7 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         self::assertCount(1, $mailer->messages);
     }
 
-    private function action(ContainerInterface $container, MailerInterface $mailer, ?LockFactory $locks = null): NotifyStaleAccountsAction
+    private function action(ContainerInterface $container, MailerInterface $mailer, ?LockFactory $locks = null, ?\DateTimeImmutable $snapshotsRequiredSince = null): NotifyStaleAccountsAction
     {
         $connection = $this->connection($container);
 
@@ -274,6 +289,9 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
             $locks ?? new LockFactory(new InMemoryStore()),
             'ops@example.test',
             'smtp://mail.example.test',
+            // Остатки обязательны давно: сторожится подключение, а не
+            // момент ввода выгрузки — его проверяет отдельный тест.
+            $snapshotsRequiredSince ?? new \DateTimeImmutable('-30 days'),
         );
     }
 
