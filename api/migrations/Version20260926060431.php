@@ -26,21 +26,25 @@ use Doctrine\Migrations\AbstractMigration;
  * как мнимую корректировку задним числом (ADR-006). Если синхронизация
  * успела раньше — последствие только это разовое обновление
  * last_updated_at, данные не портятся.
- * Проверка после бэкфилла — по БД, не по выводу команды (facts в нём —
- * разобранные строки, а не изменённые): число строк окна, чей row_hash
- * расходится с пересчитанным по текущей формуле SalesFact::computeRowHash,
- * должно быть 0. Окно — ночной рескан отправлений (postingRescanDays = 30
- * в DispatchActiveOzonSyncsAction), самый широкий из тиков. Ненулевой
- * остаток — строки, чей текущий снимок не нашёлся в raw диапазона:
- * расширить --from или принять их разовое обновление.
+ * Проверка — сразу после бэкфилла, до следующего тика синхронизации:
+ * тик сам переписывает расходящийся хэш на новый и спрятал бы строки,
+ * которые бэкфилл не перевёл. Смотрится по БД, не по выводу команды
+ * (facts в нём — разобранные строки, а не изменённые). Окно — ночной
+ * рескан отправлений: postingRescanDays = 30 дней, от сегодня по
+ * Europe/Moscow до сегодня минус 29 (DispatchActiveOzonSyncsAction).
+ * Запрос отдаёт строки, чей row_hash расходится с пересчитанным по
+ * SalesFact::computeRowHash, и должен вернуть пусто. Непустой — снимок
+ * строки не нашёлся в raw диапазона: расширить --from или принять их
+ * разовое обновление.
  *
- *   SELECT count(*) FROM sales_fact
- *   WHERE business_date >= current_date - 30
+ *   SELECT company_id, marketplace_account_id, source_row_id FROM sales_fact
+ *   WHERE business_date >= (now() AT TIME ZONE 'Europe/Moscow')::date - 29
  *     AND row_hash <> encode(sha256(convert_to(concat_ws('|',
  *         status, quantity, amount_minor, commission_amount_minor,
  *         COALESCE(posting_number, '<null>'), COALESCE(order_number, '<null>'),
  *         COALESCE(warehouse_id::text, '<null>'), COALESCE(warehouse_name, '<null>'),
- *         COALESCE(delivery_city, '<null>')), 'UTF8')), 'hex');
+ *         COALESCE(delivery_city, '<null>')), 'UTF8')), 'hex')
+ *   LIMIT 50;
  *
  * down() рабочий: колонки восстанавливаются из raw той же командой.
  */
