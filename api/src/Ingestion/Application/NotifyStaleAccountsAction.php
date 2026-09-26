@@ -92,6 +92,16 @@ final readonly class NotifyStaleAccountsAction
         MarketplaceReportType::OzonAnalyticsStocks => 'остатки',
     ];
 
+    /**
+     * Когда снимок остатков стал обязательным — выкладка PR #192 на прод.
+     * Льготный период отсчитывается от более позднего из этого момента и
+     * подключения кабинета: кабинет, подключённый задолго до появления
+     * выгрузки, первого снимка ещё не получал, и тревога по нему в первые
+     * часы после выкладки была бы ложной (#193). Новая выгрузка под
+     * сторожем получает такую же отметку (docs/patterns.md).
+     */
+    private const string SNAPSHOTS_REQUIRED_SINCE = '2026-09-26T13:22:00+00:00';
+
     public function __construct(
         private IdentityScheduleFacade $identitySchedule,
         private RecentlyIngestedAccountsQuery $recentlyIngested,
@@ -100,6 +110,7 @@ final readonly class NotifyStaleAccountsAction
         private LockFactory $lockFactory,
         private string $alertEmail,
         private string $mailerDsn,
+        private \DateTimeImmutable $snapshotsRequiredSince = new \DateTimeImmutable(self::SNAPSHOTS_REQUIRED_SINCE),
     ) {
     }
 
@@ -142,8 +153,9 @@ final readonly class NotifyStaleAccountsAction
             // подключение бывает наполовину живым, и «данные по нему
             // идут» — не ответ на вопрос «идут ли расходы».
             // Снимок остатков — раз в сутки; кабинет, подключённый меньше
-            // порога назад, его ещё не обязан иметь (ADR-034).
-            $snapshotDue = $target->connectedAt <= $now->sub(new \DateInterval(self::STALE_AFTER));
+            // порога назад, его ещё не обязан иметь (ADR-034), как и кабинет,
+            // у которого выгрузка появилась меньше порога назад (#193).
+            $snapshotDue = max($target->connectedAt, $this->snapshotsRequiredSince) <= $now->sub(new \DateInterval(self::STALE_AFTER));
             $watched = self::WATCHED_REPORTS
                 + ($snapshotDue ? self::SNAPSHOT_REPORTS : [])
                 + ($target->advertisingActive ? self::ADVERTISING_REPORTS : []);
