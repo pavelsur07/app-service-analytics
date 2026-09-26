@@ -35,7 +35,7 @@ final readonly class ActiveOzonAccountsQuery
     public function build(): QueryBuilder
     {
         return $this->connection->createQueryBuilder()
-            ->select('company_id', 'id', 'advertising_state')
+            ->select('company_id', 'id', 'advertising_state', 'created_at')
             ->from('marketplace_account')
             ->where('marketplace = :marketplace')
             ->andWhere('state = :state')
@@ -55,6 +55,7 @@ final readonly class ActiveOzonAccountsQuery
             // ADR-026 п. 1: реклама грузится только при active у обеих
             // частей; state = active уже отобран условием запроса.
             advertisingActive: 'active' === $row['advertising_state'],
+            connectedAt: new \DateTimeImmutable(self::stringValue($row['created_at']), new \DateTimeZone('UTC')),
         );
     }
 

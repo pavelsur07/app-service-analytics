@@ -302,6 +302,7 @@ Ingestion дополнительно:
 | Сценарий | `Application` | `Infrastructure/Query` | `Ui/Response` |
 |---|---|---|---|
 | Выкуп (`Buyout`) | `BuildBuyoutDailySeriesAction`, `BuildBuyoutRateReportAction`, `BuyoutRateReport`, `BuyoutRateSku`, `BuyoutRateSummary` | `Buyout*`, `UnclassifiedOzonBuyout*`, `OzonPostingRawHistory*` | `Buyout*` |
+| Остатки (снимок, ADR-034) | `MessageHandler/FetchOzonStocksHandler` | `AccountListingSkusQuery`, `RecentStockSnapshotAccountsQuery` (узкий слой сторожа) | — |
 | Скорость доставки (`DeliverySpeed`) | `BuildDeliverySpeedReportAction`, `DeliverySpeedReport` | `DeliverySpeed*` | `DeliverySpeed*` |
 | Локализация (`Localization`) | `BuildLocalizationReportAction`, `LocalizationReport` | `Localization*` | `Localization*` |
 | Юнит-экономика (`UnitEconomics`) | `BuildUnitEconomicsAction`, `UnitEconomicsExpense`, `UnitEconomicsReport`, `UnitEconomicsSku` | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |
@@ -466,6 +467,12 @@ apps/seller/
 из-за раскладки и выкуп по скорости. Бэкенд —
 `Ingestion/Infrastructure/Query/DeliverySpeed`, план и метод оценки моментов —
 `docs/plan/ozon-delivery-speed-report.md`.
+
+Отчёт «Остатки» — `apps/seller/src/features/stock-placement/` (`/stock-placement`):
+остаток Ozon FBO по кластерам против спроса, статус и рекомендация «довезти».
+Бэкенд — `Ingestion/Infrastructure/Query/StockPlacement`, источник и снимки —
+ADR-034, план — `docs/plan/ozon-stock-placement-report.md`. Форматирование
+потерянных часов ожидания общее с «Доставкой» — `shared/lib/formatLostTime.ts`.
 
 Внутри фичи — `ui/`, `model/` (хуки и запросы), `lib/` (чистые функции).
 Три папки, не больше.

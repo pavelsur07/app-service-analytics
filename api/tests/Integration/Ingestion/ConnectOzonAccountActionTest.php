@@ -15,6 +15,7 @@ use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
+use App\Ingestion\Application\Message\FetchOzonStocksMessage;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Domain\OzonExpensesFetcher;
 use App\Ingestion\Domain\OzonPostingsFetcher;
@@ -34,6 +35,7 @@ use Monolog\Handler\TestHandler;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
@@ -69,9 +71,19 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
 
         // Месяц нового кабинета — история: в своей очереди и своём воркере,
         // а не перед тиком остальных кабинетов (docs/task/ingestion-queue-isolation.md).
+        // Единственное исключение — первый снимок остатков: у снимка нет
+        // глубины, и ADR-034 ставит его на транспорт ingestion. Одно
+        // отложенное сообщение тик остальных кабинетов не задерживает.
         $tick = static::getContainer()->get('messenger.transport.async_ingestion');
         self::assertInstanceOf(InMemoryTransport::class, $tick);
-        self::assertSame([], [...$tick->getSent()]);
+        $onTick = [...$tick->getSent()];
+        self::assertCount(1, $onTick);
+        self::assertInstanceOf(FetchOzonStocksMessage::class, $onTick[0]->getMessage());
+        self::assertTrue($onTick[0]->getMessage()->retryIfCatalogEmpty);
+        // После каталога, с задержкой: SKU для запроса берутся из него.
+        $delay = $onTick[0]->last(DelayStamp::class);
+        self::assertInstanceOf(DelayStamp::class, $delay);
+        self::assertGreaterThan(0, $delay->getDelay());
 
         // Возвраты принимают диапазон, а не один день: ровно одно
         // сообщение на весь месяц, не по одному на день, и его границы —

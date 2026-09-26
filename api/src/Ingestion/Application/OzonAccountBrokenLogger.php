@@ -102,9 +102,9 @@ final readonly class OzonAccountBrokenLogger
      * `advertising` — отказ рекламного ключа (ADR-026 п. 1): в broken
      * переходит только реклама, и сообщение записи говорит именно это.
      *
-     * @param 'products'|'sales'|'expenses'|'returns'|'advertising' $scope область
-     *                                                                     синхронизации — тот же словарь, что у проб ключей
-     *                                                                     (`ConnectOzonAccountAction::classifyProbeFailure()`)
+     * @param 'products'|'sales'|'expenses'|'returns'|'advertising'|'stocks' $scope область
+     *                                                                              синхронизации — тот же словарь, что у проб ключей
+     *                                                                              (`ConnectOzonAccountAction::classifyProbeFailure()`)
      */
     public function log(
         string $companyId,

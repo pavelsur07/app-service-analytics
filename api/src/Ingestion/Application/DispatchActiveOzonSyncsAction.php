@@ -10,6 +10,7 @@ use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
+use App\Ingestion\Application\Message\FetchOzonStocksMessage;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -133,6 +134,16 @@ final readonly class DispatchActiveOzonSyncsAction
                 companyId: $target->companyId,
                 marketplaceAccountId: $target->marketplaceAccountId,
             ));
+
+            // Снимок остатков — раз в сутки, в час рескана (ADR-034):
+            // рекомендации строятся по суточному спросу, внутридневной
+            // ноль им не нужен, а прогон — запрос на каждые 100 SKU.
+            if ($this->isRescanTick($today)) {
+                $this->bus->dispatch(new FetchOzonStocksMessage(
+                    companyId: $target->companyId,
+                    marketplaceAccountId: $target->marketplaceAccountId,
+                ));
+            }
 
             for ($daysAgo = 0; $daysAgo < $this->expenseWindowDays; ++$daysAgo) {
                 $this->bus->dispatch(new FetchOzonExpensesMessage(

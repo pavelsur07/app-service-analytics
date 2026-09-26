@@ -1,0 +1,10 @@
+HTTP/2 200 
+server: nginx
+date: Sat, 26 Sep 2026 11:42:11 GMT
+content-type: application/json
+ratelimit-remaining: 45
+vary: Origin, Accept-Encoding
+strict-transport-security: max-age=31536000; includeSubDomains;
+x-o3-trace-id: 0df13c35968ca004
+strict-transport-security: max-age=31536000; includeSubDomains;
+

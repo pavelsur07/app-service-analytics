@@ -17,6 +17,7 @@ import { PriceOverviewPage } from '../features/price-monitoring/ui/PriceOverview
 import { ExtensionConnectPage } from '../features/extension/ui/ExtensionConnectPage'
 import { SalesFactsPage } from '../features/ingestion/ui/SalesFactsPage'
 import { SignUpPage } from '../features/auth/ui/SignUpPage'
+import { StockPlacementPage } from '../features/stock-placement/ui/StockPlacementPage'
 import { UnitEconomicsPage } from '../features/unit-economics/ui/UnitEconomicsPage'
 import { CompanyLayout } from './CompanyLayout'
 import { RequireAuth } from './RequireAuth'
@@ -68,6 +69,7 @@ const router = createBrowserRouter([
       { path: 'redemption', element: <BuyoutRatePage /> },
       { path: 'localization', element: <LocalizationPage /> },
       { path: 'delivery-speed', element: <DeliverySpeedPage /> },
+      { path: 'stock-placement', element: <StockPlacementPage /> },
       { path: 'extension', element: <ExtensionConnectPage /> },
       { path: 'connections', element: <ConnectionsPage /> },
       { path: 'coverage', element: <DataCoveragePage /> },

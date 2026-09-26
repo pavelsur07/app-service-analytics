@@ -54,6 +54,7 @@ final readonly class IdentityScheduleFacade
             companyId: $row->companyId,
             marketplaceAccountId: $row->marketplaceAccountId,
             advertisingActive: $row->advertisingActive,
+            connectedAt: $row->connectedAt,
         );
     }
 }

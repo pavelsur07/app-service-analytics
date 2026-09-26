@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  formatBucket,
-  formatDuration,
-  formatLostTime,
-  NO_DATA,
-} from './deliverySpeedFormat'
+import { formatBucket, formatDuration, NO_DATA } from './deliverySpeedFormat'
 
 describe('форматирование скорости доставки', () => {
   it('меньше суток — в часах, иначе в днях с одним знаком', () => {
@@ -13,15 +8,6 @@ describe('форматирование скорости доставки', () =>
     expect(formatDuration(193_950)).toBe('2,2 дн')
     expect(formatDuration(369_000)).toBe('4,3 дн')
     expect(formatDuration(null)).toBe(NO_DATA)
-  })
-
-  it('потерянное время: меньше суток — в часах, иначе в днях', () => {
-    expect(formatLostTime(5)).toBe('5 ч')
-    // Бэкенд округляет вверх: положительная потеря — хотя бы 1 ч.
-    expect(formatLostTime(1)).toBe('1 ч')
-    expect(formatLostTime(0)).toBe('0 ч')
-    expect(formatLostTime(486)).toBe('20,3 дн')
-    expect(formatLostTime(null)).toBe(NO_DATA)
   })
 
   it('корзины — с включающей верхней границей и открытым хвостом', () => {

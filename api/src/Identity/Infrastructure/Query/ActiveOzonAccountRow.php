@@ -10,6 +10,7 @@ final readonly class ActiveOzonAccountRow
         public string $companyId,
         public string $marketplaceAccountId,
         public bool $advertisingActive,
+        public \DateTimeImmutable $connectedAt,
     ) {
     }
 }

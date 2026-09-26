@@ -9,6 +9,7 @@ import {
   Tag,
   TrendingUp,
   Truck,
+  Warehouse,
   CalendarCheck,
 } from 'lucide-react'
 import { NavLink } from 'react-router'
@@ -46,6 +47,7 @@ const ITEMS = [
   },
   { to: 'localization?days=30', label: 'Локализация', icon: MapPinned },
   { to: 'delivery-speed?days=30', label: 'Доставка', icon: Truck },
+  { to: 'stock-placement', label: 'Остатки', icon: Warehouse },
   { to: 'unit-economics', label: 'Экономика', icon: Calculator },
   { to: 'costs', label: 'Себестоимость', icon: Tag },
   { to: 'prices', label: 'Цены и соинвест', icon: TrendingDown },

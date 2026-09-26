@@ -120,6 +120,10 @@ class MarketplaceAccount
         string $externalShopId,
         string $credentialsCiphertext,
         int $credentialsKeyVersion,
+        // Момент подключения — снаружи, а не только из часов: от него
+        // считается льготный период сторожа свежести (ADR-034), и тест
+        // обязан задавать проверяемое значение сам (ADR-005).
+        ?\DateTimeImmutable $connectedAt = null,
     ): self {
         return new self(
             Uuid::v7(),
@@ -129,7 +133,7 @@ class MarketplaceAccount
             $externalShopId,
             $credentialsCiphertext,
             $credentialsKeyVersion,
-            new \DateTimeImmutable(),
+            $connectedAt ?? new \DateTimeImmutable(),
         );
     }
 
