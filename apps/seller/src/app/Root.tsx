@@ -4,6 +4,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 import { CompanyListPage } from '../features/auth/ui/CompanyListPage'
 import { ConfirmEmailPage } from '../features/auth/ui/ConfirmEmailPage'
 import { BuyoutRatePage } from '../features/buyout-rate/ui/BuyoutRatePage'
+import { LocalizationPage } from '../features/localization/ui/LocalizationPage'
 import { EmailSentPage } from '../features/auth/ui/EmailSentPage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
 import { OnboardingStartPage } from '../features/onboarding/ui/OnboardingStartPage'
@@ -64,6 +65,7 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="sales" replace /> },
       { path: 'sales', element: <SalesFactsPage /> },
       { path: 'redemption', element: <BuyoutRatePage /> },
+      { path: 'localization', element: <LocalizationPage /> },
       { path: 'extension', element: <ExtensionConnectPage /> },
       { path: 'connections', element: <ConnectionsPage /> },
       { path: 'coverage', element: <DataCoveragePage /> },
