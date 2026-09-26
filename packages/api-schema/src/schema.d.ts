@@ -436,6 +436,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/stock-placement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_stock_placement_report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/unit-economics": {
         parameters: {
             query?: never;
@@ -999,6 +1015,57 @@ export interface components {
             marketplaceSku: string;
             days: number;
             totals: components["schemas"]["SkuSalesTotalResponse"][];
+        };
+        StockPlacementDefinitionsResponse: {
+            targetDays: number;
+            leadDays: number;
+            demandWindowDays: number;
+            minSales: number;
+            surplusFactor: number;
+            abcABps: number;
+            abcBBps: number;
+            /** @enum {string} */
+            demandBasis: "delivery_cluster_sales_excluding_cancelled";
+            /** @enum {string} */
+            stockBasis: "latest_complete_snapshot_including_pickup_points";
+        };
+        StockPlacementItemResponse: {
+            marketplaceSku: string;
+            offerId: string | null;
+            name: string | null;
+            cluster: string;
+            available: number;
+            transit: number;
+            requested: number;
+            sold: number;
+            demandMilliPerDay: number;
+            coverDays: number | null;
+            recommended: number | null;
+            /** @enum {string} */
+            status: "deficit" | "normal" | "surplus" | "insufficient_data" | "no_sales";
+            /** @enum {string} */
+            abcClass: "A" | "B" | "C";
+            zeroDays: number;
+            lostHours: number | null;
+            /** Средние продажи в день по кластеру по методике Ozon — справочно, строкой numeric. */
+            adsCluster: string | null;
+            idcCluster: number | null;
+        };
+        StockPlacementReportResponse: {
+            today: string;
+            definitions: components["schemas"]["StockPlacementDefinitionsResponse"];
+            /** Дата последнего полного снимка; null — снимков ещё нет. */
+            snapshotDate: string | null;
+            completeSnapshotDays: number;
+            /** Поправка на дефицит применена: полных снимков — все дни окна спроса. */
+            correctionApplied: boolean;
+            deficitPositions: number;
+            deficitUnits: number;
+            surplusPositions: number;
+            recommendedPositions: number;
+            recommendedUnits: number;
+            items: components["schemas"]["StockPlacementItemResponse"][];
+            nextCursor: string | null;
         };
         UnitEconomicsExpenseResponse: {
             feeTypeId: number;
@@ -2460,6 +2527,52 @@ export interface operations {
                 };
             };
             /** @description Некорректный days */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_stock_placement_report: {
+        parameters: {
+            query?: {
+                target_days?: number;
+                lead_days?: number;
+                status?: "deficit" | "normal" | "surplus" | "insufficient_data" | "no_sales";
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Остатки Ozon FBO по кластерам и рекомендация поставок */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockPlacementReportResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректные параметры отчёта */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -29,50 +29,7 @@ final readonly class DeliverySpeedSkuQuery
         int $limit,
         ?DeliverySpeedSkuCursor $cursor = null,
     ): QueryBuilder {
-        $min = DeliverySpeedSql::MIN_POSTINGS;
-        $source = 'WITH '.DeliverySpeedSql::timedCte().<<<SQL
-            ,
-            by_cluster AS (
-                SELECT cluster_to,
-                       COUNT(*) FILTER (WHERE arrived AND is_local) AS local_arrived,
-                       COUNT(*) FILTER (WHERE arrived AND NOT is_local) AS nonlocal_arrived,
-                       percentile_disc(0.5) WITHIN GROUP (ORDER BY delivery_seconds) FILTER (WHERE arrived AND is_local) AS median_local_seconds,
-                       percentile_disc(0.5) WITHIN GROUP (ORDER BY delivery_seconds) FILTER (WHERE arrived AND NOT is_local) AS median_nonlocal_seconds
-                FROM timed
-                WHERE live AND has_clusters
-                GROUP BY cluster_to
-            ),
-            cluster_gap AS (
-                SELECT cluster_to, median_local_seconds, median_nonlocal_seconds,
-                       GREATEST(0, median_nonlocal_seconds - median_local_seconds) AS gap_seconds
-                FROM by_cluster
-                WHERE local_arrived >= {$min} AND nonlocal_arrived >= {$min}
-            ),
-            lines AS (
-                SELECT marketplace_account_id, posting_number, marketplace_sku, quantity
-                FROM sales_fact
-                WHERE company_id = :companyId
-                  AND business_date BETWEEN :from AND :to
-                  AND posting_number IS NOT NULL
-            ),
-            by_sku AS (
-                SELECT l.marketplace_sku, t.cluster_to,
-                       SUM(l.quantity)::bigint AS quantity,
-                       COALESCE(SUM(l.quantity) FILTER (WHERE NOT t.is_local), 0)::bigint AS nonlocal_quantity,
-                       COUNT(DISTINCT (t.marketplace_account_id, t.posting_number)) FILTER (WHERE t.arrived AND NOT t.is_local) AS nonlocal_arrived_postings
-                FROM lines l
-                JOIN timed t
-                  ON t.marketplace_account_id = l.marketplace_account_id
-                 AND t.posting_number = l.posting_number
-                WHERE t.live AND t.has_clusters
-                GROUP BY l.marketplace_sku, t.cluster_to
-            )
-            SELECT b.*, g.median_local_seconds, g.median_nonlocal_seconds,
-                   CEIL(b.nonlocal_arrived_postings::numeric * g.gap_seconds / 3600)::bigint AS lost_hours
-            FROM by_sku b
-            JOIN cluster_gap g ON g.cluster_to = b.cluster_to
-            WHERE g.gap_seconds > 0 AND b.nonlocal_arrived_postings > 0
-            SQL;
+        $source = 'WITH '.DeliverySpeedSql::timedCte().', '.DeliverySpeedSql::skuLostCte().' SELECT * FROM sku_lost';
 
         $query = $this->connection->createQueryBuilder()
             ->select('sku.*', 'listing.offer_id', 'listing.name')
