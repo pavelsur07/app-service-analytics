@@ -7,6 +7,7 @@ namespace App\Ingestion\Application;
 use App\Identity\Application\Facade\IdentityScheduleFacade;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
+use App\Ingestion\Infrastructure\Query\RecentStockSnapshotAccountsQuery;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\LockInterface;
 use Symfony\Component\Mailer\MailerInterface;
@@ -81,9 +82,20 @@ final readonly class NotifyStaleAccountsAction
         MarketplaceReportType::OzonAdExpense => 'реклама',
     ];
 
+    /**
+     * Снимочные выгрузки (ADR-034): признак жизни — завершённый полный
+     * прогон, а не raw (CLAUDE.md «Наблюдаемость»): прогон, стабильно
+     * обрывающийся на последней пачке, по raw выглядел бы живым. Снимок
+     * раз в сутки в час рескана, поэтому тот же порог в 36 часов.
+     */
+    private const array SNAPSHOT_REPORTS = [
+        MarketplaceReportType::OzonAnalyticsStocks => 'остатки',
+    ];
+
     public function __construct(
         private IdentityScheduleFacade $identitySchedule,
         private RecentlyIngestedAccountsQuery $recentlyIngested,
+        private RecentStockSnapshotAccountsQuery $recentStockSnapshots,
         private MailerInterface $mailer,
         private LockFactory $lockFactory,
         private string $alertEmail,
@@ -128,7 +140,8 @@ final readonly class NotifyStaleAccountsAction
             // Каждая отслеживаемая выгрузка проверяется своей отметкой:
             // подключение бывает наполовину живым, и «данные по нему
             // идут» — не ответ на вопрос «идут ли расходы».
-            $watched = $target->advertisingActive ? self::WATCHED_REPORTS + self::ADVERTISING_REPORTS : self::WATCHED_REPORTS;
+            $watched = self::WATCHED_REPORTS + self::SNAPSHOT_REPORTS
+                + ($target->advertisingActive ? self::ADVERTISING_REPORTS : []);
             foreach ($watched as $reportType => $label) {
                 $key = RecentlyIngestedAccountsQuery::key($target->companyId, $target->marketplaceAccountId, $reportType);
                 if (isset($fresh[$key])) {
@@ -189,6 +202,21 @@ final readonly class NotifyStaleAccountsAction
         foreach ($rows as $row) {
             $fresh = RecentlyIngestedAccountsQuery::mapRow($row);
             $keys[RecentlyIngestedAccountsQuery::key($fresh->companyId, $fresh->marketplaceAccountId, $fresh->reportType)] = true;
+        }
+
+        $snapshots = $this->recentStockSnapshots->build($now->sub(new \DateInterval(self::STALE_AFTER)))
+            ->executeQuery()
+            ->fetchAllAssociative();
+        if (\count($snapshots) > RecentlyIngestedAccountsQuery::MAX_ACCOUNTS) {
+            throw new \RuntimeException(\sprintf('Свежих снимков остатков больше защитного потолка %d — нужна курсорная выборка.', RecentlyIngestedAccountsQuery::MAX_ACCOUNTS));
+        }
+        foreach ($snapshots as $row) {
+            $companyId = $row['company_id'] ?? null;
+            $accountId = $row['marketplace_account_id'] ?? null;
+            if (!\is_string($companyId) || !\is_string($accountId)) {
+                throw new \UnexpectedValueException('Stock snapshot run row must carry company and account ids.');
+            }
+            $keys[RecentlyIngestedAccountsQuery::key($companyId, $accountId, MarketplaceReportType::OzonAnalyticsStocks)] = true;
         }
 
         return $keys;

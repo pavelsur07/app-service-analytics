@@ -11,7 +11,9 @@ use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Infrastructure\Query\ActiveOzonAccountsQuery;
 use App\Ingestion\Application\NotifyStaleAccountsAction;
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Infrastructure\Persistence\DoctrineStockSnapshotWriter;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
+use App\Ingestion\Infrastructure\Query\RecentStockSnapshotAccountsQuery;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
@@ -38,11 +40,12 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         $mailer = $this->recordingMailer();
         $alerted = ($this->action($container, $mailer))();
 
-        // Обе отслеживаемые выгрузки, а не одна строка на подключение.
+        // Все отслеживаемые выгрузки, а не одна строка на подключение.
         self::assertSame(
             [
                 $this->key($account, MarketplaceReportType::OzonPostingFboList),
                 $this->key($account, MarketplaceReportType::OzonAccrualByDay),
+                $this->key($account, MarketplaceReportType::OzonAnalyticsStocks),
             ],
             $alerted,
         );
@@ -53,6 +56,7 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         $body = (string) $email->getTextBody();
         self::assertStringContainsString($account->id()->toRfc4122().' — продажи', $body);
         self::assertStringContainsString($account->id()->toRfc4122().' — расходы', $body);
+        self::assertStringContainsString($account->id()->toRfc4122().' — остатки', $body);
         $to = $email->getTo();
         self::assertNotSame([], $to);
         self::assertSame('ops@example.test', $to[0]->getAddress());
@@ -64,6 +68,7 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         $account = $this->activeAccount($container);
 
         $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
+        $this->snapshotted($container, $account);
 
         $mailer = $this->recordingMailer();
         $alerted = ($this->action($container, $mailer))();
@@ -88,6 +93,7 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
 
         $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
         $this->uploaded($container, $account, MarketplaceReportType::OzonAccrualByDay);
+        $this->snapshotted($container, $account);
 
         $mailer = $this->recordingMailer();
         $alerted = ($this->action($container, $mailer))();
@@ -105,6 +111,7 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         foreach ([$withAds, $withoutAds] as $account) {
             $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
             $this->uploaded($container, $account, MarketplaceReportType::OzonAccrualByDay);
+            $this->snapshotted($container, $account);
         }
 
         $mailer = $this->recordingMailer();
@@ -128,6 +135,7 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
         $this->uploaded($container, $account, MarketplaceReportType::OzonAccrualByDay);
         $this->uploaded($container, $account, MarketplaceReportType::OzonAdExpense);
+        $this->snapshotted($container, $account);
 
         $mailer = $this->recordingMailer();
 
@@ -148,7 +156,35 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         $mailer = $this->recordingMailer();
         $alerted = ($this->action($container, $mailer))();
 
-        self::assertCount(2, $alerted);
+        self::assertCount(3, $alerted);
+    }
+
+    public function testStockFreshnessComesFromCompleteRunsNotRaw(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container);
+        $stale = $this->activeAccount($container);
+
+        foreach ([$account, $stale] as $each) {
+            $this->uploaded($container, $each, MarketplaceReportType::OzonPostingFboList);
+            $this->uploaded($container, $each, MarketplaceReportType::OzonAccrualByDay);
+        }
+        // Raw пачек остатков пришёл, а полного прогона нет — прогон,
+        // обрывающийся на последней пачке, по raw выглядел бы живым
+        // (ADR-034, CLAUDE.md «Наблюдаемость»).
+        $this->uploaded($container, $account, MarketplaceReportType::OzonAnalyticsStocks);
+        // Полный прогон был, но двое суток назад — дольше порога.
+        $this->snapshotted($container, $stale, new \DateTimeImmutable('-2 days'));
+
+        $alerted = ($this->action($container, $this->recordingMailer()))();
+
+        self::assertSame(
+            [
+                $this->key($account, MarketplaceReportType::OzonAnalyticsStocks),
+                $this->key($stale, MarketplaceReportType::OzonAnalyticsStocks),
+            ],
+            $alerted,
+        );
     }
 
     public function testSecondTickDoesNotRepeatTheSameLetter(): void
@@ -202,6 +238,7 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
             [
                 $this->key($account, MarketplaceReportType::OzonPostingFboList),
                 $this->key($account, MarketplaceReportType::OzonAccrualByDay),
+                $this->key($account, MarketplaceReportType::OzonAnalyticsStocks),
             ],
             $retried,
         );
@@ -215,6 +252,7 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         return new NotifyStaleAccountsAction(
             new IdentityScheduleFacade(new ActiveOzonAccountsQuery($connection)),
             new RecentlyIngestedAccountsQuery($connection),
+            new RecentStockSnapshotAccountsQuery($connection),
             $mailer,
             // InMemoryStore, а не боевой LOCK_DSN: flock в тестовой среде
             // отпускает замок вместе с процессом и посуточное подавление
@@ -261,6 +299,24 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
             ->withReportType($reportType)
             ->withReceivedAt(new \DateTimeImmutable('-1 hour'))
             ->persistWith(MarketplaceRawDocumentBuilder::repository($container));
+    }
+
+    /**
+     * Полный прогон снимка остатков — единственным путём записи отметки,
+     * через writer (ADR-034); строк остатка для сторожа не нужно.
+     */
+    private function snapshotted(ContainerInterface $container, MarketplaceAccount $account, ?\DateTimeImmutable $startedAt = null): void
+    {
+        $startedAt ??= new \DateTimeImmutable('-1 hour');
+        (new DoctrineStockSnapshotWriter($this->connection($container)))->replaceDay(
+            $account->companyId()->toRfc4122(),
+            $account->id(),
+            $startedAt->setTimezone(new \DateTimeZone('Europe/Moscow'))->setTime(0, 0),
+            $startedAt,
+            ['1001'],
+            [],
+            [],
+        );
     }
 
     private function connection(ContainerInterface $container): Connection

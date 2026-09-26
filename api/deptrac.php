@@ -223,7 +223,7 @@ return static function (DeptracConfig $config): void {
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Ingestion/Infrastructure/.*')],
                     mustNot: [
-                        ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\RecentlyIngestedAccountsQuery$'),
+                        ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\(RecentlyIngestedAccounts|RecentStockSnapshotAccounts)Query$'),
                         ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\AllCompaniesRawObject(sSinceQuery|Row)$'),
                         DirectoryConfig::create('src/Ingestion/Infrastructure/Storage/.*'),
                     ],
@@ -236,7 +236,7 @@ return static function (DeptracConfig $config): void {
                 DirectoryConfig::create('src/Ingestion/Infrastructure/Storage/.*'),
             ),
             $ingestionOperationalQuery = Layer::withName('IngestionOperationalQuery')->collectors(
-                ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\RecentlyIngestedAccountsQuery$'),
+                ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\(RecentlyIngestedAccounts|RecentStockSnapshotAccounts)Query$'),
             ),
             // Зеркально: единственные классы IngestionUi, которым нужен
             // (и разрешён) доступ к IngestionOperationalAction — команды

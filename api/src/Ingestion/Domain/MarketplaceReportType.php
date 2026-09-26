@@ -30,6 +30,13 @@ final class MarketplaceReportType
     public const string OzonReturnsList = 'ozon_returns_list';
 
     /**
+     * Остатки FBO по складам с кластером (ADR-034), /v1/analytics/stocks.
+     * Период документа — дата снимка: даты в запросе нет, и без неё
+     * неизменный ответ следующего дня не дал бы своего документа.
+     */
+    public const string OzonAnalyticsStocks = 'ozon_analytics_stocks';
+
+    /**
      * Реклама Ozon, Performance API (ADR-026 п. 3): список кампаний,
      * расход кампаний за день и статистика кампаний за день. Расход
      * и статистика — два типа,

@@ -10,6 +10,7 @@ use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
+use App\Ingestion\Application\Message\FetchOzonStocksMessage;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Domain\OzonExpensesFetcher;
@@ -19,6 +20,7 @@ use App\Ingestion\Domain\OzonProductListParser;
 use App\Ingestion\Domain\OzonReturnsFetcher;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExceptionInterface;
 
 /**
@@ -96,6 +98,9 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  */
 final readonly class ConnectOzonAccountAction
 {
+    /** Каталог нового кабинета успевает загрузиться (ADR-034). */
+    private const int FIRST_STOCK_SNAPSHOT_DELAY_MS = 15 * 60 * 1000;
+
     private const int PROBE_LIMIT = 1;
 
     public function __construct(
@@ -251,6 +256,14 @@ final readonly class ConnectOzonAccountAction
     private function scheduleInitialBackfill(string $companyId, string $accountId): void
     {
         $this->bus->dispatch(new FetchOzonCatalogMessage($companyId, $accountId), IngestionBackfill::stamps());
+
+        // Первый снимок остатков (ADR-034) — после каталога: SKU берутся
+        // из него. Задержка, а не ожидание: очереди порядок не обещают,
+        // а без каталога прогон ничего не запросит и молча завершится.
+        $this->bus->dispatch(
+            new FetchOzonStocksMessage($companyId, $accountId),
+            [...IngestionBackfill::stamps(), new DelayStamp(self::FIRST_STOCK_SNAPSHOT_DELAY_MS)],
+        );
 
         $businessDates = InitialBackfillWindow::businessDates(new \DateTimeImmutable());
         foreach ($businessDates as $businessDate) {

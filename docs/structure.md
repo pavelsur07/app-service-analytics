@@ -302,6 +302,7 @@ Ingestion дополнительно:
 | Сценарий | `Application` | `Infrastructure/Query` | `Ui/Response` |
 |---|---|---|---|
 | Выкуп (`Buyout`) | `BuildBuyoutDailySeriesAction`, `BuildBuyoutRateReportAction`, `BuyoutRateReport`, `BuyoutRateSku`, `BuyoutRateSummary` | `Buyout*`, `UnclassifiedOzonBuyout*`, `OzonPostingRawHistory*` | `Buyout*` |
+| Остатки (снимок, ADR-034) | `MessageHandler/FetchOzonStocksHandler` | `AccountListingSkusQuery`, `RecentStockSnapshotAccountsQuery` (узкий слой сторожа) | — |
 | Скорость доставки (`DeliverySpeed`) | `BuildDeliverySpeedReportAction`, `DeliverySpeedReport` | `DeliverySpeed*` | `DeliverySpeed*` |
 | Локализация (`Localization`) | `BuildLocalizationReportAction`, `LocalizationReport` | `Localization*` | `Localization*` |
 | Юнит-экономика (`UnitEconomics`) | `BuildUnitEconomicsAction`, `UnitEconomicsExpense`, `UnitEconomicsReport`, `UnitEconomicsSku` | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |

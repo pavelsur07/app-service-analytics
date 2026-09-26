@@ -128,6 +128,7 @@ framework:
             App\Ingestion\Application\Message\FetchOzonCatalogMessage: async_ingestion
             App\Ingestion\Application\Message\FetchOzonExpensesMessage: async_ingestion
             App\Ingestion\Application\Message\FetchOzonReturnsMessage: async_ingestion
+            App\Ingestion\Application\Message\FetchOzonStocksMessage: async_ingestion
             App\Ingestion\Application\Message\FetchOzonAdCampaignStatsMessage: async_ingestion
             App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage: async_backfill
             App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage: async_backfill

@@ -15,6 +15,7 @@ use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
+use App\Ingestion\Application\Message\FetchOzonStocksMessage;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Domain\OzonExpensesFetcher;
 use App\Ingestion\Domain\OzonPostingsFetcher;
@@ -34,6 +35,8 @@ use Monolog\Handler\TestHandler;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
@@ -66,6 +69,14 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
         self::assertContains(FetchOzonCatalogMessage::class, $dispatched);
         self::assertContains(FetchOzonPostingsMessage::class, $dispatched);
         self::assertContains(FetchOzonExpensesMessage::class, $dispatched);
+
+        // Первый снимок остатков — после каталога, с задержкой: SKU для
+        // запроса берутся из каталога (ADR-034).
+        $stocks = $this->dispatchedEnvelopesOf(FetchOzonStocksMessage::class);
+        self::assertCount(1, $stocks);
+        $delay = $stocks[0]->last(DelayStamp::class);
+        self::assertInstanceOf(DelayStamp::class, $delay);
+        self::assertGreaterThan(0, $delay->getDelay());
 
         // Месяц нового кабинета — история: в своей очереди и своём воркере,
         // а не перед тиком остальных кабинетов (docs/task/ingestion-queue-isolation.md).
@@ -336,6 +347,22 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
         $this->expectExceptionMessage('неожиданный дефект нашего кода');
 
         ($this->action())($companyId, 'Мой магазин', 'shop-1', 'live-key', $userId);
+    }
+
+    /**
+     * @param class-string $class
+     *
+     * @return list<Envelope>
+     */
+    private function dispatchedEnvelopesOf(string $class): array
+    {
+        $transport = static::getContainer()->get('messenger.transport.async_backfill');
+        self::assertInstanceOf(InMemoryTransport::class, $transport);
+
+        return array_values(array_filter(
+            iterator_to_array($transport->getSent(), false),
+            static fn (Envelope $envelope): bool => $envelope->getMessage() instanceof $class,
+        ));
     }
 
     /** @return list<string> */

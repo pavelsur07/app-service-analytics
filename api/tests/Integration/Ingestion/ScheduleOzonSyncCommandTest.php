@@ -11,6 +11,7 @@ use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
+use App\Ingestion\Application\Message\FetchOzonStocksMessage;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -62,6 +63,10 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
                 $expenseDates[$message->marketplaceAccountId][] = $message->accrualDate;
             } elseif ($message instanceof FetchOzonReturnsMessage) {
                 $returnRanges[$message->marketplaceAccountId][] = [$message->from, $message->to];
+            } elseif ($message instanceof FetchOzonStocksMessage) {
+                // Раз в сутки, в час рескана (ADR-034); расписание проверяет
+                // StockScheduleTest, здесь — только что тип известен.
+                continue;
             } else {
                 self::fail('Планировщик поставил задачу неизвестного типа.');
             }
