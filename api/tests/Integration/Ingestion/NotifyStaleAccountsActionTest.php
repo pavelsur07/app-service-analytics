@@ -159,6 +159,18 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         self::assertCount(3, $alerted);
     }
 
+    public function testNewlyConnectedCabinetIsNotAskedForStocksYet(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container, connectedAt: new \DateTimeImmutable('-2 hours'));
+        $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
+        $this->uploaded($container, $account, MarketplaceReportType::OzonAccrualByDay);
+
+        // Снимок раз в сутки: кабинет, подключённый два часа назад, его
+        // ещё не обязан иметь, и тревога была бы ложной.
+        self::assertSame([], ($this->action($container, $this->recordingMailer()))());
+    }
+
     public function testStockFreshnessComesFromCompleteRunsNotRaw(): void
     {
         $container = $this->bootedContainer();
@@ -265,16 +277,20 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         );
     }
 
-    private function activeAccount(ContainerInterface $container, bool $advertising = false): MarketplaceAccount
+    private function activeAccount(ContainerInterface $container, bool $advertising = false, ?\DateTimeImmutable $connectedAt = null): MarketplaceAccount
     {
         /** @var CompanyRepository $companies */
         $companies = $container->get(CompanyRepository::class);
         /** @var MarketplaceAccountRepository $marketplaceAccounts */
         $marketplaceAccounts = $container->get(MarketplaceAccountRepository::class);
 
+        // Подключён давно: от нового кабинета суточный снимок остатков
+        // ещё не ждут (льготный период, ADR-034) — его проверяет
+        // testNewlyConnectedCabinetIsNotAskedForStocksYet.
         $builder = MarketplaceAccountBuilder::aMarketplaceAccount()
             ->withCompany(CompanyBuilder::aCompany()->persistWith($companies))
-            ->withExternalShopId('shop-'.bin2hex(random_bytes(4)));
+            ->withExternalShopId('shop-'.bin2hex(random_bytes(4)))
+            ->withConnectedAt($connectedAt ?? new \DateTimeImmutable('-3 days'));
         if ($advertising) {
             $builder = $builder->withAdvertisingConnected();
         }

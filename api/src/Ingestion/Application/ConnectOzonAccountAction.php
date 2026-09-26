@@ -260,9 +260,11 @@ final readonly class ConnectOzonAccountAction
         // Первый снимок остатков (ADR-034) — после каталога: SKU берутся
         // из него. Задержка, а не ожидание: очереди порядок не обещают,
         // а без каталога прогон ничего не запросит и молча завершится.
+        // Транспорт ingestion по маршруту (ADR-034), а не очередь истории:
+        // у снимка нет глубины, это одно сообщение текущего состояния.
         $this->bus->dispatch(
-            new FetchOzonStocksMessage($companyId, $accountId),
-            [...IngestionBackfill::stamps(), new DelayStamp(self::FIRST_STOCK_SNAPSHOT_DELAY_MS)],
+            new FetchOzonStocksMessage($companyId, $accountId, retryIfCatalogEmpty: true),
+            [new DelayStamp(self::FIRST_STOCK_SNAPSHOT_DELAY_MS)],
         );
 
         $businessDates = InitialBackfillWindow::businessDates(new \DateTimeImmutable());

@@ -16,10 +16,12 @@ interface StockSnapshotRepository
      * удаляются, вставляется полный набор, отметка обновляется.
      *
      * Все $facts обязаны принадлежать $companyId, подключению и дню.
+     * Итерируются лениво внутри транзакции и вставляются порциями
+     * (CLAUDE.md §6): память — одна пачка, а не весь снимок.
      *
-     * @param list<string>            $requestedSkus
-     * @param list<Uuid>              $rawDocumentIds
-     * @param list<StockSnapshotFact> $facts
+     * @param list<string>                $requestedSkus
+     * @param list<Uuid>                  $rawDocumentIds
+     * @param iterable<StockSnapshotFact> $facts
      *
      * @return bool true — день заменён; false — прогон устарел
      */
@@ -30,6 +32,6 @@ interface StockSnapshotRepository
         \DateTimeImmutable $startedAt,
         array $requestedSkus,
         array $rawDocumentIds,
-        array $facts,
+        iterable $facts,
     ): bool;
 }

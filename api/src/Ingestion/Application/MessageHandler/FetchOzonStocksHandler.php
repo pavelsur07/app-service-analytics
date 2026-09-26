@@ -13,6 +13,7 @@ use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonAnalyticsStocksParser;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonStockFetcher;
+use App\Ingestion\Domain\StockSnapshotFact;
 use App\Ingestion\Domain\StockSnapshotRepository;
 use App\Ingestion\Infrastructure\Query\AccountListingSkusQuery;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -34,8 +35,12 @@ use Symfony\Component\Uid\Uuid;
  * Блокировки прогонов нет намеренно (ADR-034): каждый прогон заменяет
  * день целиком и побеждает более поздний по началу.
  *
- * Запросы к площадке в цикле по пачкам — цикл внешнего API, как
- * у каталога; запись в базу одна на прогон (CLAUDE.md §6).
+ * Цикл по пачкам — цикл внешнего API, как у каталога: на каждый ответ
+ * площадки — один raw-документ до разбора (ADR-006), это не «связанные
+ * данные в цикле» из CLAUDE.md §6. Факты в памяти не копятся: запись дня
+ * читает их лениво из raw по одной пачке и вставляет порциями — память
+ * ограничена пачкой, а не каталогом, и день заодно собирается ровно из тех
+ * документов, что записаны в его отметку.
  */
 #[AsMessageHandler]
 final readonly class FetchOzonStocksHandler
@@ -65,16 +70,23 @@ final readonly class FetchOzonStocksHandler
         $companyId = Uuid::fromString($target->companyId);
         $accountId = Uuid::fromString($target->marketplaceAccountId);
 
-        $skus = $this->skus->fetch($target->companyId, $target->marketplaceAccountId);
+        $skus = AccountListingSkusQuery::mapColumn(
+            $this->skus->build($target->companyId, $target->marketplaceAccountId)->executeQuery()->fetchFirstColumn(),
+            $target->marketplaceAccountId,
+        );
         if ([] === $skus) {
-            // Каталог ещё не загружен (подключение только что создано) или
-            // пуст — запрашивать нечего. Не ошибка: следующий прогон возьмёт
-            // каталог, а сторож свежести напомнит, если снимков так и нет.
+            if ($message->retryIfCatalogEmpty) {
+                // Первый снимок нового кабинета: каталог ещё грузится.
+                // Повтор очереди, а не тихий выход — иначе день потерян.
+                throw new \RuntimeException("Каталог подключения {$message->marketplaceAccountId} ещё не загружен — первый снимок остатков отложен до повтора.");
+            }
+
+            // Ночной прогон по пустому каталогу — запрашивать нечего;
+            // сторож свежести напомнит, если снимков так и нет.
             return;
         }
 
         $rawDocumentIds = [];
-        $facts = [];
         foreach (array_chunk($skus, OzonAnalyticsStocksParser::BATCH_SIZE) as $batch) {
             try {
                 $rawBody = $this->client->fetchStocks($target->clientId, $target->apiKey, $batch);
@@ -97,10 +109,11 @@ final readonly class FetchOzonStocksHandler
                 period: $snapshotDate,
                 rawBody: $rawBody,
             ));
+            // Разбор сразу — ради громкого отказа до записи дня: ответ
+            // с ключами продолжения или без полей не должен дойти до замены.
+            $this->parser->parse($rawBody, $companyId, $accountId, $snapshotDate, $rawDocumentId);
             $rawDocumentIds[] = $rawDocumentId;
-            foreach ($this->parser->parse($rawBody, $companyId, $accountId, $snapshotDate, $rawDocumentId) as $fact) {
-                $facts[] = $fact;
-            }
+            unset($rawBody);
         }
 
         $this->snapshots->replaceDay(
@@ -110,7 +123,30 @@ final readonly class FetchOzonStocksHandler
             $startedAt,
             $skus,
             $rawDocumentIds,
-            $facts,
+            $this->factsFromRaw($target->companyId, $companyId, $accountId, $snapshotDate, $rawDocumentIds),
         );
+    }
+
+    /**
+     * Факты дня — из raw-документов прогона по одному (company-scoped
+     * чтение тела, ADR-024): одновременно в памяти одна пачка.
+     *
+     * @param list<Uuid> $rawDocumentIds
+     *
+     * @return \Generator<int, StockSnapshotFact>
+     */
+    private function factsFromRaw(
+        string $companyIdValue,
+        Uuid $companyId,
+        Uuid $accountId,
+        \DateTimeImmutable $snapshotDate,
+        array $rawDocumentIds,
+    ): \Generator {
+        foreach ($rawDocumentIds as $rawDocumentId) {
+            $body = $this->rawDocuments->body($companyIdValue, $accountId, $rawDocumentId);
+            foreach ($this->parser->parse($body, $companyId, $accountId, $snapshotDate, $rawDocumentId) as $fact) {
+                yield $fact;
+            }
+        }
     }
 }

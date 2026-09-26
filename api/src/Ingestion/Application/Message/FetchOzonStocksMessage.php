@@ -13,6 +13,12 @@ final readonly class FetchOzonStocksMessage
     public function __construct(
         public string $companyId,
         public string $marketplaceAccountId,
+        /**
+         * Первый снимок после подключения: каталог может ещё грузиться,
+         * и пустой каталог — повод для повтора, а не для тихого выхода
+         * (иначе первый день снимка потерян, а задним числом его не взять).
+         */
+        public bool $retryIfCatalogEmpty = false,
     ) {
     }
 }

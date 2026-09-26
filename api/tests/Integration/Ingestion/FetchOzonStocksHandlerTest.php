@@ -93,6 +93,22 @@ final class FetchOzonStocksHandlerTest extends KernelTestCase
         self::assertFalse($this->markExists($container, $account));
     }
 
+    public function testFirstSnapshotRetriesWhileTheCatalogIsStillLoading(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $this->fetcher($container, []);
+
+        // Первый снимок нового кабинета: каталог ещё грузится — повтор,
+        // а не тихий выход, иначе первый день потерян (ADR-034).
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('ещё не загружен');
+
+        /** @var FetchOzonStocksHandler $handler */
+        $handler = $container->get(FetchOzonStocksHandler::class);
+        ($handler)(new FetchOzonStocksMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), retryIfCatalogEmpty: true));
+    }
+
     public function testEmptyCatalogRequestsNothing(): void
     {
         $container = $this->bootedContainer();

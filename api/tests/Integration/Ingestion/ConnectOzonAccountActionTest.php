@@ -35,7 +35,6 @@ use Monolog\Handler\TestHandler;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
-use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
@@ -70,19 +69,21 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
         self::assertContains(FetchOzonPostingsMessage::class, $dispatched);
         self::assertContains(FetchOzonExpensesMessage::class, $dispatched);
 
-        // Первый снимок остатков — после каталога, с задержкой: SKU для
-        // запроса берутся из каталога (ADR-034).
-        $stocks = $this->dispatchedEnvelopesOf(FetchOzonStocksMessage::class);
-        self::assertCount(1, $stocks);
-        $delay = $stocks[0]->last(DelayStamp::class);
-        self::assertInstanceOf(DelayStamp::class, $delay);
-        self::assertGreaterThan(0, $delay->getDelay());
-
         // Месяц нового кабинета — история: в своей очереди и своём воркере,
         // а не перед тиком остальных кабинетов (docs/task/ingestion-queue-isolation.md).
+        // Единственное исключение — первый снимок остатков: у снимка нет
+        // глубины, и ADR-034 ставит его на транспорт ingestion. Одно
+        // отложенное сообщение тик остальных кабинетов не задерживает.
         $tick = static::getContainer()->get('messenger.transport.async_ingestion');
         self::assertInstanceOf(InMemoryTransport::class, $tick);
-        self::assertSame([], [...$tick->getSent()]);
+        $onTick = [...$tick->getSent()];
+        self::assertCount(1, $onTick);
+        self::assertInstanceOf(FetchOzonStocksMessage::class, $onTick[0]->getMessage());
+        self::assertTrue($onTick[0]->getMessage()->retryIfCatalogEmpty);
+        // После каталога, с задержкой: SKU для запроса берутся из него.
+        $delay = $onTick[0]->last(DelayStamp::class);
+        self::assertInstanceOf(DelayStamp::class, $delay);
+        self::assertGreaterThan(0, $delay->getDelay());
 
         // Возвраты принимают диапазон, а не один день: ровно одно
         // сообщение на весь месяц, не по одному на день, и его границы —
@@ -347,22 +348,6 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
         $this->expectExceptionMessage('неожиданный дефект нашего кода');
 
         ($this->action())($companyId, 'Мой магазин', 'shop-1', 'live-key', $userId);
-    }
-
-    /**
-     * @param class-string $class
-     *
-     * @return list<Envelope>
-     */
-    private function dispatchedEnvelopesOf(string $class): array
-    {
-        $transport = static::getContainer()->get('messenger.transport.async_backfill');
-        self::assertInstanceOf(InMemoryTransport::class, $transport);
-
-        return array_values(array_filter(
-            iterator_to_array($transport->getSent(), false),
-            static fn (Envelope $envelope): bool => $envelope->getMessage() instanceof $class,
-        ));
     }
 
     /** @return list<string> */

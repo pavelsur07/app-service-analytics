@@ -130,7 +130,8 @@ final readonly class NotifyStaleAccountsAction
             return [];
         }
 
-        $fresh = $this->freshKeys(new \DateTimeImmutable('now'));
+        $now = new \DateTimeImmutable('now');
+        $fresh = $this->freshKeys($now);
 
         /** @var array<string, LockInterface> $claimed */
         $claimed = [];
@@ -140,7 +141,11 @@ final readonly class NotifyStaleAccountsAction
             // Каждая отслеживаемая выгрузка проверяется своей отметкой:
             // подключение бывает наполовину живым, и «данные по нему
             // идут» — не ответ на вопрос «идут ли расходы».
-            $watched = self::WATCHED_REPORTS + self::SNAPSHOT_REPORTS
+            // Снимок остатков — раз в сутки; кабинет, подключённый меньше
+            // порога назад, его ещё не обязан иметь (ADR-034).
+            $snapshotDue = $target->connectedAt <= $now->sub(new \DateInterval(self::STALE_AFTER));
+            $watched = self::WATCHED_REPORTS
+                + ($snapshotDue ? self::SNAPSHOT_REPORTS : [])
                 + ($target->advertisingActive ? self::ADVERTISING_REPORTS : []);
             foreach ($watched as $reportType => $label) {
                 $key = RecentlyIngestedAccountsQuery::key($target->companyId, $target->marketplaceAccountId, $reportType);

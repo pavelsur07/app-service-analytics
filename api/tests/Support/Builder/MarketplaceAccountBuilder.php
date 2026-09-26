@@ -19,6 +19,7 @@ use App\Identity\Domain\ValueObject\MarketplaceCredentials;
  */
 final class MarketplaceAccountBuilder
 {
+    private ?\DateTimeImmutable $connectedAt = null;
     private ?Company $company = null;
     private Marketplace $marketplace = Marketplace::Ozon;
     private string $name = 'Песочный магазин';
@@ -100,6 +101,14 @@ final class MarketplaceAccountBuilder
      * через withPlaintextCredentials(), как и ключ Seller API: builder
      * не решает за тест, что лежит в зашифрованном объекте.
      */
+    public function withConnectedAt(\DateTimeImmutable $connectedAt): self
+    {
+        $clone = clone $this;
+        $clone->connectedAt = $connectedAt;
+
+        return $clone;
+    }
+
     public function withAdvertisingConnected(): self
     {
         $clone = clone $this;
@@ -118,6 +127,7 @@ final class MarketplaceAccountBuilder
             externalShopId: $this->externalShopId,
             credentialsCiphertext: $this->credentialsCiphertext,
             credentialsKeyVersion: $this->credentialsKeyVersion,
+            connectedAt: $this->connectedAt,
         );
         $this->applyState($account);
 
@@ -135,6 +145,7 @@ final class MarketplaceAccountBuilder
             externalShopId: $this->externalShopId,
             credentialsCiphertext: $this->credentialsCiphertext,
             credentialsKeyVersion: $this->credentialsKeyVersion,
+            connectedAt: $this->connectedAt,
         );
         $this->applyState($account);
         $marketplaceAccounts->add($account);

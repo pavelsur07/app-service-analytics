@@ -34,23 +34,14 @@ final readonly class DoctrineStockSnapshotWriter implements StockSnapshotReposit
         \DateTimeImmutable $startedAt,
         array $requestedSkus,
         array $rawDocumentIds,
-        array $facts,
+        iterable $facts,
     ): bool {
         $accountId = $marketplaceAccountId->toRfc4122();
         $day = $snapshotDate->format('Y-m-d');
-        foreach ($facts as $fact) {
-            if (
-                $fact->companyId()->toRfc4122() !== $companyId
-                || $fact->marketplaceAccountId()->toRfc4122() !== $accountId
-                || $fact->snapshotDate()->format('Y-m-d') !== $day
-            ) {
-                throw new \InvalidArgumentException('Stock snapshot fact belongs to another company, account or day.');
-            }
-        }
         $key = [$companyId, $accountId, $day];
         $started = $startedAt->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
 
-        return $this->connection->transactional(function (Connection $connection) use ($key, $started, $requestedSkus, $rawDocumentIds, $facts): bool {
+        return $this->connection->transactional(function (Connection $connection) use ($key, $started, $requestedSkus, $rawDocumentIds, $facts, $companyId, $accountId, $day): bool {
             $connection->executeStatement(
                 "INSERT INTO stock_snapshot_run (company_id, marketplace_account_id, snapshot_date, requested_skus, raw_document_ids, row_count)
                  VALUES (?, ?, ?, '[]', '[]', 0)
@@ -72,9 +63,28 @@ final readonly class DoctrineStockSnapshotWriter implements StockSnapshotReposit
                 'DELETE FROM stock_snapshot_fact WHERE company_id = ? AND marketplace_account_id = ? AND snapshot_date = ?',
                 $key,
             );
-            foreach (array_chunk($facts, self::CHUNK_SIZE) as $chunk) {
-                $this->insertChunk($connection, $chunk);
+            $rows = 0;
+            $chunk = [];
+            foreach ($facts as $fact) {
+                if (
+                    $fact->companyId()->toRfc4122() !== $companyId
+                    || $fact->marketplaceAccountId()->toRfc4122() !== $accountId
+                    || $fact->snapshotDate()->format('Y-m-d') !== $day
+                ) {
+                    // Исключение откатывает транзакцию: чужая строка не
+                    // попадает никуда, день остаётся прежним.
+                    throw new \InvalidArgumentException('Stock snapshot fact belongs to another company, account or day.');
+                }
+                $chunk[] = $fact;
+                if (\count($chunk) >= self::CHUNK_SIZE) {
+                    $this->insertChunk($connection, $chunk);
+                    $rows += \count($chunk);
+                    $chunk = [];
+                }
             }
+            $this->insertChunk($connection, $chunk);
+            $rows += \count($chunk);
+
             $connection->executeStatement(
                 'UPDATE stock_snapshot_run
                  SET started_at = ?, first_started_at = COALESCE(first_started_at, ?),
@@ -85,7 +95,7 @@ final readonly class DoctrineStockSnapshotWriter implements StockSnapshotReposit
                     $started,
                     json_encode(array_values($requestedSkus), \JSON_THROW_ON_ERROR),
                     json_encode(array_map(static fn (Uuid $id): string => $id->toRfc4122(), $rawDocumentIds), \JSON_THROW_ON_ERROR),
-                    \count($facts),
+                    $rows,
                     ...$key,
                 ],
             );
