@@ -92,6 +92,8 @@ final class OzonPostingFboListParser
         $warehouseId = self::optionalPositiveInt($analytics, 'warehouse_id');
         $warehouseName = self::optionalNonEmptyString($analytics, 'warehouse_name');
         $deliveryCity = self::optionalNonEmptyString($analytics, 'city');
+        $clusterFrom = \is_array($financialData) ? self::optionalNonEmptyString($financialData, 'cluster_from') : null;
+        $clusterTo = \is_array($financialData) ? self::optionalNonEmptyString($financialData, 'cluster_to') : null;
 
         $products = $posting['products'] ?? [];
         if (!\is_array($products)) {
@@ -133,6 +135,8 @@ final class OzonPostingFboListParser
                 warehouseId: $warehouseId,
                 warehouseName: $warehouseName,
                 deliveryCity: $deliveryCity,
+                clusterFrom: $clusterFrom,
+                clusterTo: $clusterTo,
             );
         }
 

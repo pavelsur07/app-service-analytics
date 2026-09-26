@@ -326,7 +326,7 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
             ->withSourceRowId('GEO-HASH-1|SKU-1')
             ->withStatus('delivered');
 
-        $writer->upsertAll([$current->withWarehouse(null, null)->withDeliveryCity(null)->build()]);
+        $writer->upsertAll([$current->withWarehouse(null, null)->withDeliveryCity(null)->withClusters(null, null)->build()]);
         $connection->executeStatement(
             "UPDATE sales_fact SET row_hash = 'legacy-formula', last_updated_at = '2026-01-01 00:00:00' WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?",
             $key,
@@ -337,7 +337,7 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
         $writer->upsertAll([$fact]);
 
         $row = $connection->fetchAssociative(
-            'SELECT row_hash, last_updated_at, delivery_city FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            'SELECT row_hash, last_updated_at, delivery_city, cluster_from, cluster_to FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
             $key,
         );
 
@@ -345,6 +345,8 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
         self::assertSame($fact->rowHash(), $row['row_hash']);
         self::assertSame('2026-01-01 00:00:00', $row['last_updated_at']);
         self::assertSame('Брянск', $row['delivery_city']);
+        self::assertSame('Москва, МО и Дальние регионы', $row['cluster_from']);
+        self::assertSame('Москва, МО и Дальние регионы', $row['cluster_to']);
     }
 
     /**
@@ -383,5 +385,34 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
         self::assertSame('delivered', $row['status']);
         self::assertSame('legacy-formula', $row['row_hash']);
         self::assertSame('Брянск', $row['delivery_city']);
+    }
+
+    public function testBackfillFillsOnlyMissingClusters(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $writer = new DoctrineSalesFactWriter($connection);
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $base = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId('CL-BACKFILL-1|SKU-1');
+
+        $writer->upsertAll([$base->withClusters(null, 'Дальний Восток')->build()]);
+        $writer->backfillLinks($companyId->toRfc4122(), [
+            $base->withClusters('Омск', 'Старый кластер')->build(),
+        ]);
+
+        $row = $connection->fetchAssociative(
+            'SELECT cluster_from, cluster_to FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$companyId->toRfc4122(), $accountId->toRfc4122(), 'CL-BACKFILL-1|SKU-1'],
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame('Омск', $row['cluster_from']);
+        self::assertSame('Дальний Восток', $row['cluster_to']);
     }
 }

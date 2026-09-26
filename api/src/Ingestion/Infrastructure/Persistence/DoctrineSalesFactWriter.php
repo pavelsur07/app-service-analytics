@@ -26,8 +26,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
      * Строка после COALESCE совпадает с разобранным историческим фактом
      * во всех полях row_hash (SalesFact::computeRowHash) — значит,
      * EXCLUDED.row_hash и есть хэш этой строки по текущей формуле.
-     * Нужен, чтобы расширение формулы хэша (атрибуты доставки) не
-     * превращалось в мнимую корректировку задним числом: без обновления
+     * Нужен, чтобы расширение формулы хэша (атрибуты доставки, кластеры)
+     * не превращалось в мнимую корректировку задним числом: без обновления
      * хэша первая синхронизация переписала бы всё окно с новым
      * last_updated_at, хотя данные площадки не менялись (ADR-006).
      */
@@ -41,6 +41,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
         AND COALESCE(sales_fact.warehouse_id, EXCLUDED.warehouse_id) IS NOT DISTINCT FROM EXCLUDED.warehouse_id
         AND COALESCE(sales_fact.warehouse_name, EXCLUDED.warehouse_name) IS NOT DISTINCT FROM EXCLUDED.warehouse_name
         AND COALESCE(sales_fact.delivery_city, EXCLUDED.delivery_city) IS NOT DISTINCT FROM EXCLUDED.delivery_city
+        AND COALESCE(sales_fact.cluster_from, EXCLUDED.cluster_from) IS NOT DISTINCT FROM EXCLUDED.cluster_from
+        AND COALESCE(sales_fact.cluster_to, EXCLUDED.cluster_to) IS NOT DISTINCT FROM EXCLUDED.cluster_to
         SQL;
 
     public function __construct(
@@ -81,7 +83,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :sourceRowId{$i}, :businessDate{$i}, "
                 .":status{$i}, :marketplaceSku{$i}, :quantity{$i}, :amountMinor{$i}, :commissionAmountMinor{$i}, "
                 .":currency{$i}, :rawDocumentId{$i}, :rowHash{$i}, :firstLoadedAt{$i}, :lastUpdatedAt{$i}, "
-                .":postingNumber{$i}, :orderNumber{$i}, :warehouseId{$i}, :warehouseName{$i}, :deliveryCity{$i})";
+                .":postingNumber{$i}, :orderNumber{$i}, :warehouseId{$i}, :warehouseName{$i}, :deliveryCity{$i}, "
+                .":clusterFrom{$i}, :clusterTo{$i})";
 
             $params["companyId{$i}"] = $companyId;
             $params["marketplaceAccountId{$i}"] = $fact->marketplaceAccountId()->toRfc4122();
@@ -102,6 +105,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             $params["warehouseId{$i}"] = $fact->warehouseId();
             $params["warehouseName{$i}"] = $fact->warehouseName();
             $params["deliveryCity{$i}"] = $fact->deliveryCity();
+            $params["clusterFrom{$i}"] = $fact->clusterFrom();
+            $params["clusterTo{$i}"] = $fact->clusterTo();
         }
 
         $snapshotMatches = self::SNAPSHOT_MATCHES_EXCLUDED;
@@ -110,7 +115,7 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
                 (company_id, marketplace_account_id, source_row_id, business_date, status, marketplace_sku,
                  quantity, amount_minor, commission_amount_minor, currency, raw_document_id, row_hash,
                  first_loaded_at, last_updated_at, posting_number, order_number,
-                 warehouse_id, warehouse_name, delivery_city)
+                 warehouse_id, warehouse_name, delivery_city, cluster_from, cluster_to)
             VALUES {$this->joinValues($valuesSql)}
             ON CONFLICT (company_id, marketplace_account_id, source_row_id)
             DO UPDATE SET
@@ -119,12 +124,16 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
                 order_number = COALESCE(sales_fact.order_number, EXCLUDED.order_number),
                 warehouse_id = COALESCE(sales_fact.warehouse_id, EXCLUDED.warehouse_id),
                 warehouse_name = COALESCE(sales_fact.warehouse_name, EXCLUDED.warehouse_name),
-                delivery_city = COALESCE(sales_fact.delivery_city, EXCLUDED.delivery_city)
+                delivery_city = COALESCE(sales_fact.delivery_city, EXCLUDED.delivery_city),
+                cluster_from = COALESCE(sales_fact.cluster_from, EXCLUDED.cluster_from),
+                cluster_to = COALESCE(sales_fact.cluster_to, EXCLUDED.cluster_to)
             WHERE (sales_fact.posting_number IS NULL AND EXCLUDED.posting_number IS NOT NULL)
                OR (sales_fact.order_number IS NULL AND EXCLUDED.order_number IS NOT NULL)
                OR (sales_fact.warehouse_id IS NULL AND EXCLUDED.warehouse_id IS NOT NULL)
                OR (sales_fact.warehouse_name IS NULL AND EXCLUDED.warehouse_name IS NOT NULL)
                OR (sales_fact.delivery_city IS NULL AND EXCLUDED.delivery_city IS NOT NULL)
+               OR (sales_fact.cluster_from IS NULL AND EXCLUDED.cluster_from IS NOT NULL)
+               OR (sales_fact.cluster_to IS NULL AND EXCLUDED.cluster_to IS NOT NULL)
                OR (sales_fact.row_hash IS DISTINCT FROM EXCLUDED.row_hash AND {$snapshotMatches})
             SQL;
 
@@ -146,7 +155,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :sourceRowId{$i}, :businessDate{$i}, "
                 .":status{$i}, :marketplaceSku{$i}, :quantity{$i}, :amountMinor{$i}, :commissionAmountMinor{$i}, "
                 .":currency{$i}, :rawDocumentId{$i}, :rowHash{$i}, :firstLoadedAt{$i}, :lastUpdatedAt{$i}, "
-                .":postingNumber{$i}, :orderNumber{$i}, :warehouseId{$i}, :warehouseName{$i}, :deliveryCity{$i})";
+                .":postingNumber{$i}, :orderNumber{$i}, :warehouseId{$i}, :warehouseName{$i}, :deliveryCity{$i}, "
+                .":clusterFrom{$i}, :clusterTo{$i})";
 
             $params["companyId{$i}"] = $fact->companyId()->toRfc4122();
             $params["marketplaceAccountId{$i}"] = $fact->marketplaceAccountId()->toRfc4122();
@@ -167,6 +177,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             $params["warehouseId{$i}"] = $fact->warehouseId();
             $params["warehouseName{$i}"] = $fact->warehouseName();
             $params["deliveryCity{$i}"] = $fact->deliveryCity();
+            $params["clusterFrom{$i}"] = $fact->clusterFrom();
+            $params["clusterTo{$i}"] = $fact->clusterTo();
         }
 
         $sql = <<<SQL
@@ -174,7 +186,7 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
                 (company_id, marketplace_account_id, source_row_id, business_date, status, marketplace_sku,
                  quantity, amount_minor, commission_amount_minor, currency, raw_document_id, row_hash,
                  first_loaded_at, last_updated_at, posting_number, order_number,
-                 warehouse_id, warehouse_name, delivery_city)
+                 warehouse_id, warehouse_name, delivery_city, cluster_from, cluster_to)
             VALUES {$this->joinValues($valuesSql)}
             ON CONFLICT (company_id, marketplace_account_id, source_row_id)
             DO UPDATE SET
@@ -191,6 +203,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
                 , warehouse_id = EXCLUDED.warehouse_id
                 , warehouse_name = EXCLUDED.warehouse_name
                 , delivery_city = EXCLUDED.delivery_city
+                , cluster_from = EXCLUDED.cluster_from
+                , cluster_to = EXCLUDED.cluster_to
             WHERE sales_fact.row_hash IS DISTINCT FROM EXCLUDED.row_hash
             SQL;
 

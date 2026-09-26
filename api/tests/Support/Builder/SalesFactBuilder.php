@@ -26,6 +26,8 @@ final class SalesFactBuilder
     private ?int $warehouseId = 1020000115166000;
     private ?string $warehouseName = 'ЖУКОВСКИЙ_РФЦ';
     private ?string $deliveryCity = 'Брянск';
+    private ?string $clusterFrom = 'Москва, МО и Дальние регионы';
+    private ?string $clusterTo = 'Москва, МО и Дальние регионы';
     private Money $amount;
     private Money $commissionAmount;
     private Uuid $rawDocumentId;
@@ -118,6 +120,15 @@ final class SalesFactBuilder
         return $clone;
     }
 
+    public function withClusters(?string $clusterFrom, ?string $clusterTo): self
+    {
+        $clone = clone $this;
+        $clone->clusterFrom = $clusterFrom;
+        $clone->clusterTo = $clusterTo;
+
+        return $clone;
+    }
+
     /**
      * Дата в часовом поясе площадки (ADR-009). Задаётся снаружи, потому что
      * попадание в окно расчёта — то, что проверяет тест, и билдер не должен
@@ -181,6 +192,8 @@ final class SalesFactBuilder
             warehouseId: $this->warehouseId,
             warehouseName: $this->warehouseName,
             deliveryCity: $this->deliveryCity,
+            clusterFrom: $this->clusterFrom,
+            clusterTo: $this->clusterTo,
         );
     }
 
