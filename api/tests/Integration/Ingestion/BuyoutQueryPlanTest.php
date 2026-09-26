@@ -12,6 +12,7 @@ use App\Ingestion\Infrastructure\Query\Buyout\BuyoutForecastQuery;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateDirection;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateQuery;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutRateSort;
+use App\Ingestion\Infrastructure\Query\DeliverySpeed\DeliverySpeedBuyoutQuery;
 use App\Tests\Support\Builder\MarketplacePostingStatusBuilder;
 use App\Tests\Support\Builder\MarketplaceReturnFactBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
@@ -78,6 +79,26 @@ final class BuyoutQueryPlanTest extends KernelTestCase
         self::assertSame([], $this->repeatedBaseTableScans($plan), self::planMessage($plan));
         self::assertCount(1, $salesFactScans, self::planMessage($plan));
         self::assertSame(1, $salesFactScans[0]['Actual Loops'] ?? null, self::planMessage($plan));
+        $this->assertTenantPredicateIsPushedIntoBaseScans($plan);
+    }
+
+    /**
+     * Новый потребитель buyout_outcome — «выкуп по скорости доставки»
+     * (docs/plan/ozon-delivery-speed-report.md): тот же инвариант ADR-020,
+     * что у запросов «Выкупа» — фильтр компании доходит до базовых таблиц,
+     * ни одна не перечитывается в цикле. sales_fact он читает дважды
+     * (своя основа и представление), поэтому проверка «ровно один скан»
+     * к нему не применяется.
+     */
+    public function testDeliverySpeedBuyoutQueryKeepsTenantPushdown(): void
+    {
+        $plan = $this->explainQuery((new DeliverySpeedBuyoutQuery($this->connection()))->build(
+            $this->companyId->toRfc4122(),
+            new \DateTimeImmutable('2026-08-01'),
+            new \DateTimeImmutable('2026-08-30'),
+        ));
+
+        self::assertSame([], $this->repeatedBaseTableScans($plan), self::planMessage($plan));
         $this->assertTenantPredicateIsPushedIntoBaseScans($plan);
     }
 

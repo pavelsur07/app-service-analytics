@@ -139,6 +139,91 @@ final class BuildDeliverySpeedReportActionTest extends KernelTestCase
         self::assertSame(193_950, $summary->medianDeliverySeconds);
     }
 
+    public function testFirstObservationAfterTickWindowIsMeasuredFromWindowEnd(): void
+    {
+        // Замечено 08-13 00:30 UTC (03:30 МСК) — первые сутки после окна
+        // тика. Предыдущий опрос — конец окна (08-13 00:00 МСК = 08-12
+        // 21:00 UTC), а не сутки назад: оценка 08-12 22:45 UTC, доставка
+        // 2 дн 16 ч 45 мин = 233 100 с. Вычет 12 ч дал бы момент раньше
+        // опроса, на котором посылки в ПВЗ ещё не было.
+        for ($i = 0; $i < 10; ++$i) {
+            $this->posting("W-{$i}", 'SKU', self::OMSK, self::OMSK, [
+                ['delivering', 'posting_on_way_to_city', '2026-08-11 10:00:00'],
+                ['delivering', 'posting_in_pickup_point', '2026-08-13 00:30:00'],
+            ]);
+        }
+
+        $summary = $this->build()->summary;
+
+        self::assertSame(233_100, $summary->medianDeliverySeconds);
+        self::assertSame(10, $summary->rescanArrivedPostings);
+    }
+
+    public function testStageMediansNeedTheirOwnSamples(): void
+    {
+        // Прибыли 10, но передача (любой delivering) наблюдалась лишь
+        // у одного: остальные курьерские, сразу delivered. Медианы сборки
+        // и пути не отдаются, общая — отдаётся.
+        for ($i = 0; $i < 10; ++$i) {
+            $events = [['delivered', 'posting_delivered', '2026-08-12 12:00:00']];
+            if (0 === $i) {
+                $events = [
+                    ['delivering', 'posting_on_way_to_city', '2026-08-11 10:00:00'],
+                    ['delivering', 'posting_in_pickup_point', '2026-08-12 12:00:00'],
+                ];
+            }
+            $this->posting("S-{$i}", 'SKU', self::OMSK, self::OMSK, $events);
+        }
+
+        $summary = $this->build()->summary;
+
+        self::assertSame(10, $summary->arrivedPostings);
+        self::assertNotNull($summary->medianDeliverySeconds);
+        self::assertNull($summary->medianAssemblySeconds);
+        self::assertNull($summary->medianTransitSeconds);
+    }
+
+    public function testSkuKeysetPagesWithoutGapsOrDuplicates(): void
+    {
+        $this->seedScenario();
+        for ($i = 0; $i < 3; ++$i) {
+            $this->posting("N2-{$i}", 'NONLOCAL2', self::MOSCOW, self::OMSK, [
+                ['delivering', 'posting_on_way_to_city', '2026-08-11 10:00:00'],
+                ['delivering', 'posting_in_pickup_point', '2026-08-15 00:30:00'],
+            ]);
+        }
+
+        $first = $this->build(limit: 1);
+        self::assertSame(['NONLOCAL'], array_map(static fn ($r): string => $r->marketplaceSku, $first->skus));
+        self::assertSame(486, $first->skus[0]->lostHours);
+        self::assertNotNull($first->nextCursor);
+
+        $second = $this->build(limit: 1, cursor: $first->nextCursor);
+        // 3 × 175 050 / 3600 = 145,875 → 146.
+        self::assertSame(['NONLOCAL2'], array_map(static fn ($r): string => $r->marketplaceSku, $second->skus));
+        self::assertSame(146, $second->skus[0]->lostHours);
+        self::assertNull($second->nextCursor);
+    }
+
+    public function testPostingWithoutOrderMomentCountsInPeriodButNotInSpeed(): void
+    {
+        /** @var SalesFactRepository $sales */
+        $sales = self::getContainer()->get(SalesFactRepository::class);
+        SalesFactBuilder::aSalesFact()
+            ->withCompanyId($this->companyId)
+            ->withMarketplaceAccountId($this->accountId)
+            ->withSourceRowId('NO-MOMENT|SKU')
+            ->withPostingNumber('NO-MOMENT')
+            ->withBusinessDate(new \DateTimeImmutable('2026-08-10'))
+            ->withOrderedAt(null)
+            ->persistWith($sales);
+
+        $report = $this->build();
+
+        self::assertSame(1, $report->periodPostings);
+        self::assertSame(0, $report->summary->postings);
+    }
+
     public function testSkuPagesAndEmptyPeriod(): void
     {
         $empty = $this->build();

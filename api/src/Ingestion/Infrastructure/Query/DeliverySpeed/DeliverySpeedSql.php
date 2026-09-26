@@ -66,7 +66,6 @@ final class DeliverySpeedSql
                 WHERE company_id = :companyId
                   AND business_date BETWEEN :from AND :to
                   AND posting_number IS NOT NULL
-                  AND ordered_at IS NOT NULL
                 GROUP BY marketplace_account_id, posting_number
             ),
             observations AS MATERIALIZED (
@@ -88,11 +87,12 @@ final class DeliverySpeedSql
                 SELECT p.marketplace_account_id, p.posting_number, p.cluster_from, p.cluster_to,
                        (p.cluster_from IS NOT NULL AND p.cluster_to IS NOT NULL) AS has_clusters,
                        COALESCE(p.cluster_from = p.cluster_to, false) AS is_local,
-                       (o.first_observed IS NOT NULL
+                       (p.ordered_at IS NOT NULL
+                        AND o.first_observed IS NOT NULL
                         AND o.first_observed <= p.ordered_at + interval '{$liveLag} hours') AS live,
                        o.arrival_observed IS NOT NULL AS arrived,
                        o.handover_observed IS NOT NULL AS handed_over,
-                       {$arrival['step']} = :rescanStep::int AS arrival_by_rescan,
+                       COALESCE({$arrival['byRescan']}, false) AS arrival_by_rescan,
                        GREATEST(0, EXTRACT(EPOCH FROM ({$arrival['moment']} - p.ordered_at)))::bigint AS delivery_seconds,
                        GREATEST(0, EXTRACT(EPOCH FROM ({$handover['moment']} - p.ordered_at)))::bigint AS assembly_seconds,
                        GREATEST(0, EXTRACT(EPOCH FROM ({$arrival['moment']} - {$handover['moment']})))::bigint AS transit_seconds
@@ -114,6 +114,8 @@ final class DeliverySpeedSql
         return 'COUNT(*)::bigint AS postings,'
             .' COUNT(*) FILTER (WHERE arrived)::bigint AS arrived_postings,'
             .' COUNT(*) FILTER (WHERE arrived AND arrival_by_rescan)::bigint AS rescan_arrived_postings,'
+            .' COUNT(*) FILTER (WHERE handed_over)::bigint AS handed_over_postings,'
+            .' COUNT(*) FILTER (WHERE arrived AND handed_over)::bigint AS arrived_handed_over_postings,'
             .' COUNT(*) FILTER (WHERE arrived AND is_local)::bigint AS local_arrived_postings,'
             .' COUNT(*) FILTER (WHERE arrived AND has_clusters AND NOT is_local)::bigint AS nonlocal_arrived_postings,'
             .' '.$median('delivery_seconds', 'arrived').' AS median_delivery_seconds,'
@@ -154,20 +156,28 @@ final class DeliverySpeedSql
     }
 
     /**
-     * Оценка момента события по первому наблюдению: середина шага опроса,
-     * пришедшегося на наблюдение. Шаг — по возрасту заказа на дату
-     * наблюдения в часовом поясе площадки.
+     * Оценка момента события по первому наблюдению: середина между ним и
+     * предыдущим опросом. Предыдущий опрос определяется по дате наблюдения
+     * относительно даты заказа (часовой пояс площадки):
+     * - в окне тика — наблюдение минус шаг тика;
+     * - первые сутки после окна — конец окна тика (последний тик прошлого
+     *   вечера), а не прошлый рескан: иначе оценка ушла бы раньше опроса,
+     *   на котором статус был ещё прежним;
+     * - дальше — прошлый ночной рескан, наблюдение минус сутки.
      *
-     * @return array{moment: string, step: string}
+     * @return array{moment: string, byRescan: string}
      */
     private static function estimate(string $observed): array
     {
-        $step = "(CASE WHEN (({$observed} AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date - p.business_date < :tickWindowDays::int"
-            .' THEN :tickStep::int ELSE :rescanStep::int END)';
+        $ageDays = "((({$observed} AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')::date - p.business_date)";
+        $tickWindowEnd = "(((p.business_date + :tickWindowDays::int)::timestamp AT TIME ZONE 'Europe/Moscow') AT TIME ZONE 'UTC')";
+        $previousPoll = "(CASE WHEN {$ageDays} < :tickWindowDays::int THEN {$observed} - interval '1 second' * :tickStep::int"
+            ." WHEN {$ageDays} = :tickWindowDays::int THEN LEAST({$observed}, {$tickWindowEnd})"
+            ." ELSE {$observed} - interval '1 second' * :rescanStep::int END)";
 
         return [
-            'moment' => "({$observed} - interval '1 second' * ({$step} / 2))",
-            'step' => $step,
+            'moment' => "({$previousPoll} + ({$observed} - {$previousPoll}) / 2)",
+            'byRescan' => "({$ageDays} >= :tickWindowDays::int)",
         ];
     }
 }

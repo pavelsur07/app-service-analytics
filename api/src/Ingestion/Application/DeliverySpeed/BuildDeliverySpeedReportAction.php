@@ -89,24 +89,41 @@ final readonly class BuildDeliverySpeedReportAction
             );
         };
 
-        // Уже открытую транзакцию (интеграционные тесты, внешний сценарий)
-        // не трогаем: уровень её изоляции определяет владелец, а SET
-        // TRANSACTION после его запросов PostgreSQL запрещает.
+        // Уже открытая транзакция (интеграционные тесты, внешний сценарий):
+        // уровень её изоляции определяет владелец, а SET TRANSACTION после
+        // его запросов PostgreSQL запрещает. Ограничения планировщика
+        // и таймаут всё равно действуют — под savepoint, чей откат снимает
+        // и SET LOCAL, и ошибку таймаута (ADR-020, как у «Выкупа»).
         $native = $this->connection->getNativeConnection();
         if ($this->connection->isTransactionActive() || ($native instanceof \PDO && $native->inTransaction())) {
-            return $read($this->connection);
+            $this->connection->createSavepoint('delivery_speed_report_guard');
+            try {
+                self::configurePlanner($this->connection);
+
+                return $read($this->connection);
+            } finally {
+                $this->connection->rollbackSavepoint('delivery_speed_report_guard');
+                $this->connection->releaseSavepoint('delivery_speed_report_guard');
+            }
         }
 
         return $this->connection->transactional(static function (Connection $connection) use ($read): DeliverySpeedReport {
             $connection->executeStatement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
-            // buyout_outcome — тяжёлое представление; те же ограничения
-            // планировщика, что у отчёта «Выкуп» (BuildBuyoutRateReportAction).
-            $connection->executeStatement('SET LOCAL jit = off');
-            $connection->executeStatement('SET LOCAL enable_nestloop = off');
-            $connection->executeStatement("SET LOCAL statement_timeout = '5s'");
+            self::configurePlanner($connection);
 
             return $read($connection);
         });
+    }
+
+    /**
+     * buyout_outcome — тяжёлое представление; те же ограничения
+     * планировщика, что у отчёта «Выкуп» (BuildBuyoutRateReportAction).
+     */
+    private static function configurePlanner(Connection $connection): void
+    {
+        $connection->executeStatement('SET LOCAL jit = off');
+        $connection->executeStatement('SET LOCAL enable_nestloop = off');
+        $connection->executeStatement("SET LOCAL statement_timeout = '5s'");
     }
 
     /**

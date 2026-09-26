@@ -37,6 +37,9 @@ final readonly class DeliverySpeedMetrics
         $local = self::int($row['local_arrived_postings']);
         $nonlocal = self::int($row['nonlocal_arrived_postings']);
         $sufficient = $arrived >= DeliverySpeedSql::MIN_POSTINGS;
+        // Медианы этапов опираются на свои выборки, а не на число прибывших.
+        $handedOver = self::int($row['handed_over_postings']);
+        $arrivedHandedOver = self::int($row['arrived_handed_over_postings']);
 
         return new self(
             postings: self::int($row['postings']),
@@ -46,8 +49,8 @@ final readonly class DeliverySpeedMetrics
             nonlocalArrivedPostings: $nonlocal,
             medianDeliverySeconds: $sufficient ? self::nullableInt($row['median_delivery_seconds']) : null,
             p90DeliverySeconds: $sufficient ? self::nullableInt($row['p90_delivery_seconds']) : null,
-            medianAssemblySeconds: $sufficient ? self::nullableInt($row['median_assembly_seconds']) : null,
-            medianTransitSeconds: $sufficient ? self::nullableInt($row['median_transit_seconds']) : null,
+            medianAssemblySeconds: $handedOver >= DeliverySpeedSql::MIN_POSTINGS ? self::nullableInt($row['median_assembly_seconds']) : null,
+            medianTransitSeconds: $arrivedHandedOver >= DeliverySpeedSql::MIN_POSTINGS ? self::nullableInt($row['median_transit_seconds']) : null,
             medianLocalSeconds: $local >= DeliverySpeedSql::MIN_POSTINGS ? self::nullableInt($row['median_local_seconds']) : null,
             medianNonlocalSeconds: $nonlocal >= DeliverySpeedSql::MIN_POSTINGS ? self::nullableInt($row['median_nonlocal_seconds']) : null,
             sufficientData: $sufficient,
