@@ -1,4 +1,5 @@
 import type { components } from '../../../api/schema'
+import { formatBasisPoints } from '../../../shared/lib/formatBasisPoints'
 
 const NO_DATA = 'Недостаточно данных'
 type MaturityStatus =
@@ -9,16 +10,7 @@ export function formatRateBps(basisPoints: number | null | undefined): string {
     return NO_DATA
   }
 
-  const integer = Math.trunc(basisPoints)
-  const absolute = Math.abs(integer)
-  const whole = Math.floor(absolute / 100)
-  const remainder = absolute % 100
-  const fraction =
-    remainder === 0
-      ? ''
-      : `,${String(remainder).padStart(2, '0').replace(/0$/, '')}`
-
-  return `${integer < 0 ? '−' : ''}${whole}${fraction}%`
+  return formatBasisPoints(basisPoints)
 }
 
 /**

@@ -23,25 +23,33 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
     private const int CHUNK_SIZE = 500;
 
     /**
-     * Строка после COALESCE совпадает с разобранным историческим фактом
-     * во всех полях row_hash (SalesFact::computeRowHash) — значит,
-     * EXCLUDED.row_hash и есть хэш этой строки по текущей формуле.
-     * Нужен, чтобы расширение формулы хэша (атрибуты доставки) не
-     * превращалось в мнимую корректировку задним числом: без обновления
-     * хэша первая синхронизация переписала бы всё окно с новым
-     * last_updated_at, хотя данные площадки не менялись (ADR-006).
+     * Атрибуты заказа, которые бэкфилл восстанавливает из исторического raw.
+     * Номера отправления и заказа — ссылки, неизменны: только заполняются.
      */
-    private const string SNAPSHOT_MATCHES_EXCLUDED = <<<'SQL'
-        sales_fact.status = EXCLUDED.status
-        AND sales_fact.quantity = EXCLUDED.quantity
-        AND sales_fact.amount_minor = EXCLUDED.amount_minor
-        AND sales_fact.commission_amount_minor = EXCLUDED.commission_amount_minor
-        AND COALESCE(sales_fact.posting_number, EXCLUDED.posting_number) IS NOT DISTINCT FROM EXCLUDED.posting_number
-        AND COALESCE(sales_fact.order_number, EXCLUDED.order_number) IS NOT DISTINCT FROM EXCLUDED.order_number
-        AND COALESCE(sales_fact.warehouse_id, EXCLUDED.warehouse_id) IS NOT DISTINCT FROM EXCLUDED.warehouse_id
-        AND COALESCE(sales_fact.warehouse_name, EXCLUDED.warehouse_name) IS NOT DISTINCT FROM EXCLUDED.warehouse_name
-        AND COALESCE(sales_fact.delivery_city, EXCLUDED.delivery_city) IS NOT DISTINCT FROM EXCLUDED.delivery_city
-        SQL;
+    private const array BACKFILL_LINK_COLUMNS = ['posting_number', 'order_number'];
+
+    /**
+     * Атрибуты, которые у одного отправления могут различаться между
+     * снимками (переназначение склада, дозаполненный город). Непустое
+     * значение из того raw, из которого получена текущая версия строки
+     * (raw_document_id, прослеживаемость ADR-006), побеждает: оно согласовано
+     * с её статусом и суммами. Пустое в нём ничего не стирает, а любой
+     * другой снимок только заполняет пустое. Когда значение в raw текущей
+     * версии есть, итог не зависит от порядка обхода. Когда его там нет,
+     * остаётся первое значение, попавшее в строку: уже записанное до
+     * прогона либо, если поле было пустым, из самого раннего снимка окна
+     * --from/--to, где оно есть (обход по возрастанию received_at), — даже
+     * если позднейшие снимки с ним расходятся.
+     */
+    private const array BACKFILL_SNAPSHOT_COLUMNS = [
+        'warehouse_id',
+        'warehouse_name',
+        'delivery_city',
+        'cluster_from',
+        'cluster_to',
+    ];
+
+    private const string SAME_RAW = 'sales_fact.raw_document_id = EXCLUDED.raw_document_id';
 
     public function __construct(
         private Connection $connection,
@@ -81,7 +89,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :sourceRowId{$i}, :businessDate{$i}, "
                 .":status{$i}, :marketplaceSku{$i}, :quantity{$i}, :amountMinor{$i}, :commissionAmountMinor{$i}, "
                 .":currency{$i}, :rawDocumentId{$i}, :rowHash{$i}, :firstLoadedAt{$i}, :lastUpdatedAt{$i}, "
-                .":postingNumber{$i}, :orderNumber{$i}, :warehouseId{$i}, :warehouseName{$i}, :deliveryCity{$i})";
+                .":postingNumber{$i}, :orderNumber{$i}, :warehouseId{$i}, :warehouseName{$i}, :deliveryCity{$i}, "
+                .":clusterFrom{$i}, :clusterTo{$i})";
 
             $params["companyId{$i}"] = $companyId;
             $params["marketplaceAccountId{$i}"] = $fact->marketplaceAccountId()->toRfc4122();
@@ -102,30 +111,21 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             $params["warehouseId{$i}"] = $fact->warehouseId();
             $params["warehouseName{$i}"] = $fact->warehouseName();
             $params["deliveryCity{$i}"] = $fact->deliveryCity();
+            $params["clusterFrom{$i}"] = $fact->clusterFrom();
+            $params["clusterTo{$i}"] = $fact->clusterTo();
         }
 
-        $snapshotMatches = self::SNAPSHOT_MATCHES_EXCLUDED;
+        [$set, $where] = self::backfillSetAndWhere();
         $sql = <<<SQL
             INSERT INTO sales_fact
                 (company_id, marketplace_account_id, source_row_id, business_date, status, marketplace_sku,
                  quantity, amount_minor, commission_amount_minor, currency, raw_document_id, row_hash,
                  first_loaded_at, last_updated_at, posting_number, order_number,
-                 warehouse_id, warehouse_name, delivery_city)
+                 warehouse_id, warehouse_name, delivery_city, cluster_from, cluster_to)
             VALUES {$this->joinValues($valuesSql)}
             ON CONFLICT (company_id, marketplace_account_id, source_row_id)
-            DO UPDATE SET
-                row_hash = CASE WHEN {$snapshotMatches} THEN EXCLUDED.row_hash ELSE sales_fact.row_hash END,
-                posting_number = COALESCE(sales_fact.posting_number, EXCLUDED.posting_number),
-                order_number = COALESCE(sales_fact.order_number, EXCLUDED.order_number),
-                warehouse_id = COALESCE(sales_fact.warehouse_id, EXCLUDED.warehouse_id),
-                warehouse_name = COALESCE(sales_fact.warehouse_name, EXCLUDED.warehouse_name),
-                delivery_city = COALESCE(sales_fact.delivery_city, EXCLUDED.delivery_city)
-            WHERE (sales_fact.posting_number IS NULL AND EXCLUDED.posting_number IS NOT NULL)
-               OR (sales_fact.order_number IS NULL AND EXCLUDED.order_number IS NOT NULL)
-               OR (sales_fact.warehouse_id IS NULL AND EXCLUDED.warehouse_id IS NOT NULL)
-               OR (sales_fact.warehouse_name IS NULL AND EXCLUDED.warehouse_name IS NOT NULL)
-               OR (sales_fact.delivery_city IS NULL AND EXCLUDED.delivery_city IS NOT NULL)
-               OR (sales_fact.row_hash IS DISTINCT FROM EXCLUDED.row_hash AND {$snapshotMatches})
+            DO UPDATE SET {$set}
+            WHERE {$where}
             SQL;
 
         $this->connection->executeStatement($sql, $params);
@@ -146,7 +146,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :sourceRowId{$i}, :businessDate{$i}, "
                 .":status{$i}, :marketplaceSku{$i}, :quantity{$i}, :amountMinor{$i}, :commissionAmountMinor{$i}, "
                 .":currency{$i}, :rawDocumentId{$i}, :rowHash{$i}, :firstLoadedAt{$i}, :lastUpdatedAt{$i}, "
-                .":postingNumber{$i}, :orderNumber{$i}, :warehouseId{$i}, :warehouseName{$i}, :deliveryCity{$i})";
+                .":postingNumber{$i}, :orderNumber{$i}, :warehouseId{$i}, :warehouseName{$i}, :deliveryCity{$i}, "
+                .":clusterFrom{$i}, :clusterTo{$i})";
 
             $params["companyId{$i}"] = $fact->companyId()->toRfc4122();
             $params["marketplaceAccountId{$i}"] = $fact->marketplaceAccountId()->toRfc4122();
@@ -167,6 +168,8 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             $params["warehouseId{$i}"] = $fact->warehouseId();
             $params["warehouseName{$i}"] = $fact->warehouseName();
             $params["deliveryCity{$i}"] = $fact->deliveryCity();
+            $params["clusterFrom{$i}"] = $fact->clusterFrom();
+            $params["clusterTo{$i}"] = $fact->clusterTo();
         }
 
         $sql = <<<SQL
@@ -174,7 +177,7 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
                 (company_id, marketplace_account_id, source_row_id, business_date, status, marketplace_sku,
                  quantity, amount_minor, commission_amount_minor, currency, raw_document_id, row_hash,
                  first_loaded_at, last_updated_at, posting_number, order_number,
-                 warehouse_id, warehouse_name, delivery_city)
+                 warehouse_id, warehouse_name, delivery_city, cluster_from, cluster_to)
             VALUES {$this->joinValues($valuesSql)}
             ON CONFLICT (company_id, marketplace_account_id, source_row_id)
             DO UPDATE SET
@@ -191,10 +194,63 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
                 , warehouse_id = EXCLUDED.warehouse_id
                 , warehouse_name = EXCLUDED.warehouse_name
                 , delivery_city = EXCLUDED.delivery_city
+                , cluster_from = EXCLUDED.cluster_from
+                , cluster_to = EXCLUDED.cluster_to
             WHERE sales_fact.row_hash IS DISTINCT FROM EXCLUDED.row_hash
             SQL;
 
         $this->connection->executeStatement($sql, $params);
+    }
+
+    /**
+     * SET и WHERE конфликтной ветки бэкфилла.
+     *
+     * row_hash переписывается, когда строка после обновления совпадает
+     * с разобранным историческим фактом во всех полях row_hash
+     * (SalesFact::computeRowHash): тогда EXCLUDED.row_hash и есть хэш этой
+     * строки по текущей формуле. Нужно, чтобы расширение формулы хэша
+     * (атрибуты доставки, кластеры) не превращалось в мнимую корректировку
+     * задним числом: без этого первая синхронизация переписала бы окно
+     * с новым last_updated_at, хотя данные площадки не менялись (ADR-006).
+     *
+     * @return array{string, string}
+     */
+    private static function backfillSetAndWhere(): array
+    {
+        $final = [];
+        foreach (self::BACKFILL_LINK_COLUMNS as $column) {
+            $final[$column] = "COALESCE(sales_fact.{$column}, EXCLUDED.{$column})";
+        }
+        foreach (self::BACKFILL_SNAPSHOT_COLUMNS as $column) {
+            $final[$column] = 'CASE WHEN '.self::SAME_RAW." THEN COALESCE(EXCLUDED.{$column}, sales_fact.{$column}) "
+                ."ELSE COALESCE(sales_fact.{$column}, EXCLUDED.{$column}) END";
+        }
+
+        $snapshotMatches = ['sales_fact.status = EXCLUDED.status',
+            'sales_fact.quantity = EXCLUDED.quantity',
+            'sales_fact.amount_minor = EXCLUDED.amount_minor',
+            'sales_fact.commission_amount_minor = EXCLUDED.commission_amount_minor',
+        ];
+        $set = [];
+        $fills = [];
+        foreach ($final as $column => $expression) {
+            $snapshotMatches[] = "({$expression}) IS NOT DISTINCT FROM EXCLUDED.{$column}";
+            $set[] = "{$column} = {$expression}";
+            $fills[] = "(sales_fact.{$column} IS NULL AND EXCLUDED.{$column} IS NOT NULL)";
+        }
+        $matches = implode(' AND ', $snapshotMatches);
+        $sameRawChanges = [];
+        foreach (self::BACKFILL_SNAPSHOT_COLUMNS as $column) {
+            $sameRawChanges[] = "(EXCLUDED.{$column} IS NOT NULL AND sales_fact.{$column} IS DISTINCT FROM EXCLUDED.{$column})";
+        }
+
+        array_unshift($set, "row_hash = CASE WHEN {$matches} THEN EXCLUDED.row_hash ELSE sales_fact.row_hash END");
+        $where = array_merge($fills, [
+            '('.self::SAME_RAW.' AND ('.implode(' OR ', $sameRawChanges).'))',
+            "(sales_fact.row_hash IS DISTINCT FROM EXCLUDED.row_hash AND {$matches})",
+        ]);
+
+        return [implode(",\n    ", $set), implode("\n   OR ", $where)];
     }
 
     /**

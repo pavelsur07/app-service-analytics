@@ -73,6 +73,15 @@ class SalesFact
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $deliveryCity;
 
+    // Кластеры Ozon из financial_data: откуда отгружено и куда доставляется.
+    // Равенство — локальная продажа (отчёт «Локализация»). Название
+    // кластера — строка площадки, справочника у нас нет.
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $clusterFrom;
+
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $clusterTo;
+
     #[ORM\Column(type: 'money_minor_amount')]
     private int $amountMinor;
 
@@ -109,6 +118,8 @@ class SalesFact
         ?int $warehouseId,
         ?string $warehouseName,
         ?string $deliveryCity,
+        ?string $clusterFrom,
+        ?string $clusterTo,
         Money $amount,
         Money $commissionAmount,
         Uuid $rawDocumentId,
@@ -128,6 +139,8 @@ class SalesFact
         $this->warehouseId = $warehouseId;
         $this->warehouseName = $warehouseName;
         $this->deliveryCity = $deliveryCity;
+        $this->clusterFrom = $clusterFrom;
+        $this->clusterTo = $clusterTo;
         $this->amountMinor = $amount->minorAmount();
         $this->commissionAmountMinor = $commissionAmount->minorAmount();
         $this->currency = $amount->currency();
@@ -159,6 +172,8 @@ class SalesFact
         ?int $warehouseId = null,
         ?string $warehouseName = null,
         ?string $deliveryCity = null,
+        ?string $clusterFrom = null,
+        ?string $clusterTo = null,
     ): self {
         if ($quantity <= 0) {
             throw new \InvalidArgumentException('Sales fact quantity must be positive.');
@@ -181,6 +196,8 @@ class SalesFact
             $warehouseId,
             $warehouseName,
             $deliveryCity,
+            $clusterFrom,
+            $clusterTo,
             $amount,
             $commissionAmount,
             $rawDocumentId,
@@ -194,6 +211,8 @@ class SalesFact
                 $warehouseId,
                 $warehouseName,
                 $deliveryCity,
+                $clusterFrom,
+                $clusterTo,
             ),
             $now,
             $now,
@@ -206,7 +225,7 @@ class SalesFact
      * поля исключены намеренно (ADR-006: суррогат/ключ строится из полей,
      * не меняющихся при корректировке).
      *
-     * Атрибуты доставки входят сюда: у части отправлений Ozon отдаёт
+     * Атрибуты доставки и кластеры входят сюда: у части отправлений Ozon отдаёт
      * пустой city и может заполнить его позже — такое изменение обязано
      * обновить факт (ADR-006), а не потеряться за неизменным хэшем.
      */
@@ -220,6 +239,8 @@ class SalesFact
         ?int $warehouseId,
         ?string $warehouseName,
         ?string $deliveryCity,
+        ?string $clusterFrom,
+        ?string $clusterTo,
     ): string {
         return hash('sha256', implode('|', [
             $status,
@@ -231,6 +252,8 @@ class SalesFact
             $warehouseId ?? '<null>',
             $warehouseName ?? '<null>',
             $deliveryCity ?? '<null>',
+            $clusterFrom ?? '<null>',
+            $clusterTo ?? '<null>',
         ]));
     }
 
@@ -292,6 +315,16 @@ class SalesFact
     public function deliveryCity(): ?string
     {
         return $this->deliveryCity;
+    }
+
+    public function clusterFrom(): ?string
+    {
+        return $this->clusterFrom;
+    }
+
+    public function clusterTo(): ?string
+    {
+        return $this->clusterTo;
     }
 
     public function amount(): Money

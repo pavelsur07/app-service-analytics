@@ -6,6 +6,7 @@ namespace App\Tests\Unit\Ingestion\Domain;
 
 use App\Ingestion\Domain\OzonPostingFboListParser;
 use App\Shared\Domain\ValueObject\Money;
+use App\Tests\Support\Builder\SalesFactBuilder;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
@@ -95,6 +96,40 @@ final class OzonPostingFboListParserTest extends TestCase
         self::assertSame('Комсомольск-на-Амуре', $facts[1]->deliveryCity());
     }
 
+    public function testMapsClustersFromFinancialData(): void
+    {
+        $fixtureBody = file_get_contents(self::FIXTURE);
+        self::assertIsString($fixtureBody);
+
+        $facts = (new OzonPostingFboListParser())->parse($fixtureBody, Uuid::v7(), Uuid::v7(), Uuid::v7());
+
+        // 81246442-0476-1 в боевом ответе: из Омска на Дальний Восток —
+        // нелокальная продажа.
+        self::assertSame('81246442-0476-1', $facts[1]->postingNumber());
+        self::assertSame('Омск', $facts[1]->clusterFrom());
+        self::assertSame('Дальний Восток', $facts[1]->clusterTo());
+    }
+
+    public function testMissingOrEmptyClustersBecomeNull(): void
+    {
+        $body = json_encode(['result' => [[
+            'posting_number' => 'P-CL-1',
+            'order_number' => 'P-CL',
+            'status' => 'delivered',
+            'in_process_at' => '2026-07-01T09:00:00Z',
+            'products' => [['sku' => 111, 'quantity' => 1]],
+            'financial_data' => [
+                'cluster_from' => '',
+                'products' => [['product_id' => 111, 'price' => 100, 'commission_amount' => -10]],
+            ],
+        ]]], \JSON_THROW_ON_ERROR);
+
+        $facts = (new OzonPostingFboListParser())->parse($body, Uuid::v7(), Uuid::v7(), Uuid::v7());
+
+        self::assertNull($facts[0]->clusterFrom());
+        self::assertNull($facts[0]->clusterTo());
+    }
+
     public function testEmptyCityInFixtureBecomesNull(): void
     {
         $fixtureBody = file_get_contents(self::FIXTURE);
@@ -173,6 +208,16 @@ final class OzonPostingFboListParserTest extends TestCase
         // Ozon дозаполняет город задним числом — детектор изменений ADR-006
         // обязан это увидеть, иначе upsert оставит строку без города.
         self::assertNotSame($withoutCity[0]->rowHash(), $withCity[0]->rowHash());
+    }
+
+    public function testChangedClusterChangesRowHash(): void
+    {
+        $base = SalesFactBuilder::aSalesFact();
+
+        self::assertNotSame(
+            $base->withClusters('Омск', 'Омск')->build()->rowHash(),
+            $base->withClusters('Омск', 'Дальний Восток')->build()->rowHash(),
+        );
     }
 
     public function testThrowsOnMissingResultKey(): void
