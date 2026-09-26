@@ -67,7 +67,15 @@ final class ShowLocalizationReportController
         $cursor = null;
         if ($request->query->has('cursor')) {
             $cursor = LocalizationSkuCursor::decode((string) $request->query->get('cursor'));
-            if (null === $cursor || $cursor->days !== $days || $cursor->to > $today) {
+            // Сервер выдаёт курсор с сегодняшним последним днём; вчерашний
+            // допустим — страницу могли запросить после полуночи. Иные
+            // окна — не наш курсор.
+            if (
+                null === $cursor
+                || $cursor->days !== $days
+                || $cursor->to > $today
+                || $cursor->to < $today->modify('-1 day')
+            ) {
                 return self::invalid('invalid_cursor', 'cursor is malformed.');
             }
             // Следующая страница — того же окна, что и первая, даже если

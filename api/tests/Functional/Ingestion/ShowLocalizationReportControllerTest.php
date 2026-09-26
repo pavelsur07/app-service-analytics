@@ -81,6 +81,10 @@ final class ShowLocalizationReportControllerTest extends WebTestCase
             'days=30&cursor='.urlencode((new LocalizationSkuCursor(30, new \DateTimeImmutable('+2 days'), 1, 'SKU', 'Омск'))->encode()),
             'invalid_cursor',
         ];
+        yield 'cursor of an old window' => [
+            'days=30&cursor='.urlencode((new LocalizationSkuCursor(30, new \DateTimeImmutable('-3 days'), 1, 'SKU', 'Омск'))->encode()),
+            'invalid_cursor',
+        ];
         yield 'cursor with an impossible date' => [
             'days=30&cursor='.urlencode(base64_encode('[30,"2026-02-30",1,"SKU","Омск"]')),
             'invalid_cursor',

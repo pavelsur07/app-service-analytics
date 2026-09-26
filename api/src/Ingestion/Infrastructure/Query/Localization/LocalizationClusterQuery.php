@@ -50,6 +50,9 @@ final readonly class LocalizationClusterQuery
                 WHERE in_cluster
                 GROUP BY cluster_to
             )
+            -- by_cluster берёт и отменённые строки (ради их обратной логистики),
+            -- а top_sources — только неотменённые: INNER JOIN отсекает кластер,
+            -- где в периоде одни отменённые.
             SELECT c.*, t.top_sources
             FROM by_cluster c
             JOIN top_sources t ON t.cluster_to = c.cluster_to

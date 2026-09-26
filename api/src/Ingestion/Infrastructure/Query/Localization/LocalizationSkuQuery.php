@@ -48,6 +48,9 @@ final readonly class LocalizationSkuQuery
                 WHERE in_cluster
                 GROUP BY marketplace_sku, cluster_to
             )
+            -- by_sku берёт и отменённые строки (ради их обратной логистики),
+            -- а main_source — только неотменённые: INNER JOIN отсекает пару,
+            -- где в периоде одни отменённые.
             SELECT b.*, m.cluster_from AS main_source_cluster
             FROM by_sku b
             JOIN main_source m ON m.marketplace_sku = b.marketplace_sku AND m.cluster_to = b.cluster_to

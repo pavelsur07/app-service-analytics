@@ -134,6 +134,21 @@ final class BuildLocalizationReportActionTest extends KernelTestCase
         self::assertSame(205, $summary->nonlocalForwardCostPerUnitMinor);
     }
 
+    public function testGroupsMadeOnlyOfCancelledPostingsAreNotListed(): void
+    {
+        $this->seedScenario();
+        // Кластер доставки и пара SKU × кластер, где в периоде только
+        // невыкуп: его обратная логистика есть в сводке, но строки нет.
+        $this->sale('P-C2', '400', 4, self::MOSCOW, 'Калининград', status: 'cancelled');
+        $this->expense('P-C2', '400', 59, -700, accrualId: 6);
+
+        $report = $this->build();
+
+        self::assertSame(1200, $report->summary->reverseCostMinor);
+        self::assertSame([self::OMSK, self::FAR_EAST], array_map(static fn ($c): string => $c->clusterTo, $report->clusters));
+        self::assertSame(['100', '200'], array_map(static fn ($s): string => $s->marketplaceSku, $report->skus));
+    }
+
     public function testEmptyPeriodReturnsZeroSummaryInsteadOfFailing(): void
     {
         $report = $this->build();
