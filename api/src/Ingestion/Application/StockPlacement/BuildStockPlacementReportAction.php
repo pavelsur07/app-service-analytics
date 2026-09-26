@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application\StockPlacement;
 
+use App\Identity\Application\Facade\CompanyConnection;
+use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Infrastructure\Query\StockPlacement\StockPlacementCursor;
 use App\Ingestion\Infrastructure\Query\StockPlacement\StockPlacementQuery;
 use App\Ingestion\Infrastructure\Query\StockPlacement\StockPlacementRow;
@@ -22,6 +24,7 @@ final readonly class BuildStockPlacementReportAction
         private Connection $connection,
         private StockPlacementSummaryQuery $summary,
         private StockPlacementQuery $items,
+        private IdentityFacade $identity,
     ) {
     }
 
@@ -34,13 +37,23 @@ final readonly class BuildStockPlacementReportAction
         int $limit,
         ?StockPlacementCursor $cursor = null,
     ): StockPlacementReport {
-        $read = function (Connection $connection) use ($companyId, $today, $targetDays, $leadDays, $status, $limit, $cursor): StockPlacementReport {
-            $summary = self::fetch($connection, $this->summary->build($companyId, $today, $targetDays, $leadDays))[0]
+        // Активные кабинеты Ozon компании — те, по которым ставятся снимки
+        // (ADR-034); company-scoped метод фасада Identity.
+        $snapshotAccounts = array_values(array_map(
+            static fn (CompanyConnection $connection): string => $connection->id,
+            array_filter(
+                $this->identity->listConnections($companyId),
+                static fn (CompanyConnection $connection): bool => 'ozon' === $connection->marketplace && 'active' === $connection->state,
+            ),
+        ));
+
+        $read = function (Connection $connection) use ($companyId, $today, $targetDays, $leadDays, $status, $limit, $cursor, $snapshotAccounts): StockPlacementReport {
+            $summary = self::fetch($connection, $this->summary->build($companyId, $today, $targetDays, $leadDays, $snapshotAccounts))[0]
                 ?? throw new \LogicException('Aggregate query returned no row.');
 
             $items = array_map(
                 StockPlacementQuery::mapRow(...),
-                self::fetch($connection, $this->items->build($companyId, $today, $targetDays, $leadDays, $status, $limit, $cursor)),
+                self::fetch($connection, $this->items->build($companyId, $today, $targetDays, $leadDays, $status, $limit, $cursor, $snapshotAccounts)),
             );
             $hasNext = \count($items) > $limit;
             if ($hasNext) {

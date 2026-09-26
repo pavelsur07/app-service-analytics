@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Query\StockPlacement;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
@@ -18,7 +19,10 @@ final readonly class StockPlacementSummaryQuery
     {
     }
 
-    public function build(string $companyId, \DateTimeImmutable $today, int $targetDays, int $leadDays): QueryBuilder
+    /**
+     * @param list<string> $snapshotAccountIds активные подключения Ozon компании
+     */
+    public function build(string $companyId, \DateTimeImmutable $today, int $targetDays, int $leadDays, array $snapshotAccountIds = []): QueryBuilder
     {
         $source = 'WITH '.StockPlacementSql::placementCte()
             .', rows_ AS (SELECT '.StockPlacementSql::rowSelect().' FROM measured m)'
@@ -44,6 +48,7 @@ final readonly class StockPlacementSummaryQuery
         return $this->connection->createQueryBuilder()
             ->select('summary.*')
             ->from('('.$source.')', 'summary')
-            ->setParameters(StockPlacementSql::parameters($companyId, $today, $targetDays, $leadDays));
+            ->setParameters(StockPlacementSql::parameters($companyId, $today, $targetDays, $leadDays))
+            ->setParameter('snapshotAccounts', $snapshotAccountIds, ArrayParameterType::STRING);
     }
 }

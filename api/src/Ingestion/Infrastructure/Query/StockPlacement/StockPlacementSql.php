@@ -50,7 +50,8 @@ final class StockPlacementSql
 
     /**
      * CTE до `measured` включительно. Параметры: :companyId, :today,
-     * :demandFrom, :windowDays, :minSales, :abcA, :abcB.
+     * :demandFrom, :windowDays, :minSales, :abcA, :abcB и список
+     * :snapshotAccounts (активные подключения Ozon компании — IdentityFacade).
      */
     public static function placementCte(): string
     {
@@ -98,12 +99,15 @@ final class StockPlacementSql
                 UNION
                 SELECT marketplace_account_id, marketplace_sku FROM fresh_requested
                 UNION
-                -- Каталог — из него формируется запрос остатков (ADR-034):
-                -- кабинет с товаром, но без продаж и без полного снимка,
-                -- тоже делает сумму по компании неполной.
+                -- Каталог активных кабинетов Ozon — по ним снимки и ставятся
+                -- (ADR-034): кабинет с товаром, но без продаж и без полного
+                -- снимка, делает сумму по компании неполной. Отключённый
+                -- кабинет снимков не получает и в проверку не входит, иначе
+                -- его SKU навсегда стали бы «неизвестными».
                 SELECT marketplace_account_id, marketplace_sku
                 FROM marketplace_listing
                 WHERE company_id = :companyId
+                  AND marketplace_account_id IN (:snapshotAccounts)
             ),
             known_skus AS (
                 SELECT sa.marketplace_sku

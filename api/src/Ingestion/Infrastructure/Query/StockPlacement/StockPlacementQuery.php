@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Query\StockPlacement;
 
 use App\Ingestion\Infrastructure\Query\DeliverySpeed\DeliverySpeedSql;
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
@@ -23,6 +24,9 @@ final readonly class StockPlacementQuery
     {
     }
 
+    /**
+     * @param list<string> $snapshotAccountIds активные подключения Ozon компании
+     */
     public function build(
         string $companyId,
         \DateTimeImmutable $today,
@@ -31,6 +35,7 @@ final readonly class StockPlacementQuery
         ?string $status,
         int $limit,
         ?StockPlacementCursor $cursor = null,
+        array $snapshotAccountIds = [],
     ): QueryBuilder {
         $source = 'WITH '.DeliverySpeedSql::timedCte().', '.DeliverySpeedSql::skuLostCte().', '
             .StockPlacementSql::placementCte()
@@ -51,6 +56,7 @@ final readonly class StockPlacementQuery
                 ...StockPlacementSql::parameters($companyId, $today, $targetDays, $leadDays),
                 ...StockPlacementSql::deliveryParameters($companyId, $today),
             ])
+            ->setParameter('snapshotAccounts', $snapshotAccountIds, ArrayParameterType::STRING)
             ->orderBy('placement.priority', 'DESC')
             ->addOrderBy('placement.recommended_key', 'DESC')
             ->addOrderBy('placement.marketplace_sku', 'ASC')

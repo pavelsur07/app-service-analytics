@@ -4,13 +4,20 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Ingestion;
 
+use App\Identity\Domain\CompanyRepository;
+use App\Identity\Domain\MarketplaceAccountRepository;
+use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Ingestion\Application\StockPlacement\BuildStockPlacementReportAction;
 use App\Ingestion\Application\StockPlacement\StockPlacementReport;
+use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Ingestion\Domain\StockSnapshotFact;
 use App\Ingestion\Infrastructure\Persistence\DoctrineStockSnapshotWriter;
 use App\Ingestion\Infrastructure\Query\StockPlacement\StockPlacementCursor;
 use App\Ingestion\Infrastructure\Query\StockPlacement\StockPlacementRow;
+use App\Tests\Support\Builder\CompanyBuilder;
+use App\Tests\Support\Builder\MarketplaceAccountBuilder;
+use App\Tests\Support\Builder\MarketplaceListingBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
 use App\Tests\Support\Builder\StockSnapshotFactBuilder;
 use Doctrine\DBAL\Connection;
@@ -181,24 +188,68 @@ final class BuildStockPlacementReportActionTest extends KernelTestCase
         self::assertSame(1, $report->staleAccounts);
     }
 
-    public function testCabinetWithCatalogButNoCompleteSnapshotCountsAsStale(): void
+    public function testActiveCabinetWithCatalogButNoCompleteSnapshotCountsAsStale(): void
     {
+        [$first, $second] = $this->cabinets(MarketplaceAccountState::Active);
+        $this->accountId = $first;
         $this->snapshot(self::TODAY, [$this->stock('A', 5)]);
         $this->sales('A', 28);
-        // Второй кабинет: A в каталоге, продаж и полного снимка нет
-        // (прогон обрывается на последней пачке).
-        /** @var \App\Ingestion\Domain\MarketplaceListingRepository $listings */
-        $listings = self::getContainer()->get(\App\Ingestion\Domain\MarketplaceListingRepository::class);
-        $cabinet = Uuid::v7();
-        $listings->replaceForAccount($this->companyId->toRfc4122(), $cabinet, [
-            \App\Tests\Support\Builder\MarketplaceListingBuilder::aMarketplaceListing()
-                ->withCompanyId($this->companyId)->withMarketplaceAccountId($cabinet)->withMarketplaceSku('A')->build(),
-        ]);
+        // Второй активный кабинет: A в каталоге, продаж и полного снимка
+        // нет (прогон обрывается на последней пачке) — сумма неполна.
+        $this->catalog($second, 'A');
 
         $report = $this->build();
 
         self::assertSame(1, $report->staleAccounts);
         self::assertSame('unknown_stock', $this->bySku($report->items)['A']->status);
+    }
+
+    public function testDisconnectedCabinetCatalogDoesNotMakeStockUnknown(): void
+    {
+        [$first, $second] = $this->cabinets(MarketplaceAccountState::Revoked);
+        $this->accountId = $first;
+        $this->snapshot(self::TODAY, [$this->stock('A', 5)]);
+        $this->sales('A', 28);
+        // Отозванный кабинет снимков не получает — его старый каталог
+        // не должен навсегда делать SKU «неизвестным».
+        $this->catalog($second, 'A');
+
+        $report = $this->build();
+
+        self::assertSame(0, $report->staleAccounts);
+        self::assertSame('deficit', $this->bySku($report->items)['A']->status);
+    }
+
+    /**
+     * Компания с двумя кабинетами Ozon в Identity: первый активный,
+     * второй — в заданном состоянии.
+     *
+     * @return array{Uuid, Uuid}
+     */
+    private function cabinets(MarketplaceAccountState $secondState): array
+    {
+        /** @var CompanyRepository $companies */
+        $companies = self::getContainer()->get(CompanyRepository::class);
+        /** @var MarketplaceAccountRepository $accounts */
+        $accounts = self::getContainer()->get(MarketplaceAccountRepository::class);
+        $company = CompanyBuilder::aCompany()->persistWith($companies);
+        $this->companyId = $company->id();
+        $first = MarketplaceAccountBuilder::aMarketplaceAccount()->withCompany($company)
+            ->withExternalShopId('shop-'.bin2hex(random_bytes(4)))->persistWith($companies, $accounts);
+        $second = MarketplaceAccountBuilder::aMarketplaceAccount()->withCompany($company)
+            ->withExternalShopId('shop-'.bin2hex(random_bytes(4)))->withState($secondState)->persistWith($companies, $accounts);
+
+        return [$first->id(), $second->id()];
+    }
+
+    private function catalog(Uuid $account, string $sku): void
+    {
+        /** @var MarketplaceListingRepository $listings */
+        $listings = self::getContainer()->get(MarketplaceListingRepository::class);
+        $listings->replaceForAccount($this->companyId->toRfc4122(), $account, [
+            MarketplaceListingBuilder::aMarketplaceListing()
+                ->withCompanyId($this->companyId)->withMarketplaceAccountId($account)->withMarketplaceSku($sku)->build(),
+        ]);
     }
 
     public function testSkuOutsideTheSnapshotRequestIsUnknownNotZero(): void
