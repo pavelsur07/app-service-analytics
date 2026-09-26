@@ -13,8 +13,9 @@ use App\Ingestion\Infrastructure\Query\DeliverySpeed\DeliverySpeedSql;
  *
  * - Остаток — последний полный снимок каждого подключения не старше
  *   вчерашнего (снимок раз в сутки), сумма складов кластера (ПВЗ входят).
- *   Остаток SKU известен, только если каждое подключение, где SKU
- *   продаётся или снимается, запросило его свежим полным снимком: иначе
+ *   Остаток SKU известен, только если каждое подключение, где SKU есть
+ *   в каталоге, продаётся или снимается, запросило его свежим полным
+ *   снимком: иначе
  *   сумма по компании неполна, отсутствие строки — «неизвестно», а не ноль
  *   (ADR-034), и строка получает статус unknown_stock без остатка, товара
  *   в пути и рекомендации. Подключение без свежего снимка своих SKU не
@@ -96,6 +97,13 @@ final class StockPlacementSql
                 CROSS JOIN LATERAL jsonb_array_elements_text(r.requested_skus) AS sku(value)
                 UNION
                 SELECT marketplace_account_id, marketplace_sku FROM fresh_requested
+                UNION
+                -- Каталог — из него формируется запрос остатков (ADR-034):
+                -- кабинет с товаром, но без продаж и без полного снимка,
+                -- тоже делает сумму по компании неполной.
+                SELECT marketplace_account_id, marketplace_sku
+                FROM marketplace_listing
+                WHERE company_id = :companyId
             ),
             known_skus AS (
                 SELECT sa.marketplace_sku

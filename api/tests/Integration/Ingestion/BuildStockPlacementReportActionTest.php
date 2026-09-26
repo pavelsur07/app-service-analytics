@@ -181,6 +181,26 @@ final class BuildStockPlacementReportActionTest extends KernelTestCase
         self::assertSame(1, $report->staleAccounts);
     }
 
+    public function testCabinetWithCatalogButNoCompleteSnapshotCountsAsStale(): void
+    {
+        $this->snapshot(self::TODAY, [$this->stock('A', 5)]);
+        $this->sales('A', 28);
+        // Второй кабинет: A в каталоге, продаж и полного снимка нет
+        // (прогон обрывается на последней пачке).
+        /** @var \App\Ingestion\Domain\MarketplaceListingRepository $listings */
+        $listings = self::getContainer()->get(\App\Ingestion\Domain\MarketplaceListingRepository::class);
+        $cabinet = Uuid::v7();
+        $listings->replaceForAccount($this->companyId->toRfc4122(), $cabinet, [
+            \App\Tests\Support\Builder\MarketplaceListingBuilder::aMarketplaceListing()
+                ->withCompanyId($this->companyId)->withMarketplaceAccountId($cabinet)->withMarketplaceSku('A')->build(),
+        ]);
+
+        $report = $this->build();
+
+        self::assertSame(1, $report->staleAccounts);
+        self::assertSame('unknown_stock', $this->bySku($report->items)['A']->status);
+    }
+
     public function testSkuOutsideTheSnapshotRequestIsUnknownNotZero(): void
     {
         // Свежий снимок есть, но F в его запросе не было (товар появился

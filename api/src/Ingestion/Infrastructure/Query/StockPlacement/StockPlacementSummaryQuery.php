@@ -33,9 +33,11 @@ final readonly class StockPlacementSummaryQuery
             .' COALESCE(SUM(recommended), 0)::bigint AS recommended_units,'
             .' COUNT(*) FILTER (WHERE recommended > 0)::bigint AS recommended_positions,'
             ." COUNT(*) FILTER (WHERE status = 'unknown_stock')::bigint AS unknown_positions,"
-            // Подключения, снимавшие остатки в окне, но без свежего полного
-            // снимка: их остаток не учтён — сводка говорит об этом прямо.
-            .' (SELECT COUNT(DISTINCT marketplace_account_id) FROM stock_runs'
+            // Подключения с товаром в каталоге, продажами или снимками, но
+            // без свежего полного снимка: их остаток не учтён — сводка
+            // говорит об этом прямо, в том числе о кабинете, чей снимок
+            // ни разу не завершился.
+            .' (SELECT COUNT(DISTINCT marketplace_account_id) FROM sku_accounts'
             .'   WHERE marketplace_account_id NOT IN (SELECT marketplace_account_id FROM last_run))::bigint AS stale_accounts'
             .' FROM rows_';
 
