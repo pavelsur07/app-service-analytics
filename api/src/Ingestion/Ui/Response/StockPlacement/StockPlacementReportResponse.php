@@ -8,7 +8,7 @@ use OpenApi\Attributes as OA;
 
 #[OA\Schema(required: [
     'today', 'definitions', 'snapshotDate', 'completeSnapshotDays', 'correctionApplied', 'deficitPositions',
-    'deficitUnits', 'surplusPositions', 'recommendedPositions', 'recommendedUnits', 'unknownPositions', 'items', 'nextCursor',
+    'deficitUnits', 'surplusPositions', 'recommendedPositions', 'recommendedUnits', 'unknownPositions', 'staleAccounts', 'items', 'nextCursor',
 ])]
 final readonly class StockPlacementReportResponse
 {
@@ -29,6 +29,8 @@ final readonly class StockPlacementReportResponse
         public int $recommendedPositions,
         public int $recommendedUnits,
         public int $unknownPositions,
+        /** Подключения без свежего полного снимка — их остаток не учтён. */
+        public int $staleAccounts,
         public array $items,
         public ?string $nextCursor,
     ) {

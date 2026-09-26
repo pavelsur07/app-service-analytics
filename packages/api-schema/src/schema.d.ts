@@ -1036,8 +1036,8 @@ export interface components {
             cluster: string;
             /** null — остаток неизвестен: SKU не было в запросе свежего полного снимка (ADR-034). */
             available: number | null;
-            transit: number;
-            requested: number;
+            transit: number | null;
+            requested: number | null;
             sold: number;
             demandMilliPerDay: number;
             coverDays: number | null;
@@ -1066,6 +1066,8 @@ export interface components {
             recommendedPositions: number;
             recommendedUnits: number;
             unknownPositions: number;
+            /** Подключения без свежего полного снимка — их остаток не учтён. */
+            staleAccounts: number;
             items: components["schemas"]["StockPlacementItemResponse"][];
             nextCursor: string | null;
         };

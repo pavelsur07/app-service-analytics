@@ -159,6 +159,28 @@ final class BuildStockPlacementReportActionTest extends KernelTestCase
         self::assertNull($a->recommended);
     }
 
+    public function testSecondCabinetWithAStaleSnapshotMakesTheSkuUnknown(): void
+    {
+        // Один SKU в двух кабинетах: у первого снимок свежий, у второго —
+        // пятидневный. Сумма по компании неполна — не «5», а «неизвестно».
+        $this->snapshot(self::TODAY, [$this->stock('A', 5)]);
+        $second = $this->accountId;
+        $this->accountId = Uuid::v7();
+        $day = (new \DateTimeImmutable(self::TODAY))->modify('-5 days')->format('Y-m-d');
+        $this->snapshot($day, [$this->stock('A', 40, day: $day)]);
+        $this->sales('A', 28);
+        $this->accountId = $second;
+
+        $report = $this->build();
+        $a = $this->bySku($report->items)['A'];
+
+        self::assertSame('unknown_stock', $a->status);
+        self::assertNull($a->available);
+        self::assertNull($a->transit);
+        self::assertNull($a->requested);
+        self::assertSame(1, $report->staleAccounts);
+    }
+
     public function testSkuOutsideTheSnapshotRequestIsUnknownNotZero(): void
     {
         // Свежий снимок есть, но F в его запросе не было (товар появился

@@ -25,8 +25,8 @@ final readonly class StockPlacementItemResponse
         public string $cluster,
         /** null — остаток неизвестен: SKU не было в запросе свежего полного снимка (ADR-034). */
         public ?int $available,
-        public int $transit,
-        public int $requested,
+        public ?int $transit,
+        public ?int $requested,
         public int $sold,
         public int $demandMilliPerDay,
         public ?int $coverDays,

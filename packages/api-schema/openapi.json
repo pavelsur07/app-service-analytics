@@ -4553,10 +4553,12 @@
                         "nullable": true
                     },
                     "transit": {
-                        "type": "integer"
+                        "type": "integer",
+                        "nullable": true
                     },
                     "requested": {
-                        "type": "integer"
+                        "type": "integer",
+                        "nullable": true
                     },
                     "sold": {
                         "type": "integer"
@@ -4623,6 +4625,7 @@
                     "recommendedPositions",
                     "recommendedUnits",
                     "unknownPositions",
+                    "staleAccounts",
                     "items",
                     "nextCursor"
                 ],
@@ -4661,6 +4664,10 @@
                         "type": "integer"
                     },
                     "unknownPositions": {
+                        "type": "integer"
+                    },
+                    "staleAccounts": {
+                        "title": "\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f \u0431\u0435\u0437 \u0441\u0432\u0435\u0436\u0435\u0433\u043e \u043f\u043e\u043b\u043d\u043e\u0433\u043e \u0441\u043d\u0438\u043c\u043a\u0430 \u2014 \u0438\u0445 \u043e\u0441\u0442\u0430\u0442\u043e\u043a \u043d\u0435 \u0443\u0447\u0442\u0451\u043d.",
                         "type": "integer"
                     },
                     "items": {

@@ -13,10 +13,12 @@ use App\Ingestion\Infrastructure\Query\DeliverySpeed\DeliverySpeedSql;
  *
  * - Остаток — последний полный снимок каждого подключения не старше
  *   вчерашнего (снимок раз в сутки), сумма складов кластера (ПВЗ входят).
- *   Остаток известен только для SKU из requested_skus этого снимка:
- *   иначе отсутствие строки — «неизвестно», а не ноль (ADR-034), и строка
- *   получает статус unknown_stock без рекомендации. Подключение без свежего
- *   снимка своих SKU не подтверждает — месячный остаток за текущий не идёт.
+ *   Остаток SKU известен, только если каждое подключение, где SKU
+ *   продаётся или снимается, запросило его свежим полным снимком: иначе
+ *   сумма по компании неполна, отсутствие строки — «неизвестно», а не ноль
+ *   (ADR-034), и строка получает статус unknown_stock без остатка, товара
+ *   в пути и рекомендации. Подключение без свежего снимка своих SKU не
+ *   подтверждает — месячный остаток за текущий не идёт.
  * - Спрос — продажи по кластеру доставки за DEMAND_WINDOW_DAYS полных
  *   дней, заканчивая вчерашним (сегодняшний ещё не закончился), без
  *   отменённых. Поправка на дефицит — дни, когда полный снимок показывает
@@ -73,14 +75,36 @@ final class StockPlacementSql
                   AND snapshot_date BETWEEN :recentFrom AND :today
                 ORDER BY marketplace_account_id, snapshot_date DESC
             ),
-            current_requested AS (
-                SELECT DISTINCT sku.value AS marketplace_sku
+            fresh_requested AS (
+                SELECT DISTINCT lr.marketplace_account_id, sku.value AS marketplace_sku
                 FROM last_run lr
                 JOIN stock_snapshot_run r
                   ON r.company_id = :companyId
                  AND r.marketplace_account_id = lr.marketplace_account_id
                  AND r.snapshot_date = lr.snapshot_date
                 CROSS JOIN LATERAL jsonb_array_elements_text(r.requested_skus) AS sku(value)
+            ),
+            sku_accounts AS (
+                SELECT DISTINCT marketplace_account_id, marketplace_sku
+                FROM sales_fact
+                WHERE company_id = :companyId
+                  AND business_date BETWEEN :demandFrom AND :windowEnd
+                  AND status <> 'cancelled'
+                UNION
+                SELECT DISTINCT r.marketplace_account_id, sku.value
+                FROM stock_runs r
+                CROSS JOIN LATERAL jsonb_array_elements_text(r.requested_skus) AS sku(value)
+                UNION
+                SELECT marketplace_account_id, marketplace_sku FROM fresh_requested
+            ),
+            known_skus AS (
+                SELECT sa.marketplace_sku
+                FROM sku_accounts sa
+                LEFT JOIN fresh_requested fr
+                  ON fr.marketplace_account_id = sa.marketplace_account_id
+                 AND fr.marketplace_sku = sa.marketplace_sku
+                GROUP BY sa.marketplace_sku
+                HAVING BOOL_AND(fr.marketplace_sku IS NOT NULL)
             ),
             stock_now AS (
                 SELECT f.marketplace_sku, f.cluster_name AS cluster,
@@ -135,7 +159,7 @@ final class StockPlacementSql
             pairs AS (
                 SELECT COALESCE(s.marketplace_sku, d.marketplace_sku) AS marketplace_sku,
                        COALESCE(s.cluster, d.cluster) AS cluster,
-                       (s.marketplace_sku IS NOT NULL OR cr.marketplace_sku IS NOT NULL) AS stock_known,
+                       (ks.marketplace_sku IS NOT NULL) AS stock_known,
                        COALESCE(s.available, 0) AS available,
                        COALESCE(s.transit, 0) AS transit,
                        COALESCE(s.requested, 0) AS requested,
@@ -145,8 +169,8 @@ final class StockPlacementSql
                 FULL OUTER JOIN demand_sales d
                   ON d.marketplace_sku = s.marketplace_sku
                  AND d.cluster = s.cluster
-                LEFT JOIN current_requested cr
-                  ON cr.marketplace_sku = COALESCE(s.marketplace_sku, d.marketplace_sku)
+                LEFT JOIN known_skus ks
+                  ON ks.marketplace_sku = COALESCE(s.marketplace_sku, d.marketplace_sku)
             ),
             measured AS (
                 SELECT p.*,
@@ -176,7 +200,9 @@ final class StockPlacementSql
         return <<<'SQL'
             m.marketplace_sku, m.cluster, m.stock_known,
             CASE WHEN m.stock_known THEN m.available END AS available,
-            m.transit, m.requested, m.sold,
+            CASE WHEN m.stock_known THEN m.transit END AS transit,
+            CASE WHEN m.stock_known THEN m.requested END AS requested,
+            m.sold,
             m.zero_days, m.correction_applied, m.abc_class, m.ads_cluster, m.idc_cluster,
             ROUND(m.demand * 1000)::bigint AS demand_milli_per_day,
             CASE WHEN m.stock_known AND m.demand > 0 THEN FLOOR(m.available / m.demand)::int END AS cover_days,

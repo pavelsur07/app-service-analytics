@@ -22,6 +22,7 @@ final readonly class StockPlacementReport
         public int $recommendedPositions,
         public int $recommendedUnits,
         public int $unknownPositions,
+        public int $staleAccounts,
         public array $items,
         public ?StockPlacementCursor $nextCursor,
     ) {

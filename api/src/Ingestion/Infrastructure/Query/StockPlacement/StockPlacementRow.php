@@ -12,8 +12,8 @@ final readonly class StockPlacementRow
         public ?string $name,
         public string $cluster,
         public ?int $available,
-        public int $transit,
-        public int $requested,
+        public ?int $transit,
+        public ?int $requested,
         public int $sold,
         /** Штук в день × 1000 — без float в контракте. */
         public int $demandMilliPerDay,

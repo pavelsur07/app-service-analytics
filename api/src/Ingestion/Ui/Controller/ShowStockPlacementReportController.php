@@ -108,6 +108,7 @@ final class ShowStockPlacementReportController
             recommendedPositions: $report->recommendedPositions,
             recommendedUnits: $report->recommendedUnits,
             unknownPositions: $report->unknownPositions,
+            staleAccounts: $report->staleAccounts,
             items: array_map(
                 static fn (StockPlacementRow $row): StockPlacementItemResponse => new StockPlacementItemResponse(
                     marketplaceSku: $row->marketplaceSku,
