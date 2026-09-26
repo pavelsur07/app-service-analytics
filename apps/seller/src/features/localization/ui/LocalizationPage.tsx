@@ -84,6 +84,12 @@ export function LocalizationPage() {
 
   const nextCursor =
     query.status === 'success' ? (query.data.nextCursor ?? null) : null
+  // Сводка есть и тогда, когда проданных штук нет, а обратная логистика —
+  // есть: невыкупы FBO — cancelled, в штуки они не входят, а в неё — да.
+  const hasReport =
+    query.status === 'success' &&
+    (query.data.summary.quantity > 0 ||
+      (query.data.summary.reverseCostMinor ?? null) !== null)
   // Сервер отвечает 422 на курсор прошлых суток: страница, открытая
   // по старой ссылке, предлагает начать с первой, а не просто ошибку.
   const staleCursor =
@@ -178,7 +184,7 @@ export function LocalizationPage() {
         </Card>
       ) : null}
 
-      {query.status === 'success' && query.data.summary.quantity === 0 ? (
+      {query.status === 'success' && !hasReport ? (
         <Card>
           <StatusPanel
             description="За выбранный период нет заказов Ozon FBO."
@@ -188,10 +194,12 @@ export function LocalizationPage() {
         </Card>
       ) : null}
 
+      {query.status === 'success' && hasReport ? (
+        <Summary report={query.data} />
+      ) : null}
+
       {query.status === 'success' && query.data.summary.quantity > 0 ? (
         <>
-          <Summary report={query.data} />
-
           <div className="overflow-hidden rounded-xl border border-border-default bg-surface-raised shadow-card">
             <div className="flex flex-wrap items-center gap-3 border-b border-border-default px-4 py-3">
               <span className="font-semibold">Кластеры доставки</span>
