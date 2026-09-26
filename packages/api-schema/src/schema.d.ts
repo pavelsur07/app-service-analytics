@@ -372,6 +372,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/delivery-speed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_delivery_speed_report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/localization": {
         parameters: {
             query?: never;
@@ -804,6 +820,82 @@ export interface components {
         ReplacedCredentialsResponse: {
             id: string;
             state: string;
+        };
+        DeliverySpeedDefinitionsResponse: {
+            /** @enum {string} */
+            startEvent: "in_process_at";
+            /** @enum {string} */
+            arrivalEvent: "pickup_point_or_delivered";
+            /** @enum {string} */
+            estimate: "midpoint_of_poll_gap";
+            tickStepSeconds: number;
+            rescanStepSeconds: number;
+            tickWindowDays: number;
+            liveObservationMaxLagHours: number;
+            maturityLagDays: number;
+            minPostings: number;
+        };
+        DeliverySpeedMetricsResponse: {
+            postings: number;
+            arrivedPostings: number;
+            rescanArrivedPostings: number;
+            localArrivedPostings: number;
+            nonlocalArrivedPostings: number;
+            medianDeliverySeconds: number | null;
+            p90DeliverySeconds: number | null;
+            medianAssemblySeconds: number | null;
+            medianTransitSeconds: number | null;
+            medianLocalSeconds: number | null;
+            medianNonlocalSeconds: number | null;
+            sufficientData: boolean;
+        };
+        DeliverySpeedClusterResponse: {
+            clusterTo: string;
+            metrics: components["schemas"]["DeliverySpeedMetricsResponse"];
+            /** Потерянные часы ожидания; null — не хватает локальных или нелокальных отправлений. */
+            lostHours: number | null;
+        };
+        DeliverySpeedRouteResponse: {
+            clusterFrom: string;
+            clusterTo: string;
+            local: boolean;
+            metrics: components["schemas"]["DeliverySpeedMetricsResponse"];
+        };
+        DeliverySpeedSkuResponse: {
+            marketplaceSku: string;
+            offerId: string | null;
+            name: string | null;
+            clusterTo: string;
+            quantity: number;
+            nonlocalQuantity: number;
+            nonlocalArrivedPostings: number;
+            clusterMedianLocalSeconds: number;
+            clusterMedianNonlocalSeconds: number;
+            lostHours: number;
+        };
+        DeliverySpeedBucketResponse: {
+            minDays: number;
+            /** Верхняя граница, не включая; null — без границы. */
+            maxDays: number | null;
+            postings: number;
+            deliveredQuantity: number;
+            resolvedQuantity: number;
+            buyoutRateBps: number | null;
+        };
+        DeliverySpeedReportResponse: {
+            from: string;
+            to: string;
+            definitions: components["schemas"]["DeliverySpeedDefinitionsResponse"];
+            /** Все отправления периода, включая не наблюдавшиеся вживую. */
+            periodPostings: number;
+            summary: components["schemas"]["DeliverySpeedMetricsResponse"];
+            clusters: components["schemas"]["DeliverySpeedClusterResponse"][];
+            clustersTruncated: boolean;
+            routes: components["schemas"]["DeliverySpeedRouteResponse"][];
+            routesTruncated: boolean;
+            items: components["schemas"]["DeliverySpeedSkuResponse"][];
+            nextCursor: string | null;
+            buyoutBySpeed: components["schemas"]["DeliverySpeedBucketResponse"][];
         };
         LocalizationDefinitionsResponse: {
             /**
@@ -2194,6 +2286,50 @@ export interface operations {
             };
             /** @description Площадка не ответила — повторить позже, ключ выпускать не нужно */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_delivery_speed_report: {
+        parameters: {
+            query?: {
+                days?: 30 | 90;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Скорость доставки Ozon FBO */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliverySpeedReportResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректные параметры отчёта */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
