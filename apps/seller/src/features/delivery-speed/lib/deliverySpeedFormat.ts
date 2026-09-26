@@ -20,13 +20,18 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${DAYS.format(seconds / SECONDS_IN_DAY)} дн`
 }
 
-// Потерянные часы ожидания в днях: «20 дн»; без данных — прочерк.
+// Потерянное время ожидания: меньше суток — в часах («5 ч»), иначе в днях
+// с одним знаком («20,3 дн»). Малая, но положительная потеря не должна
+// выглядеть нулём — по ней отсортирован список.
 export function formatLostTime(hours: number | null | undefined): string {
   if (hours === null || hours === undefined) {
     return NO_DATA
   }
+  if (hours < 24) {
+    return `${WHOLE.format(hours)} ч`
+  }
 
-  return `${WHOLE.format(hours / 24)} дн`
+  return `${DAYS.format(hours / 24)} дн`
 }
 
 export function formatBucket(

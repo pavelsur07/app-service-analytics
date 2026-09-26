@@ -15,8 +15,9 @@ describe('форматирование скорости доставки', () =>
     expect(formatDuration(null)).toBe(NO_DATA)
   })
 
-  it('потерянные часы — в целых днях', () => {
-    expect(formatLostTime(486)).toBe('20 дн')
+  it('потерянное время: меньше суток — в часах, иначе в днях', () => {
+    expect(formatLostTime(5)).toBe('5 ч')
+    expect(formatLostTime(486)).toBe('20,3 дн')
     expect(formatLostTime(null)).toBe(NO_DATA)
   })
 
