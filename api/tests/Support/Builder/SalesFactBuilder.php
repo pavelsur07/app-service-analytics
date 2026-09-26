@@ -28,6 +28,7 @@ final class SalesFactBuilder
     private ?string $deliveryCity = 'Брянск';
     private ?string $clusterFrom = 'Москва, МО и Дальние регионы';
     private ?string $clusterTo = 'Москва, МО и Дальние регионы';
+    private ?\DateTimeImmutable $orderedAt;
     private Money $amount;
     private Money $commissionAmount;
     private Uuid $rawDocumentId;
@@ -40,6 +41,7 @@ final class SalesFactBuilder
         $this->amount = Money::ofMinor(216_000, 'RUB');
         $this->commissionAmount = Money::ofMinor(-32_400, 'RUB');
         $this->rawDocumentId = Uuid::v7();
+        $this->orderedAt = new \DateTimeImmutable('2026-06-30 21:01:11', new \DateTimeZone('UTC'));
     }
 
     public static function aSalesFact(): self
@@ -120,6 +122,14 @@ final class SalesFactBuilder
         return $clone;
     }
 
+    public function withOrderedAt(?\DateTimeImmutable $orderedAt): self
+    {
+        $clone = clone $this;
+        $clone->orderedAt = $orderedAt;
+
+        return $clone;
+    }
+
     public function withClusters(?string $clusterFrom, ?string $clusterTo): self
     {
         $clone = clone $this;
@@ -194,6 +204,7 @@ final class SalesFactBuilder
             deliveryCity: $this->deliveryCity,
             clusterFrom: $this->clusterFrom,
             clusterTo: $this->clusterTo,
+            orderedAt: $this->orderedAt,
         );
     }
 

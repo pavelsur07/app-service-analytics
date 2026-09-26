@@ -82,6 +82,12 @@ class SalesFact
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $clusterTo;
 
+    // Момент заказа (in_process_at, UTC) — точка отсчёта скорости доставки.
+    // Неизменен, как и выведенная из него business_date, поэтому в row_hash
+    // не входит.
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    private ?\DateTimeImmutable $orderedAt;
+
     #[ORM\Column(type: 'money_minor_amount')]
     private int $amountMinor;
 
@@ -120,6 +126,7 @@ class SalesFact
         ?string $deliveryCity,
         ?string $clusterFrom,
         ?string $clusterTo,
+        ?\DateTimeImmutable $orderedAt,
         Money $amount,
         Money $commissionAmount,
         Uuid $rawDocumentId,
@@ -141,6 +148,7 @@ class SalesFact
         $this->deliveryCity = $deliveryCity;
         $this->clusterFrom = $clusterFrom;
         $this->clusterTo = $clusterTo;
+        $this->orderedAt = $orderedAt;
         $this->amountMinor = $amount->minorAmount();
         $this->commissionAmountMinor = $commissionAmount->minorAmount();
         $this->currency = $amount->currency();
@@ -174,6 +182,7 @@ class SalesFact
         ?string $deliveryCity = null,
         ?string $clusterFrom = null,
         ?string $clusterTo = null,
+        ?\DateTimeImmutable $orderedAt = null,
     ): self {
         if ($quantity <= 0) {
             throw new \InvalidArgumentException('Sales fact quantity must be positive.');
@@ -182,6 +191,9 @@ class SalesFact
             throw new \InvalidArgumentException('Amount and commission amount must share the same currency.');
         }
         $now = new \DateTimeImmutable();
+        // Колонка — timestamp без зоны и по контракту хранит UTC: приводится
+        // здесь, а не полагается на то, что источник уже прислал UTC.
+        $orderedAt = $orderedAt?->setTimezone(new \DateTimeZone('UTC'));
 
         return new self(
             $companyId,
@@ -198,6 +210,7 @@ class SalesFact
             $deliveryCity,
             $clusterFrom,
             $clusterTo,
+            $orderedAt,
             $amount,
             $commissionAmount,
             $rawDocumentId,
@@ -325,6 +338,11 @@ class SalesFact
     public function clusterTo(): ?string
     {
         return $this->clusterTo;
+    }
+
+    public function orderedAt(): ?\DateTimeImmutable
+    {
+        return $this->orderedAt;
     }
 
     public function amount(): Money
