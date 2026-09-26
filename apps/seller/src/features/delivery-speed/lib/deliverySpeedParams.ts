@@ -46,3 +46,25 @@ export function deliverySpeedSearchWithCursor(
 
   return next
 }
+
+// Вкладка — в адресе, как и период: ссылка на «что довезти первым»
+// открывает именно её, а не первую вкладку.
+const DELIVERY_SPEED_VIEWS = ['clusters', 'items', 'buyout', 'routes'] as const
+
+export type DeliverySpeedView = (typeof DELIVERY_SPEED_VIEWS)[number]
+
+const DEFAULT_VIEW: DeliverySpeedView = 'clusters'
+
+export function parseDeliverySpeedView(raw: string | null): DeliverySpeedView {
+  return DELIVERY_SPEED_VIEWS.find((view) => view === raw) ?? DEFAULT_VIEW
+}
+
+export function deliverySpeedSearchWithView(
+  current: URLSearchParams,
+  view: DeliverySpeedView,
+): URLSearchParams {
+  const next = new URLSearchParams(current)
+  next.set('view', view)
+
+  return next
+}
