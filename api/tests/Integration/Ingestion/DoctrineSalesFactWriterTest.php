@@ -290,6 +290,7 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
                 ->withStatus('awaiting_packaging')
                 ->withWarehouse(42, 'СТАРЫЙ_РФЦ')
                 ->withDeliveryCity('Старый город')
+                ->withRawDocumentId(Uuid::v7())
                 ->build(),
         ]);
 
@@ -403,7 +404,7 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
 
         $writer->upsertAll([$base->withClusters(null, 'Дальний Восток')->build()]);
         $writer->backfillLinks($companyId->toRfc4122(), [
-            $base->withClusters('Омск', 'Старый кластер')->build(),
+            $base->withClusters('Омск', 'Старый кластер')->withRawDocumentId(Uuid::v7())->build(),
         ]);
 
         $row = $connection->fetchAssociative(
@@ -414,5 +415,58 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
         self::assertNotFalse($row);
         self::assertSame('Омск', $row['cluster_from']);
         self::assertSame('Дальний Восток', $row['cluster_to']);
+    }
+
+    /**
+     * Обход raw идёт по возрастанию received_at. Значение первого снимка
+     * не должно пережить снимок, из которого получена текущая версия
+     * строки: кластер прямо меняет метрику локальности.
+     */
+    public function testBackfillTakesSnapshotAttributesFromTheCurrentVersionRaw(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $writer = new DoctrineSalesFactWriter($connection);
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $currentRawId = Uuid::v7();
+        $base = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId('CL-ORDER-1|SKU-1');
+
+        $writer->upsertAll([
+            $base->withRawDocumentId($currentRawId)->withClusters(null, null)->withWarehouse(null, null)->build(),
+        ]);
+
+        // Ранний снимок: склад отгрузки ещё прежний.
+        $writer->backfillLinks($companyId->toRfc4122(), [
+            $base->withRawDocumentId(Uuid::v7())->withClusters('Омск', 'Дальний Восток')->withWarehouse(1, 'ОМСК_РФЦ')->build(),
+        ]);
+        // Снимок текущей версии строки: склад переназначен.
+        $current = $base->withRawDocumentId($currentRawId)
+            ->withClusters('Дальний Восток', 'Дальний Восток')
+            ->withWarehouse(2, 'ХАБАРОВСК_2_РФЦ')
+            ->build();
+        $writer->backfillLinks($companyId->toRfc4122(), [$current]);
+        // Более поздний, не текущий снимок не перетирает значение текущего.
+        $writer->backfillLinks($companyId->toRfc4122(), [
+            $base->withRawDocumentId(Uuid::v7())->withClusters('Новосибирск', 'Дальний Восток')->build(),
+        ]);
+
+        $row = $connection->fetchAssociative(
+            'SELECT cluster_from, cluster_to, warehouse_id, warehouse_name, row_hash, raw_document_id FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$companyId->toRfc4122(), $accountId->toRfc4122(), 'CL-ORDER-1|SKU-1'],
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame('Дальний Восток', $row['cluster_from']);
+        self::assertSame('Дальний Восток', $row['cluster_to']);
+        self::assertSame(2, $row['warehouse_id']);
+        self::assertSame('ХАБАРОВСК_2_РФЦ', $row['warehouse_name']);
+        self::assertSame($current->rowHash(), $row['row_hash']);
+        self::assertSame($currentRawId->toRfc4122(), $row['raw_document_id']);
     }
 }

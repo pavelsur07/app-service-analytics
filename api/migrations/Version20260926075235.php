@@ -17,10 +17,12 @@ use Doctrine\Migrations\AbstractMigration;
  * метаданных таблицы, без перезаписи строк и долгой блокировки записи.
  * Совместима со старым кодом: он колонок не знает и не читает.
  *
- * Порядок после применения — тот же, что у Version20260926060431:
- * сразу бэкфилл app:ingestion:backfill-ozon-posting-statuses по каждому
- * Ozon-подключению с --from не позже первого raw строк окна пересчёта
- * и --to = сегодня. Он заполняет кластеры и переводит row_hash на формулу
+ * Порядок после применения — сразу бэкфилл
+ * app:ingestion:backfill-ozon-posting-statuses по каждому Ozon-подключению
+ * по всей истории: --from = дата первого raw ozon_posting_fbo_list
+ * подключения, --to = сегодня. Окна пересчёта мало: отчёт смотрит до
+ * 90 дней, а строки старше рескана синхронизация уже не перепишет, и их
+ * кластеры заполнит только бэкфилл. Он же переводит row_hash на формулу
  * с кластерами, и синхронизация не переписывает окно как мнимую
  * корректировку задним числом (ADR-006).
  * Проверка — сразу после бэкфилла. Она находит строки, которые бэкфилл
@@ -43,6 +45,16 @@ use Doctrine\Migrations\AbstractMigration;
  *         COALESCE(warehouse_id::text, '<null>'), COALESCE(warehouse_name, '<null>'),
  *         COALESCE(delivery_city, '<null>'),
  *         COALESCE(cluster_from, '<null>'), COALESCE(cluster_to, '<null>')), 'UTF8')), 'hex')
+ *   LIMIT 50;
+ *
+ * Вторая проверка — полнота кластеров за период отчёта (90 дней). Ожидаемо
+ * пусто; непустой результат — отправления, в raw которых кластеров нет
+ * (сверить с raw) или raw вне диапазона бэкфилла:
+ *
+ *   SELECT company_id, marketplace_account_id, source_row_id FROM sales_fact
+ *   WHERE business_date >= (now() AT TIME ZONE 'Europe/Moscow')::date - 89
+ *     AND status <> 'cancelled'
+ *     AND (cluster_from IS NULL OR cluster_to IS NULL)
  *   LIMIT 50;
  *
  * down() рабочий: колонки восстанавливаются из raw той же командой.
