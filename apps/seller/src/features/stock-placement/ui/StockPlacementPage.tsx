@@ -304,6 +304,10 @@ function Notices({ report }: { report: StockPlacementReportResponse }) {
     notices.push(
       `У ${QUANTITY.format(report.staleAccounts)} подключ. нет свежего полного снимка — остаток ${QUANTITY.format(report.unknownPositions)} поз. неизвестен, рекомендации по ним нет. Проверьте раздел «Подключения».`,
     )
+  } else if (report.unknownPositions > 0) {
+    notices.push(
+      `Остаток ${QUANTITY.format(report.unknownPositions)} поз. неизвестен: товара не было в последнем снимке — например, карточка появилась позже. В итоги «Дефицит» и «Довезти» они не входят; остаток появится со следующим снимком.`,
+    )
   }
   if (!report.correctionApplied) {
     notices.push(
