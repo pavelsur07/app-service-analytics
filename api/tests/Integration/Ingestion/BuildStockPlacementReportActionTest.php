@@ -204,6 +204,22 @@ final class BuildStockPlacementReportActionTest extends KernelTestCase
         self::assertSame('unknown_stock', $this->bySku($report->items)['A']->status);
     }
 
+    public function testBrokenCabinetWithCatalogStaysStaleWithoutSales(): void
+    {
+        [$first, $second] = $this->cabinets(MarketplaceAccountState::Broken);
+        $this->accountId = $first;
+        $this->snapshot(self::TODAY, [$this->stock('A', 5)]);
+        $this->sales('A', 28);
+        // Сломанный кабинет (401/403): снимков и продаж больше нет, а товар
+        // на складах у него есть — остаток неизвестен, а не пропал молча.
+        $this->catalog($second, 'A');
+
+        $report = $this->build();
+
+        self::assertSame(1, $report->staleAccounts);
+        self::assertSame('unknown_stock', $this->bySku($report->items)['A']->status);
+    }
+
     public function testDisconnectedCabinetCatalogDoesNotMakeStockUnknown(): void
     {
         [$first, $second] = $this->cabinets(MarketplaceAccountState::Revoked);

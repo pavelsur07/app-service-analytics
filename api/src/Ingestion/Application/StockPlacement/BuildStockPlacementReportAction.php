@@ -37,13 +37,15 @@ final readonly class BuildStockPlacementReportAction
         int $limit,
         ?StockPlacementCursor $cursor = null,
     ): StockPlacementReport {
-        // Активные кабинеты Ozon компании — те, по которым ставятся снимки
-        // (ADR-034); company-scoped метод фасада Identity.
+        // Кабинеты Ozon компании, кроме отозванных самим продавцом:
+        // сломанный (401/403) снимков не получает, но товар на складах у него
+        // есть — его остаток неизвестен, и это надо показать, а не потерять
+        // (ADR-034, тихая ошибка). Company-scoped метод фасада Identity.
         $snapshotAccounts = array_values(array_map(
             static fn (CompanyConnection $connection): string => $connection->id,
             array_filter(
                 $this->identity->listConnections($companyId),
-                static fn (CompanyConnection $connection): bool => 'ozon' === $connection->marketplace && 'active' === $connection->state,
+                static fn (CompanyConnection $connection): bool => 'ozon' === $connection->marketplace && 'revoked' !== $connection->state,
             ),
         ));
 
