@@ -15,8 +15,11 @@ use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonStockFetcher;
 use App\Ingestion\Domain\StockSnapshotFact;
 use App\Ingestion\Domain\StockSnapshotRepository;
+use App\Ingestion\Infrastructure\Persistence\StockSnapshotRawReader;
 use App\Ingestion\Infrastructure\Query\AccountListingSkusQuery;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -47,6 +50,15 @@ final readonly class FetchOzonStocksHandler
 {
     private const string TIMEZONE = 'Europe/Moscow';
 
+    /**
+     * Ожидание каталога нового кабинета: 12 попыток через 10 минут — два
+     * часа. Своя повторная постановка, а не повторы очереди: их пять за
+     * минуты, и сообщение ушло бы в failed раньше, чем догрузится
+     * каталог большого кабинета, а пропущенный день снимка не вернуть.
+     */
+    public const int MAX_CATALOG_WAITS = 12;
+    private const int CATALOG_WAIT_MS = 10 * 60 * 1000;
+
     public function __construct(
         private IdentityFacade $identityFacade,
         private OzonAccountBrokenLogger $brokenLogger,
@@ -54,7 +66,9 @@ final readonly class FetchOzonStocksHandler
         private OzonStockFetcher $client,
         private OzonAnalyticsStocksParser $parser,
         private MarketplaceRawDocumentRepository $rawDocuments,
+        private StockSnapshotRawReader $rawReader,
         private StockSnapshotRepository $snapshots,
+        private MessageBusInterface $bus,
     ) {
     }
 
@@ -77,8 +91,16 @@ final readonly class FetchOzonStocksHandler
         if ([] === $skus) {
             if ($message->retryIfCatalogEmpty) {
                 // Первый снимок нового кабинета: каталог ещё грузится.
-                // Повтор очереди, а не тихий выход — иначе день потерян.
-                throw new \RuntimeException("Каталог подключения {$message->marketplaceAccountId} ещё не загружен — первый снимок остатков отложен до повтора.");
+                // Ждём, а не выходим тихо — иначе день потерян.
+                if ($message->attempt >= self::MAX_CATALOG_WAITS) {
+                    throw new \RuntimeException("Каталог подключения {$message->marketplaceAccountId} так и не загрузился — первый снимок остатков не сделан.");
+                }
+                $this->bus->dispatch(
+                    new FetchOzonStocksMessage($message->companyId, $message->marketplaceAccountId, true, $message->attempt + 1),
+                    [new DelayStamp(self::CATALOG_WAIT_MS)],
+                );
+
+                return;
             }
 
             // Ночной прогон по пустому каталогу — запрашивать нечего;
@@ -128,8 +150,9 @@ final readonly class FetchOzonStocksHandler
     }
 
     /**
-     * Факты дня — из raw-документов прогона по одному (company-scoped
-     * чтение тела, ADR-024): одновременно в памяти одна пачка.
+     * Факты дня — из raw-документов прогона по одному: метаданные всех
+     * одним запросом до транзакции замены дня, тела — лениво внутри неё
+     * (StockSnapshotRawReader). В памяти одна пачка.
      *
      * @param list<Uuid> $rawDocumentIds
      *
@@ -142,11 +165,19 @@ final readonly class FetchOzonStocksHandler
         \DateTimeImmutable $snapshotDate,
         array $rawDocumentIds,
     ): \Generator {
-        foreach ($rawDocumentIds as $rawDocumentId) {
-            $body = $this->rawDocuments->body($companyIdValue, $accountId, $rawDocumentId);
-            foreach ($this->parser->parse($body, $companyId, $accountId, $snapshotDate, $rawDocumentId) as $fact) {
-                yield $fact;
+        $rows = $this->rawReader->rows($companyIdValue, $accountId, $rawDocumentIds);
+
+        return (function () use ($rows, $companyIdValue, $companyId, $accountId, $snapshotDate): \Generator {
+            foreach ($rows as $row) {
+                $id = $row['id'] ?? null;
+                if (!\is_string($id)) {
+                    throw new \UnexpectedValueException('Raw document row must carry its id.');
+                }
+                $body = $this->rawReader->body($companyIdValue, $row);
+                foreach ($this->parser->parse($body, $companyId, $accountId, $snapshotDate, Uuid::fromString($id)) as $fact) {
+                    yield $fact;
+                }
             }
-        }
+        })();
     }
 }

@@ -25,6 +25,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
+use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
  * Прогон снимка остатков (ADR-034): пачки SKU каталога, полнота снимка,
@@ -93,20 +95,34 @@ final class FetchOzonStocksHandlerTest extends KernelTestCase
         self::assertFalse($this->markExists($container, $account));
     }
 
-    public function testFirstSnapshotRetriesWhileTheCatalogIsStillLoading(): void
+    public function testFirstSnapshotWaitsForTheCatalogAndGivesUpLoudly(): void
     {
         $container = $this->bootedContainer();
         $account = $this->account($container);
         $this->fetcher($container, []);
-
-        // Первый снимок нового кабинета: каталог ещё грузится — повтор,
-        // а не тихий выход, иначе первый день потерян (ADR-034).
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('ещё не загружен');
-
         /** @var FetchOzonStocksHandler $handler */
         $handler = $container->get(FetchOzonStocksHandler::class);
-        ($handler)(new FetchOzonStocksMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), retryIfCatalogEmpty: true));
+        $companyId = $account->companyId()->toRfc4122();
+        $accountId = $account->id()->toRfc4122();
+
+        // Каталог ещё грузится — ждём сами, с задержкой, а не повторами
+        // очереди: их мало, и пропущенный день снимка не вернуть (ADR-034).
+        ($handler)(new FetchOzonStocksMessage($companyId, $accountId, retryIfCatalogEmpty: true));
+
+        $transport = $container->get('messenger.transport.async_ingestion');
+        self::assertInstanceOf(InMemoryTransport::class, $transport);
+        $sent = [...$transport->getSent()];
+        self::assertCount(1, $sent);
+        $next = $sent[0]->getMessage();
+        self::assertInstanceOf(FetchOzonStocksMessage::class, $next);
+        self::assertSame(2, $next->attempt);
+        self::assertTrue($next->retryIfCatalogEmpty);
+        self::assertInstanceOf(DelayStamp::class, $sent[0]->last(DelayStamp::class));
+
+        // Каталог так и не появился — громкий отказ, а не тишина.
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('так и не загрузился');
+        ($handler)(new FetchOzonStocksMessage($companyId, $accountId, true, FetchOzonStocksHandler::MAX_CATALOG_WAITS));
     }
 
     public function testEmptyCatalogRequestsNothing(): void

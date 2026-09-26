@@ -19,6 +19,8 @@ final readonly class FetchOzonStocksMessage
          * (иначе первый день снимка потерян, а задним числом его не взять).
          */
         public bool $retryIfCatalogEmpty = false,
+        /** Номер попытки дождаться каталога (FetchOzonStocksHandler::MAX_CATALOG_WAITS). */
+        public int $attempt = 1,
     ) {
     }
 }
