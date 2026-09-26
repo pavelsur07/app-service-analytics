@@ -302,6 +302,7 @@ Ingestion дополнительно:
 | Сценарий | `Application` | `Infrastructure/Query` | `Ui/Response` |
 |---|---|---|---|
 | Выкуп (`Buyout`) | `BuildBuyoutDailySeriesAction`, `BuildBuyoutRateReportAction`, `BuyoutRateReport`, `BuyoutRateSku`, `BuyoutRateSummary` | `Buyout*`, `UnclassifiedOzonBuyout*`, `OzonPostingRawHistory*` | `Buyout*` |
+| Скорость доставки (`DeliverySpeed`) | `BuildDeliverySpeedReportAction`, `DeliverySpeedReport` | `DeliverySpeed*` | `DeliverySpeed*` |
 | Локализация (`Localization`) | `BuildLocalizationReportAction`, `LocalizationReport` | `Localization*` | `Localization*` |
 | Юнит-экономика (`UnitEconomics`) | `BuildUnitEconomicsAction`, `UnitEconomicsExpense`, `UnitEconomicsReport`, `UnitEconomicsSku` | `UnitEconomics*`, `ExpenseCoverageQuery` | `UnitEconomics*` |
 | Себестоимость (`ListingCosts`) | `CorrectListingCostAction`, `ListListingCostsAction`, `ListingCostsPage`, `SetListingCostAction` | `ListingCost*` | `ListingCost*` |
@@ -459,6 +460,12 @@ apps/seller/
 доля локальных продаж по кластерам Ozon и логистика на штуку. Бэкенд —
 `Ingestion/Infrastructure/Query/Localization`, план и определения —
 `docs/plan/ozon-localization-report.md`.
+
+Отчёт «Доставка» — `apps/seller/src/features/delivery-speed/` (`/delivery-speed`):
+время от заказа до прибытия по кластерам и маршрутам, потерянные дни ожидания
+из-за раскладки и выкуп по скорости. Бэкенд —
+`Ingestion/Infrastructure/Query/DeliverySpeed`, план и метод оценки моментов —
+`docs/plan/ozon-delivery-speed-report.md`.
 
 Внутри фичи — `ui/`, `model/` (хуки и запросы), `lib/` (чистые функции).
 Три папки, не больше.

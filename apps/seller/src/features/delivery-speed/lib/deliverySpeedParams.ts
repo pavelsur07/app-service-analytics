@@ -1,0 +1,48 @@
+import type { paths } from '../../../api/schema'
+
+type Query = NonNullable<
+  paths['/api/companies/{companyId}/delivery-speed']['get']['parameters']['query']
+>
+
+export type DeliverySpeedDays = NonNullable<Query['days']>
+
+export const DELIVERY_SPEED_WINDOWS = [
+  30, 90,
+] as const satisfies readonly DeliverySpeedDays[]
+
+const DEFAULT_DAYS: DeliverySpeedDays = 30
+
+export function parseDeliverySpeedDays(raw: string | null): DeliverySpeedDays {
+  const value = Number(raw)
+
+  return (
+    DELIVERY_SPEED_WINDOWS.find((window) => window === value) ?? DEFAULT_DAYS
+  )
+}
+
+export function deliverySpeedSearchWithDays(
+  current: URLSearchParams,
+  days: DeliverySpeedDays,
+): URLSearchParams {
+  const next = new URLSearchParams(current)
+  next.set('days', String(days))
+  next.delete('cursor')
+
+  return next
+}
+
+export function deliverySpeedSearchWithCursor(
+  current: URLSearchParams,
+  cursor: string | null,
+): URLSearchParams {
+  const next = new URLSearchParams(current)
+  next.set('days', String(parseDeliverySpeedDays(current.get('days'))))
+
+  if (cursor === null) {
+    next.delete('cursor')
+  } else {
+    next.set('cursor', cursor)
+  }
+
+  return next
+}
