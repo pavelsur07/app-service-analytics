@@ -12,7 +12,7 @@ final readonly class LocalizationSourceClusterResponse
     public function __construct(
         public string $cluster,
         public int $quantity,
-        public int $shareBps,
+        public ?int $shareBps,
     ) {
     }
 }

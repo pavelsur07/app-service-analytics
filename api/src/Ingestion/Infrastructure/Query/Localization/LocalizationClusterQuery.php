@@ -47,7 +47,7 @@ final readonly class LocalizationClusterQuery
             by_cluster AS (
                 SELECT cluster_to, {$metrics}
                 FROM lines
-                WHERE has_clusters
+                WHERE in_cluster
                 GROUP BY cluster_to
             )
             SELECT c.*, t.top_sources
@@ -77,6 +77,7 @@ final readonly class LocalizationClusterQuery
         if (!\is_array($decoded)) {
             throw new \UnexpectedValueException('Localization top sources must be a JSON array.');
         }
+        $metrics = LocalizationMetrics::fromRow($row);
         foreach ($decoded as $source) {
             if (!\is_array($source)) {
                 throw new \UnexpectedValueException('Localization top source must be an object.');
@@ -84,13 +85,13 @@ final readonly class LocalizationClusterQuery
             $sources[] = new LocalizationSourceCluster(
                 cluster: LocalizationMetrics::string($source['cluster'] ?? null),
                 quantity: LocalizationMetrics::int($source['quantity'] ?? null),
-                shareBps: LocalizationMetrics::int($source['share_bps'] ?? null),
+                shareBps: $metrics->sufficientData ? LocalizationMetrics::int($source['share_bps'] ?? null) : null,
             );
         }
 
         return new LocalizationClusterRow(
             clusterTo: LocalizationMetrics::string($row['cluster_to']),
-            metrics: LocalizationMetrics::fromRow($row),
+            metrics: $metrics,
             topSources: $sources,
         );
     }

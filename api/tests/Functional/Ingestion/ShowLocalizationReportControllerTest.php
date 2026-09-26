@@ -74,7 +74,15 @@ final class ShowLocalizationReportControllerTest extends WebTestCase
         yield 'limit below minimum' => ['limit=0', 'invalid_limit'];
         yield 'garbage cursor' => ['cursor=%%%', 'invalid_cursor'];
         yield 'cursor of another period' => [
-            'days=30&cursor='.urlencode((new LocalizationSkuCursor(90, 1, 'SKU', 'Омск'))->encode()),
+            'days=30&cursor='.urlencode((new LocalizationSkuCursor(90, new \DateTimeImmutable('2026-07-30'), 1, 'SKU', 'Омск'))->encode()),
+            'invalid_cursor',
+        ];
+        yield 'cursor from the future' => [
+            'days=30&cursor='.urlencode((new LocalizationSkuCursor(30, new \DateTimeImmutable('+2 days'), 1, 'SKU', 'Омск'))->encode()),
+            'invalid_cursor',
+        ];
+        yield 'cursor with an impossible date' => [
+            'days=30&cursor='.urlencode(base64_encode('[30,"2026-02-30",1,"SKU","Омск"]')),
             'invalid_cursor',
         ];
     }

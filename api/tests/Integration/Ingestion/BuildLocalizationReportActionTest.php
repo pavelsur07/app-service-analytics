@@ -58,9 +58,10 @@ final class BuildLocalizationReportActionTest extends KernelTestCase
         // 1005 коп. / 10 шт. = 100,5 → 101: половина от нуля.
         self::assertSame(101, $summary->localForwardCostPerUnitMinor);
         // (2400 + 60) / 12 = 205; 3 штуки без начислений в знаменатель не входят,
-        // а обратная логистика 300 — в числитель.
+        // а обратная логистика — в числитель.
         self::assertSame(205, $summary->nonlocalForwardCostPerUnitMinor);
-        self::assertSame(300, $summary->reverseCostMinor);
+        // 300 по доставленной + 200 по отменённой.
+        self::assertSame(500, $summary->reverseCostMinor);
         self::assertSame('RUB', $summary->currency);
         self::assertTrue($summary->sufficientData);
     }
@@ -84,12 +85,15 @@ final class BuildLocalizationReportActionTest extends KernelTestCase
         self::assertSame(6000, $omsk->topSources[0]->shareBps);
         self::assertSame(self::OMSK, $omsk->topSources[1]->cluster);
 
-        // Две штуки — ниже порога: ни доли, ни логистики на штуку.
+        // Две штуки — ниже порога: ни одной доли, ни логистики на штуку.
         $farEast = $report->clusters[1];
         self::assertSame(self::FAR_EAST, $farEast->clusterTo);
         self::assertFalse($farEast->metrics->sufficientData);
         self::assertNull($farEast->metrics->localShareBps);
+        self::assertNull($farEast->metrics->chargedShareBps);
         self::assertNull($farEast->metrics->nonlocalForwardCostPerUnitMinor);
+        self::assertSame(2, $farEast->topSources[0]->quantity);
+        self::assertNull($farEast->topSources[0]->shareBps);
     }
 
     public function testSkuPagesGoByNonlocalQuantityWithoutGapsOrDuplicates(): void
@@ -130,6 +134,19 @@ final class BuildLocalizationReportActionTest extends KernelTestCase
         self::assertSame(205, $summary->nonlocalForwardCostPerUnitMinor);
     }
 
+    public function testEmptyPeriodReturnsZeroSummaryInsteadOfFailing(): void
+    {
+        $report = $this->build();
+
+        self::assertSame(0, $report->summary->quantity);
+        self::assertNull($report->summary->localShareBps);
+        self::assertNull($report->summary->reverseCostMinor);
+        self::assertNull($report->summary->currency);
+        self::assertSame([], $report->clusters);
+        self::assertSame([], $report->skus);
+        self::assertNull($report->nextCursor);
+    }
+
     public function testMixedCurrenciesInOneGroupFailLoudly(): void
     {
         $this->sale('P-CUR', '300', 10, self::OMSK, self::OMSK);
@@ -153,8 +170,11 @@ final class BuildLocalizationReportActionTest extends KernelTestCase
         $this->expense('P-N1', '100', 59, -300, accrualId: 4);
         // 3 нелокальных, логистика ещё не начислена.
         $this->sale('P-N2', '100', 3, self::MOSCOW, self::OMSK);
-        // Отменённая и вне периода — не в отчёте.
+        // Отменённая (у Ozon FBO так же выглядит невыкуп) — не в штуках и
+        // долях, но её обратная логистика 200 в сумме обратной есть.
         $this->sale('P-C1', '100', 5, self::OMSK, self::OMSK, status: 'cancelled');
+        $this->expense('P-C1', '100', 45, -200, accrualId: 5);
+        // Вне периода — не в отчёте.
         $this->sale('P-OLD', '100', 7, self::OMSK, self::OMSK, date: '2026-06-30');
         // Кластеров нет — в штуках, но не в доле.
         $this->sale('P-U1', '100', 2, null, null);

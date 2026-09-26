@@ -806,6 +806,24 @@ export interface components {
             state: string;
         };
         LocalizationDefinitionsResponse: {
+            /**
+             * Локальная продажа — кластер отгрузки совпадает с кластером доставки.
+             * @enum {string}
+             */
+            localSale: "cluster_from_equals_cluster_to";
+            /**
+             * Период — по дате заказа в часовом поясе площадки.
+             * @enum {string}
+             */
+            periodBasis: "order_date_europe_moscow";
+            excludedStatuses: string[];
+            /** Обратная логистика считается и по исключённым: невыкуп у Ozon FBO — тоже cancelled. */
+            reverseIncludesExcluded: boolean;
+            /**
+             * Логистика на штуку — только по штукам, у которых прямая логистика уже начислена.
+             * @enum {string}
+             */
+            perUnitBasis: "charged_units_only";
             minQuantity: number;
             /** @enum {string} */
             rounding: "half_away_from_zero";
@@ -829,7 +847,7 @@ export interface components {
         LocalizationSourceClusterResponse: {
             cluster: string;
             quantity: number;
-            shareBps: number;
+            shareBps: number | null;
         };
         LocalizationClusterResponse: {
             clusterTo: string;

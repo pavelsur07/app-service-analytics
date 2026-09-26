@@ -62,15 +62,18 @@ final class ShowLocalizationReportController
             return self::invalid('invalid_limit', 'limit must be an integer between 1 and 200.');
         }
 
+        $today = (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))->setTime(0, 0);
+        $to = $today;
         $cursor = null;
         if ($request->query->has('cursor')) {
             $cursor = LocalizationSkuCursor::decode((string) $request->query->get('cursor'));
-            if (null === $cursor || $cursor->days !== $days) {
+            if (null === $cursor || $cursor->days !== $days || $cursor->to > $today) {
                 return self::invalid('invalid_cursor', 'cursor is malformed.');
             }
+            // Следующая страница — того же окна, что и первая, даже если
+            // между запросами наступили новые сутки.
+            $to = $cursor->to;
         }
-
-        $to = (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))->setTime(0, 0);
         $from = $to->modify('-'.($days - 1).' days');
         $report = ($this->buildReport)($companyId, $from, $to, $days, $limit, $cursor);
 
@@ -78,6 +81,11 @@ final class ShowLocalizationReportController
             from: $from->format('Y-m-d'),
             to: $to->format('Y-m-d'),
             definitions: new LocalizationDefinitionsResponse(
+                localSale: LocalizationSql::LOCAL_SALE,
+                periodBasis: LocalizationSql::PERIOD_BASIS,
+                excludedStatuses: LocalizationSql::EXCLUDED_STATUSES,
+                reverseIncludesExcluded: true,
+                perUnitBasis: LocalizationSql::PER_UNIT_BASIS,
                 minQuantity: LocalizationSql::MIN_QUANTITY,
                 rounding: LocalizationSql::ROUNDING,
                 forwardFeeTypeIds: LocalizationSql::FORWARD_FEE_TYPES,

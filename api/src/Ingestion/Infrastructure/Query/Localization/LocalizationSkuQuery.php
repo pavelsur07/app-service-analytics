@@ -45,7 +45,7 @@ final readonly class LocalizationSkuQuery
             by_sku AS (
                 SELECT marketplace_sku, cluster_to, {$metrics}
                 FROM lines
-                WHERE has_clusters
+                WHERE in_cluster
                 GROUP BY marketplace_sku, cluster_to
             )
             SELECT b.*, m.cluster_from AS main_source_cluster

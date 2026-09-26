@@ -65,7 +65,7 @@ final readonly class BuildLocalizationReportAction
                 clustersTruncated: $clustersTruncated,
                 skus: $skus,
                 nextCursor: $last instanceof LocalizationSkuRow
-                    ? new LocalizationSkuCursor($days, $last->metrics->nonlocalQuantity, $last->marketplaceSku, $last->clusterTo)
+                    ? new LocalizationSkuCursor($days, $to, $last->metrics->nonlocalQuantity, $last->marketplaceSku, $last->clusterTo)
                     : null,
             );
         };

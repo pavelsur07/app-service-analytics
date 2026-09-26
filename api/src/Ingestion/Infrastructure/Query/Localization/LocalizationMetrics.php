@@ -7,7 +7,8 @@ namespace App\Ingestion\Infrastructure\Query\Localization;
 /**
  * Показатели группы строк отчёта «Локализация» (LocalizationSql::metricsSelect).
  * Доли — basis points, деньги — минорные единицы в $currency. Ниже
- * LocalizationSql::MIN_QUANTITY доля и логистика на штуку не отдаются:
+ * LocalizationSql::MIN_QUANTITY ни одна доля и ни одна логистика на штуку
+ * не отдаются:
  * при трёх продажах они шумят, а экран выдал бы шум за вывод.
  */
 final readonly class LocalizationMetrics
@@ -52,7 +53,7 @@ final readonly class LocalizationMetrics
             nonlocalQuantity: self::int($row['nonlocal_quantity']),
             localShareBps: $sufficient ? self::nullableInt($row['local_share_bps']) : null,
             chargedQuantity: self::int($row['charged_quantity']),
-            chargedShareBps: self::nullableInt($row['charged_share_bps']),
+            chargedShareBps: $sufficient ? self::nullableInt($row['charged_share_bps']) : null,
             localForwardCostPerUnitMinor: $localCharged >= LocalizationSql::MIN_QUANTITY
                 ? self::nullableInt($row['local_forward_cost_per_unit_minor'])
                 : null,
