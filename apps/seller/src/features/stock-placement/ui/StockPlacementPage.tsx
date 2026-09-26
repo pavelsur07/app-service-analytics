@@ -306,7 +306,7 @@ function Notices({ report }: { report: StockPlacementReportResponse }) {
     )
   } else if (report.unknownPositions > 0) {
     notices.push(
-      `Остаток ${QUANTITY.format(report.unknownPositions)} поз. неизвестен: товара не было в последнем снимке — например, карточка появилась позже. В итоги «Дефицит» и «Довезти» они не входят; остаток появится со следующим снимком.`,
+      `Остаток ${QUANTITY.format(report.unknownPositions)} поз. неизвестен: товара не было в последнем снимке: карточка появилась после него или товар ушёл из каталога, а продажи за окно остались. В итоги «Дефицит» и «Довезти» они не входят.`,
     )
   }
   if (!report.correctionApplied) {
