@@ -540,4 +540,39 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
         self::assertSame('2026-07-10 08:15:00', $row['ordered_at']);
         self::assertSame('delivered', $row['status']);
     }
+
+    public function testFilledOrderMomentSurvivesBackfillAndChangedUpsert(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $writer = new DoctrineSalesFactWriter($connection);
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $key = [$companyId->toRfc4122(), $accountId->toRfc4122(), 'ORDERED-2|SKU-1'];
+        $base = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId('ORDERED-2|SKU-1');
+        // Москва +03:00 — в базе обязан оказаться UTC.
+        $orderedAt = new \DateTimeImmutable('2026-07-10 11:15:00', new \DateTimeZone('Europe/Moscow'));
+
+        $writer->upsertAll([$base->withStatus('awaiting_packaging')->withOrderedAt($orderedAt)->build()]);
+        // Исторический снимок с другим моментом не перетирает заполненный.
+        $writer->backfillLinks($companyId->toRfc4122(), [
+            $base->withOrderedAt(new \DateTimeImmutable('2026-01-01 00:00:00'))->withRawDocumentId(Uuid::v7())->build(),
+        ]);
+        // Изменился статус (хэш другой), а момента в снимке нет — не стирается.
+        $writer->upsertAll([$base->withStatus('delivered')->withOrderedAt(null)->build()]);
+
+        $row = $connection->fetchAssociative(
+            'SELECT ordered_at, status FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            $key,
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame('delivered', $row['status']);
+        self::assertSame('2026-07-10 08:15:00', $row['ordered_at']);
+    }
 }

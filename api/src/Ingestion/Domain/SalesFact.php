@@ -191,6 +191,9 @@ class SalesFact
             throw new \InvalidArgumentException('Amount and commission amount must share the same currency.');
         }
         $now = new \DateTimeImmutable();
+        // Колонка — timestamp без зоны и по контракту хранит UTC: приводится
+        // здесь, а не полагается на то, что источник уже прислал UTC.
+        $orderedAt = $orderedAt?->setTimezone(new \DateTimeZone('UTC'));
 
         return new self(
             $companyId,
