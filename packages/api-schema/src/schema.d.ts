@@ -372,6 +372,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/localization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_localization_report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/buyout-rate/{sku}/daily": {
         parameters: {
             query?: never;
@@ -788,6 +804,55 @@ export interface components {
         ReplacedCredentialsResponse: {
             id: string;
             state: string;
+        };
+        LocalizationDefinitionsResponse: {
+            minQuantity: number;
+            /** @enum {string} */
+            rounding: "half_away_from_zero";
+            forwardFeeTypeIds: number[];
+            reverseFeeTypeIds: number[];
+        };
+        LocalizationMetricsResponse: {
+            quantity: number;
+            clusteredQuantity: number;
+            localQuantity: number;
+            nonlocalQuantity: number;
+            localShareBps: number | null;
+            chargedQuantity: number;
+            chargedShareBps: number | null;
+            localForwardCostPerUnitMinor: number | null;
+            nonlocalForwardCostPerUnitMinor: number | null;
+            reverseCostMinor: number | null;
+            currency: string | null;
+            sufficientData: boolean;
+        };
+        LocalizationSourceClusterResponse: {
+            cluster: string;
+            quantity: number;
+            shareBps: number;
+        };
+        LocalizationClusterResponse: {
+            clusterTo: string;
+            metrics: components["schemas"]["LocalizationMetricsResponse"];
+            topSources: components["schemas"]["LocalizationSourceClusterResponse"][];
+        };
+        LocalizationSkuResponse: {
+            marketplaceSku: string;
+            offerId: string | null;
+            name: string | null;
+            clusterTo: string;
+            mainSourceCluster: string;
+            metrics: components["schemas"]["LocalizationMetricsResponse"];
+        };
+        LocalizationReportResponse: {
+            from: string;
+            to: string;
+            definitions: components["schemas"]["LocalizationDefinitionsResponse"];
+            summary: components["schemas"]["LocalizationMetricsResponse"];
+            clusters: components["schemas"]["LocalizationClusterResponse"][];
+            clustersTruncated: boolean;
+            items: components["schemas"]["LocalizationSkuResponse"][];
+            nextCursor: string | null;
         };
         BuyoutDailyPointResponse: {
             date: string;
@@ -2111,6 +2176,50 @@ export interface operations {
             };
             /** @description Площадка не ответила — повторить позже, ключ выпускать не нужно */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_localization_report: {
+        parameters: {
+            query?: {
+                days?: 30 | 90;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Локализация продаж Ozon FBO по кластерам */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalizationReportResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректные параметры отчёта */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
