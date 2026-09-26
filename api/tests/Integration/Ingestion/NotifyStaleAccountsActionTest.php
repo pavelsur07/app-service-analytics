@@ -205,7 +205,9 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
 
         $alerted = ($this->action($container, $this->recordingMailer()))();
 
-        self::assertSame(
+        // Порядок кабинетов в письме не важен, а два кабинета, созданные
+        // в одну секунду, приходят из запроса в любом порядке.
+        self::assertEqualsCanonicalizing(
             [
                 $this->key($account, MarketplaceReportType::OzonAnalyticsStocks),
                 $this->key($stale, MarketplaceReportType::OzonAnalyticsStocks),
