@@ -22,6 +22,27 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
 {
     private const int CHUNK_SIZE = 500;
 
+    /**
+     * Строка после COALESCE совпадает с разобранным историческим фактом
+     * во всех полях row_hash (SalesFact::computeRowHash) — значит,
+     * EXCLUDED.row_hash и есть хэш этой строки по текущей формуле.
+     * Нужен, чтобы расширение формулы хэша (атрибуты доставки) не
+     * превращалось в мнимую корректировку задним числом: без обновления
+     * хэша первая синхронизация переписала бы всё окно с новым
+     * last_updated_at, хотя данные площадки не менялись (ADR-006).
+     */
+    private const string SNAPSHOT_MATCHES_EXCLUDED = <<<'SQL'
+        sales_fact.status = EXCLUDED.status
+        AND sales_fact.quantity = EXCLUDED.quantity
+        AND sales_fact.amount_minor = EXCLUDED.amount_minor
+        AND sales_fact.commission_amount_minor = EXCLUDED.commission_amount_minor
+        AND COALESCE(sales_fact.posting_number, EXCLUDED.posting_number) IS NOT DISTINCT FROM EXCLUDED.posting_number
+        AND COALESCE(sales_fact.order_number, EXCLUDED.order_number) IS NOT DISTINCT FROM EXCLUDED.order_number
+        AND COALESCE(sales_fact.warehouse_id, EXCLUDED.warehouse_id) IS NOT DISTINCT FROM EXCLUDED.warehouse_id
+        AND COALESCE(sales_fact.warehouse_name, EXCLUDED.warehouse_name) IS NOT DISTINCT FROM EXCLUDED.warehouse_name
+        AND COALESCE(sales_fact.delivery_city, EXCLUDED.delivery_city) IS NOT DISTINCT FROM EXCLUDED.delivery_city
+        SQL;
+
     public function __construct(
         private Connection $connection,
     ) {
@@ -83,6 +104,7 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             $params["deliveryCity{$i}"] = $fact->deliveryCity();
         }
 
+        $snapshotMatches = self::SNAPSHOT_MATCHES_EXCLUDED;
         $sql = <<<SQL
             INSERT INTO sales_fact
                 (company_id, marketplace_account_id, source_row_id, business_date, status, marketplace_sku,
@@ -92,6 +114,7 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
             VALUES {$this->joinValues($valuesSql)}
             ON CONFLICT (company_id, marketplace_account_id, source_row_id)
             DO UPDATE SET
+                row_hash = CASE WHEN {$snapshotMatches} THEN EXCLUDED.row_hash ELSE sales_fact.row_hash END,
                 posting_number = COALESCE(sales_fact.posting_number, EXCLUDED.posting_number),
                 order_number = COALESCE(sales_fact.order_number, EXCLUDED.order_number),
                 warehouse_id = COALESCE(sales_fact.warehouse_id, EXCLUDED.warehouse_id),
@@ -102,6 +125,7 @@ final readonly class DoctrineSalesFactWriter implements SalesFactRepository
                OR (sales_fact.warehouse_id IS NULL AND EXCLUDED.warehouse_id IS NOT NULL)
                OR (sales_fact.warehouse_name IS NULL AND EXCLUDED.warehouse_name IS NOT NULL)
                OR (sales_fact.delivery_city IS NULL AND EXCLUDED.delivery_city IS NOT NULL)
+               OR (sales_fact.row_hash IS DISTINCT FROM EXCLUDED.row_hash AND {$snapshotMatches})
             SQL;
 
         $this->connection->executeStatement($sql, $params);

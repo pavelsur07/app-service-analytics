@@ -304,4 +304,84 @@ final class DoctrineSalesFactWriterTest extends KernelTestCase
         self::assertSame('СТАРЫЙ_РФЦ', $row['warehouse_name']);
         self::assertSame('Брянск', $row['delivery_city']);
     }
+
+    /**
+     * Строка, записанная до расширения формулы row_hash: после бэкфилла
+     * следующая синхронизация того же ответа не должна выглядеть как
+     * корректировка задним числом (ADR-006: last_updated_at — её признак).
+     */
+    public function testBackfillRefreshesLegacyRowHashSoNextSyncIsNoOp(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $writer = new DoctrineSalesFactWriter($connection);
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $key = [$companyId->toRfc4122(), $accountId->toRfc4122(), 'GEO-HASH-1|SKU-1'];
+        $current = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId('GEO-HASH-1|SKU-1')
+            ->withStatus('delivered');
+
+        $writer->upsertAll([$current->withWarehouse(null, null)->withDeliveryCity(null)->build()]);
+        $connection->executeStatement(
+            "UPDATE sales_fact SET row_hash = 'legacy-formula', last_updated_at = '2026-01-01 00:00:00' WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?",
+            $key,
+        );
+
+        $fact = $current->build();
+        $writer->backfillLinks($companyId->toRfc4122(), [$fact]);
+        $writer->upsertAll([$fact]);
+
+        $row = $connection->fetchAssociative(
+            'SELECT row_hash, last_updated_at, delivery_city FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            $key,
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame($fact->rowHash(), $row['row_hash']);
+        self::assertSame('2026-01-01 00:00:00', $row['last_updated_at']);
+        self::assertSame('Брянск', $row['delivery_city']);
+    }
+
+    /**
+     * Исторический ответ со старым статусом не совпадает со строкой —
+     * его хэш не принадлежит текущему снимку и не записывается.
+     */
+    public function testBackfillKeepsRowHashWhenHistoricalSnapshotDiffers(): void
+    {
+        self::bootKernel();
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $writer = new DoctrineSalesFactWriter($connection);
+
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $key = [$companyId->toRfc4122(), $accountId->toRfc4122(), 'GEO-HASH-2|SKU-1'];
+        $base = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)
+            ->withMarketplaceAccountId($accountId)
+            ->withSourceRowId('GEO-HASH-2|SKU-1');
+
+        $writer->upsertAll([$base->withStatus('delivered')->withDeliveryCity(null)->build()]);
+        $connection->executeStatement(
+            "UPDATE sales_fact SET row_hash = 'legacy-formula' WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?",
+            $key,
+        );
+
+        $writer->backfillLinks($companyId->toRfc4122(), [$base->withStatus('awaiting_packaging')->build()]);
+
+        $row = $connection->fetchAssociative(
+            'SELECT status, row_hash, delivery_city FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            $key,
+        );
+
+        self::assertNotFalse($row);
+        self::assertSame('delivered', $row['status']);
+        self::assertSame('legacy-formula', $row['row_hash']);
+        self::assertSame('Брянск', $row['delivery_city']);
+    }
 }
