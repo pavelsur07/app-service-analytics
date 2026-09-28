@@ -73,7 +73,7 @@ final class ShowUnitEconomicsController
         schema: new OA\Schema(
             type: 'string',
             default: 'revenue',
-            enum: ['delivered', 'revenue', 'commission', 'expenses', 'cost', 'margin'],
+            enum: ['delivered', 'revenue', 'commission', 'expenses', 'advertising', 'cost', 'margin'],
         ),
     )]
     #[OA\Parameter(
@@ -196,6 +196,7 @@ final class ShowUnitEconomicsController
                     commissionMinor: $sku->commissionMinor,
                     expenses: array_map(self::expense(...), $sku->expenses),
                     expensesTotalMinor: $sku->expensesTotalMinor,
+                    advertisingMinor: $sku->advertisingMinor,
                     deductionsTotalMinor: $sku->deductionsTotalMinor,
                     marginMinor: $sku->marginMinor,
                     costTotalMinor: $sku->costTotalMinor,
@@ -207,6 +208,8 @@ final class ShowUnitEconomicsController
             ),
             cabinetExpenses: array_map(self::expense(...), $report->cabinetExpenses),
             cabinetExpensesTotalMinor: $report->cabinetExpensesTotalMinor,
+            advertisingUnallocatedMinor: $report->advertisingUnallocatedMinor,
+            advertisingUnreconciledDays: $report->advertisingUnreconciledDays,
             daysWithoutExpenses: $report->daysWithoutExpenses,
             nextCursor: $report->nextCursor,
         ));

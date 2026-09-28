@@ -19,6 +19,8 @@ final readonly class UnitEconomicsSkuRow
         public int $commissionAmountMinor,
         public int $orderedQuantity,
         public int $expensesTotalMinor,
+        /** Реклама по SKU из SKU-отчётов площадки, отрицательная (ADR-035). */
+        public int $advertisingTotalMinor,
         /** Себестоимость проданного, отрицательная — как и прочие вычеты. */
         public int $costTotalMinor,
         /** Сколько проданных штук пришлось на дни без заданной цены. */

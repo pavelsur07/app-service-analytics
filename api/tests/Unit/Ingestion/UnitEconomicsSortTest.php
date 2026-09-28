@@ -30,6 +30,7 @@ final class UnitEconomicsSortTest extends TestCase
             commissionAmountMinor: -33,
             orderedQuantity: 44,
             expensesTotalMinor: -55,
+            advertisingTotalMinor: -99,
             costTotalMinor: -66,
             quantityWithoutCost: 77,
             costCorrectedAt: null,
@@ -44,6 +45,7 @@ final class UnitEconomicsSortTest extends TestCase
             'delivered_amount_minor' => 22,
             'commission_amount_minor' => -33,
             'expenses_total_minor' => -55,
+            'advertising_total_minor' => -99,
             'cost_total_minor' => -66,
             'margin_minor' => 88,
         ];

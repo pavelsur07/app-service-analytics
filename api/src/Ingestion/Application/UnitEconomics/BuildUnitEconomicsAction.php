@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application\UnitEconomics;
 
+use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Domain\OzonFeeTypeNames;
+use App\Ingestion\Infrastructure\Query\UnitEconomics\AdvertisingReconciliationQuery;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\ExpenseCoverageQuery;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsCursor;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsDirection;
@@ -23,12 +25,19 @@ use App\Shared\Domain\ValueObject\Money;
  *
  * Денежная арифметика — через Money (ADR-004): величины разных валют
  * не складываются, и проверка живёт в самом типе, а не в этом сценарии.
+ *
+ * Реклама (ADR-035 п. 6): у товара — из SKU-отчётов площадки как есть;
+ * в кабинете «Оплата за клик» из `by-day` заменена остатком, не
+ * разнесённым по товарам, — итог 41 минус реклама по SKU за период.
+ * Реклама по SKU плюс остаток равна итогу 41: отчёт по-прежнему
+ * сходится с финансовым отчётом площадки.
  */
 final readonly class BuildUnitEconomicsAction
 {
     public function __construct(
         private UnitEconomicsQuery $query,
         private ExpenseCoverageQuery $coverage,
+        private AdvertisingReconciliationQuery $reconciliation,
     ) {
     }
 
@@ -58,8 +67,12 @@ final readonly class BuildUnitEconomicsAction
         $cabinetRows = $this->query->cabinetExpenses($companyId, $from, $to)->executeQuery()->fetchAllAssociative();
         $cabinet = array_map(UnitEconomicsQuery::mapExpenseRow(...), $cabinetRows);
 
+        /** @var list<array<string, mixed>> $advertisingRows */
+        $advertisingRows = $this->query->advertisingTotals($companyId, $from, $to)->executeQuery()->fetchAllAssociative();
+
         $breakdown = $this->breakdown($companyId, $from, $to, $rows);
-        $currency = $this->singleCurrency($rows, $cabinet);
+        $currency = $this->singleCurrency($rows, $cabinet, $advertisingRows);
+        $unallocated = $this->unallocatedAdvertising($advertisingRows, $currency);
 
         $skus = [];
         foreach ($rows as $row) {
@@ -71,7 +84,12 @@ final readonly class BuildUnitEconomicsAction
         return new UnitEconomicsReport(
             skus: $skus,
             cabinetExpenses: $this->grouped($cabinet),
-            cabinetExpensesTotalMinor: $this->total($cabinet),
+            // Остаток рекламы — часть расходов кабинета: без него итог
+            // кабинета потерял бы «Оплату за клик», не разнесённую
+            // по товарам.
+            cabinetExpensesTotalMinor: Money::ofMinor($this->total($cabinet), $currency)->plus($unallocated)->minorAmount(),
+            advertisingUnallocatedMinor: $unallocated->minorAmount(),
+            advertisingUnreconciledDays: $this->unreconciledDays($companyId, $from, $to),
             currency: $currency,
             // Покрытие считается по всему окну, а не по странице: дыра
             // в расходах — свойство периода, и на второй странице она
@@ -144,11 +162,12 @@ final readonly class BuildUnitEconomicsAction
         $revenue = Money::ofMinor($row->deliveredAmountMinor, $row->currency);
         $commission = Money::ofMinor($row->commissionAmountMinor, $row->currency);
         $expensesTotal = Money::ofMinor($row->expensesTotalMinor, $row->currency);
+        $advertising = Money::ofMinor($row->advertisingTotalMinor, $row->currency);
 
-        // Сложение, а не вычитание: комиссия и расходы приходят
-        // от площадки отрицательными, и «вычесть расход» означало бы
-        // гадать, каким знаком он пришёл.
-        $deductions = $commission->plus($expensesTotal);
+        // Сложение, а не вычитание: комиссия, расходы и реклама приходят
+        // отрицательными, и «вычесть расход» означало бы гадать, каким
+        // знаком он пришёл.
+        $deductions = $commission->plus($expensesTotal)->plus($advertising);
 
         $margin = $revenue->plus($deductions);
         $cost = Money::ofMinor($row->costTotalMinor, $row->currency);
@@ -164,6 +183,7 @@ final readonly class BuildUnitEconomicsAction
             commissionMinor: $commission->minorAmount(),
             expenses: $this->grouped($expenses),
             expensesTotalMinor: $expensesTotal->minorAmount(),
+            advertisingMinor: $advertising->minorAmount(),
             deductionsTotalMinor: $deductions->minorAmount(),
             marginMinor: $margin->minorAmount(),
             costTotalMinor: $cost->minorAmount(),
@@ -228,14 +248,99 @@ final readonly class BuildUnitEconomicsAction
     }
 
     /**
+     * Итог 41 из `by-day` минус реклама по SKU за период (ADR-035 п. 6).
+     * Положительный остаток тоже возможен и показывается: реклама по SKU
+     * за последние дни уже есть, а начисление в `by-day` ещё не пришло.
+     *
+     * @param list<array<string, mixed>> $advertisingRows
+     */
+    private function unallocatedAdvertising(array $advertisingRows, string $currency): Money
+    {
+        $unallocated = Money::ofMinor(0, $currency);
+        foreach ($advertisingRows as $row) {
+            $rowCurrency = self::string($row['currency']);
+            $byDay = Money::ofMinor(self::int($row['by_day_minor']), $rowCurrency);
+            $sku = Money::ofMinor(self::int($row['sku_minor']), $rowCurrency);
+            $unallocated = $unallocated->plus($byDay->minus($sku));
+        }
+
+        return $unallocated;
+    }
+
+    /**
+     * Дни окна, где хоть одна пара «кампания × день» не сошлась
+     * со списанием `by-day` сверх допуска (ADR-035 п. 5): копейка
+     * на строку SKU — площадка округляет каждую строку отчёта отдельно.
+     *
+     * Сегодняшний день не сверяется: начисление за него `by-day` отдаёт
+     * только завтра, и сверка показывала бы расхождение каждый день —
+     * а тревога, которая врёт ежедневно, перестаёт читаться.
+     */
+    private function unreconciledDays(string $companyId, \DateTimeImmutable $from, \DateTimeImmutable $to): int
+    {
+        /** @var list<array<string, mixed>> $pairs */
+        $pairs = $this->reconciliation->pairs($companyId, $from, $to)->executeQuery()->fetchAllAssociative();
+        if (\count($pairs) >= AdvertisingReconciliationQuery::MAX_ROWS) {
+            throw new \RuntimeException('Сверка рекламы упёрлась в потолок строк — результат был бы неполным.');
+        }
+
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable())->format('Y-m-d');
+        $days = [];
+        foreach ($pairs as $pair) {
+            $day = self::string($pair['business_date']);
+            if ($day >= $today) {
+                continue;
+            }
+
+            $currency = self::string($pair['currency']);
+            $difference = Money::ofMinor(self::int($pair['by_day_minor']), $currency)
+                ->minus(Money::ofMinor(self::int($pair['sku_minor']), $currency));
+            $tolerance = self::int($pair['sku_rows']);
+
+            if (abs($difference->minorAmount()) > $tolerance) {
+                $days[$day] = true;
+            }
+        }
+
+        return \count($days);
+    }
+
+    private static function string(mixed $value): string
+    {
+        if (!\is_string($value)) {
+            throw new \UnexpectedValueException('Expected a string value in an advertising row.');
+        }
+
+        return $value;
+    }
+
+    /**
+     * SUM в PostgreSQL — numeric, и DBAL отдаёт его строкой.
+     */
+    private static function int(mixed $value): int
+    {
+        if (\is_int($value)) {
+            return $value;
+        }
+
+        if (\is_string($value) && 1 === preg_match('/^-?\d+$/', $value)) {
+            return (int) $value;
+        }
+
+        throw new \UnexpectedValueException('Expected an integer value in an advertising row.');
+    }
+
+    /**
      * @param list<UnitEconomicsSkuRow>     $rows
      * @param list<UnitEconomicsExpenseRow> $cabinet
+     * @param list<array<string, mixed>>    $advertisingRows
      */
-    private function singleCurrency(array $rows, array $cabinet): string
+    private function singleCurrency(array $rows, array $cabinet, array $advertisingRows): string
     {
         $currencies = array_unique(array_merge(
             array_map(static fn (UnitEconomicsSkuRow $row): string => $row->currency, $rows),
             array_map(static fn (UnitEconomicsExpenseRow $row): string => $row->currency, $cabinet),
+            array_map(static fn (array $row): string => self::string($row['currency']), $advertisingRows),
         ));
 
         if (\count($currencies) > 1) {

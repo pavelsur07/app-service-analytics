@@ -12,7 +12,7 @@ namespace App\Ingestion\Infrastructure\Query\UnitEconomics;
  * сортировку от инъекции. Значение из HTTP становится этим типом
  * на границе (контроллер) или не становится вовсе — тогда 422.
  *
- * Сортируются только числовые показатели: все шесть колонок целые
+ * Сортируются только числовые показатели: все семь колонок целые
  * (минорные единицы и штуки) и все обёрнуты COALESCE в подзапросе,
  * поэтому NULL в порядке не участвует и NULLS FIRST/LAST не нужен.
  */
@@ -22,6 +22,7 @@ enum UnitEconomicsSort: string
     case Revenue = 'revenue';
     case Commission = 'commission';
     case Expenses = 'expenses';
+    case Advertising = 'advertising';
     case Cost = 'cost';
     case Margin = 'margin';
 
@@ -39,6 +40,7 @@ enum UnitEconomicsSort: string
             self::Revenue => 'delivered_amount_minor',
             self::Commission => 'commission_amount_minor',
             self::Expenses => 'expenses_total_minor',
+            self::Advertising => 'advertising_total_minor',
             self::Cost => 'cost_total_minor',
             self::Margin => 'margin_minor',
         };
@@ -59,6 +61,7 @@ enum UnitEconomicsSort: string
             self::Revenue => $row->deliveredAmountMinor,
             self::Commission => $row->commissionAmountMinor,
             self::Expenses => $row->expensesTotalMinor,
+            self::Advertising => $row->advertisingTotalMinor,
             self::Cost => $row->costTotalMinor,
             self::Margin => $row->marginMinor,
         };

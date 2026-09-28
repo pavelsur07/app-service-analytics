@@ -21,7 +21,20 @@ final readonly class UnitEconomicsReport
     public function __construct(
         public array $skus,
         public array $cabinetExpenses,
+        /** Расходы кабинета вместе с остатком рекламы. */
         public int $cabinetExpensesTotalMinor,
+        /**
+         * «Оплата за клик» из `by-day`, не разнесённая по товарам:
+         * итог 41 минус реклама по SKU за период (ADR-035 п. 6).
+         * Копейки построчного округления площадки видны здесь всегда.
+         */
+        public int $advertisingUnallocatedMinor,
+        /**
+         * Дни окна (кроме сегодняшнего), где реклама по SKU не сошлась
+         * со списанием `by-day` сверх допуска (ADR-035 п. 5). Ноль —
+         * реклама по товарам совпадает с финансовым отчётом.
+         */
+        public int $advertisingUnreconciledDays,
         public string $currency,
         /**
          * Сколько дней окна показывают маржу, посчитанную без расходов:

@@ -8,9 +8,11 @@ use App\Identity\Domain\Company;
 use App\Identity\Domain\CompanyRepository;
 use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
+use App\Ingestion\Domain\AdSkuExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceExpenseFactRepository;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Shared\Domain\ValueObject\Money;
+use App\Tests\Support\Builder\AdSkuExpenseFactBuilder;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
@@ -48,12 +50,29 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
             ->withMarketplaceSku('own')
             ->withAmount(Money::ofMinor(-999_999, 'RUB'))
             ->persistWith($this->expenseFacts());
+        // И реклама чужой компании: на тот же артикул и «Оплатой
+        // за клик» в кабинете (ADR-035).
+        AdSkuExpenseFactBuilder::anAdSkuExpenseFact()
+            ->withBusinessDate($this->today())
+            ->withMarketplaceSku('own')
+            ->withAmount(Money::ofMinor(-888_888, 'RUB'))
+            ->persistWith($this->adSkuFacts());
+        MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
+            ->withBusinessDate($this->today())
+            ->withoutSku()
+            ->withFeeTypeId(41)
+            ->withUnitNumber('14275771')
+            ->withAmount(Money::ofMinor(-777_777, 'RUB'))
+            ->persistWith($this->expenseFacts());
 
         $payload = $this->get($client, $company);
 
         self::assertCount(1, $payload['skus']);
         self::assertSame(0, $payload['skus'][0]['expensesTotalMinor']);
+        self::assertSame(0, $payload['skus'][0]['advertisingMinor']);
         self::assertSame(0, $payload['cabinetExpensesTotalMinor']);
+        self::assertSame(0, $payload['advertisingUnallocatedMinor']);
+        self::assertSame(0, $payload['advertisingUnreconciledDays']);
     }
 
     public function testWindowBeyondTheLimitIsRejected(): void
@@ -152,7 +171,7 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
     }
 
     /**
-     * @return array{skus: list<array<string, mixed>>, cabinetExpenses: list<array<string, mixed>>, cabinetExpensesTotalMinor: int}
+     * @return array{skus: list<array<string, mixed>>, cabinetExpenses: list<array<string, mixed>>, cabinetExpensesTotalMinor: int, advertisingUnallocatedMinor: int, advertisingUnreconciledDays: int}
      */
     private function get(KernelBrowser $client, Company $company): array
     {
@@ -163,7 +182,7 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
         $content = $client->getResponse()->getContent();
         self::assertIsString($content);
 
-        /** @var array{skus: list<array<string, mixed>>, cabinetExpenses: list<array<string, mixed>>, cabinetExpensesTotalMinor: int} $payload */
+        /** @var array{skus: list<array<string, mixed>>, cabinetExpenses: list<array<string, mixed>>, cabinetExpensesTotalMinor: int, advertisingUnallocatedMinor: int, advertisingUnreconciledDays: int} $payload */
         $payload = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
 
         return $payload;
@@ -212,6 +231,14 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
         $salesFacts = static::getContainer()->get(SalesFactRepository::class);
 
         return $salesFacts;
+    }
+
+    private function adSkuFacts(): AdSkuExpenseFactRepository
+    {
+        /** @var AdSkuExpenseFactRepository $facts */
+        $facts = static::getContainer()->get(AdSkuExpenseFactRepository::class);
+
+        return $facts;
     }
 
     private function expenseFacts(): MarketplaceExpenseFactRepository

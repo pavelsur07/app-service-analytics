@@ -20,6 +20,13 @@ namespace App\Ingestion\Domain;
  */
 final class OzonFeeTypeNames
 {
+    /**
+     * «Оплата за клик»: одна строка на рекламную кампанию в день,
+     * `unit_number` — идентификатор кампании. Итог кабинета, с которым
+     * сверяется реклама по SKU (ADR-035 п. 5).
+     */
+    public const int PAY_PER_CLICK = 41;
+
     private const array NAMES = [
         1 => 'Эквайринг',
         2 => 'Обратная магистраль',
