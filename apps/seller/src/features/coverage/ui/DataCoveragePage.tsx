@@ -9,17 +9,19 @@ import {
 } from '../../../../../../packages/ui/src'
 import { useConnections } from '../../../shared/model/useConnections'
 import {
-  canGoBack,
-  canGoForward,
   cellTitle,
-  currentMonth,
   dayNumber,
-  monthFromParam,
-  monthLabel,
-  shiftMonth,
   statusView,
   type CoverageStatus,
 } from '../lib/coverage'
+import {
+  canGoBack,
+  canGoForward,
+  currentMonth,
+  monthFromParam,
+  monthLabel,
+  shiftMonth,
+} from '../../../shared/lib/month'
 import { useDataCoverage } from '../model/useDataCoverage'
 
 type CoverageRow = components['schemas']['DataCoverageRowResponse']

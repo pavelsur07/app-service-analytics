@@ -7,13 +7,15 @@ import {
   TriangleAlert,
   Wallet,
 } from 'lucide-react'
-import { useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { ApiError } from '../../../api/ApiError'
 import { Button, Card, StatusPanel } from '../../../../../../packages/ui/src'
 import { formatMinorAmount } from '../../../shared/lib/formatMinorAmount'
+import { TABS, parseTab, searchWithTab } from '../lib/tab'
 import { PAGE_SIZES, WINDOWS, parsePageSize } from '../lib/tableParams'
 import { useUnitEconomics } from '../model/useUnitEconomics'
 import { useUnitEconomicsView } from '../model/useUnitEconomicsView'
+import { AccrualReconciliationPanel } from './AccrualReconciliationPanel'
 import {
   UnitEconomicsTable,
   UnitEconomicsTableSkeleton,
@@ -37,9 +39,11 @@ export function UnitEconomicsPage() {
   const { companyId } = useParams<{ companyId: string }>()
   const view = useUnitEconomicsView(companyId ?? '')
   const [cabinetOpen, setCabinetOpen] = useState(false)
+  const [search, setSearch] = useSearchParams()
+  const tab = parseTab(search.get('view'))
 
   const query = useUnitEconomics(companyId ?? '', view.params, {
-    enabled: companyId !== undefined,
+    enabled: companyId !== undefined && tab === 'units',
   })
 
   useEffect(() => {
@@ -59,6 +63,56 @@ export function UnitEconomicsPage() {
           tone="negative"
         />
       </Card>
+    )
+  }
+
+  // Вкладка — в адресе, как на экране локализации: ссылкой на сверку
+  // можно поделиться, «назад» в браузере возвращает на юнит-экономику.
+  const tabs = (
+    <div
+      aria-label="Раздел"
+      className="flex flex-wrap items-center gap-1"
+      role="tablist"
+    >
+      {TABS.map((item) => (
+        <Button
+          // Панель с id есть только у сверки: юнит-экономика — это
+          // остальная страница целиком, а не отдельный блок.
+          aria-controls={
+            item.tab === 'reconciliation'
+              ? 'unit-economics-panel-reconciliation'
+              : undefined
+          }
+          aria-selected={item.tab === tab}
+          id={`unit-economics-tab-${item.tab}`}
+          key={item.tab}
+          onClick={() => {
+            setSearch(searchWithTab(search, item.tab), { replace: true })
+          }}
+          role="tab"
+          size="compact"
+          type="button"
+          variant={item.tab === tab ? 'primary' : 'ghost'}
+        >
+          {item.label}
+        </Button>
+      ))}
+    </div>
+  )
+
+  if (tab === 'reconciliation') {
+    return (
+      <div className="flex flex-col gap-4">
+        <h1 className="text-xl font-semibold">Юнит-экономика</h1>
+        {tabs}
+        <div
+          aria-labelledby="unit-economics-tab-reconciliation"
+          id="unit-economics-panel-reconciliation"
+          role="tabpanel"
+        >
+          <AccrualReconciliationPanel companyId={companyId} />
+        </div>
+      </div>
     )
   }
 
@@ -85,6 +139,8 @@ export function UnitEconomicsPage() {
           ))}
         </div>
       </div>
+
+      {tabs}
 
       {/* Прямо на экране, а не в справке: цифры — по дате начисления,
           как в отчёте «Начисления» кабинета, а не по дате заказа, и это

@@ -1697,6 +1697,64 @@
                 }
             }
         },
+        "/api/companies/{companyId}/unit-economics/reconciliation": {
+            "get": {
+                "operationId": "get_ingestion_unit_economics_reconciliation",
+                "parameters": [
+                    {
+                        "name": "month",
+                        "in": "query",
+                        "description": "\u041c\u0435\u0441\u044f\u0446 \u043d\u0430\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u0439, Y-m; \u043f\u043e \u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e \u043f\u0440\u043e\u0448\u043b\u044b\u0439 (\u043f\u043e \u041c\u043e\u0441\u043a\u0432\u0435)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u041d\u0430\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u044f \u043c\u0435\u0441\u044f\u0446\u0430 \u043f\u043e \u0433\u0440\u0443\u043f\u043f\u0430\u043c \u043a\u0430\u0431\u0438\u043d\u0435\u0442\u0430 \u0438 \u0438\u0442\u043e\u0433 \u043a \u043d\u0430\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u044e",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccrualReconciliationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0439 \u043c\u0435\u0441\u044f\u0446",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/companies/{companyId}/delivery-speed": {
             "get": {
                 "operationId": "get_ingestion_delivery_speed_report",
@@ -3770,6 +3828,109 @@
                 },
                 "type": "object"
             },
+            "UnitEconomicsExpenseResponse": {
+                "required": [
+                    "feeTypeId",
+                    "name",
+                    "amountMinor"
+                ],
+                "properties": {
+                    "feeTypeId": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "amountMinor": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "AccrualReconciliationGroupResponse": {
+                "required": [
+                    "code",
+                    "label",
+                    "totalMinor",
+                    "items"
+                ],
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "enum": [
+                            "sales",
+                            "returns",
+                            "commission",
+                            "delivery",
+                            "partners",
+                            "fbo",
+                            "promotion",
+                            "other_services",
+                            "compensations",
+                            "ungrouped"
+                        ]
+                    },
+                    "label": {
+                        "title": "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u0433\u0440\u0443\u043f\u043f\u044b, \u043a\u0430\u043a \u0432 \u043a\u0430\u0431\u0438\u043d\u0435\u0442\u0435.",
+                        "type": "string"
+                    },
+                    "totalMinor": {
+                        "type": "integer"
+                    },
+                    "items": {
+                        "title": "\u0421\u0442\u0430\u0442\u044c\u0438 \u0433\u0440\u0443\u043f\u043f\u044b, \u043a\u0440\u0443\u043f\u043d\u0430\u044f \u043f\u0435\u0440\u0432\u043e\u0439.",
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UnitEconomicsExpenseResponse"
+                        }
+                    }
+                },
+                "type": "object"
+            },
+            "AccrualReconciliationResponse": {
+                "required": [
+                    "month",
+                    "from",
+                    "to",
+                    "groups",
+                    "totalMinor",
+                    "daysWithoutAccruals"
+                ],
+                "properties": {
+                    "month": {
+                        "title": "\u041c\u0435\u0441\u044f\u0446, Y-m.",
+                        "type": "string"
+                    },
+                    "from": {
+                        "title": "\u041f\u0435\u0440\u0432\u044b\u0439 \u0434\u0435\u043d\u044c \u043f\u0435\u0440\u0438\u043e\u0434\u0430, Y-m-d.",
+                        "type": "string"
+                    },
+                    "to": {
+                        "title": "\u041f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0439 \u0434\u0435\u043d\u044c \u043f\u0435\u0440\u0438\u043e\u0434\u0430, Y-m-d: \u043a\u043e\u043d\u0435\u0446 \u043c\u0435\u0441\u044f\u0446\u0430 \u0438\u043b\u0438 \u0441\u0435\u0433\u043e\u0434\u043d\u044f \u0434\u043b\u044f \u0442\u0435\u043a\u0443\u0449\u0435\u0433\u043e.",
+                        "type": "string"
+                    },
+                    "currency": {
+                        "title": "null \u2014 \u0437\u0430 \u043f\u0435\u0440\u0438\u043e\u0434 \u043d\u0435\u0442 \u043d\u0438 \u043e\u0434\u043d\u043e\u0433\u043e \u043d\u0430\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u044f.",
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "groups": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AccrualReconciliationGroupResponse"
+                        }
+                    },
+                    "totalMinor": {
+                        "title": "\u0418\u0442\u043e\u0433\u043e \u043a \u043d\u0430\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u044e: \u0441\u0443\u043c\u043c\u0430 \u0432\u0441\u0435\u0445 \u0433\u0440\u0443\u043f\u043f.",
+                        "type": "integer"
+                    },
+                    "daysWithoutAccruals": {
+                        "title": "\u0414\u043d\u0438 \u043f\u0435\u0440\u0438\u043e\u0434\u0430, \u0437\u0430 \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u0432\u044b\u0433\u0440\u0443\u0437\u043a\u0430 \u043d\u0430\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u0439 \u043d\u0435 \u043f\u0440\u043e\u0445\u043e\u0434\u0438\u043b\u0430.",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
             "DeliverySpeedDefinitionsResponse": {
                 "required": [
                     "startEvent",
@@ -4680,25 +4841,6 @@
                     "nextCursor": {
                         "type": "string",
                         "nullable": true
-                    }
-                },
-                "type": "object"
-            },
-            "UnitEconomicsExpenseResponse": {
-                "required": [
-                    "feeTypeId",
-                    "name",
-                    "amountMinor"
-                ],
-                "properties": {
-                    "feeTypeId": {
-                        "type": "integer"
-                    },
-                    "name": {
-                        "type": "string"
-                    },
-                    "amountMinor": {
-                        "type": "integer"
                     }
                 },
                 "type": "object"

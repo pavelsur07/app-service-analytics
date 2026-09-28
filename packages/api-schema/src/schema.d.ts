@@ -372,6 +372,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/unit-economics/reconciliation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_unit_economics_reconciliation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/delivery-speed": {
         parameters: {
             query?: never;
@@ -837,6 +853,35 @@ export interface components {
             id: string;
             state: string;
         };
+        UnitEconomicsExpenseResponse: {
+            feeTypeId: number;
+            name: string;
+            amountMinor: number;
+        };
+        AccrualReconciliationGroupResponse: {
+            /** @enum {string} */
+            code: "sales" | "returns" | "commission" | "delivery" | "partners" | "fbo" | "promotion" | "other_services" | "compensations" | "ungrouped";
+            /** Название группы, как в кабинете. */
+            label: string;
+            totalMinor: number;
+            /** Статьи группы, крупная первой. */
+            items: components["schemas"]["UnitEconomicsExpenseResponse"][];
+        };
+        AccrualReconciliationResponse: {
+            /** Месяц, Y-m. */
+            month: string;
+            /** Первый день периода, Y-m-d. */
+            from: string;
+            /** Последний день периода, Y-m-d: конец месяца или сегодня для текущего. */
+            to: string;
+            /** null — за период нет ни одного начисления. */
+            currency?: string | null;
+            groups: components["schemas"]["AccrualReconciliationGroupResponse"][];
+            /** Итого к начислению: сумма всех групп. */
+            totalMinor: number;
+            /** Дни периода, за которые выгрузка начислений не проходила. */
+            daysWithoutAccruals: number;
+        };
         DeliverySpeedDefinitionsResponse: {
             /** @enum {string} */
             startEvent: "in_process_at";
@@ -1070,11 +1115,6 @@ export interface components {
             staleAccounts: number;
             items: components["schemas"]["StockPlacementItemResponse"][];
             nextCursor: string | null;
-        };
-        UnitEconomicsExpenseResponse: {
-            feeTypeId: number;
-            name: string;
-            amountMinor: number;
         };
         UnitEconomicsSkuResponse: {
             marketplaceSku: string;
@@ -2373,6 +2413,49 @@ export interface operations {
             };
             /** @description Площадка не ответила — повторить позже, ключ выпускать не нужно */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_unit_economics_reconciliation: {
+        parameters: {
+            query?: {
+                /** @description Месяц начислений, Y-m; по умолчанию прошлый (по Москве) */
+                month?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Начисления месяца по группам кабинета и итог к начислению */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccrualReconciliationResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректный месяц */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

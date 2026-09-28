@@ -573,8 +573,10 @@ apps/seller/
 │   │   ├── lib/
 │   │   │   ├── formatMinorAmount.ts   копейки → отображаемая сумма
 │   │   │   ├── companyQueryKey.ts     ['company', companyId, модуль, сущность, ...]
-│   │   │   └── connectionsQueryKey.ts ключ списка подключений — общий
-│   │   │                              для features/connections и features/onboarding
+│   │   │   ├── connectionsQueryKey.ts ключ списка подключений — общий
+│   │   │   │                          для features/connections и features/onboarding
+│   │   │   └── month.ts               месяц отчёта YYYY-MM по Москве — общий
+│   │   │                              для features/coverage и сверки unit-economics
 │   │   └── model/
 │   │       └── useCurrentUser.ts      «кто я» — нужен оболочке и обеим фичам
 │   └── features/
