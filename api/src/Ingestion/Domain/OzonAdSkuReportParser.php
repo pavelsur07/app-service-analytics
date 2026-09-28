@@ -40,11 +40,17 @@ final class OzonAdSkuReportParser
     public function parseReport(string $body): \Generator
     {
         $decoded = self::decode($body);
+        // Верхний уровень — объект по кампаниям, не список: `[…]`
+        // означал бы другую форму ответа.
+        if ([] !== $decoded && array_is_list($decoded)) {
+            throw new \UnexpectedValueException('Ozon SKU report: body is a list, not an object keyed by campaign.');
+        }
 
         $seen = [];
         foreach ($decoded as $campaignId => $campaign) {
             $campaignId = self::campaignId((string) $campaignId);
-            if (!\is_array($campaign) || !\is_array($campaign['report'] ?? null) || !\is_array($campaign['report']['rows'] ?? null)) {
+            if (!\is_array($campaign) || !\is_array($campaign['report'] ?? null) || !\is_array($campaign['report']['rows'] ?? null)
+                || !array_is_list($campaign['report']['rows'])) {
                 throw new \UnexpectedValueException("Ozon SKU report: campaign {$campaignId} has no report rows.");
             }
 
@@ -74,7 +80,7 @@ final class OzonAdSkuReportParser
     public function parseDay(string $body): \Generator
     {
         $decoded = self::decode($body);
-        if (!\is_array($decoded['rows'] ?? null)) {
+        if (!\is_array($decoded['rows'] ?? null) || !array_is_list($decoded['rows'])) {
             throw new \UnexpectedValueException('Ozon products/sku: no "rows" array.');
         }
 

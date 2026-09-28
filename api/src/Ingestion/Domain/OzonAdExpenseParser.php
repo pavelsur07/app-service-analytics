@@ -24,7 +24,7 @@ final class OzonAdExpenseParser
     public function campaignsWithSpend(string $body, \DateTimeImmutable $from, \DateTimeImmutable $to): array
     {
         $decoded = json_decode($body, true, flags: \JSON_THROW_ON_ERROR);
-        if (!\is_array($decoded) || !\is_array($decoded['rows'] ?? null)) {
+        if (!\is_array($decoded) || !\is_array($decoded['rows'] ?? null) || !array_is_list($decoded['rows'])) {
             throw new \UnexpectedValueException('Ozon ad expense: no "rows" array.');
         }
 

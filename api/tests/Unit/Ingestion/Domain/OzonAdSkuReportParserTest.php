@@ -101,6 +101,8 @@ final class OzonAdSkuReportParserTest extends TestCase
         yield 'no sku' => ['{"1":{"report":{"rows":[{"date":"17.09.2026","moneySpent":"18,34"}]}}}'];
         yield 'campaign key not digits' => ['{"x":{"report":{"rows":[]}}}'];
         yield 'no report rows' => ['{"1":{"title":"t"}}'];
+        yield 'rows as an object' => ['{"1":{"report":{"rows":{"a":{"date":"17.09.2026","sku":"1","moneySpent":"1,00"}}}}}'];
+        yield 'body as a list' => ['[{"report":{"rows":[]}}]'];
         yield 'same triple twice' => ['{"1":{"report":{"rows":[{"date":"17.09.2026","sku":"1","moneySpent":"1,00"},{"date":"17.09.2026","sku":"1","moneySpent":"2,00"}]}}}'];
     }
 
@@ -122,6 +124,7 @@ final class OzonAdSkuReportParserTest extends TestCase
         yield 'no campaign' => ['{"rows":[{"date":"2026-09-23","sku":"1","expense":"1.00"}]}'];
         yield 'dotted date' => ['{"rows":[{"campaignId":"1","date":"23.09.2026","sku":"1","expense":"1.00"}]}'];
         yield 'no rows' => ['{"products":[]}'];
+        yield 'rows as an object' => ['{"rows":{"a":{"campaignId":"1","date":"2026-09-23","sku":"1","expense":"1.00"}}}'];
     }
 
     #[DataProvider('brokenSyncDays')]
@@ -158,6 +161,13 @@ final class OzonAdSkuReportParserTest extends TestCase
             '12387459',
             $parser->campaignsWithSpend($september, new \DateTimeImmutable('2025-09-15'), new \DateTimeImmutable('2025-09-30')),
         );
+    }
+
+    public function testExpenseRowsAsAnObjectAreAParseError(): void
+    {
+        $this->expectException(\UnexpectedValueException::class);
+
+        (new OzonAdExpenseParser())->campaignsWithSpend('{"rows":{"a":{"id":"1","date":"2026-09-23","moneySpent":"1,00"}}}', new \DateTimeImmutable('2026-09-23'), new \DateTimeImmutable('2026-09-23'));
     }
 
     public function testZeroSpendIsNotSpend(): void
