@@ -107,6 +107,27 @@ final class BuildAccrualReconciliationActionTest extends KernelTestCase
         self::assertSame([50_000, -8_000, 42_000], [$compensation->accruedMinor, $compensation->reversedMinor, $compensation->amountMinor]);
     }
 
+    public function testUngroupedTypeTakesItsDirectionFromTheNet(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        // Природа типа без группы неизвестна: положительное нетто —
+        // доход, нулевое — затрата.
+        $this->row($container, $company, 1, 118, 50_000, sku: '');
+        $this->row($container, $company, 2, 118, -10_000, sku: '');
+        $this->row($container, $company, 3, 117, 30_000, sku: '');
+        $this->row($container, $company, 4, 117, -30_000, sku: '');
+
+        $items = [];
+        foreach ($this->group($this->report($container, $company), 'ungrouped')->items as $item) {
+            $items[$item->feeTypeId] = [$item->accruedMinor, $item->reversedMinor, $item->amountMinor];
+        }
+
+        self::assertSame([50_000, -10_000, 40_000], $items[118] ?? null);
+        self::assertSame([-30_000, 30_000, 0], $items[117] ?? null);
+    }
+
     public function testUnmappedTypeIsShownUngrouped(): void
     {
         $container = $this->bootedContainer();
