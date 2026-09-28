@@ -1091,9 +1091,14 @@ export interface components {
              *     вёрстка, а не каталог.
              */
             photoUrl?: string | null;
+            /** Штук продаж, начисленных за период (ADR-036). */
             deliveredQuantity: number;
-            orderedQuantity: number;
+            /** Штук возвратов, начисленных за период. */
+            returnedQuantity: number;
+            /** Выручка нетто: продажи плюс возвраты со своим знаком. */
             revenueMinor: number;
+            /** Возвраты выручки за период, отрицательные; уже внутри revenueMinor. */
+            returnsMinor: number;
             commissionMinor: number;
             expenses: components["schemas"]["UnitEconomicsExpenseResponse"][];
             expensesTotalMinor: number;
@@ -1107,7 +1112,7 @@ export interface components {
             marginMinor: number;
             /** Себестоимость проданного, отрицательная — как и прочие вычеты. */
             costTotalMinor: number;
-            /** Сколько проданных штук пришлось на дни без заданной цены. */
+            /** Сколько штук продаж и возвратов пришлось на дни без заданной цены. */
             quantityWithoutCost: number;
             profitMinor?: number | null;
             /**

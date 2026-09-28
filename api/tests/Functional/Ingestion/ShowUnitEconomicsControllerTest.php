@@ -12,14 +12,13 @@ use App\Ingestion\Domain\AdSkuExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
-use App\Ingestion\Domain\SalesFactRepository;
+use App\Ingestion\Domain\OzonFeeTypeNames;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\AdSkuExpenseFactBuilder;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
-use App\Tests\Support\Builder\SalesFactBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -40,13 +39,24 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
         $client = static::createClient();
         $company = $this->loginAsCompanyMember($client);
 
-        SalesFactBuilder::aSalesFact()
+        // Своя продажа — строка выручки ленты начислений (ADR-036).
+        MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
             ->withBusinessDate($this->today())
             ->withCompanyId($company->id())
             ->withMarketplaceSku('own')
-            ->withSourceRowId('own-1')
-            ->withStatus('delivered')
-            ->persistWith($this->salesFacts());
+            ->withAccrualId(1)
+            ->withFeeTypeId(OzonFeeTypeNames::REVENUE)
+            ->withAmount(Money::ofMinor(240_200, 'RUB'))
+            ->persistWith($this->expenseFacts());
+        // Чужой возврат на тот же артикул: выручка и возвраты чужой
+        // компании в отчёт не попадают.
+        MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
+            ->withBusinessDate($this->today())
+            ->withMarketplaceSku('own')
+            ->withAccrualId(2)
+            ->withFeeTypeId(OzonFeeTypeNames::REVENUE)
+            ->withAmount(Money::ofMinor(-240_200, 'RUB'))
+            ->persistWith($this->expenseFacts());
         // Чужая компания с расходом на тот же артикул — доказывает
         // изоляцию, а не только то, что своё попадает в отчёт.
         MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
@@ -84,6 +94,8 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
         $payload = $this->get($client, $company);
 
         self::assertCount(1, $payload['skus']);
+        self::assertSame(240_200, $payload['skus'][0]['revenueMinor']);
+        self::assertSame(0, $payload['skus'][0]['returnedQuantity']);
         self::assertSame(0, $payload['skus'][0]['expensesTotalMinor']);
         self::assertSame(0, $payload['skus'][0]['advertisingMinor']);
         self::assertSame(0, $payload['cabinetExpensesTotalMinor']);
@@ -238,14 +250,6 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
         $companies = static::getContainer()->get(CompanyRepository::class);
 
         return $companies;
-    }
-
-    private function salesFacts(): SalesFactRepository
-    {
-        /** @var SalesFactRepository $salesFacts */
-        $salesFacts = static::getContainer()->get(SalesFactRepository::class);
-
-        return $salesFacts;
     }
 
     private function rawDocuments(): MarketplaceRawDocumentRepository

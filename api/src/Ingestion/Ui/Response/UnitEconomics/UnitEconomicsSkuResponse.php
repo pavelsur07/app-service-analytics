@@ -37,9 +37,14 @@ final readonly class UnitEconomicsSkuResponse
          * вёрстка, а не каталог.
          */
         public ?string $photoUrl,
+        /** Штук продаж, начисленных за период (ADR-036). */
         public int $deliveredQuantity,
-        public int $orderedQuantity,
+        /** Штук возвратов, начисленных за период. */
+        public int $returnedQuantity,
+        /** Выручка нетто: продажи плюс возвраты со своим знаком. */
         public int $revenueMinor,
+        /** Возвраты выручки за период, отрицательные; уже внутри revenueMinor. */
+        public int $returnsMinor,
         public int $commissionMinor,
         public array $expenses,
         public int $expensesTotalMinor,
@@ -53,7 +58,7 @@ final readonly class UnitEconomicsSkuResponse
         public int $marginMinor,
         /** Себестоимость проданного, отрицательная — как и прочие вычеты. */
         public int $costTotalMinor,
-        /** Сколько проданных штук пришлось на дни без заданной цены. */
+        /** Сколько штук продаж и возвратов пришлось на дни без заданной цены. */
         public int $quantityWithoutCost,
         public ?int $profitMinor,
         /**

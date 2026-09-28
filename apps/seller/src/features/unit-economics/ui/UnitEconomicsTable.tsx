@@ -47,7 +47,7 @@ const COLUMNS: Column[] = [
   // фикстуре, а обрезка съедает хвост — именно тот, что различает
   // варианты одного товара, «черный-M» против «черный-L».
   { label: 'Артик.', width: 'w-44' },
-  { label: 'Доставлено, шт.', width: 'w-32', sort: 'delivered' },
+  { label: 'Продано, шт.', width: 'w-32', sort: 'delivered' },
   { label: 'Выручка', width: 'w-32', sort: 'revenue' },
   { label: 'Комиссия', width: 'w-30', sort: 'commission' },
   { label: 'Расходы площадки', width: 'w-44', sort: 'expenses' },
@@ -209,9 +209,15 @@ function Breakdown({
                 )}
               </dd>
             </div>
+            {/* Возвраты уже вычтены из выручки и комиссии: здесь они
+                названы отдельно, чтобы нетто-выручку было из чего
+                объяснить (ADR-036). */}
             <div>
-              <dt className="text-xs text-text-muted">Заказано, шт.</dt>
-              <dd>{sku.orderedQuantity}</dd>
+              <dt className="text-xs text-text-muted">Возвраты</dt>
+              <dd>
+                {sku.returnedQuantity} шт. ·{' '}
+                {formatMinorAmount(sku.returnsMinor, currency)}
+              </dd>
             </div>
             {share === null ? null : (
               <div>

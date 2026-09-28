@@ -32,9 +32,14 @@ final readonly class UnitEconomicsSku
         public ?string $name,
         public ?string $offerId,
         public ?string $photoUrl,
+        /** Штук продаж, начисленных за период (ADR-036). */
         public int $deliveredQuantity,
-        public int $orderedQuantity,
+        /** Штук возвратов, начисленных за период. */
+        public int $returnedQuantity,
+        /** Выручка нетто: продажи плюс возвраты со своим знаком. */
         public int $revenueMinor,
+        /** Возвраты выручки за период, отрицательные; уже внутри revenueMinor. */
+        public int $returnsMinor,
         public int $commissionMinor,
         public array $expenses,
         public int $expensesTotalMinor,
@@ -52,7 +57,7 @@ final readonly class UnitEconomicsSku
         public int $marginMinor,
         /** Себестоимость проданного, отрицательная — как и прочие вычеты. */
         public int $costTotalMinor,
-        /** Сколько проданных штук пришлось на дни без заданной цены. */
+        /** Сколько штук продаж и возвратов пришлось на дни без заданной цены. */
         public int $quantityWithoutCost,
         /**
          * Прибыль: маржа минус себестоимость. null — цена задана

@@ -27,7 +27,25 @@ final class OzonFeeTypeNames
      */
     public const int PAY_PER_CLICK = 41;
 
+    /**
+     * Выручка продажи — `sale_amount` блока `commission` (ADR-036).
+     * Код наш: выручки в справочнике площадки нет, а её нумерация
+     * начинается с единицы.
+     */
+    public const int REVENUE = 0;
+
+    /** «Вознаграждение за продажу» — `sale_commission` блока `commission` (ADR-036). */
+    public const int SALE_COMMISSION = 69;
+
+    /**
+     * Строки продажи, а не расхода: выручка и комиссия. Всё, что
+     * суммирует «расходы», обязано их исключать — иначе выручка
+     * попадёт в издержки (ADR-036 п. 7).
+     */
+    public const array SALE_TYPES = [self::REVENUE, self::SALE_COMMISSION];
+
     private const array NAMES = [
+        self::REVENUE => 'Выручка',
         1 => 'Эквайринг',
         2 => 'Обратная магистраль',
         3 => 'Продвижение бренда',

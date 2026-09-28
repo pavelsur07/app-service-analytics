@@ -8,15 +8,16 @@ use App\Identity\Domain\Company;
 use App\Identity\Domain\CompanyRepository;
 use App\Ingestion\Application\UnitEconomics\BuildUnitEconomicsAction;
 use App\Ingestion\Application\UnitEconomics\UnitEconomicsReport;
+use App\Ingestion\Domain\MarketplaceExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceListingCost;
-use App\Ingestion\Domain\SalesFactRepository;
+use App\Ingestion\Domain\OzonFeeTypeNames;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceListingCostRepository;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsDirection;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsSort;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\CompanyBuilder;
+use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
 use App\Tests\Support\Builder\MarketplaceListingCostBuilder;
-use App\Tests\Support\Builder\SalesFactBuilder;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -221,20 +222,28 @@ final class UnitEconomicsCostTest extends KernelTestCase
         int $commissionMinor,
         string $sourceRowId = 'sale',
     ): void {
-        /** @var SalesFactRepository $salesFacts */
-        $salesFacts = $container->get(SalesFactRepository::class);
+        /** @var MarketplaceExpenseFactRepository $expenseFacts */
+        $expenseFacts = $container->get(MarketplaceExpenseFactRepository::class);
 
-        SalesFactBuilder::aSalesFact()
-            ->withCompanyId($company->id())
-            ->withMarketplaceAccountId(Uuid::fromString(self::ACCOUNT_ID))
-            ->withBusinessDate(new \DateTimeImmutable($day))
-            ->withMarketplaceSku(self::SKU)
-            ->withSourceRowId($sourceRowId)
-            ->withStatus('delivered')
-            ->withQuantity($quantity)
-            ->withAmount(Money::ofMinor($amountMinor, 'RUB'))
-            ->withCommissionAmount(Money::ofMinor($commissionMinor, 'RUB'))
-            ->persistWith($salesFacts);
+        // Штука — строка выручки ленты начислений (ADR-036): продажа
+        // нескольких штук — несколько начислений. Каждая строка
+        // положительная (знак выручки — это «продажа»), итог — ровно
+        // $amountMinor: остальные штуки по копейке, остаток — первой.
+        for ($unit = 0; $unit < $quantity; ++$unit) {
+            $accrual = MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
+                ->withCompanyId($company->id())
+                ->withMarketplaceAccountId(Uuid::fromString(self::ACCOUNT_ID))
+                ->withBusinessDate(new \DateTimeImmutable($day))
+                ->withMarketplaceSku(self::SKU)
+                ->withAccrualId(crc32($sourceRowId.'-'.$unit))
+                ->withUnitNumber($sourceRowId.'-'.$unit);
+            $accrual->withFeeTypeId(OzonFeeTypeNames::REVENUE)
+                ->withAmount(Money::ofMinor(0 === $unit ? $amountMinor - ($quantity - 1) : 1, 'RUB'))
+                ->persistWith($expenseFacts);
+            $accrual->withFeeTypeId(OzonFeeTypeNames::SALE_COMMISSION)
+                ->withAmount(Money::ofMinor(0 === $unit ? $commissionMinor : 0, 'RUB'))
+                ->persistWith($expenseFacts);
+        }
     }
 
     private function company(ContainerInterface $container): Company

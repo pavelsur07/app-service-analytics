@@ -5,21 +5,25 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Query\UnitEconomics;
 
 use App\Ingestion\Domain\OzonFeeTypeNames;
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
 /**
- * Юнит-экономика за период: по товару — выручка, комиссия и расходы
- * площадки; отдельно — расходы кабинета, к товару не привязанные.
+ * Юнит-экономика за период по методу начисления (ADR-036): по товару —
+ * выручка и комиссия нетто возвратов, расходы площадки и реклама;
+ * отдельно — расходы кабинета, к товару не привязанные. Всё — из ленты
+ * начислений `by-day` (`marketplace_expense_fact`) по дате начисления;
+ * `sales_fact` здесь не читается.
  *
  * Считает PostgreSQL, не PHP (CLAUDE.md §5): наружу уходят агрегаты,
  * а не выборка фактов.
  *
  * Товары берутся объединением продаж и расходов — FULL OUTER JOIN
- * по артикулу, а не по дате. Дата тут соединять нечего: у продажи
- * и её расходов разные бизнес-даты по природе, начисление приходит
- * позже, иногда на недели (ADR-012). Обе стороны уже свёрнуты за один
- * и тот же период, и склеиваются по товару.
+ * по артикулу, а не по дате. Обе стороны свёрнуты за один и тот же
+ * период начислений и склеиваются по товару. Строки продажи (выручка
+ * и комиссия, `OzonFeeTypeNames::SALE_TYPES`) из расходов исключаются:
+ * это одна таблица, и без фильтра выручка попала бы в издержки.
  *
  * Объединение в SQL, а не в PHP, ещё и потому, что иначе список товаров
  * невозможно ограничить: артикул с расходами, но без продаж, попадал бы
@@ -52,8 +56,8 @@ final readonly class UnitEconomicsQuery
     }
 
     /**
-     * Страница товаров: выручка и комиссия из продаж, итог расходов —
-     * из расходов, обе стороны за один период.
+     * Страница товаров: выручка и комиссия из строк продажи, итог
+     * расходов — из остальных строк ленты, обе стороны за один период.
      *
      * $cursor — пара из предыдущей страницы; null для первой.
      */
@@ -77,42 +81,62 @@ final readonly class UnitEconomicsQuery
             throw new \InvalidArgumentException('Cursor was issued for a different sort order.');
         }
 
-        // Себестоимость соединяется с КАЖДОЙ строкой продажи по её
-        // бизнес-дате, а не берётся одна на период (ADR-013). Иначе
-        // товар, проданный в июле по 420, посчитался бы по августовской
-        // цене 510 — то есть новая поставка задним числом переписала бы
-        // прибыль за июль, ровно то, что раздельные операции ввода
-        // и запрещают.
+        // Продажи — из ленты начислений `by-day`, по дате начисления
+        // (ADR-036), а не из отправлений по дате заказа: юнит-экономика
+        // — это деньги, и отчёт, с которым её сверяют, — начисления
+        // площадки. Штука — строка выручки: `+` продажа, `−` возврат.
+        // Выручка и комиссия нетто — возвраты уже со своим знаком.
         //
-        // Умножение цены на количество делает PostgreSQL над минорными
-        // единицами (§5, ADR-013): у Money умножения нет, а количество
-        // целое, и округлять здесь нечего.
+        // Себестоимость соединяется с КАЖДОЙ строкой выручки по дате,
+        // а не берётся одна на период (ADR-013). У продажи — дата её
+        // начисления. У возврата — дата исходной продажи той же пары
+        // «отправление + SKU»: иначе смена цены между продажей и
+        // возвратом дала бы прибыль или убыток, которых не было. Продажа
+        // раньше загруженной истории — по дате самого возврата.
         //
-        // Знак отрицательный намеренно — как у комиссии и расходов
-        // площадки. Тогда итог везде складывается, и ни одна строка
-        // расчёта не гадает, каким знаком пришла величина.
+        // Умножать нечего: штука одна на строку. Знак себестоимости
+        // отрицательный намеренно — как у комиссии и расходов площадки;
+        // у возврата — положительный, это сторно. CASE, а не SIGN():
+        // SIGN над bigint PostgreSQL вправе посчитать в double precision.
         $sales = <<<'SQL'
             SELECT f.marketplace_sku,
                    f.currency,
-                   COALESCE(SUM(f.quantity) FILTER (WHERE f.status = 'delivered'), 0) AS delivered_quantity,
-                   COALESCE(SUM(f.amount_minor) FILTER (WHERE f.status = 'delivered'), 0) AS delivered_amount_minor,
-                   COALESCE(SUM(f.commission_amount_minor) FILTER (WHERE f.status = 'delivered'), 0) AS commission_amount_minor,
-                   COALESCE(SUM(f.quantity) FILTER (WHERE f.status <> 'cancelled'), 0) AS ordered_quantity,
-                   -COALESCE(SUM(f.quantity * c.unit_cost_minor) FILTER (WHERE f.status = 'delivered'), 0) AS cost_total_minor,
-                   COALESCE(SUM(f.quantity) FILTER (WHERE f.status = 'delivered' AND c.unit_cost_minor IS NULL), 0) AS quantity_without_cost,
-                   MAX(c.updated_at) FILTER (WHERE f.status = 'delivered' AND c.updated_at > c.recorded_at) AS cost_corrected_at
-            FROM sales_fact AS f
+                   COUNT(*) FILTER (WHERE f.fee_type_id = :revenueType AND f.amount_minor > 0) AS delivered_quantity,
+                   COUNT(*) FILTER (WHERE f.fee_type_id = :revenueType AND f.amount_minor < 0) AS returned_quantity,
+                   COALESCE(SUM(f.amount_minor) FILTER (WHERE f.fee_type_id = :revenueType), 0) AS delivered_amount_minor,
+                   COALESCE(SUM(f.amount_minor) FILTER (WHERE f.fee_type_id = :revenueType AND f.amount_minor < 0), 0) AS returns_amount_minor,
+                   COALESCE(SUM(f.amount_minor) FILTER (WHERE f.fee_type_id = :saleCommissionType), 0) AS commission_amount_minor,
+                   COALESCE(SUM(CASE WHEN f.amount_minor > 0 THEN -c.unit_cost_minor ELSE c.unit_cost_minor END)
+                       FILTER (WHERE f.fee_type_id = :revenueType), 0) AS cost_total_minor,
+                   COUNT(*) FILTER (WHERE f.fee_type_id = :revenueType AND c.unit_cost_minor IS NULL) AS quantity_without_cost,
+                   MAX(c.updated_at) FILTER (WHERE f.fee_type_id = :revenueType AND c.updated_at > c.recorded_at) AS cost_corrected_at
+            FROM marketplace_expense_fact AS f
+            LEFT JOIN LATERAL (
+                SELECT MIN(s.business_date) AS sale_date
+                FROM marketplace_expense_fact AS s
+                WHERE f.fee_type_id = :revenueType
+                  AND f.amount_minor < 0
+                  AND f.unit_number <> ''
+                  AND s.company_id = f.company_id
+                  AND s.marketplace_account_id = f.marketplace_account_id
+                  AND s.marketplace_sku = f.marketplace_sku
+                  AND s.unit_number = f.unit_number
+                  AND s.fee_type_id = :revenueType
+                  AND s.amount_minor > 0
+            ) AS o ON TRUE
             LEFT JOIN LATERAL (
                 SELECT lc.unit_cost_minor, lc.updated_at, lc.recorded_at
                 FROM marketplace_listing_cost AS lc
-                WHERE lc.company_id = f.company_id
+                WHERE f.fee_type_id = :revenueType
+                  AND lc.company_id = f.company_id
                   AND lc.marketplace_account_id = f.marketplace_account_id
                   AND lc.marketplace_sku = f.marketplace_sku
-                  AND lc.effective_from <= f.business_date
+                  AND lc.effective_from <= COALESCE(o.sale_date, f.business_date)
                 ORDER BY lc.effective_from DESC
                 LIMIT 1
             ) AS c ON TRUE
             WHERE f.company_id = :companyId AND f.business_date >= :from AND f.business_date <= :to
+              AND f.fee_type_id IN (:saleTypes)
             GROUP BY f.marketplace_sku, f.currency
             SQL;
 
@@ -123,6 +147,7 @@ final readonly class UnitEconomicsQuery
             FROM marketplace_expense_fact
             WHERE company_id = :companyId AND business_date >= :from AND business_date <= :to
               AND marketplace_sku <> ''
+              AND fee_type_id NOT IN (:saleTypes)
             GROUP BY marketplace_sku, currency
             SQL;
 
@@ -179,9 +204,10 @@ final readonly class UnitEconomicsQuery
                     SELECT COALESCE(s.marketplace_sku, e.marketplace_sku, a.marketplace_sku) AS marketplace_sku,
                            COALESCE(s.currency, e.currency, a.currency) AS currency,
                            COALESCE(s.delivered_quantity, 0) AS delivered_quantity,
+                           COALESCE(s.returned_quantity, 0) AS returned_quantity,
                            COALESCE(s.delivered_amount_minor, 0) AS delivered_amount_minor,
+                           COALESCE(s.returns_amount_minor, 0) AS returns_amount_minor,
                            COALESCE(s.commission_amount_minor, 0) AS commission_amount_minor,
-                           COALESCE(s.ordered_quantity, 0) AS ordered_quantity,
                            COALESCE(e.expenses_total_minor, 0) AS expenses_total_minor,
                            COALESCE(a.advertising_total_minor, 0) AS advertising_total_minor,
                            COALESCE(s.cost_total_minor, 0) AS cost_total_minor,
@@ -203,9 +229,10 @@ final readonly class UnitEconomicsQuery
                 'marketplace_sku',
                 'currency',
                 'delivered_quantity',
+                'returned_quantity',
                 'delivered_amount_minor',
+                'returns_amount_minor',
                 'commission_amount_minor',
-                'ordered_quantity',
                 'expenses_total_minor',
                 'advertising_total_minor',
                 'cost_total_minor',
@@ -220,6 +247,9 @@ final readonly class UnitEconomicsQuery
             ->setParameter('companyId', $companyId)
             ->setParameter('from', $from->format('Y-m-d'))
             ->setParameter('to', $to->format('Y-m-d'))
+            ->setParameter('revenueType', OzonFeeTypeNames::REVENUE)
+            ->setParameter('saleCommissionType', OzonFeeTypeNames::SALE_COMMISSION)
+            ->setParameter('saleTypes', OzonFeeTypeNames::SALE_TYPES, ArrayParameterType::INTEGER)
             // Порядок выбирает клиент; умолчание — выручка по убыванию,
             // ради неё экран и открывают. Артикул вторым столбцом
             // и всегда по возрастанию — чтобы порядок был устойчивым
@@ -259,10 +289,13 @@ final readonly class UnitEconomicsQuery
             ->andWhere('business_date >= :from')
             ->andWhere('business_date <= :to')
             ->andWhere('marketplace_sku IN (SELECT jsonb_array_elements_text(:skus::jsonb))')
+            // Выручка и комиссия — строки продажи, не расхода (ADR-036 п. 7).
+            ->andWhere('fee_type_id NOT IN (:saleTypes)')
             ->setParameter('companyId', $companyId)
             ->setParameter('from', $from->format('Y-m-d'))
             ->setParameter('to', $to->format('Y-m-d'))
             ->setParameter('skus', json_encode($marketplaceSkus, \JSON_THROW_ON_ERROR))
+            ->setParameter('saleTypes', OzonFeeTypeNames::SALE_TYPES, ArrayParameterType::INTEGER)
             ->groupBy('marketplace_sku')
             ->addGroupBy('fee_type_id')
             ->addGroupBy('currency')
@@ -341,9 +374,10 @@ final readonly class UnitEconomicsQuery
             marketplaceSku: self::stringValue($row['marketplace_sku']),
             currency: self::stringValue($row['currency']),
             deliveredQuantity: self::intValue($row['delivered_quantity']),
+            returnedQuantity: self::intValue($row['returned_quantity']),
             deliveredAmountMinor: self::intValue($row['delivered_amount_minor']),
+            returnsAmountMinor: self::intValue($row['returns_amount_minor']),
             commissionAmountMinor: self::intValue($row['commission_amount_minor']),
-            orderedQuantity: self::intValue($row['ordered_quantity']),
             expensesTotalMinor: self::intValue($row['expenses_total_minor']),
             advertisingTotalMinor: self::intValue($row['advertising_total_minor']),
             costTotalMinor: self::intValue($row['cost_total_minor']),
