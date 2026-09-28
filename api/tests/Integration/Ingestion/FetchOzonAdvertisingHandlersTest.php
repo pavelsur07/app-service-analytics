@@ -124,10 +124,32 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         self::assertSame(-119339, $this->factAmount($container, $account, '14275771|2026-09-23|286085455'));
         // Прослеживаемость (ADR-006): строка ссылается на raw-документ,
         // из которого получена её текущая версия. Второй день принёс
-        // те же суммы — строка не переписана и ссылается на первый.
+        // те же суммы, ответ получен позже — ссылка на последний
+        // подтвердивший её документ.
         $factRaw = $this->factRawDocumentIds($container, $account);
         self::assertCount(1, $factRaw);
         self::assertContains($factRaw[0], $this->rawIdStrings($container, $account, MarketplaceReportType::OzonAdSkuDay));
+    }
+
+    public function testUnparsableSkuDayDoesNotStopTheRestOfTheChunk(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+        // Площадка сменила разделитель в products/sku: разбор отказывает.
+        $fetcher = $this->fetcher($container, expense: $this->expenseEndingOn($today), sku: str_replace('"1193.39"', '"1193,39"', $this->fixture('statistics-products-sku-2026-09-23.json')));
+        $chunk = OzonAdvertisingWindows::lastDays($today, 30)[0];
+
+        $this->syncStats($container, $account, $chunk['from'], $chunk['to'], withReports: true);
+
+        // Ответ в raw, фактов нет, отказ виден в журнале. Остальное
+        // из куска выполнено: оба дня products/sku и заказ отчётов
+        // (ADR-006: неудача разбора не отменяет загрузку).
+        self::assertCount(2, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuDay));
+        self::assertSame(0, $this->factTotals($container, $account)['rows']);
+        self::assertSame(2, $this->warningsContaining($container, 'SKU-разбивка рекламы Ozon не разобрана'));
+        self::assertSame(self::SPENDING_ON_LAST_DAY, $this->orderedSkuCampaigns($container));
+        self::assertCount(2, array_unique(array_column($fetcher->skuRequests, 'day')));
     }
 
     public function testHistoricalChunkOrdersReportsForArchivedCampaignsWithSpend(): void
@@ -728,9 +750,9 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         throw new \LogicException('Ответ с кодом ошибки обязан бросить исключение.');
     }
 
-    private function fetcher(ContainerInterface $container, int $tokenStatus = 200, ?\Closure $beforeRejection = null, ?string $expense = null, ?string $campaigns = null): FakeOzonAdvertisingFetcher
+    private function fetcher(ContainerInterface $container, int $tokenStatus = 200, ?\Closure $beforeRejection = null, ?string $expense = null, ?string $campaigns = null, ?string $sku = null): FakeOzonAdvertisingFetcher
     {
-        $fetcher = new FakeOzonAdvertisingFetcher($tokenStatus, $campaigns ?? $this->fixture('campaign-list.json'), $expense ?? $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json'), $beforeRejection, $this->fixture('statistics-products-sku-2026-09-23.json'), $this->fixture('statistics-json-many-2026-08-25-request.json'), $this->fixture('statistics-json-many-2026-08-25.json'));
+        $fetcher = new FakeOzonAdvertisingFetcher($tokenStatus, $campaigns ?? $this->fixture('campaign-list.json'), $expense ?? $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json'), $beforeRejection, $sku ?? $this->fixture('statistics-products-sku-2026-09-23.json'), $this->fixture('statistics-json-many-2026-08-25-request.json'), $this->fixture('statistics-json-many-2026-08-25.json'));
         $container->set(OzonPerformanceCampaignClient::class, $fetcher);
 
         return $fetcher;

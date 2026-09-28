@@ -96,6 +96,7 @@ final class OzonAdSkuReportParserTest extends TestCase
         yield 'dot instead of comma' => ['{"1":{"report":{"rows":[{"date":"17.09.2026","sku":"1","moneySpent":"18.34"}]}}}'];
         yield 'three fraction digits' => ['{"1":{"report":{"rows":[{"date":"17.09.2026","sku":"1","moneySpent":"18,345"}]}}}'];
         yield 'negative' => ['{"1":{"report":{"rows":[{"date":"17.09.2026","sku":"1","moneySpent":"-18,34"}]}}}'];
+        yield 'integer part beyond int in minor units' => ['{"1":{"report":{"rows":[{"date":"17.09.2026","sku":"1","moneySpent":"92233720368547758,07"}]}}}'];
         yield 'ISO date' => ['{"1":{"report":{"rows":[{"date":"2026-09-17","sku":"1","moneySpent":"18,34"}]}}}'];
         yield 'no sku' => ['{"1":{"report":{"rows":[{"date":"17.09.2026","moneySpent":"18,34"}]}}}'];
         yield 'campaign key not digits' => ['{"x":{"report":{"rows":[]}}}'];
@@ -137,6 +138,7 @@ final class OzonAdSkuReportParserTest extends TestCase
         self::assertSame(250, OzonPerformanceMoney::commaDecimal('2,5')->minorAmount());
         self::assertSame(700, OzonPerformanceMoney::commaDecimal('7')->minorAmount());
         self::assertSame(119339, OzonPerformanceMoney::dotDecimal('1193.39')->minorAmount());
+        self::assertSame(999999999999999, OzonPerformanceMoney::commaDecimal('9999999999999,99')->minorAmount());
         self::assertSame('RUB', OzonPerformanceMoney::dotDecimal('0.00')->currency());
     }
 

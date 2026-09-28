@@ -25,10 +25,7 @@ final class DoctrineAdSkuExpenseFactWriterTest extends KernelTestCase
         $writer->upsertAll([$fact]);
         $first = $this->row($connection, $fact->companyId(), $fact->sourceRowIdValue());
         // Повтор того же ответа — идемпотентен (CLAUDE.md §4).
-        $writer->upsertAll([AdSkuExpenseFactBuilder::anAdSkuExpenseFact()
-            ->withCompanyId($fact->companyId())
-            ->withMarketplaceAccountId($fact->marketplaceAccountId())
-            ->build()]);
+        $writer->upsertAll([$fact]);
 
         self::assertSame(1, $this->rowsOf($connection, $fact->companyId()));
         self::assertSame($first, $this->row($connection, $fact->companyId(), $fact->sourceRowIdValue()));
@@ -74,6 +71,32 @@ final class DoctrineAdSkuExpenseFactWriterTest extends KernelTestCase
             ->build()]);
 
         self::assertSame(-100000, $this->row($connection, $newer->companyId(), $newer->sourceRowIdValue())['amount_minor']);
+    }
+
+    public function testNewerAnswerWithTheSameAmountAdvancesTheReceivedMark(): void
+    {
+        [$connection, $writer] = $this->writer();
+        $base = AdSkuExpenseFactBuilder::anAdSkuExpenseFact()->withCompanyId(Uuid::v7())->withMarketplaceAccountId(Uuid::v7());
+        $first = $base->withSourceReceivedAt(new \DateTimeImmutable('2026-09-24 08:00:00'))->build();
+        $confirmingRaw = Uuid::v7();
+
+        $writer->upsertAll([$first]);
+        $before = $this->row($connection, $first->companyId(), $first->sourceRowIdValue());
+        // 26.09 площадка подтвердила ту же сумму.
+        $writer->upsertAll([$base->withRawDocumentId($confirmingRaw)->withSourceReceivedAt(new \DateTimeImmutable('2026-09-26 08:00:00'))->build()]);
+        // Ответ от 25.09 с другой суммой обработан последним: он старше
+        // подтверждения и прежнюю сумму не возвращает.
+        $writer->upsertAll([$base
+            ->withAmount(Money::ofMinor(-100000, 'RUB'))
+            ->withSourceReceivedAt(new \DateTimeImmutable('2026-09-25 08:00:00'))
+            ->build()]);
+
+        $after = $this->row($connection, $first->companyId(), $first->sourceRowIdValue());
+        self::assertSame(-119339, $after['amount_minor']);
+        self::assertSame('2026-09-26 08:00:00', $after['source_received_at']);
+        self::assertSame($confirmingRaw->toRfc4122(), $after['raw_document_id']);
+        // Данные не менялись — время последнего обновления прежнее (ADR-006).
+        self::assertSame($before['last_updated_at'], $after['last_updated_at']);
     }
 
     public function testCorrectionToZeroOverwritesTheOldAmount(): void
@@ -141,7 +164,7 @@ final class DoctrineAdSkuExpenseFactWriterTest extends KernelTestCase
     private function row(Connection $connection, Uuid $companyId, string $sourceRowId): array
     {
         $row = $connection->fetchAssociative(
-            'SELECT amount_minor, currency, raw_document_id::text AS raw_document_id, source_received_at, first_loaded_at FROM ad_sku_expense_fact WHERE company_id = ? AND source_row_id = ?',
+            'SELECT amount_minor, currency, raw_document_id::text AS raw_document_id, source_received_at, first_loaded_at, last_updated_at FROM ad_sku_expense_fact WHERE company_id = ? AND source_row_id = ?',
             [$companyId->toRfc4122(), $sourceRowId],
         );
         self::assertIsArray($row);

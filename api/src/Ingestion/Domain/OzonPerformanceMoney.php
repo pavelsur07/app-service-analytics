@@ -40,8 +40,10 @@ final class OzonPerformanceMoney
      */
     private static function parse(string $value, string $separator): Money
     {
-        if (1 !== preg_match('/\A\d+(?:'.preg_quote($separator, '/').'\d{1,2})?\z/', $value)) {
-            throw new \UnexpectedValueException(\sprintf("Ozon Performance amount '%s' is not a non-negative decimal with '%s' and at most two fraction digits.", $value, $separator));
+        // Не больше 13 знаков целой части: сумма в минорных единицах
+        // остаётся в int, и умножение не уходит в float при переполнении.
+        if (1 !== preg_match('/\A\d{1,13}(?:'.preg_quote($separator, '/').'\d{1,2})?\z/', $value)) {
+            throw new \UnexpectedValueException(\sprintf("Ozon Performance amount '%s' is not a non-negative decimal with '%s', at most 13 integer and two fraction digits.", $value, $separator));
         }
 
         [$whole, $fraction] = array_pad(explode($separator, $value, 2), 2, '');

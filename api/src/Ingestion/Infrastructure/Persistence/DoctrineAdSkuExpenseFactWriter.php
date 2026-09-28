@@ -10,10 +10,16 @@ use Doctrine\DBAL\Connection;
 
 /**
  * DBAL, не ORM (CLAUDE.md §6). Устроен как
- * DoctrineMarketplaceExpenseFactWriter, с одним дополнительным условием
- * обновления: ответ не старше записанного (ADR-035 п. 2). Периоды
- * SKU-отчётов перекрываются, и порядок обработки документов очередью
- * не совпадает с порядком их получения.
+ * DoctrineMarketplaceExpenseFactWriter, но условие обновления другое:
+ * ответ не старше записанного (ADR-035 п. 2). Периоды SKU-отчётов
+ * перекрываются, и порядок обработки документов очередью не совпадает
+ * с порядком их получения.
+ *
+ * Более новый ответ с той же суммой тоже продвигает отметку получения
+ * и ссылку на raw: иначе ответ, полученный между ними, прошёл бы
+ * сравнение с устаревшей отметкой и вернул старую сумму. Время
+ * последнего обновления (ADR-006) при этом меняется только вместе
+ * с суммой — оно про изменение данных, а не про подтверждение.
  *
  * first_loaded_at в SET не входит вовсе.
  */
@@ -78,9 +84,11 @@ final readonly class DoctrineAdSkuExpenseFactWriter implements AdSkuExpenseFactR
                 raw_document_id = EXCLUDED.raw_document_id,
                 source_received_at = EXCLUDED.source_received_at,
                 row_hash = EXCLUDED.row_hash,
-                last_updated_at = EXCLUDED.last_updated_at
-            WHERE ad_sku_expense_fact.row_hash IS DISTINCT FROM EXCLUDED.row_hash
-              AND ad_sku_expense_fact.source_received_at <= EXCLUDED.source_received_at
+                last_updated_at = CASE
+                    WHEN ad_sku_expense_fact.row_hash IS DISTINCT FROM EXCLUDED.row_hash THEN EXCLUDED.last_updated_at
+                    ELSE ad_sku_expense_fact.last_updated_at
+                END
+            WHERE ad_sku_expense_fact.source_received_at <= EXCLUDED.source_received_at
             SQL;
 
         $this->connection->executeStatement($sql, $params);
