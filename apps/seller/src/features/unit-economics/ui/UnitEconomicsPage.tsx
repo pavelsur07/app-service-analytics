@@ -87,7 +87,9 @@ export function UnitEconomicsPage() {
           id={`unit-economics-tab-${item.tab}`}
           key={item.tab}
           onClick={() => {
-            setSearch(searchWithTab(search, item.tab), { replace: true })
+            // Новая запись истории, а не замена: «назад» в браузере
+            // возвращает на предыдущую вкладку.
+            setSearch(searchWithTab(search, item.tab))
           }}
           role="tab"
           size="compact"

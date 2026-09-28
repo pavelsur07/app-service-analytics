@@ -17,12 +17,13 @@ use Doctrine\DBAL\Query\QueryBuilder;
  * разные группы кабинета, и сумма одной строкой их бы смешала.
  *
  * Считает PostgreSQL (CLAUDE.md §5); наружу — строка на тип, знак
- * выручки и валюту. Типов у площадки 119, строк не больше чем вдвое
- * больше; потолок защитный.
+ * выручки и валюту. Типов у площадки 119, и только выручка даёт две
+ * строки — при одной валюте их не больше 121. Потолок — максимум
+ * списка по §5.
  */
 final readonly class AccrualCategoriesQuery
 {
-    private const int MAX_ROWS = 400;
+    private const int MAX_ROWS = 200;
 
     public function __construct(
         private Connection $connection,

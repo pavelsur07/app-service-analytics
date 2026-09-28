@@ -220,7 +220,14 @@ export function AccrualReconciliationPanel({
                         className="text-text-muted"
                         key={`${group.code}-${String(item.feeTypeId)}`}
                       >
-                        <td className="py-1 pr-4 pl-12">{item.name}</td>
+                        <td className="py-1 pr-4 pl-12">
+                          {item.name}
+                          {/* Без группы — тип, которого нет в соответствии
+                              кабинета: код нужен, чтобы его дописать. */}
+                          {group.code === 'ungrouped'
+                            ? ` · код ${String(item.feeTypeId)}`
+                            : null}
+                        </td>
                         <td className="px-4 py-1 text-right tabular-nums">
                           {formatMinorAmount(item.amountMinor, currency)}
                         </td>
