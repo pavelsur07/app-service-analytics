@@ -23,6 +23,7 @@ services:
             string $smartCaptchaServerKey: '%env(SMARTCAPTCHA_SERVER_KEY)%'
             string $kernelSecret: '%kernel.secret%'
             int $expenseWindowDays: '%env(int:OZON_EXPENSE_WINDOW_DAYS)%'
+            int $expenseRescanDays: '%env(int:OZON_EXPENSE_RESCAN_DAYS)%'
             string $rawStorageBucket: '%env(RAW_STORAGE_BUCKET)%'
             # s3 | database — аварийный возврат записи тел в базу на время
             # наблюдения этапа 2 ADR-024; убирается на этапе 3.

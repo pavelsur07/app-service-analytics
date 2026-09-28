@@ -31,9 +31,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
  *
  * Расходы диспатчатся окном последних дней, а не только за сегодня:
  * начисление приходит позже продажи, иногда на недели, и день,
- * загруженный один раз, назавтра уже неполон. Окно узкое — это дневной
- * хвост, а не глубокий рескан ADR-006: тот приедет отдельной задачей
- * и с другим ритмом.
+ * загруженный один раз, назавтра уже неполон. Окно тика узкое — дневной
+ * хвост; длинный хвост закрывает суточный рескан расходов в час рескана.
  *
  * Каталог диспатчится в том же тике и с тем же ритмом, что продажи.
  * Отдельного расписания у него нет намеренно: разные интервалы — это
@@ -55,12 +54,16 @@ final readonly class DispatchActiveOzonSyncsAction
      * а здесь день — это запрос, и сорок пять дней на каждом тике
      * планировщика означали бы сорок пять запросов каждые полчаса.
      * Начисления за день приходят ещё сутки, часть — на третьи; длинный
-     * хвост закрывает глубокий рескан из того же ADR-006, у которого
-     * будет свой ритм, а не тик.
+     * хвост закрывает суточный рескан (`expenseRescanDays`).
      *
-     * ponytail: окно назначено, а не вычислено. Сверка с итогами периода
-     * (/v3/finance/transaction/totals) появится вместе с экраном —
-     * и тогда окно станет считаться от расхождения, а не от догадки.
+     * Рескан — 45 дней, умолчание окна ADR-006, раз в сутки в час
+     * рескана, как у продаж. Число измерено, а не назначено: добор
+     * `by-day` с 01.07 (2026-09-28) нашёл ровно одно начисление, которое
+     * пропустило окно в три дня, — компенсации датой 31.08, начисленные
+     * площадкой на четвёртой неделе после неё (тип 25, 11 960,94 ₽).
+     * Компенсации Ozon проводит последним днём месяца и публикует
+     * в следующем; 45 дней накрывают такой хвост с запасом. Сорок пять
+     * запросов раз в сутки при лимите площадки незаметны.
      */
     /**
      * Окно продаж — тот же приём и та же причина, что у расходов, но
@@ -91,6 +94,7 @@ final readonly class DispatchActiveOzonSyncsAction
         private IdentityScheduleFacade $identitySchedule,
         private MessageBusInterface $bus,
         private int $expenseWindowDays = 3,
+        private int $expenseRescanDays = 45,
         private int $postingWindowDays = 3,
         private int $postingRescanDays = 30,
         private int $returnWindowDays = 3,
@@ -117,6 +121,7 @@ final readonly class DispatchActiveOzonSyncsAction
 
         $postingDays = $this->isRescanTick($today) ? $this->postingRescanDays : $this->postingWindowDays;
         $returnDays = $this->isRescanTick($today) ? $this->returnRescanDays : $this->returnWindowDays;
+        $expenseDays = $this->isRescanTick($today) ? $this->expenseRescanDays : $this->expenseWindowDays;
 
         foreach ($targets as $target) {
             // Окно, а не только сегодня: заказ, загруженный в день
@@ -145,7 +150,7 @@ final readonly class DispatchActiveOzonSyncsAction
                 ));
             }
 
-            for ($daysAgo = 0; $daysAgo < $this->expenseWindowDays; ++$daysAgo) {
+            for ($daysAgo = 0; $daysAgo < $expenseDays; ++$daysAgo) {
                 $this->bus->dispatch(new FetchOzonExpensesMessage(
                     companyId: $target->companyId,
                     marketplaceAccountId: $target->marketplaceAccountId,
