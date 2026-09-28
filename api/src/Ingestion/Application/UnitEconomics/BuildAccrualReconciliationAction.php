@@ -48,7 +48,15 @@ final readonly class BuildAccrualReconciliationAction
         $itemsByGroup = [];
         foreach ($rows as $row) {
             $group = OzonAccrualGroups::of($row->feeTypeId, $row->negativeRevenue);
-            $income = $row->amountMinor > 0;
+            // Природа статьи — по группе, а не по знаку нетто за месяц:
+            // отмена логистики за прошлый месяц может перевесить начисления
+            // текущего, и затрата с положительным нетто всё равно затрата.
+            // Только у типа без группы природа неизвестна — там знак нетто.
+            $income = match ($group) {
+                OzonAccrualGroups::SALES, OzonAccrualGroups::COMPENSATIONS => true,
+                OzonAccrualGroups::UNGROUPED => $row->amountMinor > 0,
+                default => false,
+            };
             $itemsByGroup[$group][] = new AccrualReconciliationItem(
                 feeTypeId: $row->feeTypeId,
                 // Как в кабинете: отрицательная выручка — «Возврат выручки».

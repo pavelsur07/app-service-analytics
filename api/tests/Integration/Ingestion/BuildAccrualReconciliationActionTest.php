@@ -79,6 +79,34 @@ final class BuildAccrualReconciliationActionTest extends KernelTestCase
         self::assertSame(0, $this->group($report, 'delivery')->items[0]->reversedMinor);
     }
 
+    public function testCostStaysACostWhenRefundsOutweighChargesOfTheMonth(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        // Отмена логистики за прошлый месяц больше начислений этого:
+        // нетто положительное, но это по-прежнему затрата.
+        $this->row($container, $company, 1, 32, -100);
+        $this->row($container, $company, 2, 32, 14_900);
+        // Нулевое нетто с начислением и отменой.
+        $this->row($container, $company, 3, 29, -1_700);
+        $this->row($container, $company, 4, 29, 1_700);
+        // Компенсация с декомпенсацией: доход, удержание — обратный знак.
+        $this->row($container, $company, 5, 25, 50_000, sku: '');
+        $this->row($container, $company, 6, 25, -8_000, sku: '');
+
+        $report = $this->report($container, $company);
+
+        $logistics = $this->group($report, 'delivery')->items[0];
+        self::assertSame([-100, 14_900, 14_800], [$logistics->accruedMinor, $logistics->reversedMinor, $logistics->amountMinor]);
+
+        $pickup = $this->group($report, 'partners')->items[0];
+        self::assertSame([-1_700, 1_700, 0], [$pickup->accruedMinor, $pickup->reversedMinor, $pickup->amountMinor]);
+
+        $compensation = $this->group($report, 'compensations')->items[0];
+        self::assertSame([50_000, -8_000, 42_000], [$compensation->accruedMinor, $compensation->reversedMinor, $compensation->amountMinor]);
+    }
+
     public function testUnmappedTypeIsShownUngrouped(): void
     {
         $container = $this->bootedContainer();

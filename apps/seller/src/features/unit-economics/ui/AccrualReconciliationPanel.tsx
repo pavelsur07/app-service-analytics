@@ -244,7 +244,7 @@ export function AccrualReconciliationPanel({
                             </tr>
                             <tr className="text-xs text-text-muted">
                               <td className="py-0.5 pr-4 pl-16">
-                                {item.accruedMinor < 0
+                                {item.reversedMinor > 0
                                   ? 'возвращено'
                                   : 'удержано'}
                               </td>
