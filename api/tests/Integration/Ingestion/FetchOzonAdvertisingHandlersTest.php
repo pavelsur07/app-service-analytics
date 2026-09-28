@@ -33,6 +33,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Uid\Uuid;
@@ -46,6 +47,9 @@ use Symfony\Component\Uid\Uuid;
 final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
 {
     private const string FIXTURES = __DIR__.'/../../Fixtures/Marketplace/ozon/performance/';
+
+    /** Кампании с расходом за последний день снятого расхода (23.09.2026). */
+    private const array SPENDING_ON_LAST_DAY = ['14275771', '16017246', '23253271', '24147313', '29088934'];
 
     public function testExpenseAndDailyAreStoredAsReceived(): void
     {
@@ -70,19 +74,19 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
     {
         $container = $this->bootedContainer();
         $account = $this->account($container);
-        $fetcher = $this->fetcher($container);
-        $chunk = OzonAdvertisingWindows::lastDays(OzonAdvertisingWindows::today(new \DateTimeImmutable()), 30)[0];
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+        $fetcher = $this->fetcher($container, expense: $this->expenseEndingOn($today));
+        $chunk = OzonAdvertisingWindows::lastDays($today, 30)[0];
 
         $this->syncStats($container, $account, $chunk['from'], $chunk['to']);
 
-        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
         $expectedDays = [$today->format('Y-m-d'), $today->modify('-1 day')->format('Y-m-d')];
         self::assertSame($expectedDays, array_values(array_unique(array_column($fetcher->skuRequests, 'day'))));
 
-        // В снятом списке 94 кампании; products/sku получает только
-        // неархивные типа SKU — у других списка товаров нет, — и не больше
-        // десяти за запрос.
-        $expectedIds = $this->activeSkuCampaignIds();
+        // products/sku получает кампании с расходом за этот день
+        // (ADR-035 п. 4) — в снятом расходе последнего дня их пять,
+        // все типа SKU, — и не больше десяти за запрос.
+        $expectedIds = self::SPENDING_ON_LAST_DAY;
         $requested = [];
         foreach ($fetcher->skuRequests as $request) {
             self::assertLessThanOrEqual(10, \count($request['campaigns']));
@@ -103,6 +107,155 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         self::assertSame([$chunk['to']], $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdCampaigns));
     }
 
+    public function testSkuOfFreshDaysBecomesFactsAsTheCabinetGaveThem(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+        $this->fetcher($container, expense: $this->expenseEndingOn($today));
+        $chunk = OzonAdvertisingWindows::lastDays($today, 30)[0];
+
+        $this->syncStats($container, $account, $chunk['from'], $chunk['to']);
+
+        // Снятый ответ products/sku за 23.09 — 21 строка на 4 654,82 ₽;
+        // суммы из строк как есть, со знаком расхода (ADR-035 п. 2).
+        // Заглушка отдаёт его на оба дня и каждую пачку: одинаковые
+        // тройки не удваиваются.
+        self::assertSame(['rows' => 21, 'total' => -465482, 'dates' => '2026-09-23'], $this->factTotals($container, $account));
+        self::assertSame(-119339, $this->factAmount($container, $account, '14275771|2026-09-23|286085455'));
+        // Прослеживаемость (ADR-006): строка ссылается на raw-документ,
+        // из которого получена её текущая версия. Второй день принёс
+        // те же суммы, ответ получен позже — ссылка на последний
+        // подтвердивший её документ.
+        $factRaw = $this->factRawDocumentIds($container, $account);
+        self::assertCount(1, $factRaw);
+        self::assertContains($factRaw[0], $this->rawIdStrings($container, $account, MarketplaceReportType::OzonAdSkuDay));
+    }
+
+    public function testUnparsableSkuDayDoesNotStopTheRestOfTheChunk(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+        // Площадка сменила разделитель в products/sku: разбор отказывает.
+        $fetcher = $this->fetcher($container, expense: $this->expenseEndingOn($today), sku: str_replace('"1193.39"', '"1193,39"', $this->fixture('statistics-products-sku-2026-09-23.json')));
+        $chunk = OzonAdvertisingWindows::lastDays($today, 30)[0];
+
+        try {
+            $this->syncStats($container, $account, $chunk['from'], $chunk['to'], withReports: true);
+            self::fail('Неудача разбора обязана дойти до трекера исключением (ADR-006).');
+        } catch (UnrecoverableMessageHandlingException $failure) {
+            // Без повторов: повтор получил бы тот же ответ и заказал бы
+            // отчёты ещё раз.
+            self::assertInstanceOf(\UnexpectedValueException::class, $failure->getPrevious());
+        }
+
+        // Ответ в raw, фактов из него нет. Остальное из куска выполнено
+        // до исключения: оба дня products/sku и заказ отчётов
+        // (ADR-006: неудача разбора не отменяет загрузку).
+        self::assertCount(2, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuDay));
+        self::assertSame(0, $this->factTotals($container, $account)['rows']);
+        self::assertSame(self::SPENDING_ON_LAST_DAY, $this->orderedSkuCampaigns($container));
+        self::assertCount(1, array_filter($this->sent($container, OrderOzonAdSkuReportMessage::class), static fn (OrderOzonAdSkuReportMessage $o): bool => OzonAdReportKind::CpoOrders === $o->kind));
+        self::assertCount(2, array_unique(array_column($fetcher->skuRequests, 'day')));
+    }
+
+    public function testUnparsableExpenseStillOrdersTheCpoReportAndReachesTheTracker(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+        // Расход кампаний сменил разделитель — отбирать кампании не по чему.
+        $expense = preg_replace('/"moneySpent":"(\d+),(\d+)"/', '"moneySpent":"$1.$2"', $this->expenseEndingOn($today));
+        self::assertIsString($expense);
+        $this->fetcher($container, expense: $expense);
+        $chunk = OzonAdvertisingWindows::lastDays($today, 30)[0];
+
+        try {
+            $this->syncStats($container, $account, $chunk['from'], $chunk['to'], withReports: true);
+            self::fail('Неудача разбора обязана дойти до трекера исключением (ADR-006).');
+        } catch (UnrecoverableMessageHandlingException) {
+        }
+
+        // Расход в raw как есть; SKU-разбивки нет, отчёт заказов
+        // «Оплаты за заказ» от отбора не зависит и заказан.
+        self::assertCount(1, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdExpense));
+        self::assertSame([], $this->orderedSkuCampaigns($container));
+        self::assertCount(1, $this->sent($container, OrderOzonAdSkuReportMessage::class));
+    }
+
+    public function testReportBrokenAfterTheFirstChunkLeavesNoFacts(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        // Последняя строка отчёта (725-я) — после первой порции записи
+        // в 500 строк: документ отклоняется целиком (ADR-035 п. 2).
+        $report = $this->fixture('statistics-json-many-2026-08-25.json');
+        // Последнее вхождение до итогов последней кампании: у итогов
+        // своё поле moneySpent, и разбор его не читает.
+        $totals = strrpos($report, '"totals"');
+        self::assertIsInt($totals);
+        $position = strrpos(substr($report, 0, $totals), '"moneySpent":"');
+        self::assertIsInt($position);
+        $report = substr_replace($report, '"moneySpent":"1.00","x":"', $position, \strlen('"moneySpent":"'));
+        $this->fetcher($container, report: $report);
+
+        try {
+            $this->check($container, $account, attempt: 1);
+            self::fail('Отчёт с ошибкой обязан быть отклонён.');
+        } catch (UnrecoverableMessageHandlingException) {
+        }
+
+        self::assertSame(0, $this->factTotals($container, $account)['rows']);
+        self::assertCount(1, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuReport));
+    }
+
+    public function testUnparsableSkuReportIsKeptInRawAndReachesTheTracker(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $this->fetcher($container, report: str_replace('"moneySpent":"18,34"', '"moneySpent":"18.34"', $this->fixture('statistics-json-many-2026-08-25.json')));
+
+        $this->expectException(UnrecoverableMessageHandlingException::class);
+        try {
+            $this->check($container, $account, attempt: 1);
+        } finally {
+            self::assertCount(1, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuReport));
+            self::assertSame([], $this->sent($container, CheckOzonAdSkuReportMessage::class));
+        }
+    }
+
+    public function testHistoricalChunkOrdersReportsForArchivedCampaignsWithSpend(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $this->fetcher($container, expense: $this->fixture('statistics-expense-2025-09-01.json'));
+
+        $this->syncStats($container, $account, '2025-09-01', '2025-09-30', withReports: true);
+
+        // Сентябрь 2025: расход у пяти кампаний. Две из них сегодня
+        // в архиве — их разбивка заказывается (ADR-035 п. 4), иначе
+        // история по ним потеряна. 5268079 — «Оплата за заказ»
+        // (SEARCH_PROMO): списка товаров у неё нет, отчёт не заказывается.
+        self::assertSame(['12387459', '14275771', '16017246', '17656929'], $this->orderedSkuCampaigns($container));
+    }
+
+    public function testCampaignWithSpendMissingFromTheListIsStillOrdered(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $list = json_decode($this->fixture('campaign-list.json'), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($list);
+        self::assertIsArray($list['list']);
+        $list['list'] = array_values(array_filter($list['list'], static fn (mixed $c): bool => \is_array($c) && '12387459' !== $c['id']));
+        $this->fetcher($container, expense: $this->fixture('statistics-expense-2025-09-01.json'), campaigns: json_encode($list, \JSON_THROW_ON_ERROR));
+
+        $this->syncStats($container, $account, '2025-09-01', '2025-09-30', withReports: true);
+
+        // Тип неизвестен — лишний отчёт дешевле потерянной разбивки.
+        self::assertContains('12387459', $this->orderedSkuCampaigns($container));
+    }
+
     public function testOldChunkDoesNotAskForSku(): void
     {
         $container = $this->bootedContainer();
@@ -120,15 +273,15 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
     {
         $container = $this->bootedContainer();
         $account = $this->account($container);
-        $fetcher = $this->fetcher($container);
         $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+        $fetcher = $this->fetcher($container, expense: $this->expenseEndingOn($today));
         $chunk = OzonAdvertisingWindows::lastDays($today, 30)[0];
 
         $this->syncStats($container, $account, $chunk['from'], $chunk['to'], withReports: true);
 
         // Вчера и сегодня отдаёт products/sku; отчёт — за остальные дни
-        // куска (ADR-026 п. 4), по всем неархивным кампаниям типа SKU,
-        // не больше десяти в заказе.
+        // куска (ADR-026 п. 4), по кампаниям с расходом в периоде отчёта
+        // (ADR-035 п. 4), не больше десяти в заказе.
         $all = $this->sent($container, OrderOzonAdSkuReportMessage::class);
         $orders = array_values(array_filter($all, static fn (OrderOzonAdSkuReportMessage $order): bool => OzonAdReportKind::Sku === OzonAdReportKind::of($order->kind)));
         self::assertNotSame([], $orders);
@@ -139,7 +292,7 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
             self::assertLessThanOrEqual(10, \count($order->campaignIds));
             $campaigns = [...$campaigns, ...$order->campaignIds];
         }
-        self::assertSame($this->activeSkuCampaignIds(), $campaigns);
+        self::assertSame(self::SPENDING_ON_LAST_DAY, $campaigns);
 
         // Заказы «Оплаты за заказ» — один отчёт по всей организации
         // за весь кусок, без кампаний: products/sku для них нет.
@@ -210,6 +363,8 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
             $this->rawBodies($container, $account, MarketplaceReportType::OzonAdCpoOrders),
         );
         self::assertSame([], $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuReport));
+        // Форма строки заказов неизвестна — фактов из него нет (ADR-035 п. 7).
+        self::assertSame(0, $this->factTotals($container, $account)['rows']);
     }
 
     public function testCheckQueuedBeforeTheKindFieldIsStillASkuReport(): void
@@ -312,6 +467,20 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         );
         self::assertSame(['2026-08-25'], $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdSkuReport));
         self::assertSame([], $this->sent($container, CheckOzonAdSkuReportMessage::class));
+
+        // После raw — разбор в факты (ADR-035 п. 3): 725 строк на
+        // 158 960,62 ₽, суммы строк отчёта как есть. Итог расхода
+        // кампаний за тот же месяц — 158 960,57 ₽: пять копеек —
+        // построчное округление площадки, и прятать его нельзя.
+        self::assertSame(['rows' => 725, 'total' => -15896062, 'dates' => '2026-08-25..2026-09-23'], $this->factTotals($container, $account));
+        self::assertSame(
+            $this->rawIdStrings($container, $account, MarketplaceReportType::OzonAdSkuReport),
+            $this->factRawDocumentIds($container, $account),
+        );
+
+        // Повтор проверки того же отчёта — тот же результат (CLAUDE.md §4).
+        $this->check($container, $account, attempt: 1);
+        self::assertSame(['rows' => 725, 'total' => -15896062, 'dates' => '2026-08-25..2026-09-23'], $this->factTotals($container, $account));
     }
 
     public function testNotReadyReportIsCheckedAgain(): void
@@ -483,20 +652,77 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
     /**
      * @return list<string>
      */
-    private function activeSkuCampaignIds(): array
+    private function orderedSkuCampaigns(ContainerInterface $container): array
     {
-        $list = json_decode($this->fixture('campaign-list.json'), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertIsArray($list);
-        self::assertIsArray($list['list']);
-        $ids = [];
-        foreach ($list['list'] as $campaign) {
-            self::assertIsArray($campaign);
-            if ('CAMPAIGN_STATE_ARCHIVED' !== $campaign['state'] && 'SKU' === $campaign['advObjectType']) {
-                self::assertIsString($campaign['id']);
-                $ids[] = $campaign['id'];
+        $campaigns = [];
+        foreach ($this->sent($container, OrderOzonAdSkuReportMessage::class) as $order) {
+            if (OzonAdReportKind::Sku === OzonAdReportKind::of($order->kind)) {
+                $campaigns = [...$campaigns, ...$order->campaignIds];
             }
         }
-        self::assertNotSame([], $ids);
+
+        return $campaigns;
+    }
+
+    /**
+     * @return array{rows: int, total: int, dates: string}
+     */
+    private function factTotals(ContainerInterface $container, MarketplaceAccount $account): array
+    {
+        $row = $this->connection($container)->fetchAssociative(
+            <<<'SQL'
+                SELECT COUNT(*) AS rows, COALESCE(SUM(amount_minor), 0) AS total,
+                       COALESCE(MIN(business_date)::text, '') AS first, COALESCE(MAX(business_date)::text, '') AS last
+                FROM ad_sku_expense_fact
+                WHERE company_id = ? AND marketplace_account_id = ?
+                SQL,
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
+        );
+        self::assertIsArray($row);
+        self::assertIsString($row['first']);
+        self::assertIsString($row['last']);
+        self::assertIsInt($row['rows']);
+        self::assertTrue(\is_int($row['total']) || \is_string($row['total']));
+
+        return [
+            'rows' => $row['rows'],
+            'total' => (int) $row['total'],
+            'dates' => $row['first'] === $row['last'] ? $row['first'] : $row['first'].'..'.$row['last'],
+        ];
+    }
+
+    private function factAmount(ContainerInterface $container, MarketplaceAccount $account, string $sourceRowId): int
+    {
+        $amount = $this->connection($container)->fetchOne(
+            'SELECT amount_minor FROM ad_sku_expense_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), $sourceRowId],
+        );
+        self::assertIsInt($amount);
+
+        return $amount;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function factRawDocumentIds(ContainerInterface $container, MarketplaceAccount $account): array
+    {
+        /** @var list<string> $ids */
+        $ids = $this->connection($container)->fetchFirstColumn(
+            'SELECT DISTINCT raw_document_id::text FROM ad_sku_expense_fact WHERE company_id = ? AND marketplace_account_id = ? ORDER BY 1',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
+        );
+
+        return $ids;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function rawIdStrings(ContainerInterface $container, MarketplaceAccount $account, string $reportType): array
+    {
+        $ids = array_map(static fn (Uuid $id): string => $id->toRfc4122(), $this->rawIds($container, $account, $reportType));
+        sort($ids);
 
         return $ids;
     }
@@ -597,9 +823,9 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         throw new \LogicException('Ответ с кодом ошибки обязан бросить исключение.');
     }
 
-    private function fetcher(ContainerInterface $container, int $tokenStatus = 200, ?\Closure $beforeRejection = null): FakeOzonAdvertisingFetcher
+    private function fetcher(ContainerInterface $container, int $tokenStatus = 200, ?\Closure $beforeRejection = null, ?string $expense = null, ?string $campaigns = null, ?string $sku = null, ?string $report = null): FakeOzonAdvertisingFetcher
     {
-        $fetcher = new FakeOzonAdvertisingFetcher($tokenStatus, $this->fixture('campaign-list.json'), $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json'), $beforeRejection, $this->fixture('statistics-products-sku-2026-09-23.json'), $this->fixture('statistics-json-many-2026-08-25-request.json'), $this->fixture('statistics-json-many-2026-08-25.json'));
+        $fetcher = new FakeOzonAdvertisingFetcher($tokenStatus, $campaigns ?? $this->fixture('campaign-list.json'), $expense ?? $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json'), $beforeRejection, $sku ?? $this->fixture('statistics-products-sku-2026-09-23.json'), $this->fixture('statistics-json-many-2026-08-25-request.json'), $report ?? $this->fixture('statistics-json-many-2026-08-25.json'));
         $container->set(OzonPerformanceCampaignClient::class, $fetcher);
 
         return $fetcher;
@@ -706,6 +932,25 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         }
 
         return $builder->persistWith($companies, $accounts);
+    }
+
+    /**
+     * Снятый расход с датами, сдвинутыми так, что его последний день
+     * (23.09.2026) приходится на $lastDay. Отбор кампаний головного куска
+     * смотрит на расход вчера и сегодня, а фикстура снята в прошлом;
+     * форма ответа и суммы остаются побайтовыми, меняются только даты.
+     */
+    private function expenseEndingOn(\DateTimeImmutable $lastDay): string
+    {
+        $shift = (int) (new \DateTimeImmutable('2026-09-23'))->diff(new \DateTimeImmutable($lastDay->format('Y-m-d')))->format('%r%a');
+        $shifted = preg_replace_callback(
+            '/"date":"(\d{4}-\d{2}-\d{2})"/',
+            static fn (array $m): string => '"date":"'.(new \DateTimeImmutable($m[1]))->modify("{$shift} days")->format('Y-m-d').'"',
+            $this->fixture('statistics-expense-2026-08-25.json'),
+        );
+        self::assertIsString($shifted);
+
+        return $shifted;
     }
 
     private function fixture(string $name): string

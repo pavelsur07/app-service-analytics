@@ -323,7 +323,7 @@ Ingestion/Infrastructure/Connector/
 его списку разрешённых путей (docs/patterns.md, «Ключ внешнего API
 с правом записи»).
 
-Реклама грузится только в raw (ADR-026 п. 3): сообщение
+Реклама грузится в raw (ADR-026 п. 3): сообщение
 `FetchOzonAdCampaignStatsMessage` (кусок ≤ 30 дней), обработчик
 в `Application/MessageHandler/`, периоды — `Application/OzonAdvertisingWindows`.
 Raw-типы `ozon_ad_expense`, `ozon_ad_daily`; головной кусок ещё
@@ -332,6 +332,15 @@ SKU за дни раньше вчерашнего — асинхронные о�
 `OrderOzonAdSkuReportMessage` → `CheckOzonAdSkuReportMessage`, raw-тип
 `ozon_ad_sku_report`; той же цепочкой — заказы «Оплаты за заказ»
 (`OzonAdReportKind::CpoOrders`, raw-тип `ozon_ad_cpo_orders`). Разовый повтор — `app:ingestion:backfill-ozon-advertising`.
+
+Реклама по SKU (ADR-035): SKU-разбивка (`ozon_ad_sku_day`,
+`ozon_ad_sku_report`) после сохранения в raw разбирается
+`Domain/OzonAdSkuReportParser` в факт-таблицу `ad_sku_expense_fact`
+(`Domain/AdSkuExpenseFact`, запись — `Persistence/DoctrineAdSkuExpenseFactWriter`)
+через `Application/StoreOzonAdSkuExpenses`. Суммы Performance в `Money` —
+`Domain/OzonPerformanceMoney`. Кампании SKU-разбивки — с расходом в периоде
+по `Domain/OzonAdExpenseParser`, архивные включительно. Отчёт заказов
+«Оплаты за заказ» не разбирается.
 
 **Тела сырых документов (ADR-024, этап 2)** пишет и читает
 `Persistence/DoctrineMarketplaceRawDocumentRepository`: при

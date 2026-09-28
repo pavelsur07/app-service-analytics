@@ -8,6 +8,7 @@ use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonAdvertisingWindows;
+use App\Ingestion\Application\StoreOzonAdSkuExpenses;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\OzonAdReportKind;
@@ -16,6 +17,7 @@ use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonRateLimited;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Uid\Uuid;
@@ -28,8 +30,10 @@ use Symfony\Component\Uid\Uuid;
  * не загружен: период снова закажут суточное окно, рескан или консольная
  * команда.
  *
- * Из ответа о состоянии читается только поле `state`. Скачанный отчёт
- * не разбирается.
+ * Из ответа о состоянии читается только поле `state`. Скачанный
+ * SKU-отчёт после сохранения в raw разбирается в факты рекламы по SKU
+ * (ADR-035 п. 3); отчёт заказов «Оплаты за заказ» не разбирается —
+ * форма его строки неизвестна (ADR-035 п. 7).
  */
 #[AsMessageHandler]
 final readonly class CheckOzonAdSkuReportHandler
@@ -48,6 +52,7 @@ final readonly class CheckOzonAdSkuReportHandler
         private MarketplaceRawDocumentRepository $rawDocuments,
         private MessageBusInterface $bus,
         private LoggerInterface $logger,
+        private StoreOzonAdSkuExpenses $skuExpenses,
     ) {
     }
 
@@ -73,13 +78,24 @@ final readonly class CheckOzonAdSkuReportHandler
             $state = self::state($this->client->reportState($token, $message->uuid));
 
             if ('OK' === $state) {
-                $this->rawDocuments->add(MarketplaceRawDocument::capture(
+                $captured = MarketplaceRawDocument::capture(
                     companyId: Uuid::fromString($target->companyId),
                     marketplaceAccountId: Uuid::fromString($target->marketplaceAccountId),
                     reportType: OzonAdReportKind::rawType($message->reportKind()),
                     period: $from,
                     rawBody: $this->client->report($token, $message->uuid),
-                ));
+                );
+                $rawDocumentId = $this->rawDocuments->add($captured);
+
+                if (OzonAdReportKind::Sku === $message->reportKind()) {
+                    try {
+                        $this->skuExpenses->fromReport($captured, $rawDocumentId);
+                    } catch (\UnexpectedValueException|\JsonException $failure) {
+                        // Отчёт в raw; повтор скачал бы тот же и упал там же.
+                        // В трекер (ADR-006) и в failed-транспорт, без повторов.
+                        throw new UnrecoverableMessageHandlingException(\sprintf('SKU-отчёт рекламы Ozon не разобран: подключение %s, период с %s, raw %s: %s', $message->marketplaceAccountId, $message->from, $rawDocumentId->toRfc4122(), $failure->getMessage()), 0, $failure);
+                    }
+                }
 
                 return;
             }
