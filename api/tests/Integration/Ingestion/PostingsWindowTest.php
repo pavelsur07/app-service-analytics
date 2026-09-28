@@ -18,7 +18,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
- * Скользящее окно продаж и суточный глубокий рескан (ADR-006).
+ * Скользящее окно продаж и расходов и суточный глубокий рескан (ADR-006).
  *
  * Предмет проверки не «сколько запросов», а свойство продукта: заказ,
  * загруженный в день создания, лежит со статусом «собирается» и сам
@@ -73,22 +73,42 @@ final class PostingsWindowTest extends KernelTestCase
         );
     }
 
-    public function testExpenseWindowIsNotAffectedByTheRescan(): void
+    public function testOrdinaryTickReloadsThreeDaysOfExpenses(): void
     {
-        $action = $this->actionWithRescanAt($this->hourNow());
+        self::assertSame($this->days(3), $this->expenseDates($this->actionWithRescanAt($this->hourThatIsNotNow())));
+    }
+
+    public function testRescanTickReachesMonthEndCompensationsOfThePreviousMonth(): void
+    {
+        $dates = $this->expenseDates($this->actionWithRescanAt($this->hourNow()));
+
+        // Компенсации датой 31.08 Ozon опубликовал на четвёртой неделе
+        // сентября; окно в три дня их пропустило. Рескан обязан
+        // дотягиваться до такого дня.
+        self::assertSame($this->days(45), $dates);
+        self::assertContains(
+            (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))
+                ->modify('-28 day')->format('Y-m-d'),
+            $dates,
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function expenseDates(DispatchActiveOzonSyncsAction $action): array
+    {
         ($action)();
 
-        $expenseDates = [];
+        $dates = [];
         foreach ($this->transport()->getSent() as $envelope) {
             $message = $envelope->getMessage();
             if ($message instanceof FetchOzonExpensesMessage) {
-                $expenseDates[] = $message->accrualDate;
+                $dates[] = $message->accrualDate;
             }
         }
 
-        // У расходов свой ритм: начисление приходит за дни, а не за
-        // недели, и раздувать его вместе с продажами незачем.
-        self::assertSame($this->days(3), $expenseDates);
+        return $dates;
     }
 
     public function testOrdinaryTickDispatchesOneThreeDayReturnsWindow(): void
