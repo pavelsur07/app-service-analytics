@@ -113,6 +113,23 @@ export function UnitEconomicsPage() {
         </Card>
       )}
 
+      {/* Реклама по товарам берётся из рекламного кабинета и каждый
+          день сверяется со списанием в финансовом отчёте Ozon (ADR-035).
+          Не сошлось — цифра по товарам может быть неполной, и экран
+          обязан это назвать, а не показать её как окончательную. */}
+      {query.status === 'success' &&
+        query.data.advertisingUnreconciledDays > 0 && (
+          <Card tone="warning">
+            <StatusPanel
+              description={`За ${query.data.advertisingUnreconciledDays} дн. реклама по товарам не совпала со списанием в финансовом отчёте Ozon: разбивка по товарам могла прийти не полностью. Разница показана в расходах кабинета.`}
+              icon={<TriangleAlert aria-hidden="true" size={20} />}
+              role="status"
+              title="Реклама по товарам не сходится с финансовым отчётом"
+              tone="warning"
+            />
+          </Card>
+        )}
+
       {query.status === 'error' && (
         <Card tone="negative">
           <StatusPanel
@@ -141,9 +158,10 @@ export function UnitEconomicsPage() {
         </Card>
       )}
 
-      {/* Не размазываются по товарам намеренно (ADR-012): реклама
-          и хранение относятся к кабинету, и доля, происхождение которой
-          клиент не проверит, хуже честной отдельной строки. */}
+      {/* Не размазываются по товарам намеренно (ADR-012): хранение
+          и прочее относятся к кабинету, и доля, происхождение которой
+          клиент не проверит, хуже честной отдельной строки. Реклама
+          по товарам — в таблице (ADR-035); здесь только её остаток. */}
       {query.status === 'success' &&
         query.data.cabinetExpensesTotalMinor !== 0 && (
           <Card>
@@ -174,8 +192,8 @@ export function UnitEconomicsPage() {
               </button>
 
               <p className="text-sm text-text-muted">
-                Реклама, хранение и прочее, что Ozon не относит к конкретному
-                товару.
+                Хранение и прочее, что Ozon не относит к конкретному товару, и
+                реклама, не разнесённая по товарам.
               </p>
 
               {cabinetOpen && (
@@ -194,6 +212,23 @@ export function UnitEconomicsPage() {
                       </dd>
                     </div>
                   ))}
+                  {/* Остаток «Оплаты за клик»: списание в финансовом
+                      отчёте минус реклама по товарам. Бывает и
+                      положительным — за последние дни разбивка уже
+                      пришла, а списание ещё нет. */}
+                  {query.data.advertisingUnallocatedMinor === 0 ? null : (
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-text-muted">
+                        Реклама, не разнесённая по товарам
+                      </dt>
+                      <dd>
+                        {formatMinorAmount(
+                          query.data.advertisingUnallocatedMinor,
+                          query.data.currency,
+                        )}
+                      </dd>
+                    </div>
+                  )}
                 </dl>
               )}
             </div>
