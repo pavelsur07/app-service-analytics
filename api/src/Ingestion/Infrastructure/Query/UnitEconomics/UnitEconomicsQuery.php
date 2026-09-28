@@ -136,7 +136,7 @@ final readonly class UnitEconomicsQuery
                 LIMIT 1
             ) AS c ON TRUE
             WHERE f.company_id = :companyId AND f.business_date >= :from AND f.business_date <= :to
-              AND f.fee_type_id IN (:revenueType, :saleCommissionType)
+              AND f.fee_type_id IN (:saleTypes)
             GROUP BY f.marketplace_sku, f.currency
             SQL;
 

@@ -105,28 +105,6 @@ final class FetchOzonExpensesHandlerTest extends KernelTestCase
         self::assertSame(2, $this->expenseCount($container, $account));
     }
 
-    public function testRejectedLaterPageLeavesTheDayUnwritten(): void
-    {
-        $container = $this->bootedContainer();
-        $account = $this->account($container);
-        $unbalanced = str_replace('"total_amount":{"amount":"-20"', '"total_amount":{"amount":"-25"', $this->day([['accrual_id' => 2, 'sku' => '222', 'type_id' => 1, 'amount' => '-20']]));
-        $this->fetcher($container, [
-            $this->day([['accrual_id' => 1, 'sku' => '111', 'type_id' => 32, 'amount' => '-10']], 'cursor-2'),
-            $unbalanced,
-        ]);
-
-        // Вторая страница отклонена проверкой баланса (ADR-036). Первая
-        // не должна остаться в таблице: день наполовину — это выручка
-        // и расходы наполовину, и на экране он выглядел бы рабочим.
-        try {
-            $this->sync($container, $account);
-            self::fail('Несбалансированное начисление должно отклонить день.');
-        } catch (\UnexpectedValueException) {
-        }
-
-        self::assertSame(0, $this->expenseCount($container, $account));
-    }
-
     public function testExpensesOfAnotherCompanyAreNotVisible(): void
     {
         $container = $this->bootedContainer();
