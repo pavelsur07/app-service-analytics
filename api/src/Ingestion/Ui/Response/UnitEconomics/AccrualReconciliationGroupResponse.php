@@ -9,7 +9,7 @@ use OpenApi\Attributes as OA;
 final readonly class AccrualReconciliationGroupResponse
 {
     /**
-     * @param list<UnitEconomicsExpenseResponse> $items
+     * @param list<AccrualReconciliationItemResponse> $items
      */
     public function __construct(
         #[OA\Property(enum: ['sales', 'returns', 'commission', 'delivery', 'partners', 'fbo', 'promotion', 'other_services', 'compensations', 'ungrouped'])]

@@ -49,6 +49,36 @@ final class BuildAccrualReconciliationActionTest extends KernelTestCase
         self::assertSame('Возврат выручки', $this->group($report, 'returns')->items[0]->name);
     }
 
+    public function testEachItemSplitsAccruedAndReversed(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        // Комиссия продажи и её возврат, эквайринг и его возврат —
+        // строки одного типа с обратным знаком. Компенсация — доход,
+        // у неё «начислено» положительное.
+        $this->row($container, $company, 1, OzonFeeTypeNames::SALE_COMMISSION, -139_636_960);
+        $this->row($container, $company, 2, OzonFeeTypeNames::SALE_COMMISSION, 12_161_262);
+        $this->row($container, $company, 3, 1, -2_229_408);
+        $this->row($container, $company, 4, 1, 300_720);
+        $this->row($container, $company, 5, 25, 1_196_094, sku: '');
+        $this->row($container, $company, 6, 32, -6_900);
+
+        $report = $this->report($container, $company);
+
+        $commission = $this->group($report, 'commission')->items[0];
+        self::assertSame([-139_636_960, 12_161_262, -127_475_698], [$commission->accruedMinor, $commission->reversedMinor, $commission->amountMinor]);
+
+        $acquiring = $this->group($report, 'partners')->items[0];
+        self::assertSame([-2_229_408, 300_720, -1_928_688], [$acquiring->accruedMinor, $acquiring->reversedMinor, $acquiring->amountMinor]);
+
+        $compensation = $this->group($report, 'compensations')->items[0];
+        self::assertSame([1_196_094, 0], [$compensation->accruedMinor, $compensation->reversedMinor]);
+
+        // Без возвратов «возвращено» — ноль, а не отсутствие.
+        self::assertSame(0, $this->group($report, 'delivery')->items[0]->reversedMinor);
+    }
+
     public function testUnmappedTypeIsShownUngrouped(): void
     {
         $container = $this->bootedContainer();

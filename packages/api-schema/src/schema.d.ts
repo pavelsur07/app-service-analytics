@@ -853,10 +853,15 @@ export interface components {
             id: string;
             state: string;
         };
-        UnitEconomicsExpenseResponse: {
+        AccrualReconciliationItemResponse: {
             feeTypeId: number;
             name: string;
+            /** Нетто: начислено плюс возвращено. */
             amountMinor: number;
+            /** Начислено — строки со знаком статьи. */
+            accruedMinor: number;
+            /** Возвращено — строки с обратным знаком (возврат комиссии, эквайринга, отмена логистики); 0 — возвратов не было. */
+            reversedMinor: number;
         };
         AccrualReconciliationGroupResponse: {
             /** @enum {string} */
@@ -865,7 +870,7 @@ export interface components {
             label: string;
             totalMinor: number;
             /** Статьи группы, крупная первой. */
-            items: components["schemas"]["UnitEconomicsExpenseResponse"][];
+            items: components["schemas"]["AccrualReconciliationItemResponse"][];
         };
         AccrualReconciliationResponse: {
             /** Месяц, Y-m. */
@@ -1115,6 +1120,11 @@ export interface components {
             staleAccounts: number;
             items: components["schemas"]["StockPlacementItemResponse"][];
             nextCursor: string | null;
+        };
+        UnitEconomicsExpenseResponse: {
+            feeTypeId: number;
+            name: string;
+            amountMinor: number;
         };
         UnitEconomicsSkuResponse: {
             marketplaceSku: string;

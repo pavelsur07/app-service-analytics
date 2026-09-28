@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import {
   ChevronDown,
   ChevronLeft,
@@ -216,22 +216,48 @@ export function AccrualReconciliationPanel({
                   </tr>
                   {expanded &&
                     group.items.map((item) => (
-                      <tr
-                        className="text-text-muted"
-                        key={`${group.code}-${String(item.feeTypeId)}`}
-                      >
-                        <td className="py-1 pr-4 pl-12">
-                          {item.name}
-                          {/* Без группы — тип, которого нет в соответствии
-                              кабинета: код нужен, чтобы его дописать. */}
-                          {group.code === 'ungrouped'
-                            ? ` · код ${String(item.feeTypeId)}`
-                            : null}
-                        </td>
-                        <td className="px-4 py-1 text-right tabular-nums">
-                          {formatMinorAmount(item.amountMinor, currency)}
-                        </td>
-                      </tr>
+                      <Fragment key={`${group.code}-${String(item.feeTypeId)}`}>
+                        <tr className="text-text-muted">
+                          <td className="py-1 pr-4 pl-12">
+                            {item.name}
+                            {/* Без группы — тип, которого нет в соответствии
+                                кабинета: код нужен, чтобы его дописать. */}
+                            {group.code === 'ungrouped'
+                              ? ` · код ${String(item.feeTypeId)}`
+                              : null}
+                          </td>
+                          <td className="px-4 py-1 text-right tabular-nums">
+                            {formatMinorAmount(item.amountMinor, currency)}
+                          </td>
+                        </tr>
+                        {/* Возврат затраты площадка проводит строкой того же
+                            типа с обратным знаком; кабинет показывает его
+                            отдельно — и здесь он виден отдельно, чтобы
+                            сверять построчно. */}
+                        {item.reversedMinor !== 0 && (
+                          <>
+                            <tr className="text-xs text-text-muted">
+                              <td className="py-0.5 pr-4 pl-16">начислено</td>
+                              <td className="px-4 py-0.5 text-right tabular-nums">
+                                {formatMinorAmount(item.accruedMinor, currency)}
+                              </td>
+                            </tr>
+                            <tr className="text-xs text-text-muted">
+                              <td className="py-0.5 pr-4 pl-16">
+                                {item.accruedMinor < 0
+                                  ? 'возвращено'
+                                  : 'удержано'}
+                              </td>
+                              <td className="px-4 py-0.5 text-right tabular-nums">
+                                {formatMinorAmount(
+                                  item.reversedMinor,
+                                  currency,
+                                )}
+                              </td>
+                            </tr>
+                          </>
+                        )}
+                      </Fragment>
                     ))}
                 </tbody>
               )
@@ -253,7 +279,10 @@ export function AccrualReconciliationPanel({
           Выручку мы делим на продажи и возвраты по знаку. Кабинет часть
           отрицательной выручки (корректировки продаж) показывает в «Продажах»,
           поэтому эти две группы могут расходиться с ним на одну и ту же сумму;
-          их сумма и итог к начислению совпадают.
+          их сумма и итог к начислению совпадают. «Возвращено» у статьи — все
+          строки с обратным знаком: у вознаграждения это «Возврат
+          вознаграждения» кабинета вместе с положительными строками
+          «Вознаграждения за продажу».
         </p>
       )}
     </div>

@@ -8,8 +8,8 @@ use App\Ingestion\Application\UnitEconomics\AccrualReconciliationGroup;
 use App\Ingestion\Application\UnitEconomics\AccrualReconciliationItem;
 use App\Ingestion\Application\UnitEconomics\BuildAccrualReconciliationAction;
 use App\Ingestion\Ui\Response\UnitEconomics\AccrualReconciliationGroupResponse;
+use App\Ingestion\Ui\Response\UnitEconomics\AccrualReconciliationItemResponse;
 use App\Ingestion\Ui\Response\UnitEconomics\AccrualReconciliationResponse;
-use App\Ingestion\Ui\Response\UnitEconomics\UnitEconomicsExpenseResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
@@ -109,10 +109,12 @@ final class ShowAccrualReconciliationController
                     label: $group->label,
                     totalMinor: $group->totalMinor,
                     items: array_map(
-                        static fn (AccrualReconciliationItem $item): UnitEconomicsExpenseResponse => new UnitEconomicsExpenseResponse(
+                        static fn (AccrualReconciliationItem $item): AccrualReconciliationItemResponse => new AccrualReconciliationItemResponse(
                             feeTypeId: $item->feeTypeId,
                             name: $item->name,
                             amountMinor: $item->amountMinor,
+                            accruedMinor: $item->accruedMinor,
+                            reversedMinor: $item->reversedMinor,
                         ),
                         $group->items,
                     ),

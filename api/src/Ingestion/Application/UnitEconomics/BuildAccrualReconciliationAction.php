@@ -48,11 +48,14 @@ final readonly class BuildAccrualReconciliationAction
         $itemsByGroup = [];
         foreach ($rows as $row) {
             $group = OzonAccrualGroups::of($row->feeTypeId, $row->negativeRevenue);
+            $income = $row->amountMinor > 0;
             $itemsByGroup[$group][] = new AccrualReconciliationItem(
                 feeTypeId: $row->feeTypeId,
                 // Как в кабинете: отрицательная выручка — «Возврат выручки».
                 name: $row->negativeRevenue ? 'Возврат выручки' : OzonFeeTypeNames::of($row->feeTypeId),
                 amountMinor: $row->amountMinor,
+                accruedMinor: $income ? $row->positiveMinor : $row->negativeMinor,
+                reversedMinor: $income ? $row->negativeMinor : $row->positiveMinor,
             );
         }
 
