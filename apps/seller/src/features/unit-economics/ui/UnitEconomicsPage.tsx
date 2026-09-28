@@ -121,7 +121,7 @@ export function UnitEconomicsPage() {
         query.data.advertisingUnreconciledDays > 0 && (
           <Card tone="warning">
             <StatusPanel
-              description={`За ${query.data.advertisingUnreconciledDays} дн. реклама по товарам не совпала со списанием в финансовом отчёте Ozon: разбивка по товарам могла прийти не полностью.`}
+              description={`За ${query.data.advertisingUnreconciledDays} дн. реклама по товарам и списание в финансовом отчёте Ozon расходятся. Обычно это данные последних дней, ещё не пришедшие в один из отчётов; если расхождение держится дольше — напишите нам.`}
               icon={<TriangleAlert aria-hidden="true" size={20} />}
               role="status"
               title="Реклама по товарам не сходится с финансовым отчётом"
