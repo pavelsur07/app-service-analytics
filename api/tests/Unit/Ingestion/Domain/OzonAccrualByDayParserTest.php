@@ -6,6 +6,7 @@ namespace App\Tests\Unit\Ingestion\Domain;
 
 use App\Ingestion\Domain\MarketplaceExpenseFact;
 use App\Ingestion\Domain\OzonAccrualByDayParser;
+use App\Ingestion\Domain\OzonFeeTypeNames;
 use App\Shared\Domain\ValueObject\Money;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\Uuid;
@@ -63,31 +64,115 @@ final class OzonAccrualByDayParserTest extends TestCase
         self::assertSame(1, $facts[0]->feeTypeId());
     }
 
-    public function testSaleCommissionIsNotTurnedIntoAnExpense(): void
+    public function testSaleGivesRevenueAndCommissionRows(): void
     {
         $facts = $this->parse($this->fixture());
 
-        // Выручка и комиссия уже лежат в sales_fact из постингов
-        // (ADR-012). Второй экземпляр дал бы двойной счёт, поэтому
-        // блок commission пропускается: у продажи в расходы идут только
-        // услуги доставки.
+        // Продажа 64533597-0142-5: 2747 − 1263,62 − 76,85 = 1406,53.
+        // Выручка и вознаграждение — строками начисления рядом
+        // с логистикой (ADR-036), эквайринг — отдельное начисление
+        // по товару с тем же unit_number.
         $sale = array_values(array_filter(
             $facts,
             static fn (MarketplaceExpenseFact $f): bool => '64533597-0142-5' === $f->unitNumber(),
         ));
 
-        // Три строки: логистика и доставка до места выдачи из начисления
-        // по отправлению плюс эквайринг из начисления по товару — у них
-        // общий unit_number. Комиссии продажи (-1263.62 ₽) среди них нет.
-        self::assertCount(3, $sale);
-        self::assertEqualsCanonicalizing([32, 29, 1], array_map(
-            static fn (MarketplaceExpenseFact $f): int => $f->feeTypeId(),
-            $sale,
+        $byType = [];
+        foreach ($sale as $fact) {
+            $byType[$fact->feeTypeId()] = $fact->amount()->minorAmount();
+        }
+        ksort($byType);
+
+        self::assertSame([
+            OzonFeeTypeNames::REVENUE => 274700,
+            1 => -2336,
+            29 => -785,
+            32 => -6900,
+            OzonFeeTypeNames::SALE_COMMISSION => -126362,
+        ], $byType);
+    }
+
+    public function testReturnIsNotSkippedSilently(): void
+    {
+        $facts = $this->parse($this->fixture());
+
+        // Возврат приходит начислением без услуг доставки — только блок
+        // commission. Раньше он давал ноль строк без ошибки; теперь это
+        // выручка со знаком минус и возврат вознаграждения (ADR-036).
+        $return = array_values(array_filter(
+            $facts,
+            static fn (MarketplaceExpenseFact $f): bool => '46205549-0525-1' === $f->unitNumber(),
         ));
-        self::assertNotContains(-126362, array_map(
+
+        $byType = [];
+        foreach ($return as $fact) {
+            $byType[$fact->feeTypeId()] = $fact->amount()->minorAmount();
+        }
+
+        self::assertSame(-240200, $byType[OzonFeeTypeNames::REVENUE] ?? null);
+        self::assertSame(110492, $byType[OzonFeeTypeNames::SALE_COMMISSION] ?? null);
+    }
+
+    public function testEachRevenueRowIsOneUnit(): void
+    {
+        $facts = $this->parse($this->fixture());
+
+        // 31 блок commission за день: 30 продаж и один возврат.
+        $revenue = array_map(
             static fn (MarketplaceExpenseFact $f): int => $f->amount()->minorAmount(),
-            $sale,
-        ));
+            array_filter($facts, static fn (MarketplaceExpenseFact $f): bool => OzonFeeTypeNames::REVENUE === $f->feeTypeId()),
+        );
+
+        self::assertCount(30, array_filter($revenue, static fn (int $amount): bool => $amount > 0));
+        self::assertCount(1, array_filter($revenue, static fn (int $amount): bool => $amount < 0));
+    }
+
+    public function testRowsOfEveryAccrualAddUpToItsTotal(): void
+    {
+        $facts = $this->parse($this->fixture());
+        $decoded = json_decode($this->fixture(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($decoded);
+        self::assertIsArray($decoded['accruals']);
+
+        // Сумма всех строк дня равна сумме total_amount всех начислений:
+        // ни одной копейки мимо разбора.
+        $expected = 0;
+        foreach ($decoded['accruals'] as $accrual) {
+            self::assertIsArray($accrual);
+            self::assertIsArray($accrual['total_amount']);
+            self::assertIsString($accrual['total_amount']['amount']);
+            // Строкой, без float (CLAUDE.md §3): «-5.8» — это -580.
+            [$whole, $fraction] = array_pad(explode('.', $accrual['total_amount']['amount'], 2), 2, '');
+            $minor = (int) ltrim($whole, '-') * 100 + (int) str_pad($fraction, 2, '0');
+            $expected += str_starts_with($whole, '-') ? -$minor : $minor;
+        }
+
+        self::assertSame($expected, array_sum(array_map(
+            static fn (MarketplaceExpenseFact $f): int => $f->amount()->minorAmount(),
+            $facts,
+        )));
+    }
+
+    public function testUnbalancedAccrualStopsTheParse(): void
+    {
+        // Начисление по отправлению без услуг и без commission, но с суммой:
+        // часть денег разбор не понял. Ноль строк без ошибки — ровно то,
+        // что раньше происходило с возвратом (ADR-036 п. 5).
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('разбор не понял');
+
+        $this->parse('{"accruals":[{"accrual_id":1,"date":"2026-07-01","unit_number":"x","accrued_category":"POSTING","total_amount":{"amount":"-1297.08","currency":"RUB"},"posting":{"delivery_schema":"Fbo","products":[{"sku":1,"delivery":null,"commission":null}]},"item_fees":null,"non_item_fee":null,"container_fees":null}],"last_id":""}');
+    }
+
+    public function testRevenueOfSeveralUnitsStopsTheParse(): void
+    {
+        // Количества в ответе нет, штука — строка выручки. sale_amount,
+        // не равная цене одной штуки, означает строку на несколько —
+        // посчитать её одной значило бы ошибиться в количестве.
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('seller_price');
+
+        $this->parse('{"accruals":[{"accrual_id":1,"date":"2026-07-01","unit_number":"x","accrued_category":"POSTING","total_amount":{"amount":"2800","currency":"RUB"},"posting":{"delivery_schema":"Fbo","products":[{"sku":1,"delivery":null,"commission":{"seller_price":{"amount":"2000","currency":"RUB"},"sale_amount":{"amount":"4000","currency":"RUB"},"sale_commission":{"amount":"-1200","currency":"RUB"}}}]},"item_fees":null,"non_item_fee":null,"container_fees":null}],"last_id":""}');
     }
 
     public function testKeyIsGluedFromAccrualSkuAndFeeType(): void
@@ -96,6 +181,7 @@ final class OzonAccrualByDayParserTest extends TestCase
             'NON_ITEM',
             null,
             '{"type_id":41,"accrued":{"amount":"-237.93","currency":"RUB"}}',
+            '-237.93',
         ));
 
         // Ключ склеен по ADR-012, у общих расходов артикул пустой.
@@ -166,14 +252,14 @@ final class OzonAccrualByDayParserTest extends TestCase
         return (new OzonAccrualByDayParser())->parse($rawBody, Uuid::v7(), Uuid::v7(), Uuid::v7())['facts'];
     }
 
-    private function accrual(string $category, ?string $itemFees = null, ?string $nonItemFee = null): string
+    private function accrual(string $category, ?string $itemFees = null, ?string $nonItemFee = null, string $total = '-19.43'): string
     {
         $body = [
             'accrual_id' => 'NON_ITEM' === $category ? 55153675049 : 55129373555,
             'date' => '2026-07-01',
             'unit_number' => '10278453-0923',
             'accrued_category' => $category,
-            'total_amount' => ['amount' => '-19.43', 'currency' => 'RUB'],
+            'total_amount' => ['amount' => $total, 'currency' => 'RUB'],
             'posting' => null,
             'item_fees' => null === $itemFees ? null : json_decode($itemFees, true, flags: \JSON_THROW_ON_ERROR),
             'non_item_fee' => null === $nonItemFee ? null : json_decode($nonItemFee, true, flags: \JSON_THROW_ON_ERROR),

@@ -12,7 +12,7 @@ use App\Ingestion\Domain\MarketplaceExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
-use App\Ingestion\Domain\SalesFactRepository;
+use App\Ingestion\Domain\OzonFeeTypeNames;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsCursor;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsDirection;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsSort;
@@ -21,7 +21,6 @@ use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
 use App\Tests\Support\Builder\MarketplaceListingBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
-use App\Tests\Support\Builder\SalesFactBuilder;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Uid\Uuid;
@@ -465,18 +464,23 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
         int $commissionMinor,
         string $sourceRowId = 'sale',
     ): void {
-        /** @var SalesFactRepository $salesFacts */
-        $salesFacts = $container->get(SalesFactRepository::class);
+        /** @var MarketplaceExpenseFactRepository $expenseFacts */
+        $expenseFacts = $container->get(MarketplaceExpenseFactRepository::class);
 
-        SalesFactBuilder::aSalesFact()
+        // Продажа — две строки ленты начислений (ADR-036): выручка
+        // и вознаграждение за продажу одного начисления.
+        $accrual = MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
             ->withCompanyId($company->id())
             ->withBusinessDate(new \DateTimeImmutable(self::DAY))
             ->withMarketplaceSku($sku)
-            ->withSourceRowId($sourceRowId.'-'.$sku)
-            ->withStatus('delivered')
+            ->withAccrualId(crc32($sourceRowId.'-'.$sku))
+            ->withUnitNumber($sourceRowId.'-'.$sku);
+        $accrual->withFeeTypeId(OzonFeeTypeNames::REVENUE)
             ->withAmount(Money::ofMinor($amountMinor, 'RUB'))
-            ->withCommissionAmount(Money::ofMinor($commissionMinor, 'RUB'))
-            ->persistWith($salesFacts);
+            ->persistWith($expenseFacts);
+        $accrual->withFeeTypeId(OzonFeeTypeNames::SALE_COMMISSION)
+            ->withAmount(Money::ofMinor($commissionMinor, 'RUB'))
+            ->persistWith($expenseFacts);
     }
 
     private function expense(

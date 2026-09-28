@@ -15,9 +15,10 @@ final readonly class UnitEconomicsSkuRow
         public string $marketplaceSku,
         public string $currency,
         public int $deliveredQuantity,
+        public int $returnedQuantity,
         public int $deliveredAmountMinor,
+        public int $returnsAmountMinor,
         public int $commissionAmountMinor,
-        public int $orderedQuantity,
         public int $expensesTotalMinor,
         /** Реклама по SKU из SKU-отчётов площадки, отрицательная (ADR-035). */
         public int $advertisingTotalMinor,

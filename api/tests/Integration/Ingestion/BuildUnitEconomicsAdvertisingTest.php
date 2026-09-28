@@ -13,7 +13,7 @@ use App\Ingestion\Domain\AdSkuExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
-use App\Ingestion\Domain\SalesFactRepository;
+use App\Ingestion\Domain\OzonFeeTypeNames;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsDirection;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\UnitEconomicsSort;
 use App\Shared\Domain\ValueObject\Money;
@@ -21,7 +21,6 @@ use App\Tests\Support\Builder\AdSkuExpenseFactBuilder;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
-use App\Tests\Support\Builder\SalesFactBuilder;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Uid\Uuid;
@@ -255,19 +254,23 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
 
     private function sale(ContainerInterface $container, Company $company, string $sku, int $amountMinor, int $commissionMinor, string $sourceRowId = 'sale'): void
     {
-        /** @var SalesFactRepository $salesFacts */
-        $salesFacts = $container->get(SalesFactRepository::class);
+        /** @var MarketplaceExpenseFactRepository $expenseFacts */
+        $expenseFacts = $container->get(MarketplaceExpenseFactRepository::class);
 
-        SalesFactBuilder::aSalesFact()
+        // Продажа — две строки ленты начислений (ADR-036).
+        $accrual = MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
             ->withCompanyId($company->id())
             ->withMarketplaceAccountId($this->account($company))
             ->withBusinessDate(new \DateTimeImmutable(self::DAY))
             ->withMarketplaceSku($sku)
-            ->withSourceRowId($sourceRowId.'-'.$sku)
-            ->withStatus('delivered')
+            ->withAccrualId(crc32($sourceRowId.'-'.$sku))
+            ->withUnitNumber($sourceRowId.'-'.$sku);
+        $accrual->withFeeTypeId(OzonFeeTypeNames::REVENUE)
             ->withAmount(Money::ofMinor($amountMinor, 'RUB'))
-            ->withCommissionAmount(Money::ofMinor($commissionMinor, 'RUB'))
-            ->persistWith($salesFacts);
+            ->persistWith($expenseFacts);
+        $accrual->withFeeTypeId(OzonFeeTypeNames::SALE_COMMISSION)
+            ->withAmount(Money::ofMinor($commissionMinor, 'RUB'))
+            ->persistWith($expenseFacts);
     }
 
     private function adSku(ContainerInterface $container, Company $company, string $campaignId, string $sku, int $amountMinor, string $day = self::DAY): void
