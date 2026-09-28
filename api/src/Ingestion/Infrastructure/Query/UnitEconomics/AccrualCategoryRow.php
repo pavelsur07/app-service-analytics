@@ -12,6 +12,10 @@ final readonly class AccrualCategoryRow
         public bool $negativeRevenue,
         public string $currency,
         public int $amountMinor,
+        /** Сумма строк со знаком «плюс» (≥ 0). */
+        public int $positiveMinor,
+        /** Сумма строк со знаком «минус» (≤ 0). */
+        public int $negativeMinor,
     ) {
     }
 }

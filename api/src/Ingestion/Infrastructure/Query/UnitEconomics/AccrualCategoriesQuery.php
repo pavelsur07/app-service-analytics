@@ -16,6 +16,11 @@ use Doctrine\DBAL\Query\QueryBuilder;
  * Выручка (тип 0) сворачивается отдельно по знаку: продажи и возвраты —
  * разные группы кабинета, и сумма одной строкой их бы смешала.
  *
+ * У остальных типов строка одна, но с суммами по знаку рядом с итогом:
+ * площадка возвращает затрату строкой того же типа с обратным знаком
+ * (возврат комиссии, эквайринга, отмена логистики), и сверка показывает
+ * «начислено» и «возвращено» раздельно, как кабинет.
+ *
  * Считает PostgreSQL (CLAUDE.md §5); наружу — строка на тип, знак
  * выручки и валюту. Типов у площадки 119, и только выручка даёт две
  * строки — при одной валюте их не больше 121. Потолок — максимум
@@ -38,6 +43,8 @@ final readonly class AccrualCategoriesQuery
                 '(fee_type_id = :revenueType AND amount_minor < 0) AS negative_revenue',
                 'currency',
                 'SUM(amount_minor) AS amount_minor',
+                'COALESCE(SUM(amount_minor) FILTER (WHERE amount_minor > 0), 0) AS positive_minor',
+                'COALESCE(SUM(amount_minor) FILTER (WHERE amount_minor < 0), 0) AS negative_minor',
             )
             ->from('marketplace_expense_fact')
             ->where('company_id = :companyId')
@@ -75,6 +82,8 @@ final readonly class AccrualCategoriesQuery
             negativeRevenue: $negative,
             currency: $currency,
             amountMinor: self::intValue($row['amount_minor']),
+            positiveMinor: self::intValue($row['positive_minor']),
+            negativeMinor: self::intValue($row['negative_minor']),
         );
     }
 

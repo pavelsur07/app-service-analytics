@@ -49,6 +49,85 @@ final class BuildAccrualReconciliationActionTest extends KernelTestCase
         self::assertSame('Возврат выручки', $this->group($report, 'returns')->items[0]->name);
     }
 
+    public function testEachItemSplitsAccruedAndReversed(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        // Комиссия продажи и её возврат, эквайринг и его возврат —
+        // строки одного типа с обратным знаком. Компенсация — доход,
+        // у неё «начислено» положительное.
+        $this->row($container, $company, 1, OzonFeeTypeNames::SALE_COMMISSION, -139_636_960);
+        $this->row($container, $company, 2, OzonFeeTypeNames::SALE_COMMISSION, 12_161_262);
+        $this->row($container, $company, 3, 1, -2_229_408);
+        $this->row($container, $company, 4, 1, 300_720);
+        $this->row($container, $company, 5, 25, 1_196_094, sku: '');
+        $this->row($container, $company, 6, 32, -6_900);
+
+        $report = $this->report($container, $company);
+
+        $commission = $this->group($report, 'commission')->items[0];
+        self::assertSame([-139_636_960, 12_161_262, -127_475_698], [$commission->accruedMinor, $commission->reversedMinor, $commission->amountMinor]);
+
+        $acquiring = $this->group($report, 'partners')->items[0];
+        self::assertSame([-2_229_408, 300_720, -1_928_688], [$acquiring->accruedMinor, $acquiring->reversedMinor, $acquiring->amountMinor]);
+
+        $compensation = $this->group($report, 'compensations')->items[0];
+        self::assertSame([1_196_094, 0], [$compensation->accruedMinor, $compensation->reversedMinor]);
+
+        // Без возвратов «возвращено» — ноль, а не отсутствие.
+        self::assertSame(0, $this->group($report, 'delivery')->items[0]->reversedMinor);
+    }
+
+    public function testCostStaysACostWhenRefundsOutweighChargesOfTheMonth(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        // Отмена логистики за прошлый месяц больше начислений этого:
+        // нетто положительное, но это по-прежнему затрата.
+        $this->row($container, $company, 1, 32, -100);
+        $this->row($container, $company, 2, 32, 14_900);
+        // Нулевое нетто с начислением и отменой.
+        $this->row($container, $company, 3, 29, -1_700);
+        $this->row($container, $company, 4, 29, 1_700);
+        // Компенсация с декомпенсацией: доход, удержание — обратный знак.
+        $this->row($container, $company, 5, 25, 50_000, sku: '');
+        $this->row($container, $company, 6, 25, -8_000, sku: '');
+
+        $report = $this->report($container, $company);
+
+        $logistics = $this->group($report, 'delivery')->items[0];
+        self::assertSame([-100, 14_900, 14_800], [$logistics->accruedMinor, $logistics->reversedMinor, $logistics->amountMinor]);
+
+        $pickup = $this->group($report, 'partners')->items[0];
+        self::assertSame([-1_700, 1_700, 0], [$pickup->accruedMinor, $pickup->reversedMinor, $pickup->amountMinor]);
+
+        $compensation = $this->group($report, 'compensations')->items[0];
+        self::assertSame([50_000, -8_000, 42_000], [$compensation->accruedMinor, $compensation->reversedMinor, $compensation->amountMinor]);
+    }
+
+    public function testUngroupedTypeTakesItsDirectionFromTheNet(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        // Природа типа без группы неизвестна: положительное нетто —
+        // доход, нулевое — затрата.
+        $this->row($container, $company, 1, 118, 50_000, sku: '');
+        $this->row($container, $company, 2, 118, -10_000, sku: '');
+        $this->row($container, $company, 3, 117, 30_000, sku: '');
+        $this->row($container, $company, 4, 117, -30_000, sku: '');
+
+        $items = [];
+        foreach ($this->group($this->report($container, $company), 'ungrouped')->items as $item) {
+            $items[$item->feeTypeId] = [$item->accruedMinor, $item->reversedMinor, $item->amountMinor];
+        }
+
+        self::assertSame([50_000, -10_000, 40_000], $items[118] ?? null);
+        self::assertSame([-30_000, 30_000, 0], $items[117] ?? null);
+    }
+
     public function testUnmappedTypeIsShownUngrouped(): void
     {
         $container = $this->bootedContainer();
