@@ -17,6 +17,7 @@ const SORT_KEYS = [
   'revenue',
   'commission',
   'expenses',
+  'advertising',
   'cost',
   'margin',
 ] as const satisfies readonly SortKey[]
@@ -72,7 +73,10 @@ export function parseDays(raw: string | null): number {
  * чисел, которые видно на экране, а видно их со знаком.
  */
 export function initialDirection(sort: SortKey): SortDirection {
-  return sort === 'commission' || sort === 'expenses' || sort === 'cost'
+  return sort === 'commission' ||
+    sort === 'expenses' ||
+    sort === 'advertising' ||
+    sort === 'cost'
     ? 'asc'
     : 'desc'
 }

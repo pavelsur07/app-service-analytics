@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Query\UnitEconomics;
 
+use App\Ingestion\Domain\OzonFeeTypeNames;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
@@ -125,6 +126,19 @@ final readonly class UnitEconomicsQuery
             GROUP BY marketplace_sku, currency
             SQL;
 
+        // Реклама по SKU — из SKU-отчётов площадки как есть (ADR-035),
+        // по дню расхода, всеми кампаниями товара. Третья сторона того же
+        // объединения: товар с рекламой, но без продаж и расходов, в
+        // список попадает, а не проходит мимо лимита страницы.
+        $advertising = <<<'SQL'
+            SELECT marketplace_sku,
+                   currency,
+                   SUM(amount_minor) AS advertising_total_minor
+            FROM ad_sku_expense_fact
+            WHERE company_id = :companyId AND business_date >= :from AND business_date <= :to
+            GROUP BY marketplace_sku, currency
+            SQL;
+
         // Карточка товара: название и артикул селлера. Ключ каталога —
         // (company_id, marketplace_account_id, marketplace_sku), а агрегат
         // выше схлопнут по (marketplace_sku, currency) и подключения уже
@@ -156,24 +170,29 @@ final readonly class UnitEconomicsQuery
         $joined = <<<SQL
             (
                 SELECT j.*,
-                       j.delivered_amount_minor + j.commission_amount_minor + j.expenses_total_minor AS margin_minor,
+                       j.delivered_amount_minor + j.commission_amount_minor + j.expenses_total_minor
+                           + j.advertising_total_minor AS margin_minor,
                        l.name,
                        l.offer_id,
                        l.photo_url
                 FROM (
-                    SELECT COALESCE(s.marketplace_sku, e.marketplace_sku) AS marketplace_sku,
-                           COALESCE(s.currency, e.currency) AS currency,
+                    SELECT COALESCE(s.marketplace_sku, e.marketplace_sku, a.marketplace_sku) AS marketplace_sku,
+                           COALESCE(s.currency, e.currency, a.currency) AS currency,
                            COALESCE(s.delivered_quantity, 0) AS delivered_quantity,
                            COALESCE(s.delivered_amount_minor, 0) AS delivered_amount_minor,
                            COALESCE(s.commission_amount_minor, 0) AS commission_amount_minor,
                            COALESCE(s.ordered_quantity, 0) AS ordered_quantity,
                            COALESCE(e.expenses_total_minor, 0) AS expenses_total_minor,
+                           COALESCE(a.advertising_total_minor, 0) AS advertising_total_minor,
                            COALESCE(s.cost_total_minor, 0) AS cost_total_minor,
                            COALESCE(s.quantity_without_cost, 0) AS quantity_without_cost,
                            s.cost_corrected_at
                     FROM ({$sales}) AS s
                     FULL OUTER JOIN ({$expenses}) AS e
                       ON s.marketplace_sku = e.marketplace_sku AND s.currency = e.currency
+                    FULL OUTER JOIN ({$advertising}) AS a
+                      ON a.marketplace_sku = COALESCE(s.marketplace_sku, e.marketplace_sku)
+                     AND a.currency = COALESCE(s.currency, e.currency)
                 ) AS j
                 LEFT JOIN ({$listing}) AS l ON l.marketplace_sku = j.marketplace_sku
             ) AS sku
@@ -188,6 +207,7 @@ final readonly class UnitEconomicsQuery
                 'commission_amount_minor',
                 'ordered_quantity',
                 'expenses_total_minor',
+                'advertising_total_minor',
                 'cost_total_minor',
                 'quantity_without_cost',
                 'cost_corrected_at',
@@ -264,13 +284,51 @@ final readonly class UnitEconomicsQuery
             ->andWhere('business_date >= :from')
             ->andWhere('business_date <= :to')
             ->andWhere("marketplace_sku = ''")
+            // «Оплата за клик» идёт отдельно — остатком, не разнесённым
+            // по товарам (advertisingTotals, ADR-035 п. 6).
+            ->andWhere('fee_type_id <> :payPerClick')
             ->setParameter('companyId', $companyId)
             ->setParameter('from', $from->format('Y-m-d'))
             ->setParameter('to', $to->format('Y-m-d'))
+            ->setParameter('payPerClick', OzonFeeTypeNames::PAY_PER_CLICK)
             ->groupBy('fee_type_id')
             ->addGroupBy('currency')
             // Типов начислений у площадки 119 — потолок с запасом
             // и всё равно ограничен (§5).
+            ->setMaxResults(self::MAX_LIMIT);
+    }
+
+    /**
+     * Реклама за период по валютам: итог «Оплаты за клик» из `by-day`
+     * и итог рекламы по SKU из SKU-отчётов (ADR-035 п. 6). Разницу —
+     * остаток, не разнесённый по товарам, — считает Money в сценарии.
+     *
+     * Строк столько, сколько валют у компании за период, — одна;
+     * потолок защитный.
+     */
+    public function advertisingTotals(string $companyId, \DateTimeImmutable $from, \DateTimeImmutable $to): QueryBuilder
+    {
+        $sides = <<<'SQL'
+            (
+                SELECT currency, amount_minor AS by_day_minor, 0 AS sku_minor
+                FROM marketplace_expense_fact
+                WHERE company_id = :companyId AND business_date >= :from AND business_date <= :to
+                  AND marketplace_sku = '' AND fee_type_id = :payPerClick
+                UNION ALL
+                SELECT currency, 0, amount_minor
+                FROM ad_sku_expense_fact
+                WHERE company_id = :companyId AND business_date >= :from AND business_date <= :to
+            ) AS sides
+            SQL;
+
+        return $this->connection->createQueryBuilder()
+            ->select('currency', 'SUM(by_day_minor) AS by_day_minor', 'SUM(sku_minor) AS sku_minor')
+            ->from($sides)
+            ->setParameter('companyId', $companyId)
+            ->setParameter('from', $from->format('Y-m-d'))
+            ->setParameter('to', $to->format('Y-m-d'))
+            ->setParameter('payPerClick', OzonFeeTypeNames::PAY_PER_CLICK)
+            ->groupBy('currency')
             ->setMaxResults(self::MAX_LIMIT);
     }
 
@@ -287,6 +345,7 @@ final readonly class UnitEconomicsQuery
             commissionAmountMinor: self::intValue($row['commission_amount_minor']),
             orderedQuantity: self::intValue($row['ordered_quantity']),
             expensesTotalMinor: self::intValue($row['expenses_total_minor']),
+            advertisingTotalMinor: self::intValue($row['advertising_total_minor']),
             costTotalMinor: self::intValue($row['cost_total_minor']),
             quantityWithoutCost: self::intValue($row['quantity_without_cost']),
             costCorrectedAt: null === $row['cost_corrected_at'] ? null : self::stringValue($row['cost_corrected_at']),

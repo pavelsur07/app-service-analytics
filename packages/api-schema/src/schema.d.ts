@@ -1097,7 +1097,12 @@ export interface components {
             commissionMinor: number;
             expenses: components["schemas"]["UnitEconomicsExpenseResponse"][];
             expensesTotalMinor: number;
-            /** Комиссия плюс расходы: считает бэкенд, не компонент (§10). */
+            /**
+             * Реклама по товару из SKU-отчётов площадки, всеми кампаниями,
+             *     отрицательная (ADR-035).
+             */
+            advertisingMinor: number;
+            /** Комиссия плюс расходы плюс реклама: считает бэкенд, не компонент (§10). */
             deductionsTotalMinor: number;
             marginMinor: number;
             /** Себестоимость проданного, отрицательная — как и прочие вычеты. */
@@ -1118,7 +1123,13 @@ export interface components {
             currency: string;
             skus: components["schemas"]["UnitEconomicsSkuResponse"][];
             cabinetExpenses: components["schemas"]["UnitEconomicsExpenseResponse"][];
+            /** Расходы кабинета вместе с остатком рекламы. */
             cabinetExpensesTotalMinor: number;
+            /**
+             * Дни окна (кроме сегодняшнего), где реклама по товарам
+             *     не сошлась с финансовым отчётом площадки. Ноль — сошлась.
+             */
+            advertisingUnreconciledDays: number;
             /**
              * Дни окна, за которые продажи загружены, а расходы нет:
              *     маржа за них завышена. Ноль — отчёт полон.
@@ -2595,7 +2606,7 @@ export interface operations {
                 /** @description Сколько товаров вернуть на странице */
                 limit?: number;
                 /** @description Показатель, по которому упорядочена страница */
-                sort?: "delivered" | "revenue" | "commission" | "expenses" | "cost" | "margin";
+                sort?: "delivered" | "revenue" | "commission" | "expenses" | "advertising" | "cost" | "margin";
                 /** @description Направление сортировки */
                 direction?: "asc" | "desc";
                 /** @description Курсор следующей страницы из предыдущего ответа. Действителен только для той сортировки, при которой выдан */

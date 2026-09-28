@@ -29,6 +29,7 @@ describe('разбор параметров адреса', () => {
   it('берёт только известные показатели сортировки', () => {
     expect(parseSort('margin')).toBe('margin')
     expect(parseSort('cost')).toBe('cost')
+    expect(parseSort('advertising')).toBe('advertising')
     expect(parseSort('profit')).toBe('revenue')
     expect(parseSort(null)).toBe('revenue')
   })
@@ -55,6 +56,8 @@ describe('сторона, с которой показатель интерес�
   it('у отрицательных показателей первый клик даёт возрастание', () => {
     expect(initialDirection('commission')).toBe('asc')
     expect(initialDirection('expenses')).toBe('asc')
+    // Реклама отрицательная, как расходы: первым — кто тратит больше.
+    expect(initialDirection('advertising')).toBe('asc')
     expect(initialDirection('cost')).toBe('asc')
   })
 

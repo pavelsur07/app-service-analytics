@@ -51,15 +51,19 @@ const COLUMNS: Column[] = [
   { label: 'Выручка', width: 'w-32', sort: 'revenue' },
   { label: 'Комиссия', width: 'w-30', sort: 'commission' },
   { label: 'Расходы площадки', width: 'w-44', sort: 'expenses' },
+  // Из рекламного кабинета по SKU, всеми кампаниями товара (ADR-035) —
+  // отдельно от расходов площадки: у них разный источник, и сверяются
+  // они по-разному.
+  { label: 'Реклама', width: 'w-30', sort: 'advertising' },
   { label: 'Себестоимость', width: 'w-32', sort: 'cost' },
   { label: 'Маржа', width: 'w-38', sort: 'margin' },
 ]
 
-// Сумма ширин колонок: 56+112+304+176+128+128+120+176+128+152.
+// Сумма ширин колонок: 56+112+304+176+128+128+120+176+120+128+152.
 // table-fixed берёт ширины из шапки, min-w не даёт им схлопнуться
 // на узком окне — вместо этого появляется горизонтальная прокрутка,
 // а первые три колонки остаются на месте.
-const TABLE_WIDTH = 'min-w-370'
+const TABLE_WIDTH = 'min-w-400'
 
 const HEAD_CELL = 'border-b border-border-default px-3 py-2'
 const BODY_CELL = 'border-b border-border-subtle px-3 py-1.5 whitespace-nowrap'
@@ -178,7 +182,7 @@ function Breakdown({
         colSpan={COLUMNS.length}
       >
         {/* Панель прижата к левому краю прокрутки и имеет свою ширину,
-            а не наследует ячейку. Ячейка занимает всю таблицу — 1480px, —
+            а не наследует ячейку. Ячейка занимает всю таблицу — 1600px, —
             и суммы в панели оказывались прижаты к её правому краю, то есть
             за пределами экрана: чтобы увидеть итог, приходилось листать
             таблицу вбок.
@@ -225,6 +229,19 @@ function Breakdown({
                 <dd>{sku.costCorrectedAt.slice(0, 10)}</dd>
               </div>
             )}
+          </dl>
+
+          {/* Реклама входит в «Съедает от выручки» и в маржу, поэтому
+              названа здесь рядом с расходами площадки, иначе строки
+              не давали бы итога. Отдельной строкой: источник другой —
+              рекламный кабинет, а не финансовый отчёт (ADR-035). */}
+          <dl className="flex flex-col gap-1 border-t border-border-subtle pt-2 text-sm">
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-text-muted">
+                Реклама по данным рекламного кабинета
+              </dt>
+              <dd>{formatMinorAmount(sku.advertisingMinor, currency)}</dd>
+            </div>
           </dl>
 
           <dl className="flex flex-col gap-1 border-t border-border-subtle pt-2 text-sm">
@@ -366,6 +383,9 @@ function Row({
               )}
             </button>
           </span>
+        </td>
+        <td className={`${BODY_CELL} text-right text-text-secondary`}>
+          {formatMinorAmount(sku.advertisingMinor, currency)}
         </td>
         <td
           className={`${BODY_CELL} text-right whitespace-nowrap text-text-secondary`}

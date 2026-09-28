@@ -8,17 +8,23 @@ use App\Identity\Domain\Company;
 use App\Identity\Domain\CompanyRepository;
 use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
+use App\Ingestion\Domain\AdSkuExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceExpenseFactRepository;
+use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Shared\Domain\ValueObject\Money;
+use App\Tests\Support\Builder\AdSkuExpenseFactBuilder;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
+use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Через HTTP проверяется только то, что живёт именно здесь: изоляция
@@ -48,12 +54,40 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
             ->withMarketplaceSku('own')
             ->withAmount(Money::ofMinor(-999_999, 'RUB'))
             ->persistWith($this->expenseFacts());
+        // И реклама чужой компании (ADR-035): на тот же артикул и
+        // «Оплатой за клик» в кабинете — вчерашней, потому что сегодня
+        // не сверяется, и под тем же идентификатором подключения, что
+        // у нашей компании с подключённой рекламой: пропущенный фильтр
+        // компании дал бы нам несошедшийся день.
+        $account = Uuid::v7();
+        MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
+            ->withCompanyId($company->id())
+            ->withMarketplaceAccountId($account)
+            ->withReportType(MarketplaceReportType::OzonAdExpense)
+            ->withPeriod($this->today())
+            ->persistWith($this->rawDocuments());
+        AdSkuExpenseFactBuilder::anAdSkuExpenseFact()
+            ->withMarketplaceAccountId($account)
+            ->withBusinessDate($this->today()->modify('-1 day'))
+            ->withMarketplaceSku('own')
+            ->withAmount(Money::ofMinor(-888_888, 'RUB'))
+            ->persistWith($this->adSkuFacts());
+        MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
+            ->withMarketplaceAccountId($account)
+            ->withBusinessDate($this->today()->modify('-1 day'))
+            ->withoutSku()
+            ->withFeeTypeId(41)
+            ->withUnitNumber('14275771')
+            ->withAmount(Money::ofMinor(-777_777, 'RUB'))
+            ->persistWith($this->expenseFacts());
 
         $payload = $this->get($client, $company);
 
         self::assertCount(1, $payload['skus']);
         self::assertSame(0, $payload['skus'][0]['expensesTotalMinor']);
+        self::assertSame(0, $payload['skus'][0]['advertisingMinor']);
         self::assertSame(0, $payload['cabinetExpensesTotalMinor']);
+        self::assertSame(0, $payload['advertisingUnreconciledDays']);
     }
 
     public function testWindowBeyondTheLimitIsRejected(): void
@@ -152,7 +186,7 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
     }
 
     /**
-     * @return array{skus: list<array<string, mixed>>, cabinetExpenses: list<array<string, mixed>>, cabinetExpensesTotalMinor: int}
+     * @return array{skus: list<array<string, mixed>>, cabinetExpenses: list<array<string, mixed>>, cabinetExpensesTotalMinor: int, advertisingUnreconciledDays: int}
      */
     private function get(KernelBrowser $client, Company $company): array
     {
@@ -163,7 +197,7 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
         $content = $client->getResponse()->getContent();
         self::assertIsString($content);
 
-        /** @var array{skus: list<array<string, mixed>>, cabinetExpenses: list<array<string, mixed>>, cabinetExpensesTotalMinor: int} $payload */
+        /** @var array{skus: list<array<string, mixed>>, cabinetExpenses: list<array<string, mixed>>, cabinetExpensesTotalMinor: int, advertisingUnreconciledDays: int} $payload */
         $payload = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
 
         return $payload;
@@ -212,6 +246,22 @@ final class ShowUnitEconomicsControllerTest extends WebTestCase
         $salesFacts = static::getContainer()->get(SalesFactRepository::class);
 
         return $salesFacts;
+    }
+
+    private function rawDocuments(): MarketplaceRawDocumentRepository
+    {
+        /** @var MarketplaceRawDocumentRepository $rawDocuments */
+        $rawDocuments = static::getContainer()->get(MarketplaceRawDocumentRepository::class);
+
+        return $rawDocuments;
+    }
+
+    private function adSkuFacts(): AdSkuExpenseFactRepository
+    {
+        /** @var AdSkuExpenseFactRepository $facts */
+        $facts = static::getContainer()->get(AdSkuExpenseFactRepository::class);
+
+        return $facts;
     }
 
     private function expenseFacts(): MarketplaceExpenseFactRepository

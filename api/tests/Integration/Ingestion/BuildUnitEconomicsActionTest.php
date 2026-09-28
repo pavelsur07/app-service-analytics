@@ -88,16 +88,18 @@ final class BuildUnitEconomicsActionTest extends KernelTestCase
         $container = $this->bootedContainer();
         $company = $this->company($container);
 
-        $this->expense($container, $company, '', 41, -23_793);
+        $this->expense($container, $company, '', 46, -7_945);
 
         $report = $this->build($container, $company);
 
-        // Реклама и хранение не размазываются по товарам (ADR-012):
-        // базис распределения захочется менять, а показанная строка
-        // честнее доли, происхождение которой клиент не проверит.
+        // Хранение и прочие расходы кабинета не размазываются по товарам
+        // (ADR-012): базис распределения захочется менять, а показанная
+        // строка честнее доли, происхождение которой клиент не проверит.
+        // Реклама по товарам — из SKU-отчётов площадки (ADR-035), её
+        // проверяет BuildUnitEconomicsAdvertisingTest.
         self::assertSame([], $report->skus);
-        self::assertSame(-23_793, $report->cabinetExpensesTotalMinor);
-        self::assertSame('Оплата за клик', $report->cabinetExpenses[0]->name);
+        self::assertSame(-7_945, $report->cabinetExpensesTotalMinor);
+        self::assertSame('Размещение товаров на складах Ozon', $report->cabinetExpenses[0]->name);
     }
 
     public function testProductWithExpensesButNoSalesIsIncluded(): void
