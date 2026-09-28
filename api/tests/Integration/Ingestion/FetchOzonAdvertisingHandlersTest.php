@@ -184,6 +184,32 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         self::assertCount(1, $this->sent($container, OrderOzonAdSkuReportMessage::class));
     }
 
+    public function testReportBrokenAfterTheFirstChunkLeavesNoFacts(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        // Последняя строка отчёта (725-я) — после первой порции записи
+        // в 500 строк: документ отклоняется целиком (ADR-035 п. 2).
+        $report = $this->fixture('statistics-json-many-2026-08-25.json');
+        // Последнее вхождение до итогов последней кампании: у итогов
+        // своё поле moneySpent, и разбор его не читает.
+        $totals = strrpos($report, '"totals"');
+        self::assertIsInt($totals);
+        $position = strrpos(substr($report, 0, $totals), '"moneySpent":"');
+        self::assertIsInt($position);
+        $report = substr_replace($report, '"moneySpent":"1.00","x":"', $position, \strlen('"moneySpent":"'));
+        $this->fetcher($container, report: $report);
+
+        try {
+            $this->check($container, $account, attempt: 1);
+            self::fail('Отчёт с ошибкой обязан быть отклонён.');
+        } catch (UnrecoverableMessageHandlingException) {
+        }
+
+        self::assertSame(0, $this->factTotals($container, $account)['rows']);
+        self::assertCount(1, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuReport));
+    }
+
     public function testUnparsableSkuReportIsKeptInRawAndReachesTheTracker(): void
     {
         $container = $this->bootedContainer();

@@ -9,6 +9,7 @@ use App\Ingestion\Domain\AdSkuExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\OzonAdSkuExpense;
 use App\Ingestion\Domain\OzonAdSkuReportParser;
+use Doctrine\DBAL\Connection;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -21,10 +22,13 @@ use Symfony\Component\Uid\Uuid;
  * получения — от только что снятого документа, а не от той строки:
  * тот же ответ, полученный повторно, новее от дедупликации не перестаёт.
  *
- * Строки пишутся порциями по ходу разбора (CLAUDE.md §6). Неудача
- * разбора — исключение (`\UnexpectedValueException`, `\JsonException`):
- * что с ним делать — остановиться или сначала закончить остальные
- * выгрузки, — решает обработчик.
+ * Строки пишутся порциями по ходу разбора (CLAUDE.md §6), но документ
+ * применяется целиком или никак: все порции — в одной транзакции, и
+ * ошибка на поздней строке откатывает уже записанные (ADR-035 п. 2:
+ * документ отклоняется). Неудача разбора — исключение
+ * (`\UnexpectedValueException`, `\JsonException`): что с ним делать —
+ * остановиться или сначала закончить остальные выгрузки, — решает
+ * обработчик.
  */
 final readonly class StoreOzonAdSkuExpenses
 {
@@ -33,6 +37,7 @@ final readonly class StoreOzonAdSkuExpenses
     public function __construct(
         private OzonAdSkuReportParser $parser,
         private AdSkuExpenseFactRepository $facts,
+        private Connection $connection,
     ) {
     }
 
@@ -52,6 +57,16 @@ final readonly class StoreOzonAdSkuExpenses
      * @param iterable<OzonAdSkuExpense> $expenses
      */
     private function store(MarketplaceRawDocument $captured, Uuid $rawDocumentId, iterable $expenses): void
+    {
+        $this->connection->transactional(function () use ($captured, $rawDocumentId, $expenses): void {
+            $this->storeAll($captured, $rawDocumentId, $expenses);
+        });
+    }
+
+    /**
+     * @param iterable<OzonAdSkuExpense> $expenses
+     */
+    private function storeAll(MarketplaceRawDocument $captured, Uuid $rawDocumentId, iterable $expenses): void
     {
         $chunk = [];
         foreach ($expenses as $expense) {
