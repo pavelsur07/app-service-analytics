@@ -231,6 +231,19 @@ function Breakdown({
             )}
           </dl>
 
+          {/* Реклама входит в «Съедает от выручки» и в маржу, поэтому
+              названа здесь рядом с расходами площадки, иначе строки
+              не давали бы итога. Отдельной строкой: источник другой —
+              рекламный кабинет, а не финансовый отчёт (ADR-035). */}
+          <dl className="flex flex-col gap-1 border-t border-border-subtle pt-2 text-sm">
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-text-muted">
+                Реклама по данным рекламного кабинета
+              </dt>
+              <dd>{formatMinorAmount(sku.advertisingMinor, currency)}</dd>
+            </div>
+          </dl>
+
           <dl className="flex flex-col gap-1 border-t border-border-subtle pt-2 text-sm">
             <div className="text-xs font-semibold text-text-muted">
               Расходы площадки

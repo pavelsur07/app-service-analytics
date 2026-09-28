@@ -121,7 +121,7 @@ export function UnitEconomicsPage() {
         query.data.advertisingUnreconciledDays > 0 && (
           <Card tone="warning">
             <StatusPanel
-              description={`За ${query.data.advertisingUnreconciledDays} дн. реклама по товарам не совпала со списанием в финансовом отчёте Ozon: разбивка по товарам могла прийти не полностью. Разница показана в расходах кабинета.`}
+              description={`За ${query.data.advertisingUnreconciledDays} дн. реклама по товарам не совпала со списанием в финансовом отчёте Ozon: разбивка по товарам могла прийти не полностью.`}
               icon={<TriangleAlert aria-hidden="true" size={20} />}
               role="status"
               title="Реклама по товарам не сходится с финансовым отчётом"
@@ -161,7 +161,8 @@ export function UnitEconomicsPage() {
       {/* Не размазываются по товарам намеренно (ADR-012): хранение
           и прочее относятся к кабинету, и доля, происхождение которой
           клиент не проверит, хуже честной отдельной строки. Реклама
-          по товарам — в таблице (ADR-035); здесь только её остаток. */}
+          по товарам — в таблице (ADR-035); в этом списке только её
+          остаток, не разнесённый по товарам. */}
       {query.status === 'success' &&
         query.data.cabinetExpensesTotalMinor !== 0 && (
           <Card>
@@ -212,23 +213,6 @@ export function UnitEconomicsPage() {
                       </dd>
                     </div>
                   ))}
-                  {/* Остаток «Оплаты за клик»: списание в финансовом
-                      отчёте минус реклама по товарам. Бывает и
-                      положительным — за последние дни разбивка уже
-                      пришла, а списание ещё нет. */}
-                  {query.data.advertisingUnallocatedMinor === 0 ? null : (
-                    <div className="flex items-center justify-between gap-4">
-                      <dt className="text-text-muted">
-                        Реклама, не разнесённая по товарам
-                      </dt>
-                      <dd>
-                        {formatMinorAmount(
-                          query.data.advertisingUnallocatedMinor,
-                          query.data.currency,
-                        )}
-                      </dd>
-                    </div>
-                  )}
                 </dl>
               )}
             </div>
