@@ -208,7 +208,6 @@ final class ShowUnitEconomicsController
             ),
             cabinetExpenses: array_map(self::expense(...), $report->cabinetExpenses),
             cabinetExpensesTotalMinor: $report->cabinetExpensesTotalMinor,
-            advertisingUnallocatedMinor: $report->advertisingUnallocatedMinor,
             advertisingUnreconciledDays: $report->advertisingUnreconciledDays,
             daysWithoutExpenses: $report->daysWithoutExpenses,
             nextCursor: $report->nextCursor,

@@ -72,7 +72,7 @@ final readonly class BuildUnitEconomicsAction
 
         $breakdown = $this->breakdown($companyId, $from, $to, $rows);
         $currency = $this->singleCurrency($rows, $cabinet, $advertisingRows);
-        $unallocated = $this->unallocatedAdvertising($advertisingRows, $currency);
+        [$unallocated, $hasSkuAdvertising] = $this->unallocatedAdvertising($advertisingRows, $currency);
 
         $skus = [];
         foreach ($rows as $row) {
@@ -83,12 +83,11 @@ final readonly class BuildUnitEconomicsAction
 
         return new UnitEconomicsReport(
             skus: $skus,
-            cabinetExpenses: $this->grouped($cabinet),
-            // Остаток рекламы — часть расходов кабинета: без него итог
+            cabinetExpenses: $this->withUnallocatedAdvertising($this->grouped($cabinet), $unallocated, $hasSkuAdvertising),
+            // Остаток рекламы — строка расходов кабинета: без него итог
             // кабинета потерял бы «Оплату за клик», не разнесённую
             // по товарам.
             cabinetExpensesTotalMinor: Money::ofMinor($this->total($cabinet), $currency)->plus($unallocated)->minorAmount(),
-            advertisingUnallocatedMinor: $unallocated->minorAmount(),
             advertisingUnreconciledDays: $this->unreconciledDays($companyId, $from, $to),
             currency: $currency,
             // Покрытие считается по всему окну, а не по странице: дыра
@@ -248,29 +247,63 @@ final readonly class BuildUnitEconomicsAction
     }
 
     /**
-     * Итог 41 из `by-day` минус реклама по SKU за период (ADR-035 п. 6).
-     * Положительный остаток тоже возможен и показывается: реклама по SKU
-     * за последние дни уже есть, а начисление в `by-day` ещё не пришло.
+     * Итог 41 из `by-day` минус реклама по SKU за период (ADR-035 п. 6)
+     * и признак, была ли реклама по SKU вообще. Положительный остаток
+     * тоже возможен и показывается: реклама по SKU за последние дни уже
+     * есть, а начисление в `by-day` ещё не пришло.
      *
      * @param list<array<string, mixed>> $advertisingRows
+     *
+     * @return array{Money, bool}
      */
-    private function unallocatedAdvertising(array $advertisingRows, string $currency): Money
+    private function unallocatedAdvertising(array $advertisingRows, string $currency): array
     {
         $unallocated = Money::ofMinor(0, $currency);
+        $hasSkuAdvertising = false;
         foreach ($advertisingRows as $row) {
             $rowCurrency = self::string($row['currency']);
             $byDay = Money::ofMinor(self::int($row['by_day_minor']), $rowCurrency);
             $sku = Money::ofMinor(self::int($row['sku_minor']), $rowCurrency);
             $unallocated = $unallocated->plus($byDay->minus($sku));
+            $hasSkuAdvertising = $hasSkuAdvertising || 0 !== $sku->minorAmount();
         }
 
-        return $unallocated;
+        return [$unallocated, $hasSkuAdvertising];
+    }
+
+    /**
+     * Остаток рекламы — строкой расходов кабинета, когда не ноль
+     * (ADR-035 п. 6). Без рекламы по SKU за период это прежняя
+     * «Оплата за клик» целиком и так и называется; с ней — то, что
+     * по товарам не разнесено.
+     *
+     * @param list<UnitEconomicsExpense> $cabinet
+     *
+     * @return list<UnitEconomicsExpense>
+     */
+    private function withUnallocatedAdvertising(array $cabinet, Money $unallocated, bool $hasSkuAdvertising): array
+    {
+        if (0 === $unallocated->minorAmount()) {
+            return $cabinet;
+        }
+
+        $cabinet[] = new UnitEconomicsExpense(
+            feeTypeId: OzonFeeTypeNames::PAY_PER_CLICK,
+            name: $hasSkuAdvertising ? 'Реклама, не разнесённая по товарам' : OzonFeeTypeNames::of(OzonFeeTypeNames::PAY_PER_CLICK),
+            amountMinor: $unallocated->minorAmount(),
+        );
+        // Тот же порядок, что у остальных строк: первым — тот, что
+        // съедает больше всего.
+        usort($cabinet, static fn (UnitEconomicsExpense $a, UnitEconomicsExpense $b): int => $a->amountMinor <=> $b->amountMinor);
+
+        return $cabinet;
     }
 
     /**
      * Дни окна, где хоть одна пара «кампания × день» не сошлась
-     * со списанием `by-day` сверх допуска (ADR-035 п. 5): копейка
-     * на строку SKU — площадка округляет каждую строку отчёта отдельно.
+     * со списанием `by-day` (ADR-035 п. 5): разбивки нет, начисления
+     * нет или расхождение больше допуска — копейки на ненулевую строку
+     * SKU, площадка округляет каждую строку отчёта отдельно.
      *
      * Сегодняшний день не сверяется: начисление за него `by-day` отдаёт
      * только завтра, и сверка показывала бы расхождение каждый день —
@@ -293,11 +326,20 @@ final readonly class BuildUnitEconomicsAction
             }
 
             $currency = self::string($pair['currency']);
-            $difference = Money::ofMinor(self::int($pair['by_day_minor']), $currency)
-                ->minus(Money::ofMinor(self::int($pair['sku_minor']), $currency));
-            $tolerance = self::int($pair['sku_rows']);
+            $sku = Money::ofMinor(self::int($pair['sku_minor']), $currency);
 
-            if (abs($difference->minorAmount()) > $tolerance) {
+            // «Начисления нет» — отдельный исход, а не частный случай
+            // расхождения: допуск на округление к нему не применяется.
+            if (0 === self::int($pair['by_day_rows'])) {
+                if (0 !== $sku->minorAmount()) {
+                    $days[$day] = true;
+                }
+
+                continue;
+            }
+
+            $difference = Money::ofMinor(self::int($pair['by_day_minor']), $currency)->minus($sku);
+            if (abs($difference->minorAmount()) > self::int($pair['sku_rows'])) {
                 $days[$day] = true;
             }
         }

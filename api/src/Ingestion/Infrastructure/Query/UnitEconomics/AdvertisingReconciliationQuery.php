@@ -12,7 +12,10 @@ use Doctrine\DBAL\Query\QueryBuilder;
 /**
  * Сверка рекламы по SKU со списанием `by-day` (ADR-035 п. 5): по паре
  * «подключение × кампания × день» — итог «Оплаты за клик»
- * (`unit_number` = кампания), итог рекламы по SKU и число строк SKU.
+ * (`unit_number` = кампания) и число его строк, итог рекламы по SKU
+ * и число ненулевых строк SKU. Нулевая строка не округлялась, и допуск
+ * от неё не растёт; число строк `by-day` отличает «начисления нет»
+ * от начисления на ноль.
  *
  * Только суммы: разницу и допуск («копейка на строку SKU») считает
  * Money в сценарии, а не база.
@@ -39,17 +42,18 @@ final readonly class AdvertisingReconciliationQuery
             (
                 SELECT marketplace_account_id, campaign_id, business_date, currency,
                        SUM(by_day_minor) AS by_day_minor,
+                       SUM(by_day_rows) AS by_day_rows,
                        SUM(sku_minor) AS sku_minor,
                        SUM(sku_rows) AS sku_rows
                 FROM (
                     SELECT marketplace_account_id, unit_number AS campaign_id, business_date, currency,
-                           amount_minor AS by_day_minor, 0 AS sku_minor, 0 AS sku_rows
+                           amount_minor AS by_day_minor, 1 AS by_day_rows, 0 AS sku_minor, 0 AS sku_rows
                     FROM marketplace_expense_fact
                     WHERE company_id = :companyId AND business_date >= :from AND business_date <= :to
                       AND marketplace_sku = '' AND fee_type_id = :payPerClick
                     UNION ALL
                     SELECT marketplace_account_id, campaign_id, business_date, currency,
-                           0, amount_minor, 1
+                           0, 0, amount_minor, CASE WHEN amount_minor <> 0 THEN 1 ELSE 0 END
                     FROM ad_sku_expense_fact
                     WHERE company_id = :companyId AND business_date >= :from AND business_date <= :to
                 ) AS sides
@@ -63,7 +67,7 @@ final readonly class AdvertisingReconciliationQuery
             SQL;
 
         return $this->connection->createQueryBuilder()
-            ->select('business_date', 'currency', 'by_day_minor', 'sku_minor', 'sku_rows')
+            ->select('business_date', 'currency', 'by_day_minor', 'by_day_rows', 'sku_minor', 'sku_rows')
             ->from($pairs)
             ->setParameter('companyId', $companyId)
             ->setParameter('from', $from->format('Y-m-d'))

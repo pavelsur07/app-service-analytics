@@ -38,7 +38,8 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
 {
     private const string DAY = '2026-09-23';
 
-    private Uuid $account;
+    /** @var array<string, Uuid> подключение каждой компании теста */
+    private array $accounts = [];
 
     public function testAdvertisingOfTheSkuIsPartOfItsDeductionsAndMargin(): void
     {
@@ -102,16 +103,18 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
 
         $report = $this->build($container, $company);
 
-        // «Оплата за клик» строкой кабинета больше не идёт — только
-        // остаток; хранение остаётся строкой.
-        self::assertSame([46], array_map(static fn ($e): int => $e->feeTypeId, $report->cabinetExpenses));
-        self::assertSame(1, $report->advertisingUnallocatedMinor);
+        // «Оплата за клик» в кабинете — только остатком, не разнесённым
+        // по товарам; хранение остаётся строкой.
+        self::assertSame(
+            [[46, 'Размещение товаров на складах Ozon', -7_945], [41, 'Реклама, не разнесённая по товарам', 1]],
+            array_map(static fn ($e): array => [$e->feeTypeId, $e->name, $e->amountMinor], $report->cabinetExpenses),
+        );
         self::assertSame(-7_945 + 1, $report->cabinetExpensesTotalMinor);
 
         // Инвариант ADR-035 п. 6: реклама по SKU плюс остаток — итог
         // `by-day`; отчёт сходится с финансовым отчётом площадки.
         $skuAdvertising = Money::sum(array_map(static fn ($s): Money => Money::ofMinor($s->advertisingMinor, 'RUB'), $report->skus));
-        self::assertSame(-50_619, $skuAdvertising->plus(Money::ofMinor($report->advertisingUnallocatedMinor, 'RUB'))->minorAmount());
+        self::assertSame(-50_619, $skuAdvertising->plus(Money::ofMinor($report->cabinetExpenses[1]->amountMinor, 'RUB'))->minorAmount());
         // Копейка на две строки — в допуске сверки.
         self::assertSame(0, $report->advertisingUnreconciledDays);
     }
@@ -125,8 +128,12 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
 
         $report = $this->build($container, $company);
 
-        // Разбивки нет — остаток равен всему начислению, как раньше строка.
-        self::assertSame(-50_619, $report->advertisingUnallocatedMinor);
+        // Разбивки нет — «Оплата за клик» строкой кабинета целиком,
+        // ровно как до ADR-035 (п. 6).
+        self::assertSame(
+            [[41, 'Оплата за клик', -50_619]],
+            array_map(static fn ($e): array => [$e->feeTypeId, $e->name, $e->amountMinor], $report->cabinetExpenses),
+        );
         self::assertSame(-50_619, $report->cabinetExpensesTotalMinor);
         // Кабинет без рекламного ключа не сверяется: иначе каждый его
         // день выглядел бы несошедшимся.
@@ -159,6 +166,33 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
         self::assertSame(2, $this->build($container, $company, from: '2026-09-22')->advertisingUnreconciledDays);
     }
 
+    public function testMissingAccrualIsUnreconciledWhateverTheTolerance(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        // Начисления нет, а разбивка — одна копейка на одну строку:
+        // допуск на округление к этому исходу не применяется.
+        $this->adSku($container, $company, '29088934', '4193185023', -1);
+
+        self::assertSame(1, $this->build($container, $company)->advertisingUnreconciledDays);
+    }
+
+    public function testZeroSkuRowsDoNotWidenTheTolerance(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        // Две копейки расхождения на одну ненулевую строку; нулевые
+        // строки не округлялись и допуск не расширяют.
+        $this->byDay($container, $company, '24147313', -50_619);
+        $this->adSku($container, $company, '24147313', '308403988', -50_617);
+        $this->adSku($container, $company, '24147313', '308866704', 0);
+        $this->adSku($container, $company, '24147313', '308389906', 0);
+
+        self::assertSame(1, $this->build($container, $company)->advertisingUnreconciledDays);
+    }
+
     public function testTodayIsNotReconciled(): void
     {
         $container = $this->bootedContainer();
@@ -175,12 +209,17 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
     {
         $container = $this->bootedContainer();
         $ours = $this->company($container);
-        $theirs = $this->company($container);
+        // Тот же идентификатор подключения — строже, чем разные: утечка
+        // по пропущенному фильтру компании сложилась бы с нашей парой
+        // и не могла бы спрятаться за другим подключением.
+        $theirs = $this->company($container, account: $this->account($ours));
 
         $this->byDay($container, $ours, '24147313', -50_619);
         $this->adSku($container, $ours, '24147313', '308403988', -50_619);
-        // Те же кампания, день и SKU у другой компании — другие деньги.
+        // Те же кампания, день и SKU у другой компании — другие деньги;
+        // ещё одна их кампания без разбивки дала бы нам несошедшийся день.
         $this->byDay($container, $theirs, '24147313', -99_999);
+        $this->byDay($container, $theirs, '16017246', -12_345);
         $this->adSku($container, $theirs, '24147313', '308403988', -1);
         $this->adSku($container, $theirs, '24147313', '999', -77_777);
 
@@ -188,7 +227,7 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
 
         self::assertSame(['308403988'], array_map(static fn ($s): string => $s->marketplaceSku, $report->skus));
         self::assertSame(-50_619, $report->skus[0]->advertisingMinor);
-        self::assertSame(0, $report->advertisingUnallocatedMinor);
+        self::assertSame([], $report->cabinetExpenses);
         self::assertSame(0, $report->advertisingUnreconciledDays);
     }
 
@@ -221,7 +260,7 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
 
         SalesFactBuilder::aSalesFact()
             ->withCompanyId($company->id())
-            ->withMarketplaceAccountId($this->account)
+            ->withMarketplaceAccountId($this->account($company))
             ->withBusinessDate(new \DateTimeImmutable(self::DAY))
             ->withMarketplaceSku($sku)
             ->withSourceRowId($sourceRowId.'-'.$sku)
@@ -238,7 +277,7 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
 
         AdSkuExpenseFactBuilder::anAdSkuExpenseFact()
             ->withCompanyId($company->id())
-            ->withMarketplaceAccountId($this->account)
+            ->withMarketplaceAccountId($this->account($company))
             ->withCampaignId($campaignId)
             ->withBusinessDate(new \DateTimeImmutable($day))
             ->withMarketplaceSku($sku)
@@ -254,7 +293,7 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
 
         MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
             ->withCompanyId($company->id())
-            ->withMarketplaceAccountId($this->account)
+            ->withMarketplaceAccountId($this->account($company))
             ->withAccrualId((int) $campaignId)
             ->withBusinessDate(new \DateTimeImmutable(self::DAY))
             ->withoutSku()
@@ -271,7 +310,7 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
 
         MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
             ->withCompanyId($company->id())
-            ->withMarketplaceAccountId($this->account)
+            ->withMarketplaceAccountId($this->account($company))
             ->withBusinessDate(new \DateTimeImmutable(self::DAY))
             ->withoutSku()
             ->withFeeTypeId($feeTypeId)
@@ -284,19 +323,24 @@ final class BuildUnitEconomicsAdvertisingTest extends KernelTestCase
      * загружался: в raw есть `ozon_ad_expense`, по нему сверка и знает,
      * какие подключения сверять.
      */
-    private function company(ContainerInterface $container, bool $advertising = true): Company
+    private function account(Company $company): Uuid
+    {
+        return $this->accounts[$company->id()->toRfc4122()] ?? throw new \LogicException('Компания теста без подключения.');
+    }
+
+    private function company(ContainerInterface $container, bool $advertising = true, ?Uuid $account = null): Company
     {
         /** @var CompanyRepository $companies */
         $companies = $container->get(CompanyRepository::class);
         $company = CompanyBuilder::aCompany()->persistWith($companies);
-        $this->account = Uuid::v7();
+        $this->accounts[$company->id()->toRfc4122()] = $account ?? Uuid::v7();
 
         if ($advertising) {
             /** @var MarketplaceRawDocumentRepository $rawDocuments */
             $rawDocuments = $container->get(MarketplaceRawDocumentRepository::class);
             MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
                 ->withCompanyId($company->id())
-                ->withMarketplaceAccountId($this->account)
+                ->withMarketplaceAccountId($this->account($company))
                 ->withReportType(MarketplaceReportType::OzonAdExpense)
                 ->withPeriod(new \DateTimeImmutable(self::DAY))
                 ->persistWith($rawDocuments);

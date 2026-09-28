@@ -19,11 +19,6 @@ final readonly class UnitEconomicsResponse
         /** Расходы кабинета вместе с остатком рекламы. */
         public int $cabinetExpensesTotalMinor,
         /**
-         * «Оплата за клик» из финансового отчёта, не разнесённая
-         * по товарам: итог площадки минус реклама по SKU (ADR-035).
-         */
-        public int $advertisingUnallocatedMinor,
-        /**
          * Дни окна (кроме сегодняшнего), где реклама по товарам
          * не сошлась с финансовым отчётом площадки. Ноль — сошлась.
          */
