@@ -164,6 +164,17 @@ final class OzonAccrualByDayParserTest extends TestCase
         $this->parse('{"accruals":[{"accrual_id":1,"date":"2026-07-01","unit_number":"x","accrued_category":"POSTING","total_amount":{"amount":"-1297.08","currency":"RUB"},"posting":{"delivery_schema":"Fbo","products":[{"sku":1,"delivery":null,"commission":null}]},"item_fees":null,"non_item_fee":null,"container_fees":null}],"last_id":""}');
     }
 
+    public function testSameSkuTwiceInOneAccrualStopsTheParse(): void
+    {
+        // Две записи products одного артикула — несколько штук одной
+        // продажи. Ключ строки их не различит, и одна штука пропала бы.
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('дважды');
+
+        $product = '{"sku":1,"delivery":null,"commission":{"seller_price":{"amount":"2000","currency":"RUB"},"sale_amount":{"amount":"2000","currency":"RUB"},"sale_commission":{"amount":"-1200","currency":"RUB"}}}';
+        $this->parse('{"accruals":[{"accrual_id":1,"date":"2026-07-01","unit_number":"x","accrued_category":"POSTING","total_amount":{"amount":"1600","currency":"RUB"},"posting":{"delivery_schema":"Fbo","products":['.$product.','.$product.']},"item_fees":null,"non_item_fee":null,"container_fees":null}],"last_id":""}');
+    }
+
     public function testRevenueOfSeveralUnitsStopsTheParse(): void
     {
         // Количества в ответе нет, штука — строка выручки. sale_amount,

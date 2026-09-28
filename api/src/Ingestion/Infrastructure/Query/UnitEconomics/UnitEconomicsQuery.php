@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Query\UnitEconomics;
 
 use App\Ingestion\Domain\OzonFeeTypeNames;
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
@@ -146,7 +147,7 @@ final readonly class UnitEconomicsQuery
             FROM marketplace_expense_fact
             WHERE company_id = :companyId AND business_date >= :from AND business_date <= :to
               AND marketplace_sku <> ''
-              AND fee_type_id NOT IN (:revenueType, :saleCommissionType)
+              AND fee_type_id NOT IN (:saleTypes)
             GROUP BY marketplace_sku, currency
             SQL;
 
@@ -248,6 +249,7 @@ final readonly class UnitEconomicsQuery
             ->setParameter('to', $to->format('Y-m-d'))
             ->setParameter('revenueType', OzonFeeTypeNames::REVENUE)
             ->setParameter('saleCommissionType', OzonFeeTypeNames::SALE_COMMISSION)
+            ->setParameter('saleTypes', OzonFeeTypeNames::SALE_TYPES, ArrayParameterType::INTEGER)
             // Порядок выбирает клиент; умолчание — выручка по убыванию,
             // ради неё экран и открывают. Артикул вторым столбцом
             // и всегда по возрастанию — чтобы порядок был устойчивым
@@ -288,13 +290,12 @@ final readonly class UnitEconomicsQuery
             ->andWhere('business_date <= :to')
             ->andWhere('marketplace_sku IN (SELECT jsonb_array_elements_text(:skus::jsonb))')
             // Выручка и комиссия — строки продажи, не расхода (ADR-036 п. 7).
-            ->andWhere('fee_type_id NOT IN (:revenueType, :saleCommissionType)')
+            ->andWhere('fee_type_id NOT IN (:saleTypes)')
             ->setParameter('companyId', $companyId)
             ->setParameter('from', $from->format('Y-m-d'))
             ->setParameter('to', $to->format('Y-m-d'))
             ->setParameter('skus', json_encode($marketplaceSkus, \JSON_THROW_ON_ERROR))
-            ->setParameter('revenueType', OzonFeeTypeNames::REVENUE)
-            ->setParameter('saleCommissionType', OzonFeeTypeNames::SALE_COMMISSION)
+            ->setParameter('saleTypes', OzonFeeTypeNames::SALE_TYPES, ArrayParameterType::INTEGER)
             ->groupBy('marketplace_sku')
             ->addGroupBy('fee_type_id')
             ->addGroupBy('currency')

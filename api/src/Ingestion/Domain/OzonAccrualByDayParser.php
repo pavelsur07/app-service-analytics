@@ -109,6 +109,7 @@ final class OzonAccrualByDayParser
 
         $rows = $this->rows($accrual, $accrualId);
         self::assertBalanced($rows, self::money($accrual['total_amount'] ?? null), $accrualId);
+        self::assertUniqueKeys($rows, $accrualId);
 
         $facts = [];
         foreach ($rows as [$sku, $feeTypeId, $amount]) {
@@ -210,6 +211,27 @@ final class OzonAccrualByDayParser
             [OzonFeeTypeNames::REVENUE, $revenue],
             [OzonFeeTypeNames::SALE_COMMISSION, self::money($commission['sale_commission'] ?? null)],
         ];
+    }
+
+    /**
+     * Пара «товар + тип» в начислении одна: ключ строки — accrual_id,
+     * артикул и тип (ADR-012). Повтор — например, две записи products
+     * одного артикула, то есть продажа нескольких штук, — дал бы одну
+     * строку вместо двух. Отказ, а не сложение: сколько здесь штук,
+     * по ответу не определить (ADR-036 п. 4).
+     *
+     * @param list<array{0: string, 1: int, 2: Money}> $rows
+     */
+    private static function assertUniqueKeys(array $rows, int $accrualId): void
+    {
+        $seen = [];
+        foreach ($rows as [$sku, $feeTypeId]) {
+            $key = $sku.'|'.$feeTypeId;
+            if (isset($seen[$key])) {
+                throw new \UnexpectedValueException("Начисление {$accrualId}: тип {$feeTypeId} по товару '{$sku}' встречается дважды — разбор не знает, как их различить (ADR-036).");
+            }
+            $seen[$key] = true;
+        }
     }
 
     /**
