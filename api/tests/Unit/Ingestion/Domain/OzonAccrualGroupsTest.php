@@ -39,6 +39,13 @@ final class OzonAccrualGroupsTest extends TestCase
         self::assertSame(OzonAccrualGroups::COMMISSION, OzonAccrualGroups::of(OzonFeeTypeNames::SALE_COMMISSION, false));
     }
 
+    public function testPremiumSubscriptionIsAnOtherService(): void
+    {
+        // Подписка Premium впервые встретилась в сентябре 2026; группа —
+        // по указанию владельца, как в кабинете.
+        self::assertSame(OzonAccrualGroups::OTHER_SERVICES, OzonAccrualGroups::of(52, false));
+    }
+
     public function testUnmappedTypeIsVisibleAsUngrouped(): void
     {
         // Куда кабинет относит тип, не встречавшийся в выгрузке, неизвестно.
