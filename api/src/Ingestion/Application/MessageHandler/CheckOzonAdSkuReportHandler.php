@@ -17,6 +17,7 @@ use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonRateLimited;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Uid\Uuid;
@@ -87,7 +88,13 @@ final readonly class CheckOzonAdSkuReportHandler
                 $rawDocumentId = $this->rawDocuments->add($captured);
 
                 if (OzonAdReportKind::Sku === $message->reportKind()) {
-                    $this->skuExpenses->fromReport($captured, $rawDocumentId);
+                    try {
+                        $this->skuExpenses->fromReport($captured, $rawDocumentId);
+                    } catch (\UnexpectedValueException|\JsonException $failure) {
+                        // Отчёт в raw; повтор скачал бы тот же и упал там же.
+                        // В трекер (ADR-006) и в failed-транспорт, без повторов.
+                        throw new UnrecoverableMessageHandlingException(\sprintf('SKU-отчёт рекламы Ozon не разобран: подключение %s, период с %s, raw %s: %s', $message->marketplaceAccountId, $message->from, $rawDocumentId->toRfc4122(), $failure->getMessage()), 0, $failure);
+                    }
                 }
 
                 return;

@@ -26,17 +26,22 @@ namespace App\Ingestion\Domain;
  * Тройка «кампания × день × SKU» в одном ответе дважды — тоже ошибка
  * разбора: какая из двух сумм верна, из ответа не понять, а запись
  * одним upsert такой пачки не допускает.
+ *
+ * Строки отдаются по одной, генератором: вызывающий пишет их порциями
+ * по ходу разбора, и список расходов целиком в памяти не собирается
+ * (CLAUDE.md §6). Ошибка на строке прерывает разбор с этого места;
+ * строки до неё к этому моменту уже отданы.
  */
 final class OzonAdSkuReportParser
 {
     /**
-     * @return list<OzonAdSkuExpense>
+     * @return \Generator<int, OzonAdSkuExpense>
      */
-    public function parseReport(string $body): array
+    public function parseReport(string $body): \Generator
     {
         $decoded = self::decode($body);
 
-        $expenses = [];
+        $seen = [];
         foreach ($decoded as $campaignId => $campaign) {
             $campaignId = self::campaignId((string) $campaignId);
             if (!\is_array($campaign) || !\is_array($campaign['report'] ?? null) || !\is_array($campaign['report']['rows'] ?? null)) {
@@ -53,62 +58,53 @@ final class OzonAdSkuReportParser
                     throw new \UnexpectedValueException('Ozon SKU report: "moneySpent" is not a string.');
                 }
 
-                $expenses[] = OzonAdSkuExpense::spent(
+                yield self::once($seen, OzonAdSkuExpense::spent(
                     $campaignId,
                     self::date(self::string($row, 'date'), 'd.m.Y'),
                     self::sku($row),
                     OzonPerformanceMoney::commaDecimal($spent),
-                );
+                ));
             }
         }
-
-        return self::unique($expenses);
     }
 
     /**
-     * @return list<OzonAdSkuExpense>
+     * @return \Generator<int, OzonAdSkuExpense>
      */
-    public function parseDay(string $body): array
+    public function parseDay(string $body): \Generator
     {
         $decoded = self::decode($body);
         if (!\is_array($decoded['rows'] ?? null)) {
             throw new \UnexpectedValueException('Ozon products/sku: no "rows" array.');
         }
 
-        $expenses = [];
+        $seen = [];
         foreach ($decoded['rows'] as $row) {
             if (!\is_array($row)) {
                 throw new \UnexpectedValueException('Ozon products/sku: row is not an object.');
             }
 
-            $expenses[] = OzonAdSkuExpense::spent(
+            yield self::once($seen, OzonAdSkuExpense::spent(
                 self::campaignId(self::string($row, 'campaignId')),
                 self::date(self::string($row, 'date'), 'Y-m-d'),
                 self::sku($row),
                 OzonPerformanceMoney::dotDecimal(self::string($row, 'expense')),
-            );
+            ));
         }
-
-        return self::unique($expenses);
     }
 
     /**
-     * @param list<OzonAdSkuExpense> $expenses
-     *
-     * @return list<OzonAdSkuExpense>
+     * @param array<string, true> $seen
      */
-    private static function unique(array $expenses): array
+    private static function once(array &$seen, OzonAdSkuExpense $expense): OzonAdSkuExpense
     {
-        $seen = [];
-        foreach ($expenses as $expense) {
-            $key = AdSkuExpenseFact::sourceRowId($expense->campaignId, $expense->businessDate, $expense->marketplaceSku);
-            if (isset($seen[$key])) {
-                throw new \UnexpectedValueException("Ozon SKU report: row {$key} appears twice.");
-            }
-            $seen[$key] = true;
+        $key = AdSkuExpenseFact::sourceRowId($expense->campaignId, $expense->businessDate, $expense->marketplaceSku);
+        if (isset($seen[$key])) {
+            throw new \UnexpectedValueException("Ozon SKU report: row {$key} appears twice.");
         }
+        $seen[$key] = true;
 
-        return $expenses;
+        return $expense;
     }
 
     /**

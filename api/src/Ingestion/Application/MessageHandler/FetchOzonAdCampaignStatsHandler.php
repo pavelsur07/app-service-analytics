@@ -21,6 +21,7 @@ use App\Ingestion\Domain\OzonAdvertisingFetcher;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -41,6 +42,13 @@ use Symfony\Component\Uid\Uuid;
  * или отсутствующие в списке кампаний (ADR-035 п. 4); пачками не больше
  * десяти. У других типов списка товаров нет. Нет таких кампаний — запроса
  * нет: пустой список площадка отклоняет.
+ *
+ * Неудача разбора — `products/sku` или `expense` для отбора — не обрывает
+ * остальные выгрузки куска: они доделываются, и только после этого
+ * обработчик бросает неповторяемое исключение с первой неудачей. Так
+ * она попадает в трекер (ADR-006), а сообщение — в failed-транспорт
+ * без повторов: повтор получил бы тот же ответ и заказал бы отчёты
+ * ещё раз.
  *
  * Отказ авторизации переводит в broken только рекламу
  * (`markOzonAdvertisingBroken`), подключение продолжает грузить продажи
@@ -88,15 +96,18 @@ final readonly class FetchOzonAdCampaignStatsHandler
             $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdExpense, $from, $expense);
             $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdDaily, $from, $this->client->daily($token, $from, $to));
 
+            /** @var list<\Throwable> $parseFailures */
+            $parseFailures = [];
+
             $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
             if (OzonAdvertisingWindows::isHeadChunk($to, $today)) {
-                $this->captureCampaignsAndSku($companyId, $accountId, $token, $to, OzonAdvertisingWindows::skuDays($from, $to, $today), $expense);
+                $parseFailures = [...$parseFailures, ...$this->captureCampaignsAndSku($companyId, $accountId, $token, $to, OzonAdvertisingWindows::skuDays($from, $to, $today), $expense)];
             }
 
             if (true === ($message->withReports ?? false)) {
                 $reportPeriod = OzonAdvertisingWindows::skuReportPeriod($from, $to, $today);
                 if (null !== $reportPeriod) {
-                    $this->orderSkuReports($message, $companyId, $accountId, $token, $reportPeriod[0], $reportPeriod[1], $expense);
+                    $parseFailures = [...$parseFailures, ...$this->orderSkuReports($message, $companyId, $accountId, $token, $reportPeriod[0], $reportPeriod[1], $expense)];
                 }
 
                 // Заказы «Оплаты за заказ» — по всей организации, за весь
@@ -110,6 +121,10 @@ final readonly class FetchOzonAdCampaignStatsHandler
                     [],
                     kind: OzonAdReportKind::CpoOrders,
                 ));
+            }
+
+            if ([] !== $parseFailures) {
+                throw new UnrecoverableMessageHandlingException(\sprintf('Реклама Ozon: не разобрано ответов — %d, подключение %s, кусок %s..%s: %s', \count($parseFailures), $message->marketplaceAccountId, $message->from, $message->to, $parseFailures[0]->getMessage()), 0, $parseFailures[0]);
             }
         } catch (\Throwable $failure) {
             if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
@@ -134,8 +149,10 @@ final readonly class FetchOzonAdCampaignStatsHandler
 
     /**
      * `products/sku` за день: сначала raw, потом разбор в факты (ADR-006).
+     * Неудача разбора возвращается, а не бросается: остальные выгрузки
+     * куска доделываются.
      */
-    private function captureSkuDay(Uuid $companyId, Uuid $accountId, \DateTimeImmutable $day, string $body): void
+    private function captureSkuDay(Uuid $companyId, Uuid $accountId, \DateTimeImmutable $day, string $body): ?\Throwable
     {
         $captured = MarketplaceRawDocument::capture(
             companyId: $companyId,
@@ -145,13 +162,22 @@ final readonly class FetchOzonAdCampaignStatsHandler
             rawBody: $body,
         );
 
-        $this->skuExpenses->fromDay($captured, $this->rawDocuments->add($captured));
+        $rawDocumentId = $this->rawDocuments->add($captured);
+        try {
+            $this->skuExpenses->fromDay($captured, $rawDocumentId);
+        } catch (\UnexpectedValueException|\JsonException $failure) {
+            return $failure;
+        }
+
+        return null;
     }
 
     /**
      * @param list<\DateTimeImmutable> $days
+     *
+     * @return list<\Throwable> неудачи разбора
      */
-    private function captureCampaignsAndSku(Uuid $companyId, Uuid $accountId, string $token, \DateTimeImmutable $to, array $days, string $expense): void
+    private function captureCampaignsAndSku(Uuid $companyId, Uuid $accountId, string $token, \DateTimeImmutable $to, array $days, string $expense): array
     {
         // Список кампаний снимает только головной кусок — один запрос
         // метода на тик: второй одновременный упирался в лимит площадки (429).
@@ -160,15 +186,24 @@ final readonly class FetchOzonAdCampaignStatsHandler
         // попадает в тот же документ.
         $campaigns = $this->client->campaigns($token);
         $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdCampaigns, $to, $campaigns);
-        if ([] === $days) {
-            return;
-        }
-
+        $failures = [];
         foreach ($days as $day) {
-            foreach (array_chunk($this->spendingSkuCampaignIds($campaigns, $expense, $day, $day), OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST) as $batch) {
-                $this->captureSkuDay($companyId, $accountId, $day, $this->client->productsSku($token, $batch, $day));
+            try {
+                $campaignIds = $this->spendingSkuCampaignIds($campaigns, $expense, $day, $day);
+            } catch (\UnexpectedValueException|\JsonException $failure) {
+                // Расход не разобран — отбирать кампании не по чему.
+                return [$failure];
+            }
+
+            foreach (array_chunk($campaignIds, OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST) as $batch) {
+                $failure = $this->captureSkuDay($companyId, $accountId, $day, $this->client->productsSku($token, $batch, $day));
+                if (null !== $failure) {
+                    $failures[] = $failure;
+                }
             }
         }
+
+        return $failures;
     }
 
     /**
@@ -178,6 +213,8 @@ final readonly class FetchOzonAdCampaignStatsHandler
      * отчёта (ADR-035 п. 4), тип — из последнего сохранённого списка;
      * его ещё нет — список запрашивается и сохраняется, сначала raw,
      * потом разбор.
+     *
+     * @return list<\Throwable> неудачи разбора
      */
     private function orderSkuReports(
         FetchOzonAdCampaignStatsMessage $message,
@@ -187,14 +224,22 @@ final readonly class FetchOzonAdCampaignStatsHandler
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         string $expense,
-    ): void {
+    ): array {
         $campaigns = $this->rawDocuments->latestBody($message->companyId, $accountId, MarketplaceReportType::OzonAdCampaigns);
         if (null === $campaigns) {
             $campaigns = $this->client->campaigns($token);
             $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdCampaigns, $to, $campaigns);
         }
 
-        foreach (array_chunk($this->spendingSkuCampaignIds($campaigns, $expense, $from, $to), OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST) as $batch) {
+        try {
+            $campaignIds = $this->spendingSkuCampaignIds($campaigns, $expense, $from, $to);
+        } catch (\UnexpectedValueException|\JsonException $failure) {
+            // Расход не разобран — отбирать кампании не по чему; заказ
+            // отчёта «Оплаты за заказ» от отбора не зависит и идёт дальше.
+            return [$failure];
+        }
+
+        foreach (array_chunk($campaignIds, OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST) as $batch) {
             $this->bus->dispatch(new OrderOzonAdSkuReportMessage(
                 $message->companyId,
                 $message->marketplaceAccountId,
@@ -203,6 +248,8 @@ final readonly class FetchOzonAdCampaignStatsHandler
                 $batch,
             ));
         }
+
+        return [];
     }
 
     /**

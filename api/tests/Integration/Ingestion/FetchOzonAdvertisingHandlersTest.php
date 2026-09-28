@@ -33,6 +33,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Uid\Uuid;
@@ -140,16 +141,62 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         $fetcher = $this->fetcher($container, expense: $this->expenseEndingOn($today), sku: str_replace('"1193.39"', '"1193,39"', $this->fixture('statistics-products-sku-2026-09-23.json')));
         $chunk = OzonAdvertisingWindows::lastDays($today, 30)[0];
 
-        $this->syncStats($container, $account, $chunk['from'], $chunk['to'], withReports: true);
+        try {
+            $this->syncStats($container, $account, $chunk['from'], $chunk['to'], withReports: true);
+            self::fail('Неудача разбора обязана дойти до трекера исключением (ADR-006).');
+        } catch (UnrecoverableMessageHandlingException $failure) {
+            // Без повторов: повтор получил бы тот же ответ и заказал бы
+            // отчёты ещё раз.
+            self::assertInstanceOf(\UnexpectedValueException::class, $failure->getPrevious());
+        }
 
-        // Ответ в raw, фактов нет, отказ виден в журнале. Остальное
-        // из куска выполнено: оба дня products/sku и заказ отчётов
+        // Ответ в raw, фактов из него нет. Остальное из куска выполнено
+        // до исключения: оба дня products/sku и заказ отчётов
         // (ADR-006: неудача разбора не отменяет загрузку).
         self::assertCount(2, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuDay));
         self::assertSame(0, $this->factTotals($container, $account)['rows']);
-        self::assertSame(2, $this->warningsContaining($container, 'SKU-разбивка рекламы Ozon не разобрана'));
         self::assertSame(self::SPENDING_ON_LAST_DAY, $this->orderedSkuCampaigns($container));
+        self::assertCount(1, array_filter($this->sent($container, OrderOzonAdSkuReportMessage::class), static fn (OrderOzonAdSkuReportMessage $o): bool => OzonAdReportKind::CpoOrders === $o->kind));
         self::assertCount(2, array_unique(array_column($fetcher->skuRequests, 'day')));
+    }
+
+    public function testUnparsableExpenseStillOrdersTheCpoReportAndReachesTheTracker(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+        // Расход кампаний сменил разделитель — отбирать кампании не по чему.
+        $expense = preg_replace('/"moneySpent":"(\d+),(\d+)"/', '"moneySpent":"$1.$2"', $this->expenseEndingOn($today));
+        self::assertIsString($expense);
+        $this->fetcher($container, expense: $expense);
+        $chunk = OzonAdvertisingWindows::lastDays($today, 30)[0];
+
+        try {
+            $this->syncStats($container, $account, $chunk['from'], $chunk['to'], withReports: true);
+            self::fail('Неудача разбора обязана дойти до трекера исключением (ADR-006).');
+        } catch (UnrecoverableMessageHandlingException) {
+        }
+
+        // Расход в raw как есть; SKU-разбивки нет, отчёт заказов
+        // «Оплаты за заказ» от отбора не зависит и заказан.
+        self::assertCount(1, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdExpense));
+        self::assertSame([], $this->orderedSkuCampaigns($container));
+        self::assertCount(1, $this->sent($container, OrderOzonAdSkuReportMessage::class));
+    }
+
+    public function testUnparsableSkuReportIsKeptInRawAndReachesTheTracker(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $this->fetcher($container, report: str_replace('"moneySpent":"18,34"', '"moneySpent":"18.34"', $this->fixture('statistics-json-many-2026-08-25.json')));
+
+        $this->expectException(UnrecoverableMessageHandlingException::class);
+        try {
+            $this->check($container, $account, attempt: 1);
+        } finally {
+            self::assertCount(1, $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuReport));
+            self::assertSame([], $this->sent($container, CheckOzonAdSkuReportMessage::class));
+        }
     }
 
     public function testHistoricalChunkOrdersReportsForArchivedCampaignsWithSpend(): void
@@ -750,9 +797,9 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         throw new \LogicException('Ответ с кодом ошибки обязан бросить исключение.');
     }
 
-    private function fetcher(ContainerInterface $container, int $tokenStatus = 200, ?\Closure $beforeRejection = null, ?string $expense = null, ?string $campaigns = null, ?string $sku = null): FakeOzonAdvertisingFetcher
+    private function fetcher(ContainerInterface $container, int $tokenStatus = 200, ?\Closure $beforeRejection = null, ?string $expense = null, ?string $campaigns = null, ?string $sku = null, ?string $report = null): FakeOzonAdvertisingFetcher
     {
-        $fetcher = new FakeOzonAdvertisingFetcher($tokenStatus, $campaigns ?? $this->fixture('campaign-list.json'), $expense ?? $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json'), $beforeRejection, $sku ?? $this->fixture('statistics-products-sku-2026-09-23.json'), $this->fixture('statistics-json-many-2026-08-25-request.json'), $this->fixture('statistics-json-many-2026-08-25.json'));
+        $fetcher = new FakeOzonAdvertisingFetcher($tokenStatus, $campaigns ?? $this->fixture('campaign-list.json'), $expense ?? $this->fixture('statistics-expense-2026-08-25.json'), $this->fixture('statistics-daily-2026-08-25.json'), $beforeRejection, $sku ?? $this->fixture('statistics-products-sku-2026-09-23.json'), $this->fixture('statistics-json-many-2026-08-25-request.json'), $report ?? $this->fixture('statistics-json-many-2026-08-25.json'));
         $container->set(OzonPerformanceCampaignClient::class, $fetcher);
 
         return $fetcher;

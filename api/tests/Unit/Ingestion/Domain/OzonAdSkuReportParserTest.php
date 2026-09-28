@@ -22,7 +22,7 @@ final class OzonAdSkuReportParserTest extends TestCase
 
     public function testAsyncReportRowsAreTakenAsTheCabinetGaveThem(): void
     {
-        $expenses = (new OzonAdSkuReportParser())->parseReport($this->fixture('statistics-json-many-2026-08-25.json'));
+        $expenses = iterator_to_array((new OzonAdSkuReportParser())->parseReport($this->fixture('statistics-json-many-2026-08-25.json')), false);
 
         // 725 строк пяти кампаний за 30 дней, 158 960,62 ₽. Итог расхода
         // кампаний за те же дни — 158 960,57 ₽: разница — построчное
@@ -44,7 +44,7 @@ final class OzonAdSkuReportParserTest extends TestCase
 
     public function testSyncDayRowsAreTakenAsTheCabinetGaveThem(): void
     {
-        $expenses = (new OzonAdSkuReportParser())->parseDay($this->fixture('statistics-products-sku-2026-09-23.json'));
+        $expenses = iterator_to_array((new OzonAdSkuReportParser())->parseDay($this->fixture('statistics-products-sku-2026-09-23.json')), false);
 
         self::assertCount(21, $expenses);
         self::assertSame(-465482, $this->total($expenses)->minorAmount());
@@ -78,9 +78,9 @@ final class OzonAdSkuReportParserTest extends TestCase
 
     public function testOmittedAmountInAsyncReportIsZeroAndTheRowStays(): void
     {
-        $expenses = (new OzonAdSkuReportParser())->parseReport(
+        $expenses = iterator_to_array((new OzonAdSkuReportParser())->parseReport(
             '{"1":{"report":{"rows":[{"date":"17.09.2026","sku":"308389906"}]}}}',
-        );
+        ), false);
 
         // Нулевая строка хранится: иначе корректировка до нуля
         // не перезаписала бы старое значение (ADR-035 п. 2).
@@ -109,7 +109,7 @@ final class OzonAdSkuReportParserTest extends TestCase
     {
         $this->expectException(\UnexpectedValueException::class);
 
-        (new OzonAdSkuReportParser())->parseReport($body);
+        iterator_to_array((new OzonAdSkuReportParser())->parseReport($body), false);
     }
 
     /**
@@ -129,7 +129,7 @@ final class OzonAdSkuReportParserTest extends TestCase
     {
         $this->expectException(\UnexpectedValueException::class);
 
-        (new OzonAdSkuReportParser())->parseDay($body);
+        iterator_to_array((new OzonAdSkuReportParser())->parseDay($body), false);
     }
 
     public function testPerformanceAmountsBecomeMinorUnitsWithoutFloat(): void
