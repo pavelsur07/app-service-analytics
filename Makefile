@@ -27,15 +27,16 @@ DB_TEST_NAME := $(DB_NAME)_test
 # $(DB_TEST_NAME)N (TEST_TOKEN, тот же dbname_suffix в doctrine.yaml).
 # Базы процессов — копии мигрированной $(DB_TEST_NAME), их пересоздаёт
 # api-migrate-test. Число процессов — по ядрам хоста; больше ядер
-# не даёт ничего, кроме конкуренции за них.
-TEST_WORKERS ?= $(shell nproc)
+# не даёт ничего, кроме конкуренции за них. Не больше 15: у процесса
+# своя база Redis (api/.env.test), их по умолчанию 16, 0 — последовательному.
+TEST_WORKERS ?= $(shell n=$$(nproc); [ $$n -gt 15 ] && n=15; echo $$n)
 
 .PHONY: help \
 	init up stop down down-clear build pull ps logs \
 	api-shell api-install api-migrate api-migrate-test api-console \
 	db-wait db-test-create db-test-rebuild db-schema-validate db-rebuild-check \
 	s3-wait s3-bucket-create \
-	test test-unit test-int test-func test-e2e test-cov \
+	test test-unit test-workers-ready test-int test-func test-e2e test-cov \
 	lint lint-fix stan deptrac structure-check audit \
 	front-typecheck front-lint front-test front-knip \
 	api-doc-export api-types api-types-check \
@@ -168,18 +169,23 @@ test: db-wait db-test-create api-migrate-test s3-bucket-create test-unit test-in
 test-unit: ## тесты без БД
 	$(COMPOSE) exec php-cli composer test:unit
 
-test-int: ## тесты с БД, параллельно через paratest (базы процессов готовит api-migrate-test)
+test-workers-ready:
 	@# Базы процессов готовит другая цель — с тем ли TEST_WORKERS, неизвестно.
 	@# Без проверки нехватка выглядела бы поломкой тестов, а не подготовки.
 	@$(COMPOSE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -tAc \
 		"SELECT 1 FROM pg_database WHERE datname = '$(DB_TEST_NAME)$(TEST_WORKERS)'" | grep -q 1 || \
 		{ echo "Нет базы $(DB_TEST_NAME)$(TEST_WORKERS) для процесса $(TEST_WORKERS): make api-migrate-test TEST_WORKERS=$(TEST_WORKERS)" >&2; exit 1; }
+	@# Процесс N пишет лимитеры и сессии в базу Redis N (api/.env.test),
+	@# а их у Redis по умолчанию 16, и 0 — у последовательного прогона.
+	@test $(TEST_WORKERS) -le 15 || { echo "TEST_WORKERS=$(TEST_WORKERS): больше 15 процессов не хватит баз Redis" >&2; exit 1; }
 	@# Прогрев до старта: иначе процессы собирают кэш ядра наперегонки.
 	$(COMPOSE) exec -T php-cli php bin/console cache:warmup --env=test >/dev/null
+
+test-int: test-workers-ready ## тесты с БД, параллельно через paratest (базы процессов готовит api-migrate-test)
 	$(COMPOSE) exec php-cli composer test:integration -- --processes=$(TEST_WORKERS)
 
-test-func: ## тесты через HTTP (тестовая база должна быть готова)
-	$(COMPOSE) exec php-cli composer test:functional
+test-func: test-workers-ready ## тесты через HTTP, параллельно через paratest (базы процессов готовит api-migrate-test)
+	$(COMPOSE) exec php-cli composer test:functional -- --processes=$(TEST_WORKERS)
 
 test-e2e: ## сеет тестовые данные (dev-БД) и прогоняет Playwright — оба сценария (seller, admin)
 	sh bin/e2e-seed.sh
