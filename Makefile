@@ -164,6 +164,11 @@ test-unit: ## тесты без БД
 	$(COMPOSE) exec php-cli composer test:unit
 
 test-int: ## тесты с БД, параллельно через paratest (базы процессов готовит api-migrate-test)
+	@# Базы процессов готовит другая цель — с тем ли TEST_WORKERS, неизвестно.
+	@# Без проверки нехватка выглядела бы поломкой тестов, а не подготовки.
+	@$(COMPOSE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -tAc \
+		"SELECT 1 FROM pg_database WHERE datname = '$(DB_TEST_NAME)$(TEST_WORKERS)'" | grep -q 1 || \
+		{ echo "Нет базы $(DB_TEST_NAME)$(TEST_WORKERS) для процесса $(TEST_WORKERS): make api-migrate-test TEST_WORKERS=$(TEST_WORKERS)" >&2; exit 1; }
 	@# Прогрев до старта: иначе процессы собирают кэш ядра наперегонки.
 	$(COMPOSE) exec -T php-cli php bin/console cache:warmup --env=test >/dev/null
 	$(COMPOSE) exec php-cli composer test:integration -- --processes=$(TEST_WORKERS)
