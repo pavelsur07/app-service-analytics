@@ -54,6 +54,20 @@ export default tseslint.config(
       ...reactHooks.configs['recommended-latest'].rules,
       '@typescript-eslint/no-explicit-any': 'error',
 
+      // Тесты идут без изоляции файлов (isolate: false в vite.config.ts):
+      // vi.mock подменяет модуль в общем кэше воркера, и что получит
+      // соседний файл, зависит от порядка прогона. afterEach его не
+      // откатывает, поэтому запрет механический (docs/patterns.md).
+      'no-restricted-properties': [
+        'error',
+        ...['mock', 'doMock', 'unmock', 'doUnmock'].map((property) => ({
+          object: 'vi',
+          property,
+          message:
+            'vi.mock запрещён: тесты делят кэш модулей (isolate: false). Внедри зависимость параметром или vi.stubGlobal/vi.spyOn — они откатываются сами.',
+        })),
+      ],
+
       // CLAUDE.md §7 — прямой fetch и localStorage вне разрешённого
       // списка. Список пока пуст, поэтому localStorage запрещён целиком.
       'no-restricted-globals': [
