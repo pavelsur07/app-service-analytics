@@ -51,6 +51,11 @@ export default defineConfig({
     // Мок-сервер по схеме OpenAPI поднимается на все тесты
     // (CLAUDE.md §10). Хендлеры задаёт каждый тест сам.
     setupFiles: ['./tests/msw/setup.ts'],
+    // Файлы делят воркер: без этого подготовка каждого файла (msw, импорты)
+    // занимала ~85% прогона. Цена — тест, подменивший глобальное состояние
+    // (vi.mock, vi.stubGlobal, таймеры), обязан вернуть его в afterEach,
+    // иначе сломает соседний файл. Проверка — `--sequence.shuffle`.
+    isolate: false,
     // tests/e2e — Playwright, отдельный тест-раннер; Vitest его не трогает.
     exclude: ['node_modules/**', 'tests/e2e/**'],
   },
