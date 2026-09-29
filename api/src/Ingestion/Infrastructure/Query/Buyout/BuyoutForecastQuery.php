@@ -196,31 +196,55 @@ final readonly class BuyoutForecastQuery
      */
     public static function forecastAggregatesSql(): string
     {
-        return <<<'SQL'
+        $unestimated = self::unestimatedUnitSql();
+        $projected = self::projectedUnitSql();
+        $eligible = self::projectedEligibleUnitSql();
+
+        return <<<SQL
             COALESCE(SUM(quantity) FILTER (
-                WHERE outcome IS NULL AND (
-                    NOT is_forecast_eligible
-                    OR (handed_over_at IS NULL AND pre_handover_rate IS NULL)
-                    OR (handed_over_at IS NOT NULL AND post_handover_rate IS NULL)
-                )
+                WHERE {$unestimated}
             ), 0)::bigint AS unestimated_quantity,
-            COALESCE(SUM(CASE
-                WHEN outcome = 'D' THEN quantity::numeric
-                WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN quantity * pre_handover_rate
+            COALESCE(SUM(quantity * {$projected}), 0::numeric) AS projected_quantity,
+            COALESCE(SUM(quantity * {$eligible}), 0::numeric) AS projected_eligible_quantity
+            SQL;
+    }
+
+    /** Общая оценка исхода одной штуки для количественного и денежного прогноза. */
+    public static function projectedUnitSql(): string
+    {
+        return <<<'SQL'
+            (CASE
+                WHEN outcome = 'D' THEN 1::numeric
+                WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN pre_handover_rate
                 WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NOT NULL
-                     -- LEAST пропускает NULL: без ставки произведение обязано
-                     -- остаться NULL, иначе штука без оценки дала бы выкуп целиком.
-                     THEN quantity * CASE WHEN post_handover_rate IS NULL THEN NULL
-                                          ELSE LEAST(1::numeric, post_handover_rate * handover_factor) END
+                    THEN CASE WHEN post_handover_rate IS NULL THEN NULL
+                              ELSE LEAST(1::numeric, post_handover_rate * handover_factor) END
                 ELSE 0::numeric
-            END), 0::numeric) AS projected_quantity,
-            COALESCE(SUM(CASE
-                WHEN outcome IN ('D', 'T2', 'P') THEN quantity::numeric
-                WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN quantity * pre_handover_eligible_rate
+            END)
+            SQL;
+    }
+
+    public static function projectedEligibleUnitSql(): string
+    {
+        return <<<'SQL'
+            (CASE
+                WHEN outcome IN ('D', 'T2', 'P') THEN 1::numeric
+                WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NULL THEN pre_handover_eligible_rate
                 WHEN outcome IS NULL AND is_forecast_eligible AND handed_over_at IS NOT NULL
-                     AND post_handover_rate IS NOT NULL THEN quantity::numeric
+                     AND post_handover_rate IS NOT NULL THEN 1::numeric
                 ELSE 0::numeric
-            END), 0::numeric) AS projected_eligible_quantity
+            END)
+            SQL;
+    }
+
+    public static function unestimatedUnitSql(): string
+    {
+        return <<<'SQL'
+            (outcome IS NULL AND (
+                NOT is_forecast_eligible
+                OR (handed_over_at IS NULL AND pre_handover_rate IS NULL)
+                OR (handed_over_at IS NOT NULL AND post_handover_rate IS NULL)
+            ))
             SQL;
     }
 

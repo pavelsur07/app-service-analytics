@@ -8,6 +8,8 @@ use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutDailyQuery;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutDailyRow;
+use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\MarketplacePostingStatusBuilder;
 use App\Tests\Support\Builder\MarketplaceReturnFactBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
@@ -128,6 +130,231 @@ final class BuyoutDailyQueryTest extends KernelTestCase
         self::assertCount(1, $rows);
         self::assertNull($rows[0]->projectedBuyoutQuantity);
         self::assertNull($rows[0]->projectedBuyoutRateBps);
+    }
+
+    public function testMonetarySeriesUsesOrderPriceAndNetDeliveredUnits(): void
+    {
+        $delivered = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($this->companyId)
+            ->withMarketplaceAccountId($this->accountId)
+            ->withSourceRowId('MONEY-D|MONEY')
+            ->withPostingNumber('MONEY-D')
+            ->withOrderNumber('MONEY-D')
+            ->withMarketplaceSku('MONEY')
+            ->withStatus('delivered')
+            ->withQuantity(3)
+            ->withAmount(Money::ofMinor(10000, 'RUB'))
+            ->withBusinessDate(new \DateTimeImmutable('2026-08-29'))
+            ->build();
+        $cancelled = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($this->companyId)
+            ->withMarketplaceAccountId($this->accountId)
+            ->withSourceRowId('MONEY-T1|MONEY')
+            ->withPostingNumber('MONEY-T1')
+            ->withOrderNumber('MONEY-T1')
+            ->withMarketplaceSku('MONEY')
+            ->withStatus('cancelled')
+            ->withQuantity(2)
+            ->withAmount(Money::ofMinor(25000, 'RUB'))
+            ->withBusinessDate(new \DateTimeImmutable('2026-08-29'))
+            ->build();
+        $otherAccountId = Uuid::v7();
+        $otherAccount = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($this->companyId)
+            ->withMarketplaceAccountId($otherAccountId)
+            ->withSourceRowId('MONEY-D|MONEY')
+            ->withPostingNumber('MONEY-D')
+            ->withOrderNumber('MONEY-D')
+            ->withMarketplaceSku('MONEY')
+            ->withStatus('delivered')
+            ->withQuantity(1)
+            ->withAmount(Money::ofMinor(3000, 'RUB'))
+            ->withBusinessDate(new \DateTimeImmutable('2026-08-29'))
+            ->build();
+        $this->sales()->upsertAll([$delivered, $cancelled, $otherAccount]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('MONEY-D', 'MONEY-D', 'delivered', '2026-08-30 02:00:00'),
+            $this->postingStatus('MONEY-T1', 'MONEY-T1', 'awaiting_packaging', '2026-08-29 01:00:00'),
+            $this->postingStatus('MONEY-T1', 'MONEY-T1', 'cancelled', '2026-08-30 02:00:00'),
+        ]);
+        $this->returns()->upsertAll([
+            $this->returnFact('MONEY-RETURN', 'MONEY-D', 'MONEY-D', 'MONEY', 'ClientReturn', 'Возврат покупателя', 1),
+            $this->returnFact('MONEY-CANCEL', 'MONEY-T1', 'MONEY-T1', 'MONEY', 'Cancellation', 'Покупатель отменил заказ', 2),
+        ]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            MarketplacePostingStatusBuilder::aMarketplacePostingStatus()
+                ->withCompanyId($this->companyId)
+                ->withMarketplaceAccountId($otherAccountId)
+                ->withPostingNumber('MONEY-D')
+                ->withOrderNumber('MONEY-D')
+                ->withStatus('delivered')
+                ->withObservedAt(new \DateTimeImmutable('2026-08-30 02:00:00'))
+                ->build(),
+        ]);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $raw = (new BuyoutDailyQuery($connection))->build(
+            $this->companyId->toRfc4122(), 'MONEY',
+            new \DateTimeImmutable('2026-08-29'), new \DateTimeImmutable('2026-08-29'),
+            new \DateTimeImmutable('2026-08-31T12:00:00Z'),
+            withMoney: true,
+        )->executeQuery()->fetchAssociative();
+
+        self::assertIsArray($raw);
+        $row = BuyoutDailyQuery::mapRow($raw);
+        self::assertSame(6, $row->orderedQuantity);
+        self::assertSame(83000, $row->orderedAmountMinor);
+        self::assertSame(23000, $row->actualRevenueMinor);
+        self::assertSame(23000, $row->forecastRevenueMinor);
+        self::assertSame(10000, $row->projectedBuyoutRateBps);
+    }
+
+    public function testLateBuyoutAndFullReturnChangeOriginalOrderDay(): void
+    {
+        $this->sales()->upsertAll([
+            $this->pricedSale('LATE', 'LATE', 'LATE', 'delivered', 2, '2026-08-31', 12345),
+            $this->pricedSale('FULL', 'FULL', 'FULL', 'delivered', 3, '2026-08-31', 5000),
+        ]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('LATE', 'LATE', 'delivered', '2026-09-03 02:00:00'),
+            $this->postingStatus('FULL', 'FULL', 'delivered', '2026-09-03 02:00:00'),
+        ]);
+        $this->returns()->upsertAll([
+            $this->returnFact('FULL-RETURN', 'FULL', 'FULL', 'FULL', 'ClientReturn', 'Возврат покупателя', 3),
+        ]);
+
+        $late = $this->moneyRow('LATE', '2026-08-31');
+        $full = $this->moneyRow('FULL', '2026-08-31');
+        self::assertSame(24690, $late->orderedAmountMinor);
+        self::assertSame(24690, $late->actualRevenueMinor);
+        self::assertSame(24690, $late->forecastRevenueMinor);
+        self::assertSame(15000, $full->orderedAmountMinor);
+        self::assertSame(0, $full->actualRevenueMinor);
+        self::assertSame(0, $full->forecastRevenueMinor);
+    }
+
+    public function testUnestimatedThresholdAndCurrencyIsolationForMoney(): void
+    {
+        $this->sales()->upsertAll([
+            $this->pricedSale('EST-D', 'EST-D', 'EST', 'delivered', 9, '2026-08-29', 10000),
+            $this->pricedSale('EST-U1', 'EST-U1', 'EST', 'cancelled', 1, '2026-08-29', 5000),
+            $this->pricedSale('EST-USD', 'EST-USD', 'EST', 'delivered', 2, '2026-08-29', 99999, 'USD'),
+        ]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('EST-D', 'EST-D', 'delivered', '2026-08-29 02:00:00'),
+            $this->postingStatus('EST-U1', 'EST-U1', 'cancelled', '2026-08-29 02:00:00'),
+            $this->postingStatus('EST-USD', 'EST-USD', 'delivered', '2026-08-29 02:00:00'),
+        ]);
+        $this->returns()->upsertAll([
+            $this->returnFact('EST-U1-RETURN', 'EST-U1', 'EST-U1', 'EST', 'Cancellation', 'Новая неизвестная причина'),
+        ]);
+
+        $atThreshold = $this->moneyRow('EST', '2026-08-29');
+        self::assertSame(10, $atThreshold->orderedQuantity);
+        self::assertSame(95000, $atThreshold->orderedAmountMinor);
+        self::assertSame(90000, $atThreshold->actualRevenueMinor);
+        self::assertSame(95000, $atThreshold->forecastRevenueMinor);
+
+        $this->sales()->upsertAll([
+            $this->pricedSale('EST-U2', 'EST-U2', 'EST', 'cancelled', 1, '2026-08-29', 1000),
+        ]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('EST-U2', 'EST-U2', 'cancelled', '2026-08-29 03:00:00'),
+        ]);
+        $this->returns()->upsertAll([
+            $this->returnFact('EST-U2-RETURN', 'EST-U2', 'EST-U2', 'EST', 'Cancellation', 'Новая неизвестная причина'),
+        ]);
+
+        $overThreshold = $this->moneyRow('EST', '2026-08-29');
+        self::assertSame(11, $overThreshold->orderedQuantity);
+        self::assertNull($overThreshold->forecastRevenueMinor);
+        self::assertNull($overThreshold->projectedBuyoutRateBps);
+        self::assertSame(90000, $overThreshold->actualRevenueMinor);
+    }
+
+    public function testForecastMoneyRoundsOnceAfterSummingAllOrderLines(): void
+    {
+        $facts = [];
+        $statuses = [];
+        for ($index = 1; $index <= 7; ++$index) {
+            $posting = 'PENNY-'.$index;
+            $facts[] = $this->pricedSale($posting, $posting, 'PENNY', 'awaiting_packaging', 1, '2026-08-30', 1);
+            $statuses[] = $this->postingStatus($posting, $posting, 'awaiting_packaging', '2026-08-30 09:00:00');
+        }
+        $this->sales()->upsertAll($facts);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), $statuses);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $row = (new BuyoutDailyQuery($connection))->build(
+            $this->companyId->toRfc4122(), 'PENNY',
+            new \DateTimeImmutable('2026-08-30'), new \DateTimeImmutable('2026-08-30'),
+            new \DateTimeImmutable('2026-08-30T12:00:00Z'),
+            withMoney: true,
+        )->executeQuery()->fetchAssociative();
+
+        self::assertIsArray($row);
+        $row = BuyoutDailyQuery::mapRow($row);
+        self::assertSame(7, $row->orderedAmountMinor);
+        self::assertSame(6, $row->forecastRevenueMinor);
+        self::assertSame(0, $row->actualRevenueMinor);
+    }
+
+    public function testUnestimatedRevenueUsesQuantityRateAtEachUnknownOrdersPrice(): void
+    {
+        $facts = [
+            $this->pricedSale('CHEAP-D', 'CHEAP-D', 'MIXED', 'delivered', 1, '2026-08-29', 100),
+            $this->pricedSale('EXPENSIVE-T2', 'EXPENSIVE-T2', 'MIXED', 'cancelled', 8, '2026-08-29', 10000),
+            $this->pricedSale('EXPENSIVE-U', 'EXPENSIVE-U', 'MIXED', 'cancelled', 1, '2026-08-29', 10000),
+        ];
+        $this->sales()->upsertAll($facts);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('CHEAP-D', 'CHEAP-D', 'delivered', '2026-08-29 02:00:00'),
+            $this->postingStatus('EXPENSIVE-T2', 'EXPENSIVE-T2', 'delivering', '2026-08-29 01:00:00'),
+            $this->postingStatus('EXPENSIVE-T2', 'EXPENSIVE-T2', 'cancelled', '2026-08-29 02:00:00'),
+            $this->postingStatus('EXPENSIVE-U', 'EXPENSIVE-U', 'cancelled', '2026-08-29 02:00:00'),
+        ]);
+        $this->returns()->upsertAll([
+            $this->returnFact('EXPENSIVE-U-RETURN', 'EXPENSIVE-U', 'EXPENSIVE-U', 'MIXED', 'Cancellation', 'Новая неизвестная причина'),
+        ]);
+
+        $row = $this->moneyRow('MIXED', '2026-08-29');
+        self::assertSame(90100, $row->orderedAmountMinor);
+        self::assertSame(100, $row->actualRevenueMinor);
+        self::assertSame(1211, $row->forecastRevenueMinor);
+    }
+
+    private function moneyRow(string $sku, string $date): BuyoutDailyRow
+    {
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $row = (new BuyoutDailyQuery($connection))->build(
+            $this->companyId->toRfc4122(), $sku,
+            new \DateTimeImmutable($date), new \DateTimeImmutable($date),
+            new \DateTimeImmutable('2026-09-04T12:00:00Z'),
+            withMoney: true,
+        )->executeQuery()->fetchAssociative();
+        self::assertIsArray($row);
+
+        return BuyoutDailyQuery::mapRow($row);
+    }
+
+    private function pricedSale(string $posting, string $order, string $sku, string $status, int $quantity, string $date, int $minor, string $currency = 'RUB'): \App\Ingestion\Domain\SalesFact
+    {
+        return SalesFactBuilder::aSalesFact()
+            ->withCompanyId($this->companyId)
+            ->withMarketplaceAccountId($this->accountId)
+            ->withSourceRowId($posting.'|'.$sku)
+            ->withPostingNumber($posting)
+            ->withOrderNumber($order)
+            ->withMarketplaceSku($sku)
+            ->withStatus($status)
+            ->withQuantity($quantity)
+            ->withBusinessDate(new \DateTimeImmutable($date))
+            ->withAmount(Money::ofMinor($minor, $currency))
+            ->withCommissionAmount(Money::ofMinor(0, $currency))
+            ->build();
     }
 
     private function seed(): void
