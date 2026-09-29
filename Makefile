@@ -90,10 +90,15 @@ api-migrate: db-wait ## применение миграций (dev-база)
 api-migrate-test: db-wait db-test-create ## применение миграций в тестовой базе и пересоздание баз процессов paratest
 	$(COMPOSE) exec php-cli php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration --env=test
 	@# Копия по шаблону, а не миграции в каждой: схема заведомо та же,
-	@# и это секунды, а не прогон миграций N раз. Копируется всегда
-	@# заново — иначе база процесса отстала бы от новой миграции.
+	@# и это секунды, а не прогон миграций N раз. Удаляются все базы
+	@# процессов, а не только 1..TEST_WORKERS: оставшаяся от прогона
+	@# с большим числом процессов отстала бы от новой миграции, а проверка
+	@# в test-int приняла бы её за готовую.
+	@for db in $$($(COMPOSE) exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -tAc \
+		"SELECT datname FROM pg_database WHERE datname ~ '^$(DB_TEST_NAME)[0-9]+$$'"); do \
+		$(COMPOSE) exec -T postgres psql -q -U $(DB_USER) -d $(DB_NAME) -c "DROP DATABASE $$db" || exit 1; \
+	done
 	@for i in $$(seq 1 $(TEST_WORKERS)); do \
-		$(COMPOSE) exec -T postgres psql -q -U $(DB_USER) -d $(DB_NAME) -c "SET client_min_messages TO warning" -c "DROP DATABASE IF EXISTS $(DB_TEST_NAME)$$i" && \
 		$(COMPOSE) exec -T postgres psql -q -U $(DB_USER) -d $(DB_NAME) -c "CREATE DATABASE $(DB_TEST_NAME)$$i TEMPLATE $(DB_TEST_NAME) STRATEGY FILE_COPY" || exit 1; \
 	done
 
