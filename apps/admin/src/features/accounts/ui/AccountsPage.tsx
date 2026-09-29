@@ -14,16 +14,37 @@ import { RegisterAccountForm } from './RegisterAccountForm'
 // ролям контура — в отличие от заведения администраторов.
 export function AccountsPage() {
   const [page, setPage] = useState(1)
+  const [creatingAccount, setCreatingAccount] = useState(false)
   const accounts = useClientAccounts(page)
   const setStatus = useSetAccountStatus()
 
   return (
     <div className="flex flex-col gap-6">
-      <RegisterAccountForm />
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-xl font-semibold">Аккаунты</h1>
+        <Button
+          type="button"
+          onClick={() => {
+            setCreatingAccount(true)
+          }}
+        >
+          Новый аккаунт
+        </Button>
+      </header>
+
+      {creatingAccount && (
+        <RegisterAccountForm
+          onCancel={() => {
+            setCreatingAccount(false)
+          }}
+          onCreated={() => {
+            setPage(1)
+            setCreatingAccount(false)
+          }}
+        />
+      )}
 
       <Card>
-        <h2 className="mb-4 text-lg font-semibold">Аккаунты</h2>
-
         {accounts.status === 'pending' && (
           <StatusPanel
             icon={

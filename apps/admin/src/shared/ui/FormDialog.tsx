@@ -2,11 +2,10 @@ import { useEffect, useId, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
 
-import { Button } from '../../../../../../packages/ui/src'
+import { Button } from '../../../../../packages/ui/src'
 
-// Пока диалоги нужны только ссылкам, оболочка остаётся внутри фичи.
 // showModal делает фон неактивным и удерживает клавиатурный фокус.
-export function LinkFormDialog({
+export function FormDialog({
   title,
   busy,
   onClose,
@@ -34,6 +33,13 @@ export function LinkFormDialog({
     }
   }, [])
 
+  useEffect(() => {
+    // Если нативное закрытие совпало с завершением запроса, сохраним ошибку
+    // видимой до доставки отложенного браузером события close.
+    const dialog = dialogRef.current
+    if (dialog && !dialog.open) dialog.showModal()
+  }, [busy])
+
   return (
     <dialog
       ref={dialogRef}
@@ -42,6 +48,15 @@ export function LinkFormDialog({
       onCancel={(event) => {
         event.preventDefault()
         if (!busy) onClose()
+      }}
+      onClose={() => {
+        // В StrictMode close из cleanup может прийти после нового showModal.
+        if (dialogRef.current?.open) return
+        if (busy) {
+          dialogRef.current?.showModal()
+        } else {
+          onClose()
+        }
       }}
     >
       <div className="mb-4 flex items-center justify-between gap-4">

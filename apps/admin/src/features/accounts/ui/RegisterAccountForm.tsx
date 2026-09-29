@@ -1,6 +1,7 @@
 import { useForm } from 'react-hook-form'
-import { CircleAlert, CircleCheck } from 'lucide-react'
-import { Button, Card, Input } from '../../../../../../packages/ui/src'
+import { CircleAlert } from 'lucide-react'
+import { Button, Input } from '../../../../../../packages/ui/src'
+import { FormDialog } from '../../../shared/ui/FormDialog'
 import { useRegisterClientAccount } from '../model/useRegisterClientAccount'
 
 interface RegisterAccountFormValues {
@@ -17,7 +18,13 @@ interface RegisterAccountFormValues {
 // Длина пароля здесь не проверяется: предел задан на бэкенде и приходит
 // в тексте отказа. Второе место с тем же числом однажды разойдётся
 // с первым.
-export function RegisterAccountForm() {
+export function RegisterAccountForm({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: () => void
+  onCancel: () => void
+}) {
   const register = useRegisterClientAccount()
   const {
     register: field,
@@ -30,12 +37,17 @@ export function RegisterAccountForm() {
     register.mutate(values, {
       onSuccess: () => {
         reset()
+        onCreated()
       },
     })
   })
 
   return (
-    <Card>
+    <FormDialog
+      busy={register.isPending}
+      onClose={onCancel}
+      title="Новый аккаунт"
+    >
       <form
         onSubmit={(event) => {
           void onSubmit(event)
@@ -43,7 +55,6 @@ export function RegisterAccountForm() {
         className="flex flex-col gap-4"
         noValidate
       >
-        <h2 className="text-lg font-semibold">Новый аккаунт</h2>
         <Input
           label="Название компании"
           error={errors.name?.message}
@@ -76,19 +87,20 @@ export function RegisterAccountForm() {
             </span>
           </div>
         )}
-        {register.isSuccess && (
-          <div
-            className="flex items-center gap-2 rounded-lg border border-positive-border bg-positive-bg p-3 text-xs text-positive-text"
-            role="status"
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" loading={register.isPending}>
+            Зарегистрировать
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={register.isPending}
+            onClick={onCancel}
           >
-            <CircleCheck aria-hidden="true" size={16} />
-            <span>Зарегистрирован «{register.data.name}»</span>
-          </div>
-        )}
-        <Button type="submit" loading={register.isPending}>
-          Зарегистрировать
-        </Button>
+            Отмена
+          </Button>
+        </div>
       </form>
-    </Card>
+    </FormDialog>
   )
 }

@@ -2,8 +2,8 @@ import { CircleAlert } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 
 import { Button, Input } from '../../../../../../packages/ui/src'
+import { FormDialog } from '../../../shared/ui/FormDialog'
 import { useCreateLink } from '../model/useCreateLink'
-import { LinkFormDialog } from './LinkFormDialog'
 
 interface CreateLinkFormValues {
   name: string
@@ -35,7 +35,7 @@ export function CreateLinkForm({
   })
 
   return (
-    <LinkFormDialog
+    <FormDialog
       busy={createLink.isPending}
       onClose={onCancel}
       title="Новая ссылка"
@@ -92,6 +92,6 @@ export function CreateLinkForm({
           </Button>
         </div>
       </form>
-    </LinkFormDialog>
+    </FormDialog>
   )
 }
