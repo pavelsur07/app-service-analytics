@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Ui\Command;
 
 use App\Ingestion\Application\DispatchActiveOzonSyncsAction;
+use App\Ingestion\Application\ScheduleTick;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -55,8 +56,19 @@ final class ScheduleOzonSyncCommand extends Command
         $once = (bool) $input->getOption('once');
 
         while (true) {
-            $dispatched = $this->tick();
-            $io->writeln("Тик планировщика: поставлено сообщений — {$dispatched}.");
+            $tick = $this->tick();
+            // Строка на тик, с окнами: рескан по сырью не виден (raw
+            // дедуплицируется), и журнал — единственный прямой его след.
+            $io->writeln(null === $tick
+                ? 'Тик планировщика пропущен: идёт другой тик.'
+                : \sprintf(
+                    'Тик планировщика: подключений — %d; рескан — %s; дней: продажи — %d, расходы — %d, возвраты — %d.',
+                    $tick->accounts,
+                    $tick->rescan ? 'да' : 'нет',
+                    $tick->postingDays,
+                    $tick->expenseDays,
+                    $tick->returnDays,
+                ));
 
             if ($once) {
                 break;
@@ -68,11 +80,11 @@ final class ScheduleOzonSyncCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function tick(): int
+    private function tick(): ?ScheduleTick
     {
         $lock = $this->lockFactory->createLock(self::LOCK_KEY);
         if (!$lock->acquire()) {
-            return 0;
+            return null;
         }
 
         try {

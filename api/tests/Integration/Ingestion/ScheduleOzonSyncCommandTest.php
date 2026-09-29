@@ -46,6 +46,12 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
         $tester = $this->commandTester();
         $tester->execute(['--once' => true]);
         $tester->assertCommandIsSuccessful();
+        // Строка журнала называет обойдённые подключения и окна тика:
+        // по ней видно, был ли рескан, — по сырью он не виден.
+        self::assertMatchesRegularExpression(
+            '/Тик планировщика: подключений — \d+; рескан — (да|нет); дней: продажи — \d+, расходы — \d+, возвраты — \d+\./u',
+            $tester->getDisplay(),
+        );
 
         $sent = $this->transport($container)->getSent();
 
@@ -119,6 +125,8 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
             $tester->assertCommandIsSuccessful();
 
             self::assertCount(0, $this->transport($container)->getSent());
+            // Пропущенный тик назван пропущенным, а не «ноль подключений».
+            self::assertStringContainsString('Тик планировщика пропущен', $tester->getDisplay());
         } finally {
             $externalLock->release();
         }

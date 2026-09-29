@@ -197,6 +197,7 @@ return static function (DeptracConfig $config): void {
                     mustNot: [
                         DirectoryConfig::create('src/Ingestion/Application/Facade/.*'),
                         ClassLikeConfig::create('^App\\Ingestion\\Application\\DispatchActiveOzonSyncsAction$'),
+                        ClassLikeConfig::create('^App\\Ingestion\\Application\\ScheduleTick$'),
                         ClassLikeConfig::create('^App\\Ingestion\\Application\\NotifyStaleAccountsAction$'),
                     ],
                 ),
@@ -205,8 +206,12 @@ return static function (DeptracConfig $config): void {
             // нужен только сторожу свежести, и общий слой выдал бы межарендаторное
             // чтение заодно планировщику, которому оно не нужно. CLAUDE.md §1
             // требует давать узкий слой только тому, кому он действительно нужен.
+            // ScheduleTick — результат тика планировщика (только числа для
+            // строки журнала); живёт в слое своего Action, чтобы команда
+            // получила его, не получая широкий IngestionApplication.
             $ingestionSyncAction = Layer::withName('IngestionSyncAction')->collectors(
                 ClassLikeConfig::create('^App\\Ingestion\\Application\\DispatchActiveOzonSyncsAction$'),
+                ClassLikeConfig::create('^App\\Ingestion\\Application\\ScheduleTick$'),
             ),
             $ingestionFreshnessAction = Layer::withName('IngestionFreshnessAction')->collectors(
                 ClassLikeConfig::create('^App\\Ingestion\\Application\\NotifyStaleAccountsAction$'),

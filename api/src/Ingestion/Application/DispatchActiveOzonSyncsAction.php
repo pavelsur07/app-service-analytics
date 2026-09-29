@@ -114,7 +114,7 @@ final readonly class DispatchActiveOzonSyncsAction
     ) {
     }
 
-    public function __invoke(): int
+    public function __invoke(): ScheduleTick
     {
         $today = new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE));
         $targets = $this->identitySchedule->findActiveOzonSyncTargets();
@@ -170,10 +170,15 @@ final readonly class DispatchActiveOzonSyncsAction
             ));
         }
 
-        // Число подключений, а не сообщений: тик планировщика меряется
-        // тем, сколько кабинетов он обошёл, и это число не должно
-        // меняться от того, что у подключения появилась вторая задача.
-        return \count($targets);
+        // Подключения, а не сообщения: тик меряется тем, сколько кабинетов
+        // он обошёл. Окна — чтобы рескан был виден в журнале (ScheduleTick).
+        return new ScheduleTick(
+            accounts: \count($targets),
+            rescan: $this->isRescanTick($today),
+            postingDays: $postingDays,
+            expenseDays: $expenseDays,
+            returnDays: $returnDays,
+        );
     }
 
     /**
