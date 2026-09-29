@@ -73,6 +73,17 @@ final class PostingsWindowTest extends KernelTestCase
         );
     }
 
+    public function testTickNamesTheWindowsItDispatched(): void
+    {
+        // Рескан по сырью не виден (raw дедуплицируется), поэтому тик сам
+        // называет окна — это строка журнала планировщика.
+        $ordinary = ($this->actionWithRescanAt($this->hourThatIsNotNow()))();
+        self::assertSame([1, false, 3, 3, 3], [$ordinary->accounts, $ordinary->rescan, $ordinary->postingDays, $ordinary->expenseDays, $ordinary->returnDays]);
+
+        $rescan = ($this->actionWithRescanAt($this->hourNow()))();
+        self::assertSame([1, true, 30, 45, 90], [$rescan->accounts, $rescan->rescan, $rescan->postingDays, $rescan->expenseDays, $rescan->returnDays]);
+    }
+
     public function testOrdinaryTickReloadsThreeDaysOfExpenses(): void
     {
         self::assertSame($this->days(3), $this->expenseDates($this->actionWithRescanAt($this->hourThatIsNotNow())));
