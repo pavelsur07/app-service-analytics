@@ -27,8 +27,9 @@ DB_TEST_NAME := $(DB_NAME)_test
 # $(DB_TEST_NAME)N (TEST_TOKEN, тот же dbname_suffix в doctrine.yaml).
 # Базы процессов — копии мигрированной $(DB_TEST_NAME), их пересоздаёт
 # api-migrate-test. Число процессов — по ядрам хоста; больше ядер
-# не даёт ничего, кроме конкуренции за них.
-TEST_WORKERS ?= $(shell nproc)
+# не даёт ничего, кроме конкуренции за них. Не больше 15: у процесса
+# своя база Redis (api/.env.test), их по умолчанию 16, 0 — последовательному.
+TEST_WORKERS ?= $(shell n=$$(nproc); [ $$n -gt 15 ] && n=15; echo $$n)
 
 .PHONY: help \
 	init up stop down down-clear build pull ps logs \
