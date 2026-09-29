@@ -1255,7 +1255,7 @@ make db-rebuild-check  down-clear → up → migrate → migrate-test → test:
 make test              unit + integration + functional (с подготовкой тестовой базы)
 make test-unit         без БД
 make test-int          с БД, параллельно через paratest (базы готовит api-migrate-test)
-make test-func         через HTTP (тестовая база должна быть готова заранее)
+make test-func         через HTTP, параллельно через paratest (базы готовит api-migrate-test)
 make test-e2e          Playwright, через контейнер playwright
 make test-cov          покрытие — драйвер pcov в php-cli (docker/php/Dockerfile)
 
