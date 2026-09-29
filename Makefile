@@ -23,6 +23,12 @@ APPS := $(if $(APP),$(APP),$(APPS))
 DB_USER := app
 DB_NAME := app
 DB_TEST_NAME := $(DB_NAME)_test
+# Integration идёт через paratest: процесс N работает в своей базе
+# $(DB_TEST_NAME)N (TEST_TOKEN, тот же dbname_suffix в doctrine.yaml).
+# Базы процессов — копии мигрированной $(DB_TEST_NAME), их пересоздаёт
+# api-migrate-test. Число процессов — по ядрам хоста; больше ядер
+# не даёт ничего, кроме конкуренции за них.
+TEST_WORKERS ?= $(shell nproc)
 
 .PHONY: help \
 	init up stop down down-clear build pull ps logs \
@@ -81,8 +87,15 @@ api-install: ## composer install
 api-migrate: db-wait ## применение миграций (dev-база)
 	$(COMPOSE) exec php-cli php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
 
-api-migrate-test: db-wait db-test-create ## применение миграций в тестовой базе
+api-migrate-test: db-wait db-test-create ## применение миграций в тестовой базе и пересоздание баз процессов paratest
 	$(COMPOSE) exec php-cli php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration --env=test
+	@# Копия по шаблону, а не миграции в каждой: схема заведомо та же,
+	@# и это секунды, а не прогон миграций N раз. Копируется всегда
+	@# заново — иначе база процесса отстала бы от новой миграции.
+	@for i in $$(seq 1 $(TEST_WORKERS)); do \
+		$(COMPOSE) exec -T postgres psql -q -U $(DB_USER) -d $(DB_NAME) -c "SET client_min_messages TO warning" -c "DROP DATABASE IF EXISTS $(DB_TEST_NAME)$$i" && \
+		$(COMPOSE) exec -T postgres psql -q -U $(DB_USER) -d $(DB_NAME) -c "CREATE DATABASE $(DB_TEST_NAME)$$i TEMPLATE $(DB_TEST_NAME) STRATEGY FILE_COPY" || exit 1; \
+	done
 
 api-console: ## произвольная консольная команда: make api-console CMD="..."
 	$(COMPOSE) exec php-cli php bin/console $(CMD)
@@ -150,8 +163,10 @@ test: db-wait db-test-create api-migrate-test s3-bucket-create test-unit test-in
 test-unit: ## тесты без БД
 	$(COMPOSE) exec php-cli composer test:unit
 
-test-int: ## тесты с БД (тестовая база должна быть готова — db-test-create, api-migrate-test)
-	$(COMPOSE) exec php-cli composer test:integration
+test-int: ## тесты с БД, параллельно через paratest (базы процессов готовит api-migrate-test)
+	@# Прогрев до старта: иначе процессы собирают кэш ядра наперегонки.
+	$(COMPOSE) exec -T php-cli php bin/console cache:warmup --env=test >/dev/null
+	$(COMPOSE) exec php-cli composer test:integration -- --processes=$(TEST_WORKERS)
 
 test-func: ## тесты через HTTP (тестовая база должна быть готова)
 	$(COMPOSE) exec php-cli composer test:functional

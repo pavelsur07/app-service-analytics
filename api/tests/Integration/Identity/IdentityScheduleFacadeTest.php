@@ -11,6 +11,7 @@ use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Identity\Infrastructure\Query\ActiveOzonAccountsQuery;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -66,11 +67,17 @@ final class IdentityScheduleFacadeTest extends KernelTestCase
         $companies = $this->companies($container);
         $marketplaceAccounts = $this->marketplaceAccounts($container);
 
+        /** @var EntityManagerInterface $entityManager */
+        $entityManager = $container->get(EntityManagerInterface::class);
+
         for ($i = 0; $i <= ActiveOzonAccountsQuery::MAX_RESULTS; ++$i) {
             MarketplaceAccountBuilder::aMarketplaceAccount()
                 ->withCompany(CompanyBuilder::aCompany()->persistWith($companies))
                 ->withExternalShopId("shop-{$i}")
                 ->persistWith($companies, $marketplaceAccounts);
+            // Каждый add() делает flush, а flush сверяет все сущности
+            // в памяти: без сброса 402 записи стоили бы квадрат этого числа.
+            $entityManager->clear();
         }
 
         $this->expectException(\RuntimeException::class);
