@@ -19,6 +19,9 @@ final readonly class BuyoutDailyRow
         /** Выкуп только по известным исходам, без условия зрелости; наружу не отдаётся. */
         public ?int $knownBuyoutRateBps,
         public ?int $unestimatedRateBps,
+        public ?int $orderedAmountMinor = null,
+        public ?int $forecastRevenueMinor = null,
+        public ?int $actualRevenueMinor = null,
     ) {
     }
 }

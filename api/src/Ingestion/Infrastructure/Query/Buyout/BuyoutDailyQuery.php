@@ -29,7 +29,11 @@ final readonly class BuyoutDailyQuery
         \DateTimeImmutable $to,
         \DateTimeImmutable $asOf,
         bool $pointInTime = false,
+        bool $withMoney = false,
     ): QueryBuilder {
+        if ($withMoney && (null === $marketplaceSku || $pointInTime || $from > $to || $from->diff($to)->days > 30)) {
+            throw new \InvalidArgumentException('Monetary daily series requires one SKU and at most 31 days.');
+        }
         $outcomeSource = $pointInTime
             ? 'buyout_outcome_as_of(:companyId::uuid, :asOf::timestamp)'
             : 'buyout_outcome WHERE company_id = :companyId';
@@ -44,10 +48,40 @@ final readonly class BuyoutDailyQuery
         $handoverFactorJoin = BuyoutForecastQuery::handoverFactorJoinSql('o');
         $projectedRate = BuyoutForecastQuery::projectedRateSql('projected_quantity', 'projected_eligible_quantity', 'ordered_quantity', 'unestimated_quantity');
         $projectedQuantity = BuyoutForecastQuery::projectedQuantitySql('projected_quantity', 'ordered_quantity', 'unestimated_quantity');
+        $sourceRowColumn = $withMoney ? ', source_row_id' : '';
+        $moneyJoin = $withMoney ? <<<'SQL'
+            JOIN sales_fact sf
+              ON sf.company_id = :companyId
+             AND sf.company_id = o.company_id
+             AND sf.marketplace_account_id = o.marketplace_account_id
+             AND sf.source_row_id = o.source_row_id
+             AND sf.marketplace_sku = :marketplaceSku
+             AND sf.business_date >= :from
+             AND sf.business_date <= :to
+             AND sf.currency = 'RUB'
+            SQL : '';
+        $moneyCurrentColumn = $withMoney ? ', sf.amount_minor' : '';
+        $unitForecast = BuyoutForecastQuery::projectedUnitSql();
+        $unestimatedUnit = BuyoutForecastQuery::unestimatedUnitSql();
+        $moneyAggregates = $withMoney ? <<<SQL
+            , SUM(quantity::numeric * amount_minor) AS ordered_amount_minor
+            , COALESCE(SUM(quantity::numeric * amount_minor) FILTER (WHERE outcome = 'D'), 0::numeric)::bigint AS actual_revenue_minor
+            , COALESCE(SUM(quantity::numeric * amount_minor * {$unitForecast}), 0::numeric) AS projected_revenue_amount
+            , COALESCE(SUM(quantity::numeric * amount_minor) FILTER (WHERE {$unestimatedUnit}), 0::numeric) AS unestimated_amount_minor
+            SQL : '';
+        $moneyColumns = $withMoney ? <<<'SQL'
+            , ordered_amount_minor::bigint AS ordered_amount_minor
+            , actual_revenue_minor
+            , CASE WHEN ordered_quantity > unestimated_quantity
+                     AND 10000 * unestimated_quantity <= 1000 * ordered_quantity
+                   THEN ROUND(projected_revenue_amount
+                              + unestimated_amount_minor * projected_quantity / (ordered_quantity - unestimated_quantity))::bigint
+                   ELSE NULL END AS forecast_revenue_minor
+            SQL : '';
         $source = <<<SQL
             WITH tenant_outcome AS MATERIALIZED (
                 SELECT company_id, marketplace_account_id,
-                       posting_number, marketplace_sku,
+                       posting_number, marketplace_sku{$sourceRowColumn},
                        quantity, business_date, outcome,
                        handed_over_at, resolved_at, is_forecast_eligible,
                        resolution_observed, is_in_flight
@@ -108,8 +142,9 @@ final readonly class BuyoutDailyQuery
                                THEN a.d_quantity::numeric / NULLIF(a.d_quantity + a.t2_quantity + a.p_quantity, 0)
                            ELSE NULL
                        END AS post_handover_rate,
-                       COALESCE(hf.factor, 1::numeric) AS handover_factor
+                       COALESCE(hf.factor, 1::numeric) AS handover_factor{$moneyCurrentColumn}
                 FROM tenant_outcome o
+                {$moneyJoin}
                 LEFT JOIN maturity m ON m.marketplace_account_id = o.marketplace_account_id
                 LEFT JOIN sku_training s
                   ON s.marketplace_account_id = o.marketplace_account_id
@@ -135,7 +170,7 @@ final readonly class BuyoutDailyQuery
                            )) > current_p95_seconds
                        ) AND {$inFlightWithinLimit} AS mature,
                        COALESCE(SUM(quantity) FILTER (WHERE is_in_flight), 0)::bigint AS in_flight_quantity,
-                       {$forecastAggregates}
+                       {$forecastAggregates}{$moneyAggregates}
                 FROM current_rows
                 GROUP BY business_date
             )
@@ -153,7 +188,7 @@ final readonly class BuyoutDailyQuery
                    resolved_quantity,
                    {$projectedQuantity} AS projected_buyout_quantity,
                    CASE WHEN mature THEN 'mature' ELSE 'preliminary' END AS maturity_status,
-                   ROUND(10000::numeric * in_flight_quantity / NULLIF(ordered_quantity, 0))::int AS in_flight_rate_bps
+                   ROUND(10000::numeric * in_flight_quantity / NULLIF(ordered_quantity, 0))::int AS in_flight_rate_bps{$moneyColumns}
             FROM daily
             SQL;
 
@@ -169,7 +204,7 @@ final readonly class BuyoutDailyQuery
             ->setParameter('asOf', $asOf->setTimezone($utc)->format('Y-m-d H:i:s'))
             ->setParameter('asOfMoscow', $asOf->setTimezone($moscow)->format('Y-m-d H:i:s'))
             ->orderBy('business_date', 'ASC')
-            ->setMaxResults(91);
+            ->setMaxResults($withMoney ? 31 : 91);
         if (null !== $marketplaceSku) {
             $query->setParameter('marketplaceSku', $marketplaceSku);
         }
@@ -194,6 +229,9 @@ final readonly class BuyoutDailyQuery
             inFlightRateBps: self::nullableInteger($row['in_flight_rate_bps'] ?? null),
             knownBuyoutRateBps: self::nullableInteger($row['known_buyout_rate_bps'] ?? null),
             unestimatedRateBps: self::nullableInteger($row['unestimated_rate_bps'] ?? null),
+            orderedAmountMinor: self::nullableInteger($row['ordered_amount_minor'] ?? null),
+            forecastRevenueMinor: self::nullableInteger($row['forecast_revenue_minor'] ?? null),
+            actualRevenueMinor: self::nullableInteger($row['actual_revenue_minor'] ?? null),
         );
     }
 

@@ -17,6 +17,7 @@ import { PriceOverviewPage } from '../features/price-monitoring/ui/PriceOverview
 import { ExtensionConnectPage } from '../features/extension/ui/ExtensionConnectPage'
 import { SalesFactsPage } from '../features/ingestion/ui/SalesFactsPage'
 import { SignUpPage } from '../features/auth/ui/SignUpPage'
+import { SkuForecastFactPage } from '../features/sku-forecast-fact/ui/SkuForecastFactPage'
 import { StockPlacementPage } from '../features/stock-placement/ui/StockPlacementPage'
 import { UnitEconomicsPage } from '../features/unit-economics/ui/UnitEconomicsPage'
 import { CompanyLayout } from './CompanyLayout'
@@ -67,6 +68,7 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="sales" replace /> },
       { path: 'sales', element: <SalesFactsPage /> },
       { path: 'redemption', element: <BuyoutRatePage /> },
+      { path: 'sku-forecast-fact', element: <SkuForecastFactPage /> },
       { path: 'localization', element: <LocalizationPage /> },
       { path: 'delivery-speed', element: <DeliverySpeedPage /> },
       { path: 'stock-placement', element: <StockPlacementPage /> },

@@ -372,6 +372,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/sku-forecast-fact/skus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_sku_forecast_fact_skus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/unit-economics/reconciliation": {
         parameters: {
             query?: never;
@@ -428,6 +444,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_ingestion_buyout_rate_daily"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/sku-forecast-fact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_sku_forecast_fact"];
         put?: never;
         post?: never;
         delete?: never;
@@ -853,6 +885,15 @@ export interface components {
             id: string;
             state: string;
         };
+        SkuForecastFactSkuResponse: {
+            marketplaceSku: string;
+            name: string | null;
+            offerId: string | null;
+        };
+        SkuForecastFactSkuSearchResponse: {
+            items: components["schemas"]["SkuForecastFactSkuResponse"][];
+            nextCursor: string | null;
+        };
         AccrualReconciliationItemResponse: {
             feeTypeId: number;
             name: string;
@@ -1051,6 +1092,25 @@ export interface components {
         BuyoutDailyResponse: {
             marketplaceSku: string;
             series: components["schemas"]["BuyoutDailyPointResponse"][];
+        };
+        SkuForecastFactDayResponse: {
+            date: string;
+            /** @description Заказано в RUB, копейки до СПП */
+            orderedAmountMinor: number;
+            orderedQuantity: number;
+            /** @description Плановый процент выкупа, базисные пункты; null без оценки */
+            plannedBuyoutRateBps: number | null;
+            /** @description Прогноз по цене каждой строки заказа, копейки до СПП; null без оценки */
+            forecastRevenueMinor: number | null;
+            /** @description Уже известный выкуп за вычетом возвратов, копейки до СПП */
+            actualRevenueMinor: number;
+        };
+        SkuForecastFactResponse: {
+            marketplaceSku: string;
+            month: string;
+            /** @enum {string} */
+            currency: "RUB";
+            days: components["schemas"]["SkuForecastFactDayResponse"][];
         };
         SkuSalesTotalResponse: {
             currency: string;
@@ -2432,6 +2492,51 @@ export interface operations {
             };
         };
     };
+    get_ingestion_sku_forecast_fact_skus: {
+        parameters: {
+            query?: {
+                /** @description Поиск каталога по части SKU, названия или артикула. Для истории заказов поиск по части SKU требует три последовательных буквы или цифры; более короткий запрос ищет точный SKU. */
+                q?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SKU компании из каталога и истории заказов */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkuForecastFactSkuSearchResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректные параметры поиска */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     get_ingestion_unit_economics_reconciliation: {
         parameters: {
             query?: {
@@ -2596,6 +2701,49 @@ export interface operations {
                 };
             };
             /** @description Некорректные days или SKU */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_sku_forecast_fact: {
+        parameters: {
+            query: {
+                sku: string;
+                month?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Прогноз и факт по SKU за месяц заказа */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkuForecastFactResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректный SKU или месяц */
             422: {
                 headers: {
                     [name: string]: unknown;

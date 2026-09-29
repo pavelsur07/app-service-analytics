@@ -1697,6 +1697,83 @@
                 }
             }
         },
+        "/api/companies/{companyId}/sku-forecast-fact/skus": {
+            "get": {
+                "operationId": "get_ingestion_sku_forecast_fact_skus",
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "description": "\u041f\u043e\u0438\u0441\u043a \u043a\u0430\u0442\u0430\u043b\u043e\u0433\u0430 \u043f\u043e \u0447\u0430\u0441\u0442\u0438 SKU, \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044f \u0438\u043b\u0438 \u0430\u0440\u0442\u0438\u043a\u0443\u043b\u0430. \u0414\u043b\u044f \u0438\u0441\u0442\u043e\u0440\u0438\u0438 \u0437\u0430\u043a\u0430\u0437\u043e\u0432 \u043f\u043e\u0438\u0441\u043a \u043f\u043e \u0447\u0430\u0441\u0442\u0438 SKU \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u0442\u0440\u0438 \u043f\u043e\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0445 \u0431\u0443\u043a\u0432\u044b \u0438\u043b\u0438 \u0446\u0438\u0444\u0440\u044b; \u0431\u043e\u043b\u0435\u0435 \u043a\u043e\u0440\u043e\u0442\u043a\u0438\u0439 \u0437\u0430\u043f\u0440\u043e\u0441 \u0438\u0449\u0435\u0442 \u0442\u043e\u0447\u043d\u044b\u0439 SKU.",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 100
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 200,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SKU \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438 \u0438\u0437 \u043a\u0430\u0442\u0430\u043b\u043e\u0433\u0430 \u0438 \u0438\u0441\u0442\u043e\u0440\u0438\u0438 \u0437\u0430\u043a\u0430\u0437\u043e\u0432",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SkuForecastFactSkuSearchResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u043f\u043e\u0438\u0441\u043a\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/companies/{companyId}/unit-economics/reconciliation": {
             "get": {
                 "operationId": "get_ingestion_unit_economics_reconciliation",
@@ -1975,6 +2052,72 @@
                     },
                     "422": {
                         "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0435 days \u0438\u043b\u0438 SKU",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/sku-forecast-fact": {
+            "get": {
+                "operationId": "get_ingestion_sku_forecast_fact",
+                "parameters": [
+                    {
+                        "name": "sku",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 64
+                        }
+                    },
+                    {
+                        "name": "month",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u041f\u0440\u043e\u0433\u043d\u043e\u0437 \u0438 \u0444\u0430\u043a\u0442 \u043f\u043e SKU \u0437\u0430 \u043c\u0435\u0441\u044f\u0446 \u0437\u0430\u043a\u0430\u0437\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SkuForecastFactResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0439 SKU \u0438\u043b\u0438 \u043c\u0435\u0441\u044f\u0446",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3828,6 +3971,46 @@
                 },
                 "type": "object"
             },
+            "SkuForecastFactSkuResponse": {
+                "required": [
+                    "marketplaceSku",
+                    "name",
+                    "offerId"
+                ],
+                "properties": {
+                    "marketplaceSku": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "offerId": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "SkuForecastFactSkuSearchResponse": {
+                "required": [
+                    "items",
+                    "nextCursor"
+                ],
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SkuForecastFactSkuResponse"
+                        }
+                    },
+                    "nextCursor": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
             "AccrualReconciliationItemResponse": {
                 "required": [
                     "feeTypeId",
@@ -4574,6 +4757,72 @@
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/BuyoutDailyPointResponse"
+                        }
+                    }
+                },
+                "type": "object"
+            },
+            "SkuForecastFactDayResponse": {
+                "required": [
+                    "date",
+                    "orderedAmountMinor",
+                    "orderedQuantity",
+                    "plannedBuyoutRateBps",
+                    "forecastRevenueMinor",
+                    "actualRevenueMinor"
+                ],
+                "properties": {
+                    "date": {
+                        "type": "string"
+                    },
+                    "orderedAmountMinor": {
+                        "description": "\u0417\u0430\u043a\u0430\u0437\u0430\u043d\u043e \u0432 RUB, \u043a\u043e\u043f\u0435\u0439\u043a\u0438 \u0434\u043e \u0421\u041f\u041f",
+                        "type": "integer"
+                    },
+                    "orderedQuantity": {
+                        "type": "integer"
+                    },
+                    "plannedBuyoutRateBps": {
+                        "description": "\u041f\u043b\u0430\u043d\u043e\u0432\u044b\u0439 \u043f\u0440\u043e\u0446\u0435\u043d\u0442 \u0432\u044b\u043a\u0443\u043f\u0430, \u0431\u0430\u0437\u0438\u0441\u043d\u044b\u0435 \u043f\u0443\u043d\u043a\u0442\u044b; null \u0431\u0435\u0437 \u043e\u0446\u0435\u043d\u043a\u0438",
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "forecastRevenueMinor": {
+                        "description": "\u041f\u0440\u043e\u0433\u043d\u043e\u0437 \u043f\u043e \u0446\u0435\u043d\u0435 \u043a\u0430\u0436\u0434\u043e\u0439 \u0441\u0442\u0440\u043e\u043a\u0438 \u0437\u0430\u043a\u0430\u0437\u0430, \u043a\u043e\u043f\u0435\u0439\u043a\u0438 \u0434\u043e \u0421\u041f\u041f; null \u0431\u0435\u0437 \u043e\u0446\u0435\u043d\u043a\u0438",
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "actualRevenueMinor": {
+                        "description": "\u0423\u0436\u0435 \u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 \u0432\u044b\u043a\u0443\u043f \u0437\u0430 \u0432\u044b\u0447\u0435\u0442\u043e\u043c \u0432\u043e\u0437\u0432\u0440\u0430\u0442\u043e\u0432, \u043a\u043e\u043f\u0435\u0439\u043a\u0438 \u0434\u043e \u0421\u041f\u041f",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "SkuForecastFactResponse": {
+                "required": [
+                    "marketplaceSku",
+                    "month",
+                    "currency",
+                    "days"
+                ],
+                "properties": {
+                    "marketplaceSku": {
+                        "type": "string"
+                    },
+                    "month": {
+                        "type": "string"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "enum": [
+                            "RUB"
+                        ]
+                    },
+                    "days": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SkuForecastFactDayResponse"
                         }
                     }
                 },
