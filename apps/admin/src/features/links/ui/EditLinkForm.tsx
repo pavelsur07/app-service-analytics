@@ -5,7 +5,7 @@ import { Button, Input } from '../../../../../../packages/ui/src'
 import { ApiError } from '../../../api/ApiError'
 import type { ShortLink } from '../model/useLinks'
 import { useUpdateLink } from '../model/useUpdateLink'
-import { LinkFormDialog } from './LinkFormDialog'
+import { FormDialog } from '../../../shared/ui/FormDialog'
 
 interface EditLinkFormValues {
   name: string
@@ -38,7 +38,7 @@ export function EditLinkForm({
   })
 
   return (
-    <LinkFormDialog
+    <FormDialog
       busy={updateLink.isPending}
       onClose={onCancel}
       title="Изменить ссылку"
@@ -93,6 +93,6 @@ export function EditLinkForm({
           </Button>
         </div>
       </form>
-    </LinkFormDialog>
+    </FormDialog>
   )
 }

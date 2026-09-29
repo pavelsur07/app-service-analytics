@@ -44,14 +44,51 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
   // Регистрация аккаунта: компания и владелец одним действием.
   const stamp = Date.now()
   const companyName = `E2E Клиент ${String(stamp)}`
-  await page.getByLabel('Название компании').fill(companyName)
-  await page
+  const newAccountButton = page.getByRole('button', { name: 'Новый аккаунт' })
+  const accountDialog = page.getByRole('dialog', { name: 'Новый аккаунт' })
+  await expect(page.getByLabel('Название компании')).toHaveCount(0)
+  await newAccountButton.click()
+  await expect(accountDialog).toBeVisible()
+  await expect(accountDialog.getByLabel('Название компании')).toBeFocused()
+  await accountDialog.evaluate((dialog: HTMLDialogElement) => {
+    dialog.close()
+  })
+  await expect(accountDialog).toHaveCount(0)
+  await expect(newAccountButton).toBeFocused()
+  await newAccountButton.click()
+  await page.keyboard.press('Escape')
+  await expect(accountDialog).toHaveCount(0)
+  await expect(newAccountButton).toBeFocused()
+  await newAccountButton.click()
+  await accountDialog.getByRole('button', { name: 'Зарегистрировать' }).click()
+  await expect(accountDialog.getByText('Введите название')).toBeVisible()
+  await accountDialog.getByLabel('Название компании').fill(companyName)
+  await accountDialog
     .getByLabel('Email владельца')
     .fill(`e2e-owner-${String(stamp)}@example.com`)
-  await page.getByLabel('Пароль владельца').fill('e2e-long-enough-password')
-  await page.getByRole('button', { name: 'Зарегистрировать' }).click()
-
-  await expect(page.getByRole('status')).toContainText(companyName)
+  await accountDialog
+    .getByLabel('Пароль владельца')
+    .fill('e2e-long-enough-password')
+  await page.route(
+    '**/api/admin/companies',
+    async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      await route.fulfill({ status: 503, body: '{}' })
+    },
+    { times: 1 },
+  )
+  await accountDialog.getByRole('button', { name: 'Зарегистрировать' }).click()
+  await expect(
+    accountDialog.getByRole('button', { name: 'Зарегистрировать' }),
+  ).toBeDisabled()
+  await accountDialog.evaluate((dialog: HTMLDialogElement) => {
+    dialog.close()
+  })
+  await expect(accountDialog).toBeVisible()
+  await expect(accountDialog.getByRole('alert')).toBeVisible()
+  await accountDialog.getByRole('button', { name: 'Зарегистрировать' }).click()
+  await expect(accountDialog).toHaveCount(0)
+  await expect(newAccountButton).toBeFocused()
 
   // Новый аккаунт появился в списке и работает.
   const row = page.getByRole('row').filter({ hasText: companyName })
