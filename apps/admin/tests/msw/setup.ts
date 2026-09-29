@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll } from 'vitest'
+import { afterAll, afterEach, beforeAll, vi } from 'vitest'
 
 import { server } from './server'
 
@@ -18,6 +18,9 @@ beforeAll(() => {
 // (CLAUDE.md §9, тот же принцип и на фронтенде).
 afterEach(() => {
   server.resetHandlers()
+  // Файлы делят воркер (isolate: false в vite.config.ts): замороженные
+  // таймеры одного файла иначе достались бы следующему.
+  vi.useRealTimers()
 })
 
 afterAll(() => {
