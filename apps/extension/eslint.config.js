@@ -33,12 +33,15 @@ export default tseslint.config(
       // откатывает, поэтому запрет механический (docs/patterns.md).
       'no-restricted-properties': [
         'error',
-        ...['mock', 'doMock', 'unmock', 'doUnmock'].map((property) => ({
-          object: 'vi',
-          property,
-          message:
-            'vi.mock запрещён: тесты делят кэш модулей (isolate: false). Внедри зависимость параметром или vi.stubGlobal/vi.spyOn — они откатываются сами.',
-        })),
+        // `vitest` — второе имя того же объекта в экспорте пакета.
+        ...['vi', 'vitest'].flatMap((object) =>
+          ['mock', 'doMock', 'unmock', 'doUnmock'].map((property) => ({
+            object,
+            property,
+            message:
+              'vi.mock запрещён: тесты делят кэш модулей (isolate: false). Внедри зависимость параметром или vi.stubGlobal/vi.spyOn — они откатываются сами.',
+          })),
+        ),
       ],
 
       'no-restricted-globals': [
