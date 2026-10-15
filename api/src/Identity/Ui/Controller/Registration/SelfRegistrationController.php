@@ -8,8 +8,8 @@ use App\Identity\Application\RegisterClientAccountAction;
 use App\Identity\Domain\User;
 use App\Identity\Ui\Request\SelfRegistrationRequest;
 use App\Identity\Ui\Response\Registration\SelfRegistrationResponse;
-use App\Identity\Ui\Security\RegistrationProtection;
-use App\Identity\Ui\Security\RegistrationProtectionDecision;
+use App\Identity\Ui\Security\PublicFormProtection;
+use App\Identity\Ui\Security\PublicFormProtectionDecision;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
@@ -25,7 +25,7 @@ final readonly class SelfRegistrationController
     public function __construct(
         private RegisterClientAccountAction $registerAccount,
         private UserPasswordHasherInterface $passwordHasher,
-        private RegistrationProtection $registrationProtection,
+        private PublicFormProtection $registrationProtection,
         private string $registrationDocumentsVersion,
     ) {
     }
@@ -84,7 +84,7 @@ final readonly class SelfRegistrationController
             $request->getClientIp(),
             $payload->captchaToken,
         );
-        if (RegistrationProtectionDecision::CaptchaRejected === $protection->decision) {
+        if (PublicFormProtectionDecision::CaptchaRejected === $protection->decision) {
             return new JsonResponse(
                 new ValidationErrorResponse(
                     Response::HTTP_UNPROCESSABLE_ENTITY,
@@ -94,7 +94,7 @@ final readonly class SelfRegistrationController
                 Response::HTTP_UNPROCESSABLE_ENTITY,
             );
         }
-        if (RegistrationProtectionDecision::Unavailable === $protection->decision) {
+        if (PublicFormProtectionDecision::Unavailable === $protection->decision) {
             return new JsonResponse(
                 new ValidationErrorResponse(
                     Response::HTTP_SERVICE_UNAVAILABLE,
@@ -105,7 +105,7 @@ final readonly class SelfRegistrationController
                 ['Retry-After' => '30'],
             );
         }
-        if (RegistrationProtectionDecision::RateLimited === $protection->decision) {
+        if (PublicFormProtectionDecision::RateLimited === $protection->decision) {
             $now = new \DateTimeImmutable();
             $retryAfter = max(0, ($protection->retryAfter ?? $now)->getTimestamp() - $now->getTimestamp());
 

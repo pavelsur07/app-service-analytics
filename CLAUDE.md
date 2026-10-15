@@ -157,7 +157,8 @@ firewall: `/api/extension/companies/{companyId}/...` (ADR-010). Значимо
   одноразовый секрет, либо выполняет нейтральный побочный эффект для
   введённого адреса. Запрос и контроллер выносятся из широких слоёв
   в две точные class-level границы Deptrac; грант получает только эта
-  пара. Первый такой случай — confirm/resend email в ADR-021;
+  пара. Первый такой случай — confirm/resend email в ADR-021,
+  второй — запрос и подтверждение сброса пароля в ADR-037;
 - системный контур читает **из контроллера** — иначе экрана не будет
   вовсе. Поэтому узкий слой выдаётся и на стороне Ui: контроллер
   выносится из широкого `*Ui` через `mustNot` в собственный слой
@@ -463,7 +464,9 @@ TypeScript `strict` со всеми флагами, включая `noUncheckedI
 allow-list Identity-эндпоинтов, вызываемых до выбора компании:
 `/api/auth/login`, `/api/auth/logout`, `/api/auth/me` по ADR-002 и
 `/api/auth/sign-up`, `/api/auth/email-verification/resend`,
-`/api/auth/email-verification/confirm` по ADR-021. Они идут через
+`/api/auth/email-verification/confirm` по ADR-021,
+`/api/auth/password-reset/request`, `/api/auth/password-reset/confirm`
+по ADR-037. Они идут через
 `apiGet`/`apiPost` напрямую, не через `createCompanyApiClient`.
 `fetch` вне `src/api/` по-прежнему запрещён — исключение про компанию,
 не про точку входа.
@@ -1214,6 +1217,7 @@ ADR выбираются явно параметром ADR или по ссыл�
 | ADR-034 | Источник остатков Ozon FBO по кластерам (снимочный факт) |
 | ADR-035 | Реклама Ozon по SKU в юнит-экономике |
 | ADR-036 | Юнит-экономика Ozon по методу начисления |
+| ADR-037 | Восстановление пароля по ссылке из письма |
 
 ---
 

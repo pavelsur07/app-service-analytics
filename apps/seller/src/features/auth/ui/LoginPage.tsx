@@ -56,6 +56,14 @@ export function LoginPage() {
               error={errors.password?.message}
               {...register('password', { required: 'Введите пароль' })}
             />
+            <p className="-mt-2 text-right text-sm">
+              <Link
+                className="font-medium text-accent-default underline hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-default"
+                to="/forgot-password"
+              >
+                Забыли пароль?
+              </Link>
+            </p>
             {login.isError && (
               <div
                 className="flex items-center gap-2 rounded-lg border border-negative-border bg-negative-bg p-3 text-xs text-negative-text"

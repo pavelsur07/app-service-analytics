@@ -7,8 +7,8 @@ namespace App\Tests\Unit\Identity\Ui\Security;
 use App\Identity\Domain\CaptchaUnavailable;
 use App\Identity\Domain\CaptchaUnavailableReason;
 use App\Identity\Domain\CaptchaVerification;
-use App\Identity\Ui\Security\RegistrationProtection;
-use App\Identity\Ui\Security\RegistrationProtectionDecision;
+use App\Identity\Ui\Security\PublicFormProtection;
+use App\Identity\Ui\Security\PublicFormProtectionDecision;
 use App\Tests\Support\Fake\FakeCaptchaVerifier;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
@@ -18,7 +18,7 @@ use Symfony\Component\RateLimiter\RateLimit;
 use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 use Symfony\Component\RateLimiter\Reservation;
 
-final class RegistrationProtectionTest extends TestCase
+final class PublicFormProtectionTest extends TestCase
 {
     private const string EMAIL = 'owner@example.com';
     private const string CLIENT_IP = '203.0.113.8';
@@ -35,7 +35,7 @@ final class RegistrationProtectionTest extends TestCase
 
         $result = $this->protection($emailLimiter, $ipLimiter, $captcha, $handler)->check(self::EMAIL, self::CLIENT_IP, self::CAPTCHA_TOKEN);
 
-        self::assertSame(RegistrationProtectionDecision::Allowed, $result->decision);
+        self::assertSame(PublicFormProtectionDecision::Allowed, $result->decision);
         self::assertNull($result->retryAfter);
         self::assertSame([hash_hmac('sha256', 'email:owner@example.com', self::KERNEL_SECRET)], $emailLimiter->keys);
         self::assertSame([hash_hmac('sha256', 'ip:203.0.113.8', self::KERNEL_SECRET)], $ipLimiter->keys);
@@ -57,7 +57,7 @@ final class RegistrationProtectionTest extends TestCase
 
         $result = $this->protection($emailLimiter, $ipLimiter, $captcha, new TestHandler())->check(self::EMAIL, self::CLIENT_IP, self::CAPTCHA_TOKEN);
 
-        self::assertSame(RegistrationProtectionDecision::RateLimited, $result->decision);
+        self::assertSame(PublicFormProtectionDecision::RateLimited, $result->decision);
         self::assertSame($ipRetryAfter, $result->retryAfter);
         self::assertSame(['email.consume', 'ip.consume'], $events->entries);
         self::assertSame(0, $captcha->calls);
@@ -73,7 +73,7 @@ final class RegistrationProtectionTest extends TestCase
 
         $result = $this->protection($emailLimiter, $ipLimiter, $captcha, new TestHandler())->check(self::EMAIL, self::CLIENT_IP, self::CAPTCHA_TOKEN);
 
-        self::assertSame(RegistrationProtectionDecision::RateLimited, $result->decision);
+        self::assertSame(PublicFormProtectionDecision::RateLimited, $result->decision);
         self::assertSame($emailRetryAfter, $result->retryAfter);
         self::assertSame(['email.consume', 'ip.consume'], $events->entries);
         self::assertSame(0, $captcha->calls);
@@ -89,7 +89,7 @@ final class RegistrationProtectionTest extends TestCase
 
         $result = $this->protection($emailLimiter, $ipLimiter, $captcha, new TestHandler())->check(self::EMAIL, self::CLIENT_IP, self::CAPTCHA_TOKEN);
 
-        self::assertSame(RegistrationProtectionDecision::RateLimited, $result->decision);
+        self::assertSame(PublicFormProtectionDecision::RateLimited, $result->decision);
         self::assertSame($ipRetryAfter, $result->retryAfter);
         self::assertSame(['email.consume', 'ip.consume'], $events->entries);
         self::assertSame(0, $captcha->calls);
@@ -104,7 +104,7 @@ final class RegistrationProtectionTest extends TestCase
 
         $result = $this->protection($emailLimiter, $ipLimiter, $captcha, new TestHandler())->check(self::EMAIL, self::CLIENT_IP, self::CAPTCHA_TOKEN);
 
-        self::assertSame(RegistrationProtectionDecision::CaptchaRejected, $result->decision);
+        self::assertSame(PublicFormProtectionDecision::CaptchaRejected, $result->decision);
         self::assertNull($result->retryAfter);
         self::assertSame(['email.consume', 'ip.consume'], $events->entries);
         self::assertSame(1, $captcha->calls);
@@ -120,13 +120,13 @@ final class RegistrationProtectionTest extends TestCase
 
         $result = $this->protection($emailLimiter, $ipLimiter, $captcha, $handler)->check(self::EMAIL, null, self::CAPTCHA_TOKEN);
 
-        self::assertSame(RegistrationProtectionDecision::Unavailable, $result->decision);
+        self::assertSame(PublicFormProtectionDecision::Unavailable, $result->decision);
         self::assertNull($result->retryAfter);
         self::assertSame([], $events->entries);
         self::assertSame(0, $captcha->calls);
         $records = $handler->getRecords();
         self::assertCount(1, $records);
-        self::assertSame('Registration protection unavailable', $records[0]->message);
+        self::assertSame('Public form protection unavailable', $records[0]->message);
         self::assertSame(['reason' => 'client_ip_missing'], $records[0]->context);
         $record = json_encode(['message' => $records[0]->message, 'context' => $records[0]->context], \JSON_THROW_ON_ERROR);
         self::assertStringNotContainsString(self::EMAIL, $record);
@@ -143,7 +143,7 @@ final class RegistrationProtectionTest extends TestCase
 
         $result = $this->protection($emailLimiter, $ipLimiter, $captcha, $handler)->check(self::EMAIL, self::CLIENT_IP, self::CAPTCHA_TOKEN);
 
-        self::assertSame(RegistrationProtectionDecision::Unavailable, $result->decision);
+        self::assertSame(PublicFormProtectionDecision::Unavailable, $result->decision);
         self::assertNull($result->retryAfter);
         self::assertSame(['email.consume', 'ip.consume'], $events->entries);
         self::assertSame(1, $captcha->calls);
@@ -155,8 +155,8 @@ final class RegistrationProtectionTest extends TestCase
         RateLimiterFactoryInterface $ipLimiter,
         FakeCaptchaVerifier $captcha,
         TestHandler $handler,
-    ): RegistrationProtection {
-        return new RegistrationProtection(
+    ): PublicFormProtection {
+        return new PublicFormProtection(
             $emailLimiter,
             $ipLimiter,
             $captcha,
@@ -207,7 +207,7 @@ final class FakeLimiter implements LimiterInterface
 
     public function reserve(int $tokens = 1, ?float $maxTime = null): Reservation
     {
-        throw new \LogicException('RegistrationProtection must consume limits immediately.');
+        throw new \LogicException('PublicFormProtection must consume limits immediately.');
     }
 
     public function consume(int $tokens = 1): RateLimit

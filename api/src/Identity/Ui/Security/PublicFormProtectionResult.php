@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Identity\Ui\Security;
 
-final readonly class RegistrationProtectionResult
+final readonly class PublicFormProtectionResult
 {
     public function __construct(
-        public RegistrationProtectionDecision $decision,
+        public PublicFormProtectionDecision $decision,
         public ?\DateTimeImmutable $retryAfter = null,
     ) {
     }
