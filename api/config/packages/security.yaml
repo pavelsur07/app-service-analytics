@@ -131,6 +131,8 @@ security:
         - { path: ^/api/auth/sign-up$, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/email-verification/resend$, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/email-verification/confirm$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/password-reset/request$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/password-reset/confirm$, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/login, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/logout, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/me, roles: ROLE_USER }

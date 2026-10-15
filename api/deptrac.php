@@ -37,6 +37,7 @@ return static function (DeptracConfig $config): void {
                         ClassLikeConfig::create('^App\\Identity\\Domain\\EmailVerificationTokenRepository$'),
                         ClassLikeConfig::create('^App\\Identity\\Domain\\EmailVerificationLifecycleGuard$'),
                         ClassLikeConfig::create('^App\\Identity\\Domain\\EmailVerificationUserByEmailQuery$'),
+                        ClassLikeConfig::create('^App\\Identity\\Domain\\PasswordReset(TokenRepository|UserByEmailQuery)$'),
                     ],
                 ),
             ),
@@ -47,6 +48,7 @@ return static function (DeptracConfig $config): void {
                         DirectoryConfig::create('src/Identity/Application/Facade/.*'),
                         ClassLikeConfig::create('^App\\Identity\\Application\\PurgeUnconfirmedAccountsAction$'),
                         ClassLikeConfig::create('^App\\Identity\\Application\\(ConfirmEmail|ResendEmailVerification)Action$'),
+                        ClassLikeConfig::create('^App\\Identity\\Application\\(RequestPasswordReset|ResetPassword)Action$'),
                     ],
                 ),
             ),
@@ -89,6 +91,7 @@ return static function (DeptracConfig $config): void {
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineEmailVerificationTokenRepository$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineEmailVerificationLifecycleGuard$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineEmailVerificationUserByEmailQuery$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrinePasswordReset(TokenRepository|UserByEmailQuery)$'),
                     ],
                 ),
             ),
@@ -152,6 +155,21 @@ return static function (DeptracConfig $config): void {
             $identityEmailVerificationUi = Layer::withName('IdentityEmailVerificationUi')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Registration\\(ConfirmEmail|ResendEmailVerification)Controller$'),
             ),
+            // Вторая pre-auth lifecycle-граница — сброс пароля (ADR-037),
+            // тем же приёмом: поиск по адресу и погашение по хэшу токена,
+            // ровно два action и ровно два HTTP-входа вынесены из широких
+            // слоёв. Action'у запроса нужна и граница подтверждения адреса:
+            // неподтверждённому пользователю уходит ссылка подтверждения,
+            // а не сброса, под той же shared-блокировкой уборки.
+            $identityPasswordResetBoundary = Layer::withName('IdentityPasswordResetBoundary')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\(Domain\\PasswordReset(TokenRepository|UserByEmailQuery)|Infrastructure\\Repository\\DoctrinePasswordReset(TokenRepository|UserByEmailQuery))$'),
+            ),
+            $identityPasswordResetAction = Layer::withName('IdentityPasswordResetAction')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Application\\(RequestPasswordReset|ResetPassword)Action$'),
+            ),
+            $identityPasswordResetUi = Layer::withName('IdentityPasswordResetUi')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\PasswordReset\\(RequestPasswordReset|ResetPassword)Controller$'),
+            ),
             // Широкий Ui продавца — без единственного контроллера выше.
             // Без mustNot он попал бы сюда, и грант на межарендаторный
             // запрос пришлось бы выдавать всему IdentityUi, то есть
@@ -163,6 +181,7 @@ return static function (DeptracConfig $config): void {
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Admin\\ListClientAccountsController$'),
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Command\\PurgeUnconfirmedAccountsCommand$'),
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Registration\\(ConfirmEmail|ResendEmailVerification)Controller$'),
+                        ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\PasswordReset\\(RequestPasswordReset|ResetPassword)Controller$'),
                     ],
                 ),
             ),
@@ -403,6 +422,9 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($identityEmailVerificationUi)->accesses($identityEmailVerificationAction, $identityDomain, $identityUi, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($identityEmailVerificationAction)->accesses($identityEmailVerificationBoundary, $identityApplication, $identityDomain),
             Ruleset::forLayer($identityEmailVerificationBoundary)->accesses($identityDomain, $symfonyUid),
+            Ruleset::forLayer($identityPasswordResetUi)->accesses($identityPasswordResetAction, $identityDomain, $identityUi, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($identityPasswordResetAction)->accesses($identityPasswordResetBoundary, $identityEmailVerificationBoundary, $identityDomain),
+            Ruleset::forLayer($identityPasswordResetBoundary)->accesses($identityDomain, $symfonyUid),
             Ruleset::forLayer($identityInfrastructure)->accesses($identityDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid, $symfonySecurityUser),
             Ruleset::forLayer($identityDomain)->accesses($sharedDomain, $symfonyUid, $symfonySecurityUser),
 

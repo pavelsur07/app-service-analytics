@@ -81,6 +81,11 @@ services:
         arguments:
             $mailer: '@mailer.sync'
 
+    # Ссылка сброса пароля (ADR-037) — тот же открытый одноразовый токен.
+    App\Identity\Infrastructure\Notification\MailPasswordResetEmailSender:
+        arguments:
+            $mailer: '@mailer.sync'
+
     # Хранилище сырья — S3 (ADR-024): SeaweedFS в песочнице, Timeweb Cloud
     # на проде. Адресация по пути, а не поддомену бакета: так работают
     # оба, и имя бакета не обязано быть валидным DNS-именем.
@@ -106,10 +111,23 @@ services:
         arguments:
             $smartCaptchaClient: '@smartcaptcha.client'
 
-    App\Identity\Ui\Security\RegistrationProtection:
+    # Один механизм защиты публичной формы (капча + лимиты по email и IP),
+    # два экземпляра со своими лимитами. Контроллер получает свой по имени
+    # аргумента: $registrationProtection / $passwordResetProtection.
+    identity.registration_protection:
+        class: App\Identity\Ui\Security\PublicFormProtection
         arguments:
-            $registrationEmailLimiter: '@limiter.registration_email'
-            $registrationIpLimiter: '@limiter.registration_ip'
+            $emailLimiter: '@limiter.registration_email'
+            $ipLimiter: '@limiter.registration_ip'
+
+    identity.password_reset_protection:
+        class: App\Identity\Ui\Security\PublicFormProtection
+        arguments:
+            $emailLimiter: '@limiter.password_reset_request_email'
+            $ipLimiter: '@limiter.password_reset_request_ip'
+
+    App\Identity\Ui\Security\PublicFormProtection $registrationProtection: '@identity.registration_protection'
+    App\Identity\Ui\Security\PublicFormProtection $passwordResetProtection: '@identity.password_reset_protection'
 
     # Тег вешается явно: автоконфигурация Monolog подхватывает процессоры
     # по интерфейсу только внутри самого бандла, не в App\.

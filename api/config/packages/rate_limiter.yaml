@@ -27,6 +27,23 @@ framework:
             policy: sliding_window
             limit: 30
             interval: '1 hour'
+        # Запрос сброса пароля (ADR-037) — та же пара ключей, что
+        # у регистрации: форма рассылает письма на произвольные адреса.
+        password_reset_request_email:
+            policy: sliding_window
+            limit: 3
+            interval: '1 hour'
+        password_reset_request_ip:
+            policy: sliding_window
+            limit: 10
+            interval: '1 hour'
+        # Ввод нового пароля — только по IP: перебирать 256-битный секрет
+        # бессмысленно, но без лимита endpoint стал бы усилителем
+        # хэширования пароля.
+        password_reset_confirm_ip:
+            policy: sliding_window
+            limit: 10
+            interval: '1 hour'
 
 when@test:
     framework:
@@ -40,4 +57,10 @@ when@test:
             registration_email:
                 limit: 2
             registration_ip:
+                limit: 3
+            password_reset_request_email:
+                limit: 2
+            password_reset_request_ip:
+                limit: 3
+            password_reset_confirm_ip:
                 limit: 3

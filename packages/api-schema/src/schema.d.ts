@@ -132,6 +132,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/password-reset/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_password_reset_request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_password_reset_confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/email-verification/confirm": {
         parameters: {
             query?: never;
@@ -695,12 +727,15 @@ export interface components {
             tokenPrefix: string;
             expiresAt: string;
         };
+        SelfRegistrationResponse: {
+            message: string;
+        };
+        PasswordResetResponse: {
+            status: string;
+        };
         EmailConfirmationResponse: {
             outcome: string;
             next?: string | null;
-        };
-        SelfRegistrationResponse: {
-            message: string;
         };
         LoginResponse: {
             email: string;
@@ -1560,6 +1595,112 @@ export interface operations {
             /** @description Токена с таким id в этой компании нет */
             404: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_identity_password_reset_request: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** Format: email */
+                    email: string;
+                    captchaToken: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Заявка принята */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfRegistrationResponse"];
+                };
+            };
+            /** @description Некорректный email или CAPTCHA */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Лимит запросов восстановления исчерпан */
+            429: {
+                headers: {
+                    /** @description Секунды до разрешённой повторной попытки */
+                    "Retry-After": number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Проверка CAPTCHA временно недоступна */
+            503: {
+                headers: {
+                    /** @description Секунды до рекомендуемой повторной попытки */
+                    "Retry-After": number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_identity_password_reset_confirm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    token: string;
+                    password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Пароль изменён, прежние сессии завершены */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetResponse"];
+                };
+            };
+            /** @description Ссылка недействительна или пароль не подходит */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Лимит попыток исчерпан */
+            429: {
+                headers: {
+                    /** @description Секунды до разрешённой повторной попытки */
+                    "Retry-After": number;
                     [name: string]: unknown;
                 };
                 content: {

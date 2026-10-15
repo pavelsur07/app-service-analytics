@@ -40,6 +40,13 @@ final class AuditAction
     /** Пользователь подтвердил владение адресом электронной почты. */
     public const string UserEmailConfirmed = 'user.email_confirmed';
 
+    /**
+     * Пароль изменён по ссылке сброса (ADR-037). Значений нет: хэш пароля
+     * в журнале — тот же секрет, а «было/стало» здесь отвечает только
+     * на «когда», и это есть в occurred_at.
+     */
+    public const string UserPasswordReset = 'user.password_reset';
+
     public const string CompanyBlocked = 'company.blocked';
 
     public const string CompanyActivated = 'company.activated';

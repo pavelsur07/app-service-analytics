@@ -144,6 +144,20 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     }
 
     /**
+     * Сброс пароля по ссылке (ADR-037). Хэш уже посчитан вызывающим:
+     * сущность не знает о хэшере. Смена хэша сама завершает прежние
+     * сессии — ContextListener сравнивает его при восстановлении сессии.
+     */
+    public function changePassword(string $passwordHash): void
+    {
+        if ('' === $passwordHash) {
+            throw new \InvalidArgumentException('Password hash must not be empty.');
+        }
+
+        $this->passwordHash = $passwordHash;
+    }
+
+    /**
      * @return non-empty-string
      */
     public function getUserIdentifier(): string

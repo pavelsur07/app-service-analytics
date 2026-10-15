@@ -129,6 +129,22 @@ class AuditRecord
     }
 
     /**
+     * Действие продавца над собственной учётной записью (ADR-037): смена
+     * пароля касается человека, а не компании — у пользователя их может
+     * быть несколько, и User не данные компании (ADR-002).
+     */
+    public static function recordForUser(
+        Uuid $actorUserId,
+        string $action,
+        Uuid $subjectId,
+        ?string $previousValue,
+        ?string $newValue,
+        \DateTimeImmutable $occurredAt,
+    ): self {
+        return new self(Uuid::v7(), null, $actorUserId, null, $action, $subjectId, $previousValue, $newValue, $occurredAt);
+    }
+
+    /**
      * Действие администратора системного контура (ADR-017). companyId
      * nullable: «заблокирован аккаунт» относится к компании, «заведён
      * Admin» — ни к какой.
