@@ -173,7 +173,7 @@ ADR-007 «с первого дня», и ограничение по адрес�
 - [ ] Для каждого `503 captcha_unavailable` в журнале есть один
       `warning`: `SmartCaptcha verification unavailable` с категорией
       причины и, если получен, HTTP-статус провайдера либо
-      `Registration protection unavailable` для отсутствующего client IP.
+      `Public form protection unavailable` для отсутствующего client IP.
       Запись обязана оставаться sanitized: без server key, CAPTCHA-токена,
       тела/сообщения Yandex, email и IP. Обычный `422 captcha_invalid`
       предупреждения не создаёт.
