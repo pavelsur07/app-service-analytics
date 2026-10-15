@@ -1,5 +1,5 @@
 import { SlidersHorizontal } from 'lucide-react'
-import { type ReactNode, useEffect, useRef } from 'react'
+import { type ReactNode, type RefObject, useEffect, useRef } from 'react'
 
 import {
   addDays,
@@ -46,6 +46,12 @@ export interface PeriodBarProps {
   comparison: DateRange
   hidden: readonly WidgetId[]
   settingsOpen: boolean
+  /**
+   * Кнопка «Виджеты»: фокус возвращается на неё, когда панель закрыта
+   * или виджет скрыт крестиком, — иначе он уходит в начало документа
+   * вместе с размонтированным элементом.
+   */
+  settingsTrigger: RefObject<HTMLButtonElement | null>
   onPreset: (preset: PresetId) => void
   onCustom: (range: DateRange) => void
   onCompare: (compare: CompareMode) => void
@@ -61,6 +67,7 @@ export function PeriodBar({
   comparison,
   hidden,
   settingsOpen,
+  settingsTrigger,
   onPreset,
   onCustom,
   onCompare,
@@ -173,6 +180,7 @@ export function PeriodBar({
           onClick={() => {
             onSettingsOpen(!settingsOpen)
           }}
+          ref={settingsTrigger}
           type="button"
         >
           <SlidersHorizontal aria-hidden="true" size={16} />
@@ -185,6 +193,7 @@ export function PeriodBar({
           hidden={hidden}
           onClose={() => {
             onSettingsOpen(false)
+            settingsTrigger.current?.focus()
           }}
           onHidden={onHidden}
         />

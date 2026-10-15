@@ -1,5 +1,5 @@
 import { CircleX, LayoutDashboard } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { Button, Card, StatusPanel } from '../../../../../../packages/ui/src'
@@ -45,6 +45,7 @@ export function DashboardPage() {
   const [search, setSearch] = useSearchParams()
   const currentUser = useCurrentUser()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsTrigger = useRef<HTMLButtonElement>(null)
 
   // Настройки — свои у каждой пары «пользователь, компания». При смене
   // компании ключ меняется, и сохранённое перечитывается тут же, в том же
@@ -143,6 +144,7 @@ export function DashboardPage() {
         preset={selection.preset}
         range={range}
         settingsOpen={settingsOpen}
+        settingsTrigger={settingsTrigger}
         today={today}
       />
 
@@ -230,6 +232,9 @@ export function DashboardPage() {
               key={widget.id}
               onHide={() => {
                 setHidden([...hidden, widget.id])
+                // Карточка с кнопкой исчезает — фокус на «Виджеты»,
+                // откуда скрытое возвращается.
+                settingsTrigger.current?.focus()
               }}
               spec={widget}
             />
