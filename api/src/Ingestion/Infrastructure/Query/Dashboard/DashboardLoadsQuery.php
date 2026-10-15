@@ -33,43 +33,9 @@ use Doctrine\DBAL\Query\QueryBuilder;
  */
 final readonly class DashboardLoadsQuery
 {
-    /**
-     * Первый и последний загруженный день каждого источника на подключение.
-     * Подключений у компании единицы.
-     */
-    private const string LOADS = <<<'SQL'
-        (
-            SELECT marketplace_account_id,
-                   MIN(period) FILTER (WHERE report_type = :salesReportType) AS sales_first,
-                   MAX(period) FILTER (WHERE report_type = :salesReportType) AS sales_last,
-                   MIN(period) FILTER (WHERE report_type = :accrualsReportType) AS accruals_first,
-                   MAX(period) FILTER (WHERE report_type = :accrualsReportType) AS accruals_last
-            FROM marketplace_raw_document
-            WHERE company_id = :companyId
-              AND report_type IN (:salesReportType, :accrualsReportType)
-            GROUP BY marketplace_account_id
-        ) AS loads
-        SQL;
-
     public function __construct(
         private Connection $connection,
     ) {
-    }
-
-    /**
-     * С какого дня данные есть у всех подключений: позднейший из первых
-     * загруженных дней обоих источников. NULL — у какого-то подключения
-     * один из источников не загружался ни разу. Для подписи на экране;
-     * решение о сравнении принимает `complete`.
-     */
-    public function dataStart(string $companyId): QueryBuilder
-    {
-        return $this->withParameters($companyId)
-            ->select(
-                'CASE WHEN bool_and(sales_first IS NOT NULL AND accruals_first IS NOT NULL)'
-                .' THEN MAX(GREATEST(sales_first, accruals_first)) END AS data_starts_on',
-            )
-            ->from(self::LOADS);
     }
 
     /**
@@ -112,16 +78,6 @@ final readonly class DashboardLoadsQuery
             ->setParameter('from', $from->format('Y-m-d'))
             ->setParameter('to', $to->format('Y-m-d'))
             ->setParameter('days', (int) $from->diff($to)->days + 1);
-    }
-
-    /**
-     * @param array<string, mixed>|false $row
-     */
-    public static function mapDataStart(array|false $row): ?string
-    {
-        $value = false === $row ? null : ($row['data_starts_on'] ?? null);
-
-        return \is_string($value) ? substr($value, 0, 10) : null;
     }
 
     /**

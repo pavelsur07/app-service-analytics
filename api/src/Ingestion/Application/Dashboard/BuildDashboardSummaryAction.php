@@ -81,17 +81,11 @@ final readonly class BuildDashboardSummaryAction
         );
         $currency = self::singleCurrency($totals, $daily);
 
-        $start = $this->loads->dataStart($companyId);
-        $dataStartsOn = DashboardLoadsQuery::mapDataStart(
-            $this->connection->fetchAssociative($start->getSQL(), $start->getParameters(), $start->getParameterTypes()),
-        );
-
         $current = $this->period($companyId, $from, $to, $asOf, self::totalsOf($totals, true), $daily);
         $comparison = $this->period($companyId, $compareFrom, $compareTo, $asOf, self::totalsOf($totals, false), $daily);
 
         return new DashboardSummary(
             currency: $currency,
-            dataStartsOn: $dataStartsOn,
             current: $current,
             comparison: $comparison,
             changes: $current->dataComplete && $comparison->dataComplete

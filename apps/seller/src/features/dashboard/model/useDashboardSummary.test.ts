@@ -46,7 +46,6 @@ function summary(ordersAmountMinor: number): DashboardSummaryResponse {
 
   return {
     currency: 'RUB',
-    dataStartsOn: '2026-07-01',
     current: period,
     comparison: period,
     changes: {},

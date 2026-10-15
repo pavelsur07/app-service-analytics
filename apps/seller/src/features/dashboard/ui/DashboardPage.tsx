@@ -12,7 +12,6 @@ import {
   type PeriodSelection,
   parseSelection,
   rangeFor,
-  rangeLabel,
   searchWithSelection,
   todayAt,
 } from '../lib/period'
@@ -269,7 +268,7 @@ function buyoutHint(summary: DashboardSummaryResponse): string | null {
 
 function Notes({ summary }: { summary: DashboardSummaryResponse }) {
   const notes: string[] = []
-  const { current, comparison, dataStartsOn } = summary
+  const { current, comparison } = summary
 
   if (current.daysWithoutAccruals > 0) {
     notes.push(
@@ -277,16 +276,11 @@ function Notes({ summary }: { summary: DashboardSummaryResponse }) {
     )
   }
   if (!current.dataComplete || !comparison.dataComplete) {
-    const incomplete = current.dataComplete ? comparison : current
-    const which = current.dataComplete ? 'Период сравнения' : 'Выбранный период'
     // Сравнение с неполным периодом показало бы рост или падение,
     // которых не было, — поэтому изменения скрыты, а причина названа.
+    const which = current.dataComplete ? 'Период сравнения' : 'Выбранный период'
     notes.push(
-      dataStartsOn === null || dataStartsOn === undefined
-        ? 'Загрузка данных кабинета ещё не завершена — изменения к периоду сравнения появятся после неё.'
-        : incomplete.from < dataStartsOn
-          ? `Данные всех кабинетов загружены с ${rangeLabel({ from: dataStartsOn, to: dataStartsOn })}: ${which.toLowerCase()} начинается раньше, поэтому изменения не показаны.`
-          : `${which} загружен не полностью — изменения появятся, когда синхронизация догрузит его.`,
+      `${which} загружен не полностью — часть дней не загружена или пришлась на время до подключения кабинета, поэтому изменения не показаны.`,
     )
   }
   if (dayCount(current) < 3) {

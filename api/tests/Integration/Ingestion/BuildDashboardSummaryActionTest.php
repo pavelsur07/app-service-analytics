@@ -164,7 +164,6 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
 
         $summary = $this->summary($container, $company);
 
-        self::assertSame('2026-07-20', $summary->dataStartsOn);
         self::assertTrue($summary->comparison->dataComplete);
         // 450 000 против 400 000 — +12,5 %.
         self::assertSame(1_250, $summary->changes->ordersAmountBps);
@@ -191,7 +190,6 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
 
         $summary = $this->summary($container, $company);
 
-        self::assertSame('2026-08-05', $summary->dataStartsOn);
         self::assertFalse($summary->comparison->dataComplete);
         self::assertTrue($summary->current->dataComplete);
         // Иначе главная показала бы рост в 90 раз от неполной недели.
@@ -208,7 +206,6 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
 
         $summary = $this->summary($container, $company);
 
-        self::assertSame('2026-08-04', $summary->dataStartsOn);
         self::assertFalse($summary->comparison->dataComplete);
         self::assertTrue($summary->current->dataComplete);
         self::assertNull($summary->changes->ordersAmountBps);
@@ -273,23 +270,6 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         self::assertNull($summary->changes->ordersAmountBps);
     }
 
-    public function testDataStartIsTheLaterOfSalesAndAccrualsLoads(): void
-    {
-        $container = $this->bootedContainer();
-        $company = $this->company($container);
-        $this->rawDocument($container, $company, MarketplaceReportType::OzonPostingFboList, '2026-06-01');
-        $this->rawDocument($container, $company, MarketplaceReportType::OzonAccrualByDay, '2026-07-01');
-
-        self::assertSame('2026-07-01', $this->summary($container, $company)->dataStartsOn);
-
-        $withoutAccruals = $this->company($container);
-        $this->rawDocument($container, $withoutAccruals, MarketplaceReportType::OzonPostingFboList, '2026-06-01');
-
-        $summary = $this->summary($container, $withoutAccruals);
-        self::assertNull($summary->dataStartsOn);
-        self::assertFalse($summary->current->dataComplete);
-    }
-
     public function testDaysCoverEveryDateOfEachPeriodWithZeros(): void
     {
         $container = $this->bootedContainer();
@@ -333,7 +313,7 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         self::assertSame(0, $metrics->deliveryLogisticsMinor);
         self::assertSame(1, $metrics->buyoutOrderedQuantity);
         // Загрузки чужой компании не делают её данные «полными».
-        self::assertNull($summary->dataStartsOn);
+        self::assertFalse($summary->current->dataComplete);
     }
 
     public function testBuyoutIsTheBuyoutReportSummaryOfTheSamePeriod(): void

@@ -1049,11 +1049,6 @@ export interface components {
         };
         DashboardSummaryResponse: {
             currency: string;
-            /**
-             * Первый день, с которого загружены и отправления, и начисления; NULL — данных нет.
-             * Format: date
-             */
-            dataStartsOn?: string | null;
             current: components["schemas"]["DashboardPeriodResponse"];
             comparison: components["schemas"]["DashboardPeriodResponse"];
             changes: components["schemas"]["DashboardChangesResponse"];
