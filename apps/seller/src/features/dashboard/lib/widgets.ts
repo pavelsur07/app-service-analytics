@@ -256,9 +256,7 @@ export const WIDGETS = [
 
 export type WidgetId = (typeof WIDGETS)[number]['id']
 
-const WIDGET_IDS: readonly WidgetId[] = WIDGETS.map(
-  (widget) => widget.id,
-)
+const WIDGET_IDS: readonly WidgetId[] = WIDGETS.map((widget) => widget.id)
 
 export function isWidgetId(value: unknown): value is WidgetId {
   return WIDGET_IDS.some((id) => id === value)

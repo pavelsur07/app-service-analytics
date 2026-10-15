@@ -7,7 +7,7 @@ namespace App\Ingestion\Application\Dashboard;
 use App\Ingestion\Application\Buyout\BuildBuyoutRateReportAction;
 use App\Ingestion\Application\Buyout\BuyoutRateSummary;
 use App\Ingestion\Infrastructure\Query\Dashboard\DashboardDailyRow;
-use App\Ingestion\Infrastructure\Query\Dashboard\DashboardDataStartQuery;
+use App\Ingestion\Infrastructure\Query\Dashboard\DashboardLoadsQuery;
 use App\Ingestion\Infrastructure\Query\Dashboard\DashboardMetricsQuery;
 use App\Ingestion\Infrastructure\Query\Dashboard\DashboardTotalsRow;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\ExpenseCoverageQuery;
@@ -28,13 +28,40 @@ final readonly class BuildDashboardSummaryAction
     public function __construct(
         private Connection $connection,
         private DashboardMetricsQuery $metrics,
-        private DashboardDataStartQuery $dataStart,
+        private DashboardLoadsQuery $loads,
         private ExpenseCoverageQuery $coverage,
         private BuildBuyoutRateReportAction $buyout,
     ) {
     }
 
     public function __invoke(
+        string $companyId,
+        \DateTimeImmutable $from,
+        \DateTimeImmutable $to,
+        \DateTimeImmutable $compareFrom,
+        \DateTimeImmutable $compareTo,
+        \DateTimeImmutable $asOf,
+    ): DashboardSummary {
+        $read = fn (): DashboardSummary => $this->read($companyId, $from, $to, $compareFrom, $compareTo, $asOf);
+
+        // Итоги, ряды, полнота и выкуп — из одного снимка: загрузка,
+        // идущая параллельно, иначе дала бы в одном ответе итог одной
+        // версии данных и ряд другой. Внутри уже открытой транзакции
+        // (тесты, вызывающий сценарий) уровень изоляции выбирает её
+        // владелец, и SET TRANSACTION после его запросов невозможен.
+        $native = $this->connection->getNativeConnection();
+        if ($this->connection->isTransactionActive() || ($native instanceof \PDO && $native->inTransaction())) {
+            return $read();
+        }
+
+        return $this->connection->transactional(static function (Connection $connection) use ($read): DashboardSummary {
+            $connection->executeStatement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+
+            return $read();
+        });
+    }
+
+    private function read(
         string $companyId,
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
@@ -52,12 +79,13 @@ final readonly class BuildDashboardSummaryAction
         );
         $currency = self::singleCurrency($totals, $daily);
 
-        $start = $this->dataStart->build($companyId);
-        $startRow = $this->connection->fetchAssociative($start->getSQL(), $start->getParameters(), $start->getParameterTypes());
-        $dataStartsOn = false === $startRow ? null : DashboardDataStartQuery::mapRow($startRow);
+        $start = $this->loads->dataStart($companyId);
+        $dataStartsOn = DashboardLoadsQuery::mapDataStart(
+            $this->connection->fetchAssociative($start->getSQL(), $start->getParameters(), $start->getParameterTypes()),
+        );
 
-        $current = $this->period($companyId, $from, $to, $asOf, $dataStartsOn, self::totalsOf($totals, true), $daily);
-        $comparison = $this->period($companyId, $compareFrom, $compareTo, $asOf, $dataStartsOn, self::totalsOf($totals, false), $daily);
+        $current = $this->period($companyId, $from, $to, $asOf, self::totalsOf($totals, true), $daily);
+        $comparison = $this->period($companyId, $compareFrom, $compareTo, $asOf, self::totalsOf($totals, false), $daily);
 
         return new DashboardSummary(
             currency: $currency,
@@ -78,19 +106,24 @@ final readonly class BuildDashboardSummaryAction
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         \DateTimeImmutable $asOf,
-        ?string $dataStartsOn,
         ?DashboardTotalsRow $totals,
         array $daily,
     ): DashboardPeriodSummary {
         $coverage = $this->coverage->daysWithoutExpenses($companyId, $from, $to);
-        $daysWithoutAccruals = $this->connection->fetchOne($coverage->getSQL(), $coverage->getParameters(), $coverage->getParameterTypes());
+        $daysWithoutAccruals = self::int($this->connection->fetchOne($coverage->getSQL(), $coverage->getParameters(), $coverage->getParameterTypes()));
+        $loads = $this->loads->complete($companyId, $from, $to);
+        $loaded = DashboardLoadsQuery::mapComplete(
+            $this->connection->fetchAssociative($loads->getSQL(), $loads->getParameters(), $loads->getParameterTypes()),
+        );
         $buyout = ($this->buyout)($companyId, $from, $to, $asOf, 1)->summary;
 
         return new DashboardPeriodSummary(
             from: $from->format('Y-m-d'),
             to: $to->format('Y-m-d'),
-            dataComplete: null !== $dataStartsOn && $from->format('Y-m-d') >= $dataStartsOn,
-            daysWithoutAccruals: self::int($daysWithoutAccruals),
+            // Полон — каждое подключение загрузило оба источника на всём
+            // периоде, и ни одного дня с продажами без начислений.
+            dataComplete: $loaded && 0 === $daysWithoutAccruals,
+            daysWithoutAccruals: $daysWithoutAccruals,
             metrics: self::metrics($totals, $buyout),
             days: self::days($from, $to, $daily),
         );

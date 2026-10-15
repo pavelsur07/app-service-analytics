@@ -34,6 +34,7 @@ use Symfony\Component\Uid\Uuid;
 final class BuildDashboardSummaryActionTest extends KernelTestCase
 {
     private const string ACCOUNT_ID = '019fe6ea-cd99-7af8-bf4a-623a5a31cf7b';
+    private const string SECOND_ACCOUNT_ID = '019fe6ea-cd99-7af8-bf4a-623a5a31cf7c';
 
     private int $accrualId = 1;
 
@@ -86,6 +87,13 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         $this->accrual($container, $company, '2026-08-08', OzonFeeTypeNames::PAY_PER_CLICK, -30_000, '29088934');
         $this->accrual($container, $company, '2026-08-08', 96, -5_000, '');
         $this->accrual($container, $company, '2026-08-08', 54, -1_000, '');
+        // Реклама в соцсетях и сбор первых отзывов — продвижение, хоть
+        // у первого клиента их ещё не встречалось.
+        $this->accrual($container, $company, '2026-08-08', 87, -2_000, '');
+        $this->accrual($container, $company, '2026-08-08', 116, -300, '');
+        // Подписка Premium и бонусы продавца — не плата за показ.
+        $this->accrual($container, $company, '2026-08-08', 52, -9_000, '');
+        $this->accrual($container, $company, '2026-08-08', 48, -9_000, '');
         // Сторно клика площадкой уменьшает расход.
         $this->accrual($container, $company, '2026-08-09', OzonFeeTypeNames::PAY_PER_CLICK, 500, '29088934');
         // «Рассрочка» — в группе кабинета «Продвижение», но не реклама.
@@ -93,7 +101,7 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
 
         $metrics = $this->summary($container, $company)->current->metrics;
 
-        self::assertSame(35_500, $metrics->advertisingMinor);
+        self::assertSame(37_800, $metrics->advertisingMinor);
     }
 
     public function testAdvertisingRatiosRoundHalfAwayFromZeroAndAreNullWithoutDenominator(): void
@@ -187,6 +195,65 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         self::assertFalse($summary->comparison->dataComplete);
         self::assertTrue($summary->current->dataComplete);
         // Иначе главная показала бы рост в 90 раз от неполной недели.
+        self::assertNull($summary->changes->ordersAmountBps);
+    }
+
+    public function testSecondCabinetConnectedDuringComparisonHasNoChanges(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->loaded($container, $company, '2026-07-01');
+        // Второй кабинет подключён 4 августа — посреди периода сравнения.
+        $this->loaded($container, $company, '2026-08-04', '2026-08-14', self::SECOND_ACCOUNT_ID);
+
+        $summary = $this->summary($container, $company);
+
+        self::assertSame('2026-08-04', $summary->dataStartsOn);
+        self::assertFalse($summary->comparison->dataComplete);
+        self::assertTrue($summary->current->dataComplete);
+        self::assertNull($summary->changes->ordersAmountBps);
+    }
+
+    public function testStalledSyncMakesThePeriodIncomplete(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        // Синхронизация встала 12 августа: конец выбранного периода не загружен.
+        $this->loaded($container, $company, '2026-07-01', '2026-08-12');
+
+        $summary = $this->summary($container, $company);
+
+        self::assertTrue($summary->comparison->dataComplete);
+        self::assertFalse($summary->current->dataComplete);
+        self::assertNull($summary->changes->ordersAmountBps);
+    }
+
+    public function testCabinetStoppedBeforeThePeriodDoesNotMakeItIncomplete(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->loaded($container, $company, '2026-07-01');
+        // Старый кабинет отключён в июле — в периодах его просто нет.
+        $this->loaded($container, $company, '2026-06-01', '2026-07-15', self::SECOND_ACCOUNT_ID);
+
+        $summary = $this->summary($container, $company);
+
+        self::assertTrue($summary->comparison->dataComplete);
+        self::assertTrue($summary->current->dataComplete);
+    }
+
+    public function testDayWithSalesButWithoutAccrualsMakesThePeriodIncomplete(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->loaded($container, $company, '2026-07-01');
+        // 10 августа продажи загружены, а начисления — нет.
+        $this->rawDocument($container, $company, MarketplaceReportType::OzonPostingFboList, '2026-08-10');
+
+        $summary = $this->summary($container, $company);
+
+        self::assertSame(1, $summary->current->daysWithoutAccruals);
+        self::assertFalse($summary->current->dataComplete);
         self::assertNull($summary->changes->ordersAmountBps);
     }
 
@@ -330,18 +397,20 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
             ->persistWith($repository);
     }
 
-    /** Обе выгрузки загружены начиная с этого дня. */
-    private function loaded(ContainerInterface $container, Company $company, string $day): void
+    /** Обе выгрузки подключения загружены с первого дня по последний. */
+    private function loaded(ContainerInterface $container, Company $company, string $first, string $last = '2026-08-14', string $account = self::ACCOUNT_ID): void
     {
-        $this->rawDocument($container, $company, MarketplaceReportType::OzonPostingFboList, $day);
-        $this->rawDocument($container, $company, MarketplaceReportType::OzonAccrualByDay, $day);
+        foreach ([MarketplaceReportType::OzonPostingFboList, MarketplaceReportType::OzonAccrualByDay] as $reportType) {
+            $this->rawDocument($container, $company, $reportType, $first, $account);
+            $this->rawDocument($container, $company, $reportType, $last, $account);
+        }
     }
 
-    private function rawDocument(ContainerInterface $container, Company $company, string $reportType, string $period): void
+    private function rawDocument(ContainerInterface $container, Company $company, string $reportType, string $period, string $account = self::ACCOUNT_ID): void
     {
         MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
             ->withCompanyId($company->id())
-            ->withMarketplaceAccountId(Uuid::fromString(self::ACCOUNT_ID))
+            ->withMarketplaceAccountId(Uuid::fromString($account))
             ->withReportType($reportType)
             ->withPeriod(new \DateTimeImmutable($period))
             ->persistWith(MarketplaceRawDocumentBuilder::repository($container));

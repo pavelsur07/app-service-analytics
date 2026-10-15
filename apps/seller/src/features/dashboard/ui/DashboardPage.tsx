@@ -277,10 +277,16 @@ function Notes({ summary }: { summary: DashboardSummaryResponse }) {
     )
   }
   if (!current.dataComplete || !comparison.dataComplete) {
+    const incomplete = current.dataComplete ? comparison : current
+    const which = current.dataComplete ? 'Период сравнения' : 'Выбранный период'
+    // Сравнение с неполным периодом показало бы рост или падение,
+    // которых не было, — поэтому изменения скрыты, а причина названа.
     notes.push(
       dataStartsOn === null || dataStartsOn === undefined
         ? 'Загрузка данных кабинета ещё не завершена — изменения к периоду сравнения появятся после неё.'
-        : `Данные кабинета загружены с ${rangeLabel({ from: dataStartsOn, to: dataStartsOn })}: ${current.dataComplete ? 'период сравнения' : 'выбранный период'} начинается раньше, поэтому изменения не показаны.`,
+        : incomplete.from < dataStartsOn
+          ? `Данные всех кабинетов загружены с ${rangeLabel({ from: dataStartsOn, to: dataStartsOn })}: ${which.toLowerCase()} начинается раньше, поэтому изменения не показаны.`
+          : `${which} загружен не полностью — изменения появятся, когда синхронизация догрузит его.`,
     )
   }
   if (dayCount(current) < 3) {
