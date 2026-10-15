@@ -1,5 +1,11 @@
 import { SlidersHorizontal } from 'lucide-react'
-import { type ReactNode, type RefObject, useEffect, useRef } from 'react'
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 
 import {
   addDays,
@@ -9,6 +15,7 @@ import {
   dayCountLabel,
   EARLIEST_DATE,
   isPresetAvailable,
+  isValidDate,
   PRESETS,
   type PresetId,
   rangeLabel,
@@ -112,36 +119,26 @@ export function PeriodBar({
 
       {preset === 'custom' ? (
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-text-muted">
-            С
-            <input
-              className={DATE_INPUT}
-              max={maxDate}
-              min={EARLIEST_DATE}
-              onChange={(event) => {
-                if (event.target.value !== '') {
-                  onCustom({ from: event.target.value, to: range.to })
-                }
-              }}
-              type="date"
-              value={range.from}
-            />
-          </label>
-          <label className="flex items-center gap-1.5 text-xs text-text-muted">
-            По
-            <input
-              className={DATE_INPUT}
-              max={maxDate}
-              min={EARLIEST_DATE}
-              onChange={(event) => {
-                if (event.target.value !== '') {
-                  onCustom({ from: range.from, to: event.target.value })
-                }
-              }}
-              type="date"
-              value={range.to}
-            />
-          </label>
+          {/* key сбрасывает черновик, когда дата пришла извне
+              (обрезка, переворот, другой пресет). */}
+          <DateField
+            key={`from-${range.from}`}
+            label="С"
+            max={maxDate}
+            onCommit={(from) => {
+              onCustom({ from, to: range.to })
+            }}
+            value={range.from}
+          />
+          <DateField
+            key={`to-${range.to}`}
+            label="По"
+            max={maxDate}
+            onCommit={(to) => {
+              onCustom({ from: range.from, to })
+            }}
+            value={range.to}
+          />
         </div>
       ) : null}
 
@@ -298,5 +295,53 @@ function WidgetSettings({
         </div>
       </div>
     </>
+  )
+}
+
+/**
+ * Поле даты своего периода. Применяется по уходу фокуса или Enter,
+ * а не на каждое изменение: при наборе года с клавиатуры браузер отдаёт
+ * промежуточные даты («0002-…», «0202-…»), и каждая, применённая сразу,
+ * обрезалась бы до 2020 года и возвращалась в поле посреди ввода —
+ * а заодно уходила бы запросом к API.
+ */
+function DateField({
+  label,
+  value,
+  max,
+  onCommit,
+}: {
+  label: string
+  value: string
+  max: string
+  onCommit: (date: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  const commit = (): void => {
+    if (isValidDate(draft) && draft !== value) {
+      onCommit(draft)
+    }
+  }
+
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-text-muted">
+      {label}
+      <input
+        className={DATE_INPUT}
+        max={max}
+        min={EARLIEST_DATE}
+        onBlur={commit}
+        onChange={(event) => {
+          setDraft(event.target.value)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            commit()
+          }
+        }}
+        type="date"
+        value={draft}
+      />
+    </label>
   )
 }
