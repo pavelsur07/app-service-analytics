@@ -140,6 +140,8 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         $this->accrual($container, $company, '2026-08-11', 59, -5_000, 'P-3');
         $this->accrual($container, $company, '2026-08-11', 2, -1_000, 'P-3');
         $this->accrual($container, $company, '2026-08-11', 9, -1_500, 'P-4');
+        // Обработка возврата партнёром — то же отправление P-3, не второе.
+        $this->accrual($container, $company, '2026-08-12', 45, -1_500, 'P-3');
         // «Последняя миля» в наборы логистики не входит.
         $this->accrual($container, $company, '2026-08-11', 28, -9_999, 'P-5');
 
@@ -147,7 +149,7 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
 
         self::assertSame(6_900 + 1_500 + 7_100 - 2_000 + 300, $metrics->deliveryLogisticsMinor);
         self::assertSame(2, $metrics->deliveryCount);
-        self::assertSame(7_500, $metrics->returnLogisticsMinor);
+        self::assertSame(5_000 + 1_000 + 1_500 + 1_500, $metrics->returnLogisticsMinor);
         self::assertSame(2, $metrics->returnLogisticsCount);
     }
 
