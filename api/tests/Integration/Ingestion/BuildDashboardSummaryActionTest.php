@@ -139,24 +139,26 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         $this->accrual($container, $company, '2026-08-10', 98, -300, '');
         // Доставка партнёром до места выдачи — то же отправление P-1, не третье.
         $this->accrual($container, $company, '2026-08-10', 29, -800, 'P-1');
-        // B2C-доставка: отдельное отправление P-6 — партнёром и силами Ozon.
+        // B2C-доставка: отдельное отправление P-6 — логистика, партнёром и силами Ozon.
         $this->accrual($container, $company, '2026-08-10', 110, -400, 'P-6');
         $this->accrual($container, $company, '2026-08-10', 111, -200, 'P-6');
+        $this->accrual($container, $company, '2026-08-10', 114, -900, 'P-6');
         $this->accrual($container, $company, '2026-08-11', 59, -5_000, 'P-3');
         $this->accrual($container, $company, '2026-08-11', 2, -1_000, 'P-3');
         $this->accrual($container, $company, '2026-08-11', 9, -1_500, 'P-4');
         // Обработка возврата партнёром — то же отправление P-3, не второе.
         $this->accrual($container, $company, '2026-08-12', 45, -1_500, 'P-3');
-        // B2C-обработка возврата — отдельное отправление P-7.
+        // B2C-возврат — отдельное отправление P-7: обработка и обратная логистика.
         $this->accrual($container, $company, '2026-08-12', 113, -700, 'P-7');
+        $this->accrual($container, $company, '2026-08-12', 115, -600, 'P-7');
         // «Последняя миля» в наборы логистики не входит.
         $this->accrual($container, $company, '2026-08-11', 28, -9_999, 'P-5');
 
         $metrics = $this->summary($container, $company)->current->metrics;
 
-        self::assertSame(6_900 + 1_500 + 7_100 - 2_000 + 300 + 800 + 400 + 200, $metrics->deliveryLogisticsMinor);
+        self::assertSame(6_900 + 1_500 + 7_100 - 2_000 + 300 + 800 + 400 + 200 + 900, $metrics->deliveryLogisticsMinor);
         self::assertSame(3, $metrics->deliveryCount);
-        self::assertSame(5_000 + 1_000 + 1_500 + 1_500 + 700, $metrics->returnLogisticsMinor);
+        self::assertSame(5_000 + 1_000 + 1_500 + 1_500 + 700 + 600, $metrics->returnLogisticsMinor);
         self::assertSame(3, $metrics->returnLogisticsCount);
     }
 
