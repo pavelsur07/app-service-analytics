@@ -53,10 +53,13 @@ final readonly class DoctrinePasswordResetTokenRepository implements PasswordRes
         return $this->entityManager->getConnection()->transactional(function (Connection $connection) use ($tokenHash, $passwordHash, $now, $formattedNow): ?string {
             // Пользователь ссылки читается до погашения только чтобы взять
             // его блокировку раньше строк токенов — в том же порядке, что
-            // issue(). Без неё параллельный выпуск вставил бы новую ссылку
-            // после гашения остальных, и она пережила бы смену пароля;
-            // обратный порядок (блокировка после UPDATE) взаимоблокировался
-            // бы с issue(). Права это чтение не даёт: решает условие UPDATE.
+            // issue(); обратный порядок взаимоблокировался бы с ним. Права
+            // это чтение не даёт: решает условие UPDATE ниже.
+            //
+            // Блокировка выстраивает выпуск и сброс в строгую очередь:
+            // ссылка, выпущенная до сброса, им гасится; выпуск, дождавшийся
+            // конца сброса, — это новый запрос после смены пароля, и его
+            // ссылка законно живёт (ADR-037: гасятся прежние ссылки).
             $lockUserId = $connection->fetchOne(
                 'SELECT user_id FROM password_reset_token WHERE token_hash = :token_hash',
                 ['token_hash' => $tokenHash],
