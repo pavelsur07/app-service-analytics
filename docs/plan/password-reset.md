@@ -99,7 +99,7 @@
       `fromPlainText`, `hash()` (или переиспользовать `EmailVerificationSecret`,
       если сигнатура подходит без изменений).
 - [ ] 1.2 Entity `Identity/Domain/PasswordResetToken`: `id uuid`, `user_id uuid`,
-      `token_hash char(64)` + уникальный индекс, `created_at`, `expires_at`,
+      `token_hash char(64)` + уникальный индекс, `issued_at`, `expires_at`,
       `consumed_at` nullable. Дописываемая таблица, без ассоциаций.
 - [ ] 1.3 Индекс по `user_id` в той же миграции (гашение старых токенов).
 - [ ] 1.4 Одна миграция с рабочим `down()`.
@@ -258,7 +258,7 @@
       «Если аккаунт существует, письмо отправлено».
 - [ ] 5.3 Страница нового пароля: токен из фрагмента `#token=`, сразу
       `history.replaceState` без токена; два поля пароля; при
-      `invalid_or_expired` — «Ссылка недействительна» + переход к запросу;
+      `reset_token_invalid` — «Ссылка недействительна» + переход к запросу;
       успех — редирект на вход с сообщением.
 - [ ] 5.4 Вызовы через `apiPost` из `src/api/`, типы из сгенерированной схемы;
       оба адреса в allow-list pre-auth вызовов.
