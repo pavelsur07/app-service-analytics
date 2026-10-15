@@ -16,6 +16,17 @@ describe('password reset request failures', () => {
     })
   })
 
+  it('lets 503 win over a contradictory rate-limit code', () => {
+    expect(
+      requestResetFailure(
+        new ApiError(503, 'password_reset_rate_limited', 'x'),
+      ),
+    ).toEqual({
+      kind: 'general',
+      message: 'Проверка временно недоступна. Попробуйте позже',
+    })
+  })
+
   it('maps an unavailable captcha to a general retry-later message', () => {
     expect(requestResetFailure(new ApiError(503, null, 'x')).kind).toBe(
       'general',
@@ -50,6 +61,18 @@ describe('new password failures', () => {
     expect(
       resetPasswordFailure(new ApiError(422, 'reset_token_invalid', 'x')),
     ).toEqual({ kind: 'invalid-link' })
+  })
+
+  it('keeps the form on a server failure even with a token code in the body', () => {
+    expect(
+      resetPasswordFailure(new ApiError(503, 'reset_token_invalid', 'x')),
+    ).toEqual({
+      kind: 'general',
+      message: 'Не удалось сменить пароль. Попробуйте позже',
+    })
+    expect(
+      resetPasswordFailure(new ApiError(429, 'reset_token_invalid', 'x')).kind,
+    ).toBe('general')
   })
 
   it('maps password validation to the password field', () => {
