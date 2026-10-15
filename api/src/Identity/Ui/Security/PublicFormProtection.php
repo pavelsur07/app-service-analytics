@@ -26,6 +26,9 @@ final readonly class PublicFormProtection
         private CaptchaVerifier $captchaVerifier,
         private LoggerInterface $logger,
         private string $kernelSecret,
+        // Имя формы в журнале: по нему всплеск отказов отличают от шума
+        // соседней формы (config/services.yaml).
+        private string $form,
     ) {
     }
 
@@ -51,6 +54,17 @@ final readonly class PublicFormProtection
             $retryAfter = $ipLimit->getRetryAfter();
         }
         if (null !== $retryAfter) {
+            // Отказ — не ошибка, а сигнал: без записи массовый перебор
+            // виден только по жалобам и счёту SMTP-провайдера. Адрес и IP
+            // в журнал не попадают — только какой лимит сработал.
+            $this->logger->warning('Public form rate limit exceeded', [
+                'form' => $this->form,
+                'limits' => array_keys(array_filter([
+                    'email' => !$emailLimit->isAccepted(),
+                    'ip' => !$ipLimit->isAccepted(),
+                ])),
+            ]);
+
             return new PublicFormProtectionResult(PublicFormProtectionDecision::RateLimited, $retryAfter);
         }
 
@@ -61,9 +75,12 @@ final readonly class PublicFormProtection
             return new PublicFormProtectionResult(PublicFormProtectionDecision::Unavailable);
         }
 
-        return new PublicFormProtectionResult(match ($captcha) {
-            CaptchaVerification::Passed => PublicFormProtectionDecision::Allowed,
-            CaptchaVerification::Rejected => PublicFormProtectionDecision::CaptchaRejected,
-        });
+        if (CaptchaVerification::Rejected === $captcha) {
+            $this->logger->warning('Public form captcha rejected', ['form' => $this->form]);
+
+            return new PublicFormProtectionResult(PublicFormProtectionDecision::CaptchaRejected);
+        }
+
+        return new PublicFormProtectionResult(PublicFormProtectionDecision::Allowed);
     }
 }

@@ -119,12 +119,14 @@ services:
         arguments:
             $emailLimiter: '@limiter.registration_email'
             $ipLimiter: '@limiter.registration_ip'
+            $form: registration
 
     identity.password_reset_protection:
         class: App\Identity\Ui\Security\PublicFormProtection
         arguments:
             $emailLimiter: '@limiter.password_reset_request_email'
             $ipLimiter: '@limiter.password_reset_request_ip'
+            $form: password_reset_request
 
     App\Identity\Ui\Security\PublicFormProtection $registrationProtection: '@identity.registration_protection'
     App\Identity\Ui\Security\PublicFormProtection $passwordResetProtection: '@identity.password_reset_protection'
