@@ -35,9 +35,9 @@ test.describe('buyout rate', () => {
     // не прочитан, и появляется вместе с оболочкой одним кадром позже.
     // allTextContents() не ждёт этого сама, поэтому первый пункт ждём
     // явно; count()/toEqual ниже уже застают сайдбар отрисованным.
-    await expect(nav.getByRole('link', { name: 'Заказы' })).toBeVisible()
+    await expect(nav.getByRole('link', { name: 'Главная' })).toBeVisible()
     const firstLinks = await nav.getByRole('link').allTextContents()
-    expect(firstLinks.slice(0, 2)).toEqual(['Заказы', 'Выкуп'])
+    expect(firstLinks.slice(0, 3)).toEqual(['Главная', 'Заказы', 'Выкуп'])
 
     await nav.getByRole('link', { name: 'Выкуп' }).click()
     await expect(page).toHaveURL(

@@ -60,7 +60,7 @@ final class ShowDashboardSummaryController
 
         $from = self::date($request, 'from');
         $to = self::date($request, 'to');
-        if (null === $from || null === $to || !self::validRange($from, $to, $yesterday)) {
+        if (null === $from || null === $to || !self::validRange($from, $to, $yesterday) || $from->format('Y-m-d') < self::EARLIEST) {
             return self::invalid('invalid_period', 'from and to must be YYYY-MM-DD, from <= to <= yesterday, from 2020-01-01, up to 366 days.');
         }
 
@@ -89,11 +89,15 @@ final class ShowDashboardSummaryController
         return false !== $date && $date->format('Y-m-d') === $value ? $date : null;
     }
 
+    /**
+     * Нижняя граница — только у выбранного периода: сравнение с годом
+     * назад от периода, начатого в 2020-м, законно уходит раньше, и там
+     * просто нет данных. Длина ограничена у обоих.
+     */
     private static function validRange(\DateTimeImmutable $from, \DateTimeImmutable $to, \DateTimeImmutable $yesterday): bool
     {
         return $from <= $to
             && $to <= $yesterday
-            && $from->format('Y-m-d') >= self::EARLIEST
             && $from->diff($to)->days < self::MAX_DAYS;
     }
 

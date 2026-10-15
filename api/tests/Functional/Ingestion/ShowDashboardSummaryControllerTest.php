@@ -102,6 +102,11 @@ final class ShowDashboardSummaryControllerTest extends WebTestCase
             }
         }
 
+        // Сравнение «год назад» от периода, начатого в 2020-м, уходит
+        // раньше нижней границы — там просто нет данных.
+        $client->request('GET', $base.'?from=2020-01-01&to=2020-01-07&compareFrom=2019-01-01&compareTo=2019-01-07');
+        self::assertResponseIsSuccessful();
+
         // Ровно 366 дней — високосный год целиком — допустим.
         $client->request('GET', $base.'?from=2024-01-01&to=2024-12-31&compareFrom=2023-01-01&compareTo=2023-12-31');
         self::assertResponseIsSuccessful();
