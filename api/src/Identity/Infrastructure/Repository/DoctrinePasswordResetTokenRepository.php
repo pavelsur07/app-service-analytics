@@ -21,6 +21,10 @@ final readonly class DoctrinePasswordResetTokenRepository implements PasswordRes
           AND consumed_at IS NULL
         SQL;
 
+    private const string USER_LOCK_SQL = <<<'SQL'
+        SELECT pg_advisory_xact_lock(hashtextextended('conwix.identity.password-reset:' || :user_id, 0))
+        SQL;
+
     public function __construct(
         private EntityManagerInterface $entityManager,
     ) {
@@ -31,12 +35,8 @@ final readonly class DoctrinePasswordResetTokenRepository implements PasswordRes
         $this->entityManager->getConnection()->transactional(function (Connection $connection) use ($token): void {
             // Два параллельных запроса одного пользователя без сериализации
             // оба погасили бы прежние ссылки до вставки соседа и оставили
-            // две живые. Блокировка — на пользователя и только на выпуск:
-            // погашение её не берёт и с выпуском не взаимоблокируется.
-            $connection->executeStatement(
-                "SELECT pg_advisory_xact_lock(hashtextextended('conwix.identity.password-reset-issue:' || :user_id, 0))",
-                ['user_id' => $token->userId()->toRfc4122()],
-            );
+            // две живые. Та же блокировка у погашения — см. resetPassword().
+            $connection->executeStatement(self::USER_LOCK_SQL, ['user_id' => $token->userId()->toRfc4122()]);
             $connection->executeStatement(self::REVOKE_ACTIVE_SQL, [
                 'now' => $token->issuedAt()->format('Y-m-d H:i:s'),
                 'user_id' => $token->userId()->toRfc4122(),
@@ -51,6 +51,24 @@ final readonly class DoctrinePasswordResetTokenRepository implements PasswordRes
         $formattedNow = $now->format('Y-m-d H:i:s');
 
         return $this->entityManager->getConnection()->transactional(function (Connection $connection) use ($tokenHash, $passwordHash, $now, $formattedNow): ?string {
+            // Пользователь ссылки читается до погашения только чтобы взять
+            // его блокировку раньше строк токенов — в том же порядке, что
+            // issue(). Без неё параллельный выпуск вставил бы новую ссылку
+            // после гашения остальных, и она пережила бы смену пароля;
+            // обратный порядок (блокировка после UPDATE) взаимоблокировался
+            // бы с issue(). Права это чтение не даёт: решает условие UPDATE.
+            $lockUserId = $connection->fetchOne(
+                'SELECT user_id FROM password_reset_token WHERE token_hash = :token_hash',
+                ['token_hash' => $tokenHash],
+            );
+            if (false === $lockUserId) {
+                return null;
+            }
+            if (!\is_string($lockUserId)) {
+                throw new \UnexpectedValueException('Password reset token must reference a string user_id.');
+            }
+            $connection->executeStatement(self::USER_LOCK_SQL, ['user_id' => $lockUserId]);
+
             // Погашение — условие внутри UPDATE, не проверка перед записью
             // (CLAUDE.md §4): из двух отправок одной ссылки пароль меняет одна.
             $userId = $connection->executeQuery(

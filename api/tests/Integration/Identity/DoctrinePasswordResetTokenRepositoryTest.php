@@ -13,6 +13,8 @@ use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Tests\Support\Builder\PasswordResetTokenBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -100,6 +102,31 @@ final class DoctrinePasswordResetTokenRepositoryTest extends KernelTestCase
         self::assertNotNull($this->storedConsumedAt($other));
     }
 
+    public function testResetWaitsForTheSameUserLockAsIssue(): void
+    {
+        self::bootKernel();
+        $secret = PasswordResetSecret::generate();
+        $user = $this->userWithToken($secret, new \DateTimeImmutable('-1 minute'));
+        // Выпуск новой ссылки держит блокировку пользователя: погашение
+        // обязано её дождаться, иначе новая ссылка пережила бы сброс.
+        $issuer = $this->independentConnection();
+        $issuer->beginTransaction();
+        $issuer->executeStatement(
+            "SELECT pg_advisory_xact_lock(hashtextextended('conwix.identity.password-reset:' || :user_id, 0))",
+            ['user_id' => $user->id()->toRfc4122()],
+        );
+
+        try {
+            $this->connection()->executeStatement("SET LOCAL lock_timeout = '100ms'");
+            $this->expectException(DriverException::class);
+
+            $this->repository()->resetPassword($secret->hash(), self::NEW_HASH, new \DateTimeImmutable());
+        } finally {
+            $issuer->rollBack();
+            $issuer->close();
+        }
+    }
+
     public function testOnlyHashIsStored(): void
     {
         self::bootKernel();
@@ -157,6 +184,21 @@ final class DoctrinePasswordResetTokenRepositoryTest extends KernelTestCase
     private function repository(): DoctrinePasswordResetTokenRepository
     {
         return new DoctrinePasswordResetTokenRepository($this->entityManager());
+    }
+
+    private function independentConnection(): Connection
+    {
+        $params = $this->connection()->getParams();
+
+        return DriverManager::getConnection([
+            'driver' => 'pdo_pgsql',
+            'host' => $params['host'],
+            'port' => $params['port'],
+            'user' => $params['user'],
+            'password' => $params['password'],
+            'dbname' => $params['dbname'],
+            'serverVersion' => $params['serverVersion'],
+        ]);
     }
 
     private function connection(): Connection
