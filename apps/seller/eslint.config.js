@@ -71,8 +71,9 @@ export default tseslint.config(
         ),
       ],
 
-      // CLAUDE.md §7 — прямой fetch и localStorage вне разрешённого
-      // списка. Список пока пуст, поэтому localStorage запрещён целиком.
+      // CLAUDE.md §10 — прямой fetch и localStorage вне разрешённого
+      // списка. Список ключей — в src/shared/lib/localPreferences.ts,
+      // и это единственный файл, которому localStorage доступен.
       'no-restricted-globals': [
         'error',
         {
@@ -82,7 +83,7 @@ export default tseslint.config(
         {
           name: 'localStorage',
           message:
-            'localStorage — только ключи из разрешённого списка (CLAUDE.md §7); список пока пуст.',
+            'localStorage — только через shared/lib/localPreferences.ts с разрешённым списком ключей (CLAUDE.md §10).',
         },
       ],
       'no-restricted-imports': [
@@ -130,6 +131,20 @@ export default tseslint.config(
     files: ['src/api/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-globals': 'off',
+    },
+  },
+  {
+    // Единственный вход в localStorage: ключ проверяется по разрешённому
+    // списку внутри файла. fetch здесь по-прежнему запрещён.
+    files: ['src/shared/lib/localPreferences.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'fetch',
+          message: 'fetch только внутри src/api/ — используй apiGet.',
+        },
+      ],
     },
   },
   {

@@ -20,11 +20,24 @@ async function login(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Войти' }).click()
 }
 
-/** Вход и выбор компании из списка — участник состоит в двух. */
+/**
+ * Вход и выбор компании из списка — участник состоит в двух. Компания
+ * открывается на главной; заказы — пунктом меню, как у продавца.
+ */
 async function loginAndOpen(page: Page, company: string): Promise<void> {
   await login(page)
   await expect(page).toHaveURL('/companies')
   await page.getByRole('link', { name: companyNameOf(company) }).click()
+  await openSales(page, company)
+}
+
+async function openSales(page: Page, company: string): Promise<void> {
+  await expect(page).toHaveURL(`/companies/${company}/dashboard`)
+  await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible()
+  await page
+    .getByRole('navigation', { name: 'Разделы компании' })
+    .getByRole('link', { name: 'Заказы' })
+    .click()
   await expect(page).toHaveURL(`/companies/${company}/sales`)
 }
 
@@ -144,7 +157,7 @@ test.describe('sales facts', () => {
     await expect(page).toHaveURL('/companies')
 
     await page.getByRole('link', { name: 'E2E Sandbox Two' }).click()
-    await expect(page).toHaveURL(`/companies/${secondCompanyId}/sales`)
+    await openSales(page, secondCompanyId ?? '')
 
     // У второй компании продаж нет вовсе. Если бы ключ кэша не содержал
     // companyId (CLAUDE.md §7), здесь остались бы строки первой —

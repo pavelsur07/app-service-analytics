@@ -496,6 +496,14 @@ apps/seller/
 ADR-034, план — `docs/plan/ozon-stock-placement-report.md`. Форматирование
 потерянных часов ожидания общее с «Доставкой» — `shared/lib/formatLostTime.ts`.
 
+Главная — `apps/seller/src/features/dashboard/` (`/dashboard`, стартовая
+страница компании): виджеты показателей кабинета за период с изменением
+к периоду сравнения. Пресеты и сравнение — чистые функции в `lib/period.ts`,
+описания виджетов — `lib/widgets.ts`, скрытые виджеты и последний период —
+`lib/preferences.ts` поверх `shared/lib/localPreferences.ts`. Бэкенд —
+`Ingestion/Application/Dashboard` и `Infrastructure/Query/Dashboard`,
+план и определения показателей — `docs/plan/dashboard-widgets.md`.
+
 Внутри фичи — `ui/`, `model/` (хуки и запросы), `lib/` (чистые функции).
 Три папки, не больше.
 
@@ -590,8 +598,10 @@ apps/seller/
 │   │   │   ├── companyQueryKey.ts     ['company', companyId, модуль, сущность, ...]
 │   │   │   ├── connectionsQueryKey.ts ключ списка подключений — общий
 │   │   │   │                          для features/connections и features/onboarding
-│   │   │   └── month.ts               месяц отчёта YYYY-MM по Москве — общий
-│   │   │                              для features/coverage и сверки unit-economics
+│   │   │   ├── month.ts               месяц отчёта YYYY-MM по Москве — общий
+│   │   │   │                          для features/coverage и сверки unit-economics
+│   │   │   └── localPreferences.ts    единственный вход в localStorage,
+│   │   │                              разрешённый список ключей (CLAUDE.md §10)
 │   │   └── model/
 │   │       └── useCurrentUser.ts      «кто я» — нужен оболочке и обеим фичам
 │   └── features/

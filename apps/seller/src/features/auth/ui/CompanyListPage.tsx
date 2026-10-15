@@ -16,7 +16,7 @@ export function CompanyListPage() {
 
   useEffect(() => {
     if (onlyCompanyId !== undefined) {
-      void navigate(`/companies/${onlyCompanyId}/sales`, {
+      void navigate(`/companies/${onlyCompanyId}/dashboard`, {
         replace: true,
       })
     }
@@ -111,7 +111,7 @@ export function CompanyListPage() {
                 <li key={company.id}>
                   <Link
                     className="font-medium"
-                    to={`/companies/${company.id}/sales`}
+                    to={`/companies/${company.id}/dashboard`}
                   >
                     {company.name}
                   </Link>

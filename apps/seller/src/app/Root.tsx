@@ -4,6 +4,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 import { CompanyListPage } from '../features/auth/ui/CompanyListPage'
 import { ConfirmEmailPage } from '../features/auth/ui/ConfirmEmailPage'
 import { BuyoutRatePage } from '../features/buyout-rate/ui/BuyoutRatePage'
+import { DashboardPage } from '../features/dashboard/ui/DashboardPage'
 import { DeliverySpeedPage } from '../features/delivery-speed/ui/DeliverySpeedPage'
 import { LocalizationPage } from '../features/localization/ui/LocalizationPage'
 import { EmailSentPage } from '../features/auth/ui/EmailSentPage'
@@ -69,7 +70,8 @@ const router = createBrowserRouter([
     path: '/companies/:companyId',
     element: <CompanyLayout />,
     children: [
-      { index: true, element: <Navigate to="sales" replace /> },
+      { index: true, element: <Navigate to="dashboard" replace /> },
+      { path: 'dashboard', element: <DashboardPage /> },
       { path: 'sales', element: <SalesFactsPage /> },
       { path: 'redemption', element: <BuyoutRatePage /> },
       { path: 'sku-forecast-fact', element: <SkuForecastFactPage /> },

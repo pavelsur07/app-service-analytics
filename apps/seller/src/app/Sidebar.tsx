@@ -12,6 +12,7 @@ import {
   Warehouse,
   CalendarCheck,
   ChartNoAxesCombined,
+  LayoutDashboard,
 } from 'lucide-react'
 import { NavLink } from 'react-router'
 
@@ -40,6 +41,7 @@ const ITEM_IDLE = 'text-text-secondary hover:bg-surface-hover'
  * умножили бы меню на число площадок. Площадка — фильтр внутри экрана.
  */
 const ITEMS = [
+  { to: 'dashboard', label: 'Главная', icon: LayoutDashboard },
   { to: 'sales', label: 'Заказы', icon: TrendingUp },
   {
     to: 'redemption?days=30&sort=ordered&direction=desc',

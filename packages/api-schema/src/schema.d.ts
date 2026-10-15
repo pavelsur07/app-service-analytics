@@ -436,6 +436,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/dashboard/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_dashboard_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/delivery-speed": {
         parameters: {
             query?: never;
@@ -962,6 +978,80 @@ export interface components {
             totalMinor: number;
             /** Дни периода, за которые выгрузка начислений не проходила. */
             daysWithoutAccruals: number;
+        };
+        DashboardMetricsResponse: {
+            ordersAmountMinor: number;
+            ordersQuantity: number;
+            salesAmountMinor: number;
+            salesQuantity: number;
+            returnsAmountMinor: number;
+            returnsQuantity: number;
+            advertisingMinor: number;
+            costPerOrderMinor?: number | null;
+            drrOrdersBps?: number | null;
+            costPerSaleMinor?: number | null;
+            drrSalesBps?: number | null;
+            deliveryLogisticsMinor: number;
+            deliveryCount: number;
+            returnLogisticsMinor: number;
+            returnLogisticsCount: number;
+            buyoutRateBps?: number | null;
+            buyoutQuantity?: number | null;
+            buyoutOrderedQuantity: number;
+            buyoutResolutionRateBps?: number | null;
+        };
+        DashboardDayResponse: {
+            date: string;
+            ordersAmountMinor: number;
+            salesAmountMinor: number;
+            returnsAmountMinor: number;
+            advertisingMinor: number;
+            deliveryLogisticsMinor: number;
+            returnLogisticsMinor: number;
+        };
+        DashboardPeriodResponse: {
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string;
+            /**
+             * Ложь — данные периода загружены не полностью: у какого-то
+             *     подключения, жившего в периоде, нет отправлений или начислений
+             *     хотя бы за один день (до подключения, пропуск, вставшая
+             *     синхронизация). Сравнивать с таким периодом нельзя.
+             */
+            dataComplete: boolean;
+            /** Дни, за которые продажи загружены, а начисления нет. */
+            daysWithoutAccruals: number;
+            metrics: components["schemas"]["DashboardMetricsResponse"];
+            /** Каждый день периода по возрастанию, без пропусков. */
+            days: components["schemas"]["DashboardDayResponse"][];
+        };
+        DashboardChangesResponse: {
+            ordersAmountBps?: number | null;
+            ordersQuantityBps?: number | null;
+            salesAmountBps?: number | null;
+            salesQuantityBps?: number | null;
+            returnsAmountBps?: number | null;
+            returnsQuantityBps?: number | null;
+            advertisingBps?: number | null;
+            costPerOrderBps?: number | null;
+            drrOrdersPointsBps?: number | null;
+            costPerSaleBps?: number | null;
+            drrSalesPointsBps?: number | null;
+            deliveryLogisticsBps?: number | null;
+            deliveryCountBps?: number | null;
+            returnLogisticsBps?: number | null;
+            returnLogisticsCountBps?: number | null;
+            buyoutRatePointsBps?: number | null;
+            buyoutQuantityBps?: number | null;
+            buyoutOrderedQuantityBps?: number | null;
+        };
+        DashboardSummaryResponse: {
+            currency: string;
+            current: components["schemas"]["DashboardPeriodResponse"];
+            comparison: components["schemas"]["DashboardPeriodResponse"];
+            changes: components["schemas"]["DashboardChangesResponse"];
         };
         DeliverySpeedDefinitionsResponse: {
             /** @enum {string} */
@@ -2711,6 +2801,51 @@ export interface operations {
                 };
             };
             /** @description Некорректный месяц */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_dashboard_summary: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                compareFrom: string;
+                compareTo: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Показатели главной за период и период сравнения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardSummaryResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректный период или период сравнения */
             422: {
                 headers: {
                     [name: string]: unknown;
