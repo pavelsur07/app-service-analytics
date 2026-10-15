@@ -13,6 +13,7 @@ use App\Identity\Ui\Response\PasswordReset\PasswordResetResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -36,6 +37,7 @@ final readonly class ResetPasswordController
         #[Autowire(service: 'limiter.password_reset_confirm_ip')]
         private RateLimiterFactoryInterface $confirmIpLimiter,
         private string $kernelSecret,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -82,6 +84,12 @@ final readonly class ResetPasswordController
             ->create(hash_hmac('sha256', 'ip:'.($request->getClientIp() ?? ''), $this->kernelSecret))
             ->consume();
         if (!$limit->isAccepted()) {
+            // Тот же сигнал, что у PublicFormProtection: перебор ссылок
+            // иначе виден только по нагрузке.
+            $this->logger->warning('Public form rate limit exceeded', [
+                'form' => 'password_reset_confirm',
+                'limits' => ['ip'],
+            ]);
             $retryAfter = max(0, $limit->getRetryAfter()->getTimestamp() - time());
 
             return $this->error(

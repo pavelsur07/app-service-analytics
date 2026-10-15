@@ -13,6 +13,7 @@ use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\Fake\FakeCaptchaVerifier;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Handler\TestHandler;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -166,6 +167,28 @@ final class PasswordResetControllerTest extends WebTestCase
         self::assertResponseStatusCodeSame(429);
         self::assertTrue($this->client->getResponse()->headers->has('Retry-After'));
         self::assertEmailCount(0);
+        $this->assertRateLimitWarning('password_reset_request', ['email']);
+    }
+
+    /**
+     * Отказ по лимиту — сигнал массовой атаки: без предупреждения в журнале
+     * её видно только по жалобам и счёту SMTP-провайдера.
+     *
+     * @param list<string> $limits
+     */
+    private function assertRateLimitWarning(string $form, array $limits): void
+    {
+        $handler = self::getContainer()->get('monolog.handler.in_memory');
+        self::assertInstanceOf(TestHandler::class, $handler);
+        $warnings = array_values(array_filter(
+            $handler->getRecords(),
+            static fn ($record): bool => 'Public form rate limit exceeded' === $record->message,
+        ));
+        self::assertNotEmpty($warnings, 'отказ по лимиту обязан оставить предупреждение в журнале');
+        $last = $warnings[\count($warnings) - 1];
+        self::assertSame('WARNING', $last->level->getName());
+        self::assertSame(['form' => $form, 'limits' => $limits], $last->context);
+        self::assertStringNotContainsString('owner@example.test', json_encode($last->context, \JSON_THROW_ON_ERROR));
     }
 
     public function testConfirmRateLimitIsCheckedBeforeHashing(): void
@@ -179,6 +202,7 @@ final class PasswordResetControllerTest extends WebTestCase
         $this->confirmReset(str_repeat('b', 64), self::NEW_PASSWORD);
         self::assertResponseStatusCodeSame(429);
         self::assertSame('password_reset_rate_limited', $this->errorCode());
+        $this->assertRateLimitWarning('password_reset_confirm', ['ip']);
     }
 
     private function confirmedUser(string $email): void

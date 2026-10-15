@@ -110,6 +110,69 @@ final class PublicFormProtectionTest extends TestCase
         self::assertSame(1, $captcha->calls);
     }
 
+    /**
+     * @return iterable<string, array{bool, bool, list<string>}>
+     */
+    public static function rejectedLimits(): iterable
+    {
+        yield 'email only' => [false, true, ['email']];
+        yield 'ip only' => [true, false, ['ip']];
+        yield 'both' => [false, false, ['email', 'ip']];
+    }
+
+    /**
+     * @param list<string> $expectedLimits
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('rejectedLimits')]
+    public function testRateLimitLogsASanitizedWarningNamingFormAndLimits(bool $emailAccepted, bool $ipAccepted, array $expectedLimits): void
+    {
+        $events = new FakeLimiterEvents();
+        $retryAfter = new \DateTimeImmutable('2026-09-02T12:20:00+00:00');
+        $emailLimiter = new FakeLimiterFactory('email', $emailAccepted ? $this->acceptedLimit() : $this->rejectedLimit($retryAfter), $events);
+        $ipLimiter = new FakeLimiterFactory('ip', $ipAccepted ? $this->acceptedLimit() : $this->rejectedLimit($retryAfter), $events);
+        $handler = new TestHandler();
+
+        $this->protection($emailLimiter, $ipLimiter, new FakeCaptchaVerifier(), $handler)->check(self::EMAIL, self::CLIENT_IP, self::CAPTCHA_TOKEN);
+
+        $records = $handler->getRecords();
+        self::assertCount(1, $records);
+        self::assertSame('WARNING', $records[0]->level->getName());
+        self::assertSame('Public form rate limit exceeded', $records[0]->message);
+        self::assertSame(['form' => 'registration', 'limits' => $expectedLimits], $records[0]->context);
+        $this->assertNoPersonalData($records[0]->message, $records[0]->context);
+    }
+
+    public function testCaptchaRejectionLogsASanitizedWarning(): void
+    {
+        $events = new FakeLimiterEvents();
+        $handler = new TestHandler();
+
+        $this->protection(
+            new FakeLimiterFactory('email', $this->acceptedLimit(), $events),
+            new FakeLimiterFactory('ip', $this->acceptedLimit(), $events),
+            new FakeCaptchaVerifier(CaptchaVerification::Rejected),
+            $handler,
+        )->check(self::EMAIL, self::CLIENT_IP, self::CAPTCHA_TOKEN);
+
+        $records = $handler->getRecords();
+        self::assertCount(1, $records);
+        self::assertSame('WARNING', $records[0]->level->getName());
+        self::assertSame('Public form captcha rejected', $records[0]->message);
+        self::assertSame(['form' => 'registration'], $records[0]->context);
+        $this->assertNoPersonalData($records[0]->message, $records[0]->context);
+    }
+
+    /**
+     * @param array<mixed> $context
+     */
+    private function assertNoPersonalData(string $message, array $context): void
+    {
+        $record = json_encode(['message' => $message, 'context' => $context], \JSON_THROW_ON_ERROR);
+        self::assertStringNotContainsString(self::EMAIL, $record);
+        self::assertStringNotContainsString(self::CLIENT_IP, $record);
+        self::assertStringNotContainsString(self::CAPTCHA_TOKEN, $record);
+    }
+
     public function testReturnsUnavailableAndLogsOnlyASanitizedWarningWhenClientIpIsMissing(): void
     {
         $events = new FakeLimiterEvents();
@@ -162,6 +225,7 @@ final class PublicFormProtectionTest extends TestCase
             $captcha,
             new Logger('test', [$handler]),
             self::KERNEL_SECRET,
+            'registration',
         );
     }
 
