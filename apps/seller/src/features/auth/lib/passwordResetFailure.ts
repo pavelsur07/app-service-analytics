@@ -17,6 +17,7 @@ export type ResetPasswordFailure =
 
 const TOO_MANY = 'Слишком много попыток. Попробуйте позже'
 const UNAVAILABLE = 'Проверка временно недоступна. Попробуйте позже'
+const REQUEST_FAILED = 'Не удалось отправить письмо. Попробуйте позже'
 const RESET_FAILED = 'Не удалось сменить пароль. Попробуйте позже'
 
 export function requestResetFailure(error: unknown): RequestResetFailure {
@@ -27,6 +28,10 @@ export function requestResetFailure(error: unknown): RequestResetFailure {
 
     if (error.status === 503) {
       return { kind: 'general', message: UNAVAILABLE }
+    }
+
+    if (error.status >= 500) {
+      return { kind: 'general', message: REQUEST_FAILED }
     }
 
     if (error.code === 'password_reset_rate_limited') {
@@ -53,10 +58,7 @@ export function requestResetFailure(error: unknown): RequestResetFailure {
     }
   }
 
-  return {
-    kind: 'general',
-    message: 'Не удалось отправить письмо. Попробуйте позже',
-  }
+  return { kind: 'general', message: REQUEST_FAILED }
 }
 
 export function resetPasswordFailure(error: unknown): ResetPasswordFailure {

@@ -27,6 +27,21 @@ describe('password reset request failures', () => {
     })
   })
 
+  it.each([500, 502, 504])(
+    'does not blame the form fields for a %i with a body code',
+    (status) => {
+      expect(
+        requestResetFailure(new ApiError(status, 'email_invalid', 'x')),
+      ).toEqual({
+        kind: 'general',
+        message: 'Не удалось отправить письмо. Попробуйте позже',
+      })
+      expect(
+        requestResetFailure(new ApiError(status, 'captcha_invalid', 'x')).kind,
+      ).toBe('general')
+    },
+  )
+
   it('maps an unavailable captcha to a general retry-later message', () => {
     expect(requestResetFailure(new ApiError(503, null, 'x')).kind).toBe(
       'general',
