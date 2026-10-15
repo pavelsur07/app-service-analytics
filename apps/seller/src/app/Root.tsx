@@ -7,9 +7,11 @@ import { BuyoutRatePage } from '../features/buyout-rate/ui/BuyoutRatePage'
 import { DeliverySpeedPage } from '../features/delivery-speed/ui/DeliverySpeedPage'
 import { LocalizationPage } from '../features/localization/ui/LocalizationPage'
 import { EmailSentPage } from '../features/auth/ui/EmailSentPage'
+import { ForgotPasswordPage } from '../features/auth/ui/ForgotPasswordPage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
 import { OnboardingStartPage } from '../features/onboarding/ui/OnboardingStartPage'
 import { ResendConfirmationPage } from '../features/auth/ui/ResendConfirmationPage'
+import { ResetPasswordPage } from '../features/auth/ui/ResetPasswordPage'
 import { ConnectionsPage } from '../features/connections/ui/ConnectionsPage'
 import { DataCoveragePage } from '../features/coverage/ui/DataCoveragePage'
 import { ListingCostsPage } from '../features/costs/ui/ListingCostsPage'
@@ -40,6 +42,8 @@ const router = createBrowserRouter([
   { path: '/sign-up/email-sent', element: <EmailSentPage /> },
   { path: '/resend-confirmation', element: <ResendConfirmationPage /> },
   { path: '/confirm-email', element: <ConfirmEmailPage /> },
+  { path: '/forgot-password', element: <ForgotPasswordPage /> },
+  { path: '/reset-password', element: <ResetPasswordPage /> },
   {
     path: '/onboarding',
     element: (

@@ -264,6 +264,8 @@ HTTP-входы сессии находятся в `Ui/Controller/Session` (`Log
 (`SelfRegistration`, `RegisterClientAccount`, `ResendEmailVerification`,
 `ConfirmEmail`). `RegisterClientAccount` обслуживает admin-контур;
 подпапка группирует сценарий регистрации и не задаёт права доступа.
+Восстановление пароля (ADR-037) — в `Ui/Controller/PasswordReset`
+(`RequestPasswordReset`, `ResetPassword`), ответ — `Ui/Response/PasswordReset`.
 Остальные системные HTTP-входы находятся в `Ui/Controller/Admin` (`AdminLogin`,
 `AdminMe`, `CreateAdministrator`, `ListClientAccounts`,
 `SetClientAccountStatus`).
@@ -535,6 +537,8 @@ ADR-034, план — `docs/plan/ozon-stock-placement-report.md`. Формати
 оболочке компании: публичные маршруты `/sign-up`, `/sign-up/email-sent`,
 `/resend-confirmation` и `/confirm-email` показывают соответственно
 `SignUpPage`, `EmailSentPage`, `ResendConfirmationPage` и `ConfirmEmailPage`.
+Восстановление пароля (ADR-037) — там же: `/forgot-password`
+(`ForgotPasswordPage`) и `/reset-password` (`ResetPasswordPage`).
 `/onboarding` — отдельный маршрут с `RequireAuth`, намеренно вне
 `/companies/:companyId` и `CompanyLayout`: только что подтвердивший email
 пользователь ещё не выбирал компанию.
@@ -557,7 +561,7 @@ membership параметра проверяется, а не берётся н�
 ```
 apps/seller/
 ├── src/
-│   ├── main.tsx                       точка входа + раннее стирание confirmation fragment
+│   ├── main.tsx                       точка входа + раннее стирание fragment-токенов
 │   ├── index.css                      @import "tailwindcss"
 │   ├── app/
 │   │   ├── Root.tsx                   роутер + QueryClientProvider
@@ -584,13 +588,17 @@ apps/seller/
 │       │   ├── lib/
 │       │   │   ├── captchaFlow.ts       автомат invisible SmartCaptcha
 │       │   │   ├── captchaLoaderGuard.ts watchdog загрузки виджета
-│       │   │   └── confirmationToken.ts одноразовый fragment-token bootstrap
+│       │   │   ├── confirmationToken.ts одноразовый fragment-token bootstrap
+│       │   │   ├── passwordResetToken.ts то же для ссылки сброса пароля
+│       │   │   └── passwordResetFailure.ts разбор ошибок двух шагов сброса
 │       │   ├── model/                   auth-запросы (useSignUp, useConfirmEmail, ...)
 │       │   └── ui/
 │       │       ├── SignUpPage.tsx
 │       │       ├── EmailSentPage.tsx
 │       │       ├── ResendConfirmationPage.tsx
 │       │       ├── ConfirmEmailPage.tsx
+│       │       ├── ForgotPasswordPage.tsx
+│       │       ├── ResetPasswordPage.tsx
 │       │       └── CompanyListPage.tsx
 │       ├── onboarding/
 │       │   ├── lib/

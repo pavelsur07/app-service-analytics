@@ -1,9 +1,11 @@
 import type { RegistrationPayload } from './registrationPayload'
 
-export type CaptchaFlowState =
+// Параметр типа — запрос формы, ждущий токена капчи: регистрация
+// (ADR-021) и запрос сброса пароля (ADR-037) идут через один автомат.
+export type CaptchaFlowState<TRequest = RegistrationPayload> =
   | { status: 'idle' }
-  | { status: 'checking'; request: RegistrationPayload }
-  | { status: 'submitting'; request: RegistrationPayload }
+  | { status: 'checking'; request: TRequest }
+  | { status: 'submitting'; request: TRequest }
   | {
       status: 'failed'
       message: string
@@ -12,14 +14,14 @@ export type CaptchaFlowState =
 
 type CaptchaFailureRecovery = 'remount' | 'reload-page'
 
-export type CaptchaRetryDecision =
-  | { action: 'continue'; state: CaptchaFlowState }
-  | { action: 'reload-page'; state: CaptchaFlowState }
+export type CaptchaRetryDecision<TRequest = RegistrationPayload> =
+  | { action: 'continue'; state: CaptchaFlowState<TRequest> }
+  | { action: 'reload-page'; state: CaptchaFlowState<TRequest> }
 
-export function startCaptcha(
-  state: CaptchaFlowState,
-  request: RegistrationPayload,
-): CaptchaFlowState {
+export function startCaptcha<TRequest = RegistrationPayload>(
+  state: CaptchaFlowState<TRequest>,
+  request: TRequest,
+): CaptchaFlowState<TRequest> {
   if (state.status !== 'idle') {
     return state
   }
@@ -27,14 +29,16 @@ export function startCaptcha(
   return { status: 'checking', request }
 }
 
-export function showChallenge(state: CaptchaFlowState): CaptchaFlowState {
+export function showChallenge<TRequest = RegistrationPayload>(
+  state: CaptchaFlowState<TRequest>,
+): CaptchaFlowState<TRequest> {
   return state
 }
 
-export function acceptCaptcha(
-  state: CaptchaFlowState,
+export function acceptCaptcha<TRequest = RegistrationPayload>(
+  state: CaptchaFlowState<TRequest>,
   captchaToken: string,
-): CaptchaFlowState {
+): CaptchaFlowState<TRequest> {
   if (state.status !== 'checking' || captchaToken.length === 0) {
     return state
   }
@@ -42,10 +46,10 @@ export function acceptCaptcha(
   return { status: 'submitting', request: state.request }
 }
 
-export function failCaptcha(
-  state: CaptchaFlowState,
+export function failCaptcha<TRequest = RegistrationPayload>(
+  state: CaptchaFlowState<TRequest>,
   message: string,
-): CaptchaFlowState {
+): CaptchaFlowState<TRequest> {
   if (state.status !== 'checking') {
     return state
   }
@@ -53,10 +57,10 @@ export function failCaptcha(
   return { status: 'failed', message, recovery: 'remount' }
 }
 
-export function failCaptchaLoader(
-  state: CaptchaFlowState,
+export function failCaptchaLoader<TRequest = RegistrationPayload>(
+  state: CaptchaFlowState<TRequest>,
   message: string,
-): CaptchaFlowState {
+): CaptchaFlowState<TRequest> {
   if (state.status !== 'idle' && state.status !== 'checking') {
     return state
   }
@@ -64,7 +68,9 @@ export function failCaptchaLoader(
   return { status: 'failed', message, recovery: 'reload-page' }
 }
 
-export function retryCaptcha(state: CaptchaFlowState): CaptchaRetryDecision {
+export function retryCaptcha<TRequest = RegistrationPayload>(
+  state: CaptchaFlowState<TRequest>,
+): CaptchaRetryDecision<TRequest> {
   if (state.status !== 'failed') {
     return { action: 'continue', state }
   }
@@ -73,9 +79,11 @@ export function retryCaptcha(state: CaptchaFlowState): CaptchaRetryDecision {
     return { action: 'reload-page', state }
   }
 
-  return { action: 'continue', state: resetCaptcha() }
+  return { action: 'continue', state: resetCaptcha<TRequest>() }
 }
 
-export function resetCaptcha(): CaptchaFlowState {
+export function resetCaptcha<
+  TRequest = RegistrationPayload,
+>(): CaptchaFlowState<TRequest> {
   return { status: 'idle' }
 }
