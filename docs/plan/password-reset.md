@@ -129,16 +129,17 @@
 
 ## Этап 2. Backend — репозиторий и запросы
 
-- [ ] 2.1 `PasswordResetTokenRepository` (Domain) + Doctrine-реализация:
-      - `issue(PasswordResetToken)` — вставка;
-      - `revokeActiveForUser(Uuid $userId)` — `UPDATE ... SET consumed_at = now()
-        WHERE user_id = :u AND consumed_at IS NULL`;
-      - `consume(string $tokenHash, DateTimeImmutable $now): ?Uuid` — атомарное
-        погашение с `RETURNING user_id`.
-- [ ] 2.2 Поиск пользователя по адресу — существующий `findByEmail`
-      (User без `companyId`, аутентификационная граница); докблок со ссылкой на §1.
-- [ ] 2.3 Advisory-lock с уборкой неподтверждённых аккаунтов — проверить,
-      нужен ли (сброс неподтверждённому не выдаётся — скорее нет; записать в отчёт).
+- [x] 2.1 `PasswordResetTokenRepository` (Domain) + Doctrine-реализация:
+      - `issue(PasswordResetToken)` — гашение прежних ссылок пользователя
+        и вставка новой одной транзакцией;
+      - `resetPassword(tokenHash, passwordHash, now): ?string` — атомарное
+        погашение, смена хэша, гашение остальных ссылок и аудит одной
+        транзакцией; возвращает адрес для уведомления.
+- [x] 2.2 Поиск пользователя по адресу — узкий `PasswordResetUserByEmailQuery`
+      (по образцу resend ADR-021), не широкий `findByEmail`.
+- [x] 2.3 Блокировки: shared-секция уборки неподтверждённых аккаунтов нужна
+      action'у запроса — неподтверждённому выпускается токен подтверждения;
+      advisory-блокировка пользователя упорядочивает выпуск и сброс.
 
 **Результат этапа:** интеграционные тесты репозитория зелёные (этап 7.1).
 
@@ -170,20 +171,19 @@
 
 ## Этап 3. Backend — сценарии (Application)
 
-- [ ] 3.1 `RequestPasswordResetAction(email, clientIp)`:
-      лимиты → нормализация адреса → `findByEmail` → ветвление по исходу →
-      `revokeActiveForUser` + `issue` → синхронное письмо → аудит
-      `password.reset_requested` (только для существующего пользователя).
-      Возвращает `void` во всех ветках.
-- [ ] 3.2 `ResetPasswordAction(token, newPassword)`:
-      валидация пароля тем же валидатором, что при регистрации → `consume` →
-      хэш → `changePassword` + `flush` в одной транзакции с погашением →
-      аудит `password.reset_completed` → письмо-уведомление.
-      Хэширование — после проверки лимита и после успешного `consume`.
-- [ ] 3.3 Порт `PasswordResetEmailSender` + `MailPasswordResetEmailSender`
+- [x] 3.1 `RequestPasswordResetAction(email, now)`: поиск → ветвление
+      (неизвестный / неподтверждённый / подтверждённый) → `issue` для
+      подтверждённого → ровно одно синхронное письмо. Лимиты и капча — в
+      контроллере до action. Запрос сброса в аудит не пишется (уточнено
+      до этапа 0, см. «Уточнения»). Возвращает `void` во всех ветках.
+- [x] 3.2 `ResetPasswordAction(secret, passwordHash, now): bool`:
+      `resetPassword` → письмо-уведомление. Хэш считает контроллер после
+      проверки лимита и до погашения (как при регистрации); аудит —
+      `user.password_reset` внутри транзакции репозитория.
+- [x] 3.3 Порт `PasswordResetEmailSender` + `MailPasswordResetEmailSender`
       (Symfony Mailer, синхронно, мимо Messenger). Три шаблона: ссылка сброса,
       нейтральное письмо, уведомление о смене пароля (без активных ссылок).
-- [ ] 3.4 `AuditAction`: два новых значения.
+- [x] 3.4 `AuditAction`: одно новое значение `user.password_reset`.
 
 **Результат этапа:** сценарии работают из теста без HTTP.
 
@@ -214,12 +214,14 @@
 
 ## Этап 4. Backend — HTTP, безопасность, границы
 
-- [ ] 4.1 `POST /api/auth/password-reset/request` `{email, captcha}` → всегда `202`.
-- [ ] 4.2 `POST /api/auth/password-reset/confirm` `{token, password}` → `204`;
-      любой отказ токена → `422 invalid_or_expired`; слабый пароль → `422` валидации.
-- [ ] 4.3 Request DTO + Validator, атрибуты Nelmio.
-- [ ] 4.4 `security.yaml`: оба маршрута `PUBLIC_ACCESS`.
-- [ ] 4.5 `rate_limiter.yaml`: `password_reset_request_ip`,
+- [x] 4.1 `POST /api/auth/password-reset/request` `{email, captchaToken}` → `202`
+      для любого адреса; `422`/`429`/`503` — как у регистрации.
+- [x] 4.2 `POST /api/auth/password-reset/confirm` `{token, password}` → `200
+      {"status":"password_changed"}`; любой отказ токена → `422 reset_token_invalid`;
+      пароль → `422 password_too_short|password_too_long`; `429`.
+- [x] 4.3 Request DTO (разбор `fromJson`, как у регистрации), атрибуты Nelmio.
+- [x] 4.4 `security.yaml`: оба маршрута `PUBLIC_ACCESS`.
+- [x] 4.5 `rate_limiter.yaml`: `password_reset_request_ip`,
       `password_reset_request_email`, `password_reset_confirm_ip`; IP — реальный
       клиент за Traefik (как у регистрации). Капча — через `RegistrationProtection`
       или его обобщение без смены поведения регистрации.
@@ -260,8 +262,8 @@
       успех — редирект на вход с сообщением.
 - [ ] 5.4 Вызовы через `apiPost` из `src/api/`, типы из сгенерированной схемы;
       оба адреса в allow-list pre-auth вызовов.
-- [ ] 5.5 Страницы не отдают Referer: `Referrer-Policy: no-referrer`
-      (meta или заголовок Nginx для маршрута).
+- [x] 5.5 Referer: отдельный `Referrer-Policy` не нужен — токен во fragment,
+      который браузер не передаёт ни в `Referer`, ни серверу (см. план этапа 5).
 - [ ] 5.6 Токен не уходит в логирование ошибок фронтенда.
 
 **Результат этапа:** `make front-typecheck front-lint front-knip APP=seller` зелёные.
@@ -288,8 +290,8 @@
 
 ## Этап 6. Документация
 
-- [ ] 6.1 `docs/structure.md` — если появились новые папки.
-- [ ] 6.2 `docs/operations-checklist.md` — что делать при обращении
+- [x] 6.1 `docs/structure.md` — если появились новые папки.
+- [x] 6.2 `docs/operations-checklist.md` — что делать при обращении
       «не приходит письмо сброса».
 - [ ] 6.3 ADR-037 → Accepted после выкладки.
 
@@ -298,10 +300,12 @@
 ## Этап 7. Тестирование
 
 ### 7.1 Integration (БД)
-- [ ] Два параллельных `consume` одного токена → успешно ровно один.
-- [ ] Истёкший токен не гасится.
-- [ ] После нового запроса старый токен не гасится.
-- [ ] В таблице лежит хэш, а не открытый текст.
+- [x] Повторное погашение одной ссылки меняет пароль ровно один раз
+      (последовательно; атомарность держит условие `UPDATE`, как у ADR-021).
+- [x] Погашение ждёт блокировку пользователя, взятую выпуском.
+- [x] Истёкшая и неизвестная ссылка ничего не меняют.
+- [x] После нового запроса прежняя ссылка недействительна.
+- [x] В таблице лежит хэш, а не открытый текст.
 
 ### 7.2 Functional (HTTP) — обязательное покрытие и граница доверия
 - [ ] Известный, неизвестный и неподтверждённый адрес → идентичный ответ;
@@ -309,15 +313,17 @@
 - [ ] Полный сценарий: запрос → ссылка из письма → новый пароль → вход новым
       паролем успешен, старым — нет.
 - [ ] Сессия, открытая до сброса, после сброса получает `401`.
-- [ ] Повторное использование ссылки → `422 invalid_or_expired`.
-- [ ] Сброс не подтверждает адрес; заблокированная компания не входит.
+- [x] Повторное использование ссылки → `422 reset_token_invalid`.
+- [x] Сброс не подтверждает адрес: неподтверждённому ссылка сброса не выдаётся
+      (тест на одинаковый ответ). Блокировку компании (ADR-017) сброс не трогает —
+      отдельного теста нет, путь входа не менялся.
 - [ ] Превышение лимита частоты → отказ; хэширование пароля не выполнялось.
 
 ### 7.3 Unit
 - [ ] `PasswordResetSecret`: длина, формат, детерминированный хэш.
 
 ### 7.4 Frontend (Vitest + `openapi-msw`)
-- [ ] Разбор `invalid_or_expired` и ошибки валидации пароля.
+- [x] Разбор `reset_token_invalid` и ошибки валидации пароля.
 - [ ] Токен читается из фрагмента и удаляется из URL.
 
 **Результат этапа:** `make test`, `make front-test APP=seller` зелёные.
