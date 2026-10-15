@@ -4,6 +4,7 @@
 
 import type { components } from '../../../api/schema'
 import { formatBasisPoints } from '../../../shared/lib/formatBasisPoints'
+import { formatMinorAmount } from '../../../shared/lib/formatMinorAmount'
 
 type Metrics = components['schemas']['DashboardMetricsResponse']
 type Changes = components['schemas']['DashboardChangesResponse']
@@ -280,14 +281,9 @@ export function formatValue(
   switch (format) {
     case 'money':
     case 'moneyPrecise':
-      // Только форматирование минорных единиц, посчитанных бэкендом:
-      // округление до рубля делает Intl при показе, сумма не меняется.
-      return new Intl.NumberFormat('ru-RU', {
-        style: 'currency',
-        currency,
-        maximumFractionDigits: format === 'money' ? 0 : 2,
-        minimumFractionDigits: format === 'money' ? 0 : 2,
-      }).format(value / 100)
+      return formatMinorAmount(value, currency, {
+        wholeUnits: format === 'money',
+      })
     case 'quantity':
       return `${QUANTITY.format(value)} шт.`
     case 'percent':
