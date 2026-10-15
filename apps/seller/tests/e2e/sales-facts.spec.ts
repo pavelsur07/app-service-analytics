@@ -46,6 +46,7 @@ test.describe('sales facts', () => {
   test('seller sees Ozon sales facts imported from a real fixture', async ({
     page,
   }) => {
+    test.setTimeout(90_000)
     await loginAndOpen(page, companyId ?? '')
 
     await expect(
@@ -71,6 +72,39 @@ test.describe('sales facts', () => {
 
     // Попадание на вторую страницу выше подтверждает, что курсорная
     // пагинация работает на полной фикстуре, а не на паре игрушечных строк.
+
+    await page
+      .getByRole('navigation', { name: 'Разделы компании' })
+      .getByRole('link', { name: 'Прогноз и факт по SKU' })
+      .click()
+    await page.getByRole('textbox', { name: 'Найти SKU' }).fill('100002')
+    await page.getByRole('button', { name: 'Найти' }).click()
+    await page.getByRole('button', { name: /SKU 100002/ }).click()
+
+    await expect(page).toHaveURL(
+      /sku-forecast-fact\?month=\d{4}-\d{2}&sku=100002|sku-forecast-fact\?sku=100002&month=\d{4}-\d{2}/,
+    )
+    const forecastTable = page.getByRole('table', {
+      name: 'Прогноз и факт по дням заказа',
+    })
+    await expect(forecastTable).toBeVisible()
+    await expect(
+      forecastTable.getByRole('columnheader', { name: 'Заказано, ₽ до СПП' }),
+    ).toBeVisible()
+    await expect(
+      forecastTable.getByRole('columnheader', {
+        name: 'Факт выручки, ₽ до СПП',
+      }),
+    ).toBeVisible()
+
+    const currentUrl = page.url()
+    await page.getByRole('button', { name: 'Предыдущий месяц' }).click()
+    await expect(page).not.toHaveURL(currentUrl)
+    await expect(forecastTable).toBeVisible()
+    await page.reload()
+    await expect(forecastTable).toBeVisible()
+    await page.getByRole('button', { name: 'Следующий месяц' }).click()
+    await expect(page).toHaveURL(currentUrl)
   })
 
   test('сайдбар переносит между разделами компании', async ({ page }) => {

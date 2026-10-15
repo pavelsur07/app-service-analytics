@@ -24,9 +24,10 @@ final readonly class BuildBuyoutDailySeriesAction
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         \DateTimeImmutable $asOf,
+        bool $withMoney = false,
     ): array {
-        $read = function (Connection $connection) use ($companyId, $marketplaceSku, $from, $to, $asOf): array {
-            $query = $this->query->build($companyId, $marketplaceSku, $from, $to, $asOf);
+        $read = function (Connection $connection) use ($companyId, $marketplaceSku, $from, $to, $asOf, $withMoney): array {
+            $query = $this->query->build($companyId, $marketplaceSku, $from, $to, $asOf, withMoney: $withMoney);
             $rows = $connection->fetchAllAssociative(
                 $query->getSQL(),
                 $query->getParameters(),

@@ -27,6 +27,8 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Index(name: 'idx_sales_fact_raw_document_id', columns: ['raw_document_id'])]
 #[ORM\Index(name: 'idx_sales_fact_posting', columns: ['company_id', 'marketplace_account_id', 'posting_number'])]
 #[ORM\Index(name: 'idx_sales_fact_order_sku', columns: ['company_id', 'marketplace_account_id', 'order_number', 'marketplace_sku'])]
+// Тип GIN и gin_trgm_ops задаёт миграция; ORM фиксирует наличие индекса для schema:validate.
+#[ORM\Index(name: 'idx_sales_fact_company_sku_trgm', columns: ['company_id', 'marketplace_sku'])]
 class SalesFact
 {
     #[ORM\Id]

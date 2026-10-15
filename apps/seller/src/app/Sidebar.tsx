@@ -11,6 +11,7 @@ import {
   Truck,
   Warehouse,
   CalendarCheck,
+  ChartNoAxesCombined,
 } from 'lucide-react'
 import { NavLink } from 'react-router'
 
@@ -44,6 +45,11 @@ const ITEMS = [
     to: 'redemption?days=30&sort=ordered&direction=desc',
     label: 'Выкуп',
     icon: PackageCheck,
+  },
+  {
+    to: 'sku-forecast-fact',
+    label: 'Прогноз и факт по SKU',
+    icon: ChartNoAxesCombined,
   },
   { to: 'localization?days=30', label: 'Локализация', icon: MapPinned },
   { to: 'delivery-speed?days=30', label: 'Доставка', icon: Truck },

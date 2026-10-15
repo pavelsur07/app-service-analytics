@@ -102,6 +102,16 @@ final class BuyoutQueryPlanTest extends KernelTestCase
         $this->assertTenantPredicateIsPushedIntoBaseScans($plan);
     }
 
+    public function testMonetaryDailyQueryKeepsTenantPushdownWithBoundedRows(): void
+    {
+        $query = $this->reportQuery('daily_money');
+        self::assertSame(31, $query->getMaxResults());
+        $plan = $this->explainQuery($query);
+
+        self::assertSame([], $this->repeatedBaseTableScans($plan), self::planMessage($plan));
+        $this->assertTenantPredicateIsPushedIntoBaseScans($plan);
+    }
+
     private function seedProductionShapedCohort(): void
     {
         $sales = [];
@@ -234,6 +244,14 @@ final class BuyoutQueryPlanTest extends KernelTestCase
                 $from,
                 $to,
                 $asOf,
+            ),
+            'daily_money' => (new BuyoutDailyQuery($connection))->build(
+                $this->companyId->toRfc4122(),
+                'PLAN-SKU-0',
+                $from,
+                $to,
+                $asOf,
+                withMoney: true,
             ),
             // Продажи засеяны «сейчас»: дата «на» после загрузки, чтобы
             // функция действительно читала когорту, а не пустой срез.
