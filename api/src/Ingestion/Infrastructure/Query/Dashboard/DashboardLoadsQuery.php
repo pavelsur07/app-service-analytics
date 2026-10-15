@@ -74,24 +74,44 @@ final readonly class DashboardLoadsQuery
 
     /**
      * Полон ли период: каждое подключение, жившее в нём, загрузило оба
-     * источника с первого дня периода по последний. Подключение «жило»,
-     * если загружалось после начала периода и начало загружаться до его
-     * конца: кабинет, остановленный раньше периода, в нём просто отсутствует,
-     * а не делает его неполным.
+     * источника за каждый его день. Загрузка дневная у обоих (period
+     * raw-документа — день выгрузки), поэтому день считается загруженным,
+     * когда за него есть документ, — пропуск внутри периода виден так же,
+     * как не загруженные начало и конец.
+     *
+     * Подключение «жило» в периоде, если его загрузки начались не позже
+     * конца периода и продолжались после его начала: кабинет, отключённый
+     * раньше, в периоде просто отсутствует и неполным его не делает.
+     * Кабинет, сломавшийся раньше периода и не починенный, отсюда
+     * неотличим от отключённого — о нём кричит контроль свежести
+     * (`NotifyStaleAccountsAction`), а не главная.
      */
     public function complete(string $companyId, \DateTimeImmutable $from, \DateTimeImmutable $to): QueryBuilder
     {
+        $days = <<<'SQL'
+            (
+                SELECT marketplace_account_id,
+                       MIN(period) AS first_load,
+                       MAX(period) AS last_load,
+                       COUNT(DISTINCT period) FILTER (WHERE report_type = :salesReportType
+                           AND period >= :from AND period <= :to) AS sales_days,
+                       COUNT(DISTINCT period) FILTER (WHERE report_type = :accrualsReportType
+                           AND period >= :from AND period <= :to) AS accruals_days
+                FROM marketplace_raw_document
+                WHERE company_id = :companyId
+                  AND report_type IN (:salesReportType, :accrualsReportType)
+                GROUP BY marketplace_account_id
+            ) AS loads
+            SQL;
+
         return $this->withParameters($companyId)
-            ->select(
-                'COUNT(*) > 0 AND bool_and(COALESCE('
-                .'sales_first <= :from AND accruals_first <= :from'
-                .' AND sales_last >= :to AND accruals_last >= :to, FALSE)) AS complete',
-            )
-            ->from(self::LOADS)
-            ->where('GREATEST(sales_last, accruals_last) >= :from')
-            ->andWhere('LEAST(sales_first, accruals_first) <= :to')
+            ->select('COUNT(*) > 0 AND bool_and(sales_days = :days AND accruals_days = :days) AS complete')
+            ->from($days)
+            ->where('first_load <= :to')
+            ->andWhere('last_load >= :from')
             ->setParameter('from', $from->format('Y-m-d'))
-            ->setParameter('to', $to->format('Y-m-d'));
+            ->setParameter('to', $to->format('Y-m-d'))
+            ->setParameter('days', (int) $from->diff($to)->days + 1);
     }
 
     /**

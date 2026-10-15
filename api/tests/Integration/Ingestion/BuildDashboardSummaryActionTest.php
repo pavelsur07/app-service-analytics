@@ -242,11 +242,27 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         self::assertTrue($summary->current->dataComplete);
     }
 
+    public function testDayMissingFromBothSourcesInsideThePeriodMakesItIncomplete(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        // 3 августа синхронизация не прошла вовсе: ни отправлений,
+        // ни начислений — границы загружены, середина нет.
+        $this->loaded($container, $company, '2026-07-25', '2026-08-14', self::ACCOUNT_ID, ['2026-08-03']);
+
+        $summary = $this->summary($container, $company);
+
+        self::assertSame(0, $summary->comparison->daysWithoutAccruals);
+        self::assertFalse($summary->comparison->dataComplete);
+        self::assertTrue($summary->current->dataComplete);
+        self::assertNull($summary->changes->ordersAmountBps);
+    }
+
     public function testDayWithSalesButWithoutAccrualsMakesThePeriodIncomplete(): void
     {
         $container = $this->bootedContainer();
         $company = $this->company($container);
-        $this->loaded($container, $company, '2026-07-01');
+        $this->loaded($container, $company, '2026-07-25', '2026-08-14', self::ACCOUNT_ID, ['2026-08-10']);
         // 10 августа продажи загружены, а начисления — нет.
         $this->rawDocument($container, $company, MarketplaceReportType::OzonPostingFboList, '2026-08-10');
 
@@ -397,12 +413,21 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
             ->persistWith($repository);
     }
 
-    /** Обе выгрузки подключения загружены с первого дня по последний. */
-    private function loaded(ContainerInterface $container, Company $company, string $first, string $last = '2026-08-14', string $account = self::ACCOUNT_ID): void
+    /**
+     * Обе дневные выгрузки подключения загружены за каждый день с первого
+     * по последний, кроме перечисленных пропусков.
+     *
+     * @param list<string> $gaps
+     */
+    private function loaded(ContainerInterface $container, Company $company, string $first, string $last = '2026-08-14', string $account = self::ACCOUNT_ID, array $gaps = []): void
     {
-        foreach ([MarketplaceReportType::OzonPostingFboList, MarketplaceReportType::OzonAccrualByDay] as $reportType) {
-            $this->rawDocument($container, $company, $reportType, $first, $account);
-            $this->rawDocument($container, $company, $reportType, $last, $account);
+        for ($day = new \DateTimeImmutable($first); $day <= new \DateTimeImmutable($last); $day = $day->modify('+1 day')) {
+            if (\in_array($day->format('Y-m-d'), $gaps, true)) {
+                continue;
+            }
+            foreach ([MarketplaceReportType::OzonPostingFboList, MarketplaceReportType::OzonAccrualByDay] as $reportType) {
+                $this->rawDocument($container, $company, $reportType, $day->format('Y-m-d'), $account);
+            }
         }
     }
 
