@@ -119,10 +119,7 @@ export function PeriodBar({
 
       {preset === 'custom' ? (
         <div className="flex items-center gap-2">
-          {/* key сбрасывает черновик, когда дата пришла извне
-              (обрезка, переворот, другой пресет). */}
           <DateField
-            key={`from-${range.from}`}
             label="С"
             max={maxDate}
             onCommit={(from) => {
@@ -131,7 +128,6 @@ export function PeriodBar({
             value={range.from}
           />
           <DateField
-            key={`to-${range.to}`}
             label="По"
             max={maxDate}
             onCommit={(to) => {
@@ -317,10 +313,22 @@ function DateField({
   onCommit: (date: string) => void
 }) {
   const [draft, setDraft] = useState(value)
+  const [shown, setShown] = useState(value)
+  // Дата пришла извне (обрезка, переворот, другой пресет) — черновик
+  // догоняет её в том же рендере. Без перемонтирования поля: смена key
+  // сняла бы фокус с input, на котором стоит пользователь.
+  if (shown !== value) {
+    setShown(value)
+    setDraft(value)
+  }
+
   const commit = (): void => {
     if (isValidDate(draft) && draft !== value) {
       onCommit(draft)
     }
+    // Применённая дата могла обрезаться до той же, что была: тогда
+    // value не меняется, и поле вернётся к действующей дате здесь.
+    setDraft(value)
   }
 
   return (

@@ -7,6 +7,7 @@ import { ApiError } from '../../../api/ApiError'
 import { formatBasisPoints } from '../../../shared/lib/formatBasisPoints'
 import { useCurrentUser } from '../../../shared/model/useCurrentUser'
 import {
+  clampCustom,
   comparisonFor,
   dayCount,
   type PeriodSelection,
@@ -130,7 +131,13 @@ export function DashboardPage() {
           select({ ...selection, compare })
         }}
         onCustom={(custom) => {
-          select({ ...selection, preset: 'custom', custom })
+          // В адрес и настройки — та дата, которую примет API, а не
+          // набранная: иначе ссылка разошлась бы с подписью диапазона.
+          select({
+            ...selection,
+            preset: 'custom',
+            custom: clampCustom(custom, today),
+          })
         }}
         onHidden={setHidden}
         onPreset={(preset) => {
