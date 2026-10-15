@@ -1,9 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { FormEventHandler } from 'react'
-import {
-  InvisibleSmartCaptcha,
-  useSmartCaptchaLoader,
-} from '@yandex/smart-captcha'
+import { InvisibleSmartCaptcha } from '@yandex/smart-captcha'
 import { CircleAlert } from 'lucide-react'
 import { Controller, useForm } from 'react-hook-form'
 import { Link, useNavigate } from 'react-router'
@@ -15,31 +12,20 @@ import {
   StatusPanel,
 } from '../../../../../../packages/ui/src'
 import {
-  acceptCaptcha,
-  failCaptcha,
-  failCaptchaLoader,
-  resetCaptcha,
-  retryCaptcha,
-  showChallenge,
-  startCaptcha,
-} from '../lib/captchaFlow'
-import type { CaptchaFlowState } from '../lib/captchaFlow'
-import { scheduleCaptchaLoaderTimeout } from '../lib/captchaLoaderGuard'
-import {
   COMPANY_NAME_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   toRegistrationPayload,
 } from '../lib/registrationPayload'
-import type { RegistrationFormValues } from '../lib/registrationPayload'
+import type {
+  RegistrationFormValues,
+  RegistrationPayload,
+} from '../lib/registrationPayload'
 import { signupFailure } from '../lib/signupFailure'
+import { useInvisibleCaptcha } from '../model/useInvisibleCaptcha'
 import { useSignUp } from '../model/useSignUp'
 import { LegalConsentField } from './LegalConsentField'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const CAPTCHA_RETRY_MESSAGE =
-  'Не удалось подтвердить проверку. Попробуйте ещё раз'
-const CAPTCHA_UNAVAILABLE_MESSAGE =
-  'Проверка временно недоступна. Попробуйте позже'
 
 const LINK_CLASS =
   'font-medium text-accent-default underline hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-default'
@@ -47,23 +33,7 @@ const LINK_CLASS =
 export function SignUpPage() {
   const navigate = useNavigate()
   const signUp = useSignUp()
-  const [captchaRevision, setCaptchaRevision] = useState(0)
-  const [flow, setFlow] = useState<CaptchaFlowState>(resetCaptcha())
   const [failureMessage, setFailureMessage] = useState<string | null>(null)
-  const flowRef = useRef<CaptchaFlowState>(flow)
-
-  const failProviderLoad = useCallback(() => {
-    const current = flowRef.current
-    const next = failCaptchaLoader(current, CAPTCHA_UNAVAILABLE_MESSAGE)
-
-    if (next === current) {
-      return
-    }
-
-    flowRef.current = next
-    setFlow(next)
-  }, [])
-  const smartCaptcha = useSmartCaptchaLoader(undefined, failProviderLoad)
   const {
     control,
     register,
@@ -73,92 +43,34 @@ export function SignUpPage() {
   } = useForm<RegistrationFormValues>({
     defaultValues: { legalConsent: false },
   })
+  const captcha = useInvisibleCaptcha<RegistrationPayload>({
+    submit: (request, captchaToken) => {
+      signUp.mutate(
+        { request, captchaToken },
+        {
+          onSuccess: () => {
+            void navigate('/sign-up/email-sent', { replace: true })
+          },
+          onError: (error) => {
+            const failure = signupFailure(error)
 
-  useEffect(() => {
-    if (flow.status !== 'checking' || smartCaptcha !== undefined) {
-      return
-    }
+            if (failure.kind === 'field') {
+              setError(failure.field, { message: failure.message })
+              return
+            }
 
-    return scheduleCaptchaLoaderTimeout(failProviderLoad)
-  }, [failProviderLoad, flow.status, smartCaptcha])
-
-  const updateFlow = (next: CaptchaFlowState) => {
-    flowRef.current = next
-    setFlow(next)
-  }
-
-  const transition = (
-    reducer: (current: CaptchaFlowState) => CaptchaFlowState,
-  ) => {
-    updateFlow(reducer(flowRef.current))
-  }
-
-  const resetWidget = () => {
-    setCaptchaRevision((revision) => revision + 1)
-    updateFlow(resetCaptcha())
-  }
-
-  const failAndRemount = (message: string) => {
-    const current = flowRef.current
-    const next = failCaptcha(current, message)
-
-    if (next === current) {
-      return
-    }
-
-    setCaptchaRevision((revision) => revision + 1)
-    updateFlow(next)
-  }
-
-  const failPendingProviderLoad = () => {
-    const current = flowRef.current
-
-    if (current.status !== 'checking') {
-      return
-    }
-
-    const next = failCaptchaLoader(current, CAPTCHA_UNAVAILABLE_MESSAGE)
-
-    setCaptchaRevision((revision) => revision + 1)
-    updateFlow(next)
-  }
-
-  const submitWithCaptcha = (captchaToken: string) => {
-    const current = flowRef.current
-    const next = acceptCaptcha(current, captchaToken)
-
-    if (next === current || next.status !== 'submitting') {
-      return
-    }
-
-    updateFlow(next)
-    signUp.mutate(
-      { request: next.request, captchaToken },
-      {
-        onSuccess: () => {
-          void navigate('/sign-up/email-sent', { replace: true })
+            setFailureMessage(failure.message)
+          },
+          onSettled: () => {
+            captcha.settle()
+          },
         },
-        onError: (error) => {
-          const failure = signupFailure(error)
-
-          if (failure.kind === 'field') {
-            setError(failure.field, { message: failure.message })
-            return
-          }
-
-          setFailureMessage(failure.message)
-        },
-        onSettled: resetWidget,
-      },
-    )
-  }
+      )
+    },
+  })
 
   const onSubmit: FormEventHandler<HTMLFormElement> = (event) => {
-    const initialRetry = retryCaptcha(flowRef.current)
-
-    if (initialRetry.action === 'reload-page') {
-      event.preventDefault()
-      window.location.reload()
+    if (!captcha.beforeSubmit(event)) {
       return
     }
 
@@ -173,19 +85,12 @@ export function SignUpPage() {
       }
 
       setFailureMessage(null)
-      const retry = retryCaptcha(flowRef.current)
-
-      if (retry.action === 'reload-page') {
-        window.location.reload()
-        return
-      }
-
-      updateFlow(startCaptcha(retry.state, request))
+      captcha.begin(request)
     })(event)
   }
 
-  const busy = flow.status === 'checking' || flow.status === 'submitting'
-  const shownFailure = flow.status === 'failed' ? flow.message : failureMessage
+  const busy = captcha.busy
+  const shownFailure = captcha.failureMessage ?? failureMessage
 
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
@@ -270,32 +175,15 @@ export function SignUpPage() {
               </Card>
             )}
 
-            {smartCaptcha === undefined ? null : (
+            {captcha.widget === null ? null : (
               <InvisibleSmartCaptcha
-                key={captchaRevision}
-                sitekey={import.meta.env.VITE_SMARTCAPTCHA_CLIENT_KEY}
-                visible={flow.status === 'checking'}
-                onChallengeVisible={() => {
-                  transition(showChallenge)
-                }}
-                onChallengeHidden={() => {
-                  failAndRemount(CAPTCHA_RETRY_MESSAGE)
-                }}
-                onNetworkError={() => {
-                  failAndRemount(CAPTCHA_UNAVAILABLE_MESSAGE)
-                }}
-                onTokenExpired={() => {
-                  failAndRemount(CAPTCHA_RETRY_MESSAGE)
-                }}
-                onJavascriptError={failPendingProviderLoad}
-                onSuccess={submitWithCaptcha}
+                key={captcha.widget.key}
+                {...captcha.widget.props}
               />
             )}
 
             <Button type="submit" loading={busy}>
-              {flow.status === 'failed'
-                ? 'Попробовать ещё раз'
-                : 'Создать аккаунт'}
+              {captcha.failed ? 'Попробовать ещё раз' : 'Создать аккаунт'}
             </Button>
             <p className="text-center text-sm text-text-muted">
               Уже есть аккаунт?{' '}
