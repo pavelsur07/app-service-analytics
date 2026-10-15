@@ -603,6 +603,7 @@ apps/seller/
 │       │   │   ├── passwordResetToken.ts то же для ссылки сброса пароля
 │       │   │   └── passwordResetFailure.ts разбор ошибок двух шагов сброса
 │       │   ├── model/                   auth-запросы (useSignUp, useConfirmEmail, ...)
+│       │   │                            и useInvisibleCaptcha — капча публичных форм
 │       │   └── ui/
 │       │       ├── SignUpPage.tsx
 │       │       ├── EmailSentPage.tsx
