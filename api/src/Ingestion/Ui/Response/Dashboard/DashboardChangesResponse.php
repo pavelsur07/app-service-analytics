@@ -10,7 +10,7 @@ use App\Ingestion\Application\Dashboard\DashboardChanges;
  * Изменения к периоду сравнения, в базисных пунктах. `*Bps` — относительное
  * изменение (1250 = +12,5 %), `*PointsBps` — разница процентов
  * (150 = +1,5 п.п.). NULL — сравнивать не с чем: в периоде сравнения ноль
- * или данные начинаются позже его начала.
+ * или один из периодов загружен не полностью (`dataComplete`).
  */
 final readonly class DashboardChangesResponse
 {

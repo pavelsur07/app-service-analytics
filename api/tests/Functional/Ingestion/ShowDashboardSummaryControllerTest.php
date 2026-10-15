@@ -91,6 +91,8 @@ final class ShowDashboardSummaryControllerTest extends WebTestCase
                 // Пересечение: общие дни молча ушли бы в выбранный период.
                 '?from=2026-08-08&to=2026-08-14&compareFrom=2026-08-01&compareTo=2026-08-08',
                 '?from=2026-08-08&to=2026-08-14&compareFrom=2026-08-07&compareTo=2026-08-01',
+                // Год 0000 PHP разбирает, а PostgreSQL — нет: 422, не 500.
+                '?from=2026-08-08&to=2026-08-14&compareFrom=0000-01-01&compareTo=0000-01-07',
             ],
         ];
 

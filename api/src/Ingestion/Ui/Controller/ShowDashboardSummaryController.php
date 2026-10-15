@@ -40,6 +40,13 @@ final class ShowDashboardSummaryController
 
     private const string EARLIEST = '2020-01-01';
 
+    /**
+     * Нижняя граница сравнения: «год назад» от периода 2020-го законно
+     * уходит раньше EARLIEST, но не в год 0000 — его PHP разбирает,
+     * а PostgreSQL отвергает, и вместо 422 вышел бы 500.
+     */
+    private const string COMPARE_EARLIEST = '2000-01-01';
+
     public function __construct(private readonly BuildDashboardSummaryAction $buildSummary)
     {
     }
@@ -66,7 +73,7 @@ final class ShowDashboardSummaryController
 
         $compareFrom = self::date($request, 'compareFrom');
         $compareTo = self::date($request, 'compareTo');
-        if (null === $compareFrom || null === $compareTo || !self::validRange($compareFrom, $compareTo, $yesterday) || $compareTo >= $from) {
+        if (null === $compareFrom || null === $compareTo || !self::validRange($compareFrom, $compareTo, $yesterday) || $compareTo >= $from || $compareFrom->format('Y-m-d') < self::COMPARE_EARLIEST) {
             return self::invalid('invalid_comparison', 'compareFrom and compareTo must be a valid period of up to 366 days that ends before from.');
         }
 
