@@ -123,7 +123,7 @@ final class DataCoverageControllerTest extends WebTestCase
         $other = $this->account($company, advertising: false);
         /** @var MarketplaceDayLoadRepository $dayLoads */
         $dayLoads = static::getContainer()->get(MarketplaceDayLoadRepository::class);
-        foreach (['2026-08-05', '2026-08-06'] as $day) {
+        foreach (['2026-08-05', '2026-08-06', '2026-08-07', '2026-08-08'] as $day) {
             MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
                 ->withCompanyId($company->id())
                 ->withMarketplaceAccountId($account->id())
@@ -132,20 +132,25 @@ final class DataCoverageControllerTest extends WebTestCase
                 ->persistWith(MarketplaceRawDocumentBuilder::repository(static::getContainer()));
         }
         $mark = MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
-            ->withReportType(MarketplaceReportType::OzonAccrualByDay)
-            ->withPeriod(new \DateTimeImmutable('2026-08-05'))
-            ->failed();
-        // Raw за 5 августа есть, но последний прогон отказал (ADR-038):
-        // в очереди failed ничего нет, отметка — единственный след.
-        $mark->withCompanyId($company->id())->withMarketplaceAccountId($account->id())->persistWith($dayLoads);
-        // Отказ того же дня другого кабинета и чужой компании — не наш.
-        $mark->withCompanyId($company->id())->withMarketplaceAccountId($other->id())->persistWith($dayLoads);
-        $mark->withCompanyId(Uuid::v7())->withMarketplaceAccountId($account->id())->withPeriod(new \DateTimeImmutable('2026-08-06'))->persistWith($dayLoads);
+            ->withCompanyId($company->id())
+            ->withMarketplaceAccountId($account->id())
+            ->withReportType(MarketplaceReportType::OzonAccrualByDay);
+
+        // 5-е: raw есть, но последний прогон отказал (ADR-038) — в очереди
+        // failed ничего нет, отметка — единственный след.
+        $mark->withPeriod(new \DateTimeImmutable('2026-08-05'))->failed()->persistWith($dayLoads);
+        // 6-е: отказ другого кабинета той же компании — не наш.
+        $mark->withMarketplaceAccountId($other->id())->withPeriod(new \DateTimeImmutable('2026-08-06'))->failed()->persistWith($dayLoads);
+        // 7-е: отказ чужой компании по тому же кабинету — не наш.
+        $mark->withCompanyId(Uuid::v7())->withPeriod(new \DateTimeImmutable('2026-08-07'))->failed()->persistWith($dayLoads);
+        // 8-е: отказ, затем успешный повтор — отказ снят.
+        $retried = $mark->withPeriod(new \DateTimeImmutable('2026-08-08'));
+        $retried->failed()->persistWith($dayLoads);
+        $retried->completed()->persistWith($dayLoads);
 
         $statuses = $this->coverage($client, $company, $account, '2026-08')['rows'][1]['statuses'];
 
-        self::assertSame('failed', $statuses[4]);
-        self::assertSame('loaded', $statuses[5]);
+        self::assertSame(['failed', 'loaded', 'loaded', 'loaded'], \array_slice($statuses, 4, 4));
     }
 
     public function testFailedLoadWithBase64BodyIsStillShown(): void
