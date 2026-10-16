@@ -10,7 +10,8 @@ use Doctrine\DBAL\Query\QueryBuilder;
 use Doctrine\DBAL\Types\Types;
 
 /**
- * Подключения всех компаний, по которым raw-слой пополнялся недавно.
+ * Подключения всех компаний, выгрузки которых недавно загрузились
+ * успешно — по отметке загрузки дня (ADR-038).
  *
  * Межарендаторное чтение для операционной системной задачи (CLAUDE.md §1):
  * контроль свежести по определению спрашивает «а у всех ли идут данные»,
@@ -21,17 +22,27 @@ use Doctrine\DBAL\Types\Types;
  * имеет широкий доступ к IngestionInfrastructure, и без выделения любой
  * контроллер мог бы прочитать подключения чужих компаний.
  *
- * Свежесть меряется raw-слоем, а не фактами. У продавца бывает день
+ * Свежесть меряется загрузкой, а не фактами. У продавца бывает день
  * без единого заказа — фактов не появится, и «нет новых фактов» назвало бы
- * исправную синхронизацию сломанной. Raw-документ приходит каждый день
- * при любом объёме продаж: period входит в естественный ключ (ADR-006),
- * поэтому новый день даёт новую строку даже при побайтово том же ответе
- * площадки. Пустой ответ — тоже ответ, и он доказывает, что связь с Ozon
- * есть, ключи живы и воркер работает.
+ * исправную синхронизацию сломанной. Признак — `completed_at` отметки:
+ * его ставит каждый прогон, записавший все страницы, при любом объёме
+ * продаж, и пустой ответ площадки — тоже успех: связь с Ozon есть, ключи
+ * живы, воркер работает. Raw-документа для этого мало: он сохраняется
+ * до разбора, и выгрузка, которая каждый тик получает ответ и отказывает
+ * на разборе, по raw выглядела бы живой (ADR-038).
  *
- * Тип отчёта в условии обязателен. Raw-слой общий для всех выгрузок
+ * Успех засчитывается только недавнему дню без отказа — `period` не
+ * раньше дня начала окна, `failed_at` пуст. Отказ сохраняет время
+ * прошлого успеха (ADR-038), и день, загрузившийся пустым в полночь
+ * и отказывающий с первого же неразборного начисления, иначе выглядел бы
+ * свежим сутки за сутками. Окно пересчёта каждый тик успешно перезагружает старые
+ * дни, и по успеху любого дня выгрузка, у которой новый день отказывает
+ * каждый тик, выглядела бы свежей бесконечно — с данными, которые
+ * перестали поступать.
+ *
+ * Тип отчёта в условии обязателен. Отметки общие для всех выгрузок
  * подключения, и без фильтра исправная синхронизация каталога — она идёт
- * тем же тиком — обновляла бы отметку за вставшую синхронизацию продаж.
+ * тем же тиком — обновляла бы свежесть за вставшую синхронизацию продаж.
  * Сторож молчал бы именно тогда, когда должен кричать.
  *
  * Свежесть считается отдельно по каждому типу, а не одной отметкой
@@ -57,6 +68,8 @@ final readonly class RecentlyIngestedAccountsQuery
      */
     public const int MAX_ACCOUNTS = 200;
 
+    private const string TIMEZONE = 'Europe/Moscow';
+
     public function __construct(
         private Connection $connection,
     ) {
@@ -69,17 +82,21 @@ final readonly class RecentlyIngestedAccountsQuery
     {
         return $this->connection->createQueryBuilder()
             ->select('company_id', 'marketplace_account_id', 'report_type')
-            ->from('marketplace_raw_document')
-            // Индекс (received_at, company_id, marketplace_account_id,
+            ->from('marketplace_day_load')
+            // Индекс (completed_at, company_id, marketplace_account_id,
             // report_type) — порядок столбцов ради index-only scan:
             // диапазон по времени ведущим столбцом, а фильтр по типу
             // и группировка забирают остальные три прямо из индекса,
             // не заглядывая в кучу. Без него сторож раз в час читал бы
-            // всю таблицу raw-документов, а она растёт с каждым днём
-            // работы каждого подключения.
-            ->where('received_at >= :since')
+            // всю таблицу отметок, а она растёт с каждым днём работы
+            // каждого подключения.
+            ->where('completed_at >= :since')
             ->andWhere('report_type IN (:reportTypes)')
+            ->andWhere('period >= :sinceDay')
+            ->andWhere('failed_at IS NULL')
             ->setParameter('since', $since, Types::DATETIME_IMMUTABLE)
+            // День — по часам площадки, как и period отметки.
+            ->setParameter('sinceDay', $since->setTimezone(new \DateTimeZone(self::TIMEZONE))->format('Y-m-d'))
             ->setParameter('reportTypes', $reportTypes, ArrayParameterType::STRING)
             ->groupBy('company_id')
             ->addGroupBy('marketplace_account_id')
@@ -116,7 +133,7 @@ final readonly class RecentlyIngestedAccountsQuery
     private static function stringValue(mixed $value): string
     {
         if (!\is_string($value)) {
-            throw new \UnexpectedValueException('Expected a string value in a raw document row.');
+            throw new \UnexpectedValueException('Expected a string value in a day load row.');
         }
 
         return $value;

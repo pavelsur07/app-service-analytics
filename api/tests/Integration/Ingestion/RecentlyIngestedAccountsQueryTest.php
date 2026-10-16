@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Ingestion;
 
+use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
-use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
+use App\Tests\Support\Builder\MarketplaceDayLoadBuilder;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -33,7 +34,7 @@ final class RecentlyIngestedAccountsQueryTest extends KernelTestCase
 
         $companyId = Uuid::v7();
         $accountId = Uuid::v7();
-        // Документ есть, но старый: синхронизация когда-то шла и встала.
+        // Успех есть, но старый: синхронизация когда-то шла и встала.
         // Это и есть случай, ради которого существует оповещение, —
         // подключение живое, экраны рисуются, данные вчерашние.
         $this->document($companyId, $accountId, new \DateTimeImmutable('-3 days'));
@@ -95,15 +96,21 @@ final class RecentlyIngestedAccountsQueryTest extends KernelTestCase
         );
     }
 
-    private function document(Uuid $companyId, Uuid $accountId, \DateTimeImmutable $receivedAt): void
+    /**
+     * Успешная загрузка продаж в момент `$at` — отметка дня (ADR-038).
+     */
+    private function document(Uuid $companyId, Uuid $accountId, \DateTimeImmutable $at): void
     {
-        $repository = MarketplaceRawDocumentBuilder::repository(self::getContainer());
+        /** @var MarketplaceDayLoadRepository $dayLoads */
+        $dayLoads = self::getContainer()->get(MarketplaceDayLoadRepository::class);
 
-        MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
+        MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
             ->withCompanyId($companyId)
             ->withMarketplaceAccountId($accountId)
-            ->withReceivedAt($receivedAt)
-            ->persistWith($repository);
+            ->withReportType(MarketplaceReportType::OzonPostingFboList)
+            ->withPeriod($at)
+            ->withAt($at)
+            ->persistWith($dayLoads);
     }
 
     private function connection(): Connection
