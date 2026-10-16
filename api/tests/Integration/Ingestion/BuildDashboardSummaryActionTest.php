@@ -9,12 +9,14 @@ use App\Identity\Domain\CompanyRepository;
 use App\Ingestion\Application\Buyout\BuildBuyoutRateReportAction;
 use App\Ingestion\Application\Dashboard\BuildDashboardSummaryAction;
 use App\Ingestion\Application\Dashboard\DashboardSummary;
+use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonFeeTypeNames;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\CompanyBuilder;
+use App\Tests\Support\Builder\MarketplaceDayLoadBuilder;
 use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
@@ -77,6 +79,23 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         self::assertSame(1, $metrics->returnsQuantity);
         self::assertSame(240_200, $metrics->returnsAmountMinor);
         self::assertSame(0, $metrics->advertisingMinor);
+    }
+
+    public function testRevenueRowOfSeveralUnitsCountsEveryUnit(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+
+        // Одна строка выручки на три штуки (ADR-038) — три продажи,
+        // а не одна; цена продажи — на три штуки.
+        $this->accrual($container, $company, '2026-08-09', OzonFeeTypeNames::REVENUE, 300_000, 'P-1', 3);
+        $this->accrual($container, $company, '2026-08-09', OzonFeeTypeNames::PAY_PER_CLICK, -30_000, '');
+
+        $metrics = $this->summary($container, $company)->current->metrics;
+
+        self::assertSame(3, $metrics->salesQuantity);
+        self::assertSame(300_000, $metrics->salesAmountMinor);
+        self::assertSame(10_000, $metrics->costPerSaleMinor);
     }
 
     public function testAdvertisingIsEveryPromotionTypeAndNotInstalments(): void
@@ -281,6 +300,65 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         self::assertNull($summary->changes->ordersAmountBps);
     }
 
+    public function testDayWhoseLastLoadFailedMakesThePeriodIncompleteUntilARepeat(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->loaded($container, $company, '2026-07-25');
+        /** @var MarketplaceDayLoadRepository $dayLoads */
+        $dayLoads = $container->get(MarketplaceDayLoadRepository::class);
+        $mark = MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
+            ->withCompanyId($company->id())
+            ->withMarketplaceAccountId(Uuid::fromString(self::ACCOUNT_ID))
+            ->withReportType(MarketplaceReportType::OzonAccrualByDay)
+            ->withPeriod(new \DateTimeImmutable('2026-08-10'));
+
+        // Отказ того же дня у другой компании — её отметка, не наша.
+        $mark->withCompanyId(Uuid::v7())->failed('чужой отказ')->persistWith($dayLoads);
+        self::assertTrue($this->summary($container, $company)->current->dataComplete);
+
+        // Raw за 10 августа есть, но прогон начислений отказал посреди
+        // страниц — записано не всё (ADR-038).
+        $mark->failed()->persistWith($dayLoads);
+
+        $summary = $this->summary($container, $company);
+        self::assertSame(1, $summary->current->daysWithoutAccruals);
+        self::assertFalse($summary->current->dataComplete);
+        self::assertNull($summary->changes->ordersAmountBps);
+
+        $mark->completed()->persistWith($dayLoads);
+
+        $summary = $this->summary($container, $company);
+        self::assertSame(0, $summary->current->daysWithoutAccruals);
+        self::assertTrue($summary->current->dataComplete);
+    }
+
+    public function testRevokedKeyDayStaysADayWithoutAccruals(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->loaded($container, $company, '2026-07-25');
+        /** @var MarketplaceDayLoadRepository $dayLoads */
+        $dayLoads = $container->get(MarketplaceDayLoadRepository::class);
+
+        // Отзыв ключа ставит отказ обеим выгрузкам дня. День продаж
+        // от этого днём продаж быть не перестаёт, и неполные начисления
+        // за него обязаны остаться видны (ADR-038).
+        foreach ([MarketplaceReportType::OzonPostingFboList, MarketplaceReportType::OzonAccrualByDay] as $reportType) {
+            MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
+                ->withCompanyId($company->id())
+                ->withMarketplaceAccountId(Uuid::fromString(self::ACCOUNT_ID))
+                ->withReportType($reportType)
+                ->withPeriod(new \DateTimeImmutable('2026-08-10'))
+                ->failed('Подключение отозвано')
+                ->persistWith($dayLoads);
+        }
+
+        $summary = $this->summary($container, $company);
+        self::assertSame(1, $summary->current->daysWithoutAccruals);
+        self::assertFalse($summary->current->dataComplete);
+    }
+
     public function testDaysCoverEveryDateOfEachPeriodWithZeros(): void
     {
         $container = $this->bootedContainer();
@@ -388,7 +466,7 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
             ->persistWith($sales);
     }
 
-    private function accrual(ContainerInterface $container, Company $company, string $day, int $feeTypeId, int $amountMinor, string $unitNumber): void
+    private function accrual(ContainerInterface $container, Company $company, string $day, int $feeTypeId, int $amountMinor, string $unitNumber, int $quantity = 1): void
     {
         /** @var MarketplaceExpenseFactRepository $repository */
         $repository = $container->get(MarketplaceExpenseFactRepository::class);
@@ -401,6 +479,7 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
             ->withFeeTypeId($feeTypeId)
             ->withUnitNumber($unitNumber)
             ->withAmount(Money::ofMinor($amountMinor, 'RUB'))
+            ->withQuantity($quantity)
             ->persistWith($repository);
     }
 

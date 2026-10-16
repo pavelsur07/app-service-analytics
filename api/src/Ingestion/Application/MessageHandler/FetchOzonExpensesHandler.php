@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Ingestion\Application\MessageHandler;
 
 use App\Identity\Application\Facade\IdentityFacade;
+use App\Identity\Application\Facade\OzonSyncTarget;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
+use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceExpenseFactRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
@@ -34,6 +36,11 @@ use Symfony\Component\Uid\Uuid;
  *
  * Отказ авторизации переводит подключение в broken и уведомляет клиента
  * (ADR-007), как и остальные обработчики.
+ *
+ * Чем кончился прогон дня, пишет отметка загрузки (ADR-038): успех —
+ * после последней страницы, отказ — при любом исключении после начала
+ * дня и при отзыве ключа. Без неё день, отклонённый на второй странице,
+ * выглядел бы загруженным: raw за него есть.
  */
 #[AsMessageHandler]
 final readonly class FetchOzonExpensesHandler
@@ -52,6 +59,7 @@ final readonly class FetchOzonExpensesHandler
         private OzonAccrualByDayParser $parser,
         private MarketplaceRawDocumentRepository $rawDocuments,
         private MarketplaceExpenseFactRepository $expenses,
+        private MarketplaceDayLoadRepository $dayLoads,
     ) {
     }
 
@@ -66,6 +74,17 @@ final readonly class FetchOzonExpensesHandler
         $marketplaceAccountId = Uuid::fromString($target->marketplaceAccountId);
         $day = new \DateTimeImmutable($message->accrualDate);
 
+        try {
+            $this->loadDay($message, $target, $companyId, $marketplaceAccountId, $day);
+        } catch (\Throwable $failure) {
+            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonAccrualByDay, $day, new \DateTimeImmutable(), $failure->getMessage());
+
+            throw $failure;
+        }
+    }
+
+    private function loadDay(FetchOzonExpensesMessage $message, OzonSyncTarget $target, Uuid $companyId, Uuid $marketplaceAccountId, \DateTimeImmutable $day): void
+    {
         $lastId = '';
         $seenCursors = [];
 
@@ -79,6 +98,7 @@ final readonly class FetchOzonExpensesHandler
 
                 $this->brokenLogger->log($message->companyId, $message->marketplaceAccountId, 'expenses', $failure, $target->apiKey);
                 $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
+                $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonAccrualByDay, $day, new \DateTimeImmutable(), 'Подключение отозвано: '.$failure->getMessage());
 
                 return;
             }
@@ -95,6 +115,8 @@ final readonly class FetchOzonExpensesHandler
             $this->expenses->upsertAll($parsed['facts']);
 
             if ('' === $parsed['lastId']) {
+                $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonAccrualByDay, $day, new \DateTimeImmutable());
+
                 return;
             }
 

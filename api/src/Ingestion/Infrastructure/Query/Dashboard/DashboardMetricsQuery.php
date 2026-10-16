@@ -241,8 +241,10 @@ final readonly class DashboardMetricsQuery
             // в пределах кабинета, а у компании их бывает несколько.
             // Строка без номера (начисление на кабинет) в сумму входит,
             // а отправлением не считается.
-            $columns[] = 'COUNT(*) FILTER (WHERE fee_type_id = :revenueType AND amount_minor > 0) AS sales_quantity';
-            $columns[] = 'COUNT(*) FILTER (WHERE fee_type_id = :revenueType AND amount_minor < 0) AS returns_quantity';
+            // Штуки — сумма quantity, а не число строк: строка выручки
+            // бывает на несколько штук (ADR-038).
+            $columns[] = 'COALESCE(SUM(quantity) FILTER (WHERE fee_type_id = :revenueType AND amount_minor > 0), 0) AS sales_quantity';
+            $columns[] = 'COALESCE(SUM(quantity) FILTER (WHERE fee_type_id = :revenueType AND amount_minor < 0), 0) AS returns_quantity';
             $columns[] = "COUNT(DISTINCT marketplace_account_id::text || '|' || unit_number)"
                 ." FILTER (WHERE fee_type_id IN (:deliveryTypes) AND amount_minor < 0 AND unit_number <> '') AS delivery_count";
             $columns[] = "COUNT(DISTINCT marketplace_account_id::text || '|' || unit_number)"

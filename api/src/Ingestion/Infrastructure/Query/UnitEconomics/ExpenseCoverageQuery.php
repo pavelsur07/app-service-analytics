@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Query\UnitEconomics;
 
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Infrastructure\Query\DayLoadSql;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
@@ -22,7 +23,8 @@ use Doctrine\DBAL\Query\QueryBuilder;
  * заказов. День, за который выгрузка не проходила, — не законный, и по
  * фактам эти два неразличимы. Признак загрузки — raw-документ: period
  * входит в его естественный ключ (ADR-006), поэтому строка появляется
- * за каждый обработанный день, даже когда ответ площадки пуст.
+ * за каждый обработанный день, даже когда ответ площадки пуст. День,
+ * последний прогон которого отказал, загруженным не считается (ADR-038).
  *
  * Считаются только дни, за которые загружены продажи. Иначе окно
  * в 90 дней у клиента, подключившегося неделю назад, объявляло бы
@@ -51,17 +53,22 @@ final readonly class ExpenseCoverageQuery
         // сверху потолком days у контроллера, так что и объём чтения
         // ограничен. Свой индекс окупится, когда документов станет
         // сотни тысяч, — тогда (company_id, report_type, period).
+        // Отметка отказа (ADR-038) — только у начислений. День продаж
+        // остаётся днём продаж и с отказом: юнит-экономика продажи
+        // не читает, а отзыв ключа ставит отказ обеим выгрузкам дня —
+        // фильтр по обеим спрятал бы именно тот день, который неполон.
+        $notRejected = DayLoadSql::NOT_REJECTED;
         $uncovered = <<<SQL
             (
                 SELECT period
-                FROM marketplace_raw_document
+                FROM marketplace_raw_document AS d
                 WHERE company_id = :companyId
                   AND period >= :from
                   AND period <= :to
                   AND report_type IN (:salesReportType, :expensesReportType)
                 GROUP BY marketplace_account_id, period
                 HAVING bool_or(report_type = :salesReportType)
-                   AND NOT bool_or(report_type = :expensesReportType)
+                   AND NOT bool_or(report_type = :expensesReportType AND {$notRejected})
             ) AS uncovered
             SQL;
 

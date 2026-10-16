@@ -27,6 +27,7 @@ final class MarketplaceExpenseFactBuilder
     private int $feeTypeId = 32;
     private string $unitNumber = '0157015884-0130-1';
     private Money $amount;
+    private int $quantity = 1;
     private Uuid $rawDocumentId;
 
     private function __construct()
@@ -116,6 +117,14 @@ final class MarketplaceExpenseFactBuilder
         return $clone;
     }
 
+    public function withQuantity(int $quantity): self
+    {
+        $clone = clone $this;
+        $clone->quantity = $quantity;
+
+        return $clone;
+    }
+
     public function withRawDocumentId(Uuid $rawDocumentId): self
     {
         $clone = clone $this;
@@ -135,6 +144,7 @@ final class MarketplaceExpenseFactBuilder
             feeTypeId: $this->feeTypeId,
             unitNumber: $this->unitNumber,
             amount: $this->amount,
+            quantity: $this->quantity,
             rawDocumentId: $this->rawDocumentId,
         );
     }

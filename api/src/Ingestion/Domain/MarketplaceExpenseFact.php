@@ -83,6 +83,15 @@ class MarketplaceExpenseFact
     #[ORM\Column(type: 'money_minor_amount')]
     private int $amountMinor;
 
+    /**
+     * Штук товара, к которым относится строка (ADR-038): у строк товара
+     * отправления — `quantity` товара из ответа, у остальных — 1.
+     * Штуки продаж — сумма этой колонки по строкам выручки, а не число
+     * строк: одна строка бывает и на тринадцать штук.
+     */
+    #[ORM\Column(options: ['default' => 1])]
+    private int $quantity;
+
     // options: ['fixed' => true] — ADR-004 требует именно char(3).
     #[ORM\Column(length: 3, options: ['fixed' => true])]
     private readonly string $currency;
@@ -108,6 +117,7 @@ class MarketplaceExpenseFact
         int $feeTypeId,
         string $unitNumber,
         Money $amount,
+        int $quantity,
         Uuid $rawDocumentId,
         string $rowHash,
         \DateTimeImmutable $firstLoadedAt,
@@ -122,6 +132,7 @@ class MarketplaceExpenseFact
         $this->unitNumber = $unitNumber;
         $this->amountMinor = $amount->minorAmount();
         $this->currency = $amount->currency();
+        $this->quantity = $quantity;
         $this->rawDocumentId = $rawDocumentId;
         $this->rowHash = $rowHash;
         $this->firstLoadedAt = $firstLoadedAt;
@@ -137,8 +148,13 @@ class MarketplaceExpenseFact
         int $feeTypeId,
         string $unitNumber,
         Money $amount,
+        int $quantity,
         Uuid $rawDocumentId,
     ): self {
+        if ($quantity < 1) {
+            throw new \InvalidArgumentException("Строка начисления {$accrualId} на {$quantity} шт. — штук не меньше одной (ADR-038).");
+        }
+
         $now = new \DateTimeImmutable();
 
         return new self(
@@ -150,8 +166,9 @@ class MarketplaceExpenseFact
             $feeTypeId,
             $unitNumber,
             $amount,
+            $quantity,
             $rawDocumentId,
-            self::computeRowHash($businessDate, $unitNumber, $amount),
+            self::computeRowHash($businessDate, $unitNumber, $amount, $quantity),
             $now,
             $now,
         );
@@ -176,15 +193,25 @@ class MarketplaceExpenseFact
      * переотнести начисление на другой день или к другому отправлению,
      * не тронув сумму, и такая правка прошла бы мимо — строка осталась бы
      * со старой датой, а объяснить клиенту расхождение стало бы нечем.
+     *
+     * Количество входит в хэш, только когда оно не 1 (ADR-038): строки,
+     * записанные до колонки, все на одну штуку, и их хэш остаётся прежним —
+     * иначе следующий пересчёт «обновил» бы каждую строку таблицы, не
+     * изменив ни одного значения.
      */
-    private static function computeRowHash(\DateTimeImmutable $businessDate, string $unitNumber, Money $amount): string
+    private static function computeRowHash(\DateTimeImmutable $businessDate, string $unitNumber, Money $amount, int $quantity): string
     {
-        return hash('sha256', implode('|', [
+        $fields = [
             $businessDate->format('Y-m-d'),
             $unitNumber,
             $amount->minorAmount(),
             $amount->currency(),
-        ]));
+        ];
+        if (1 !== $quantity) {
+            $fields[] = 'qty:'.$quantity;
+        }
+
+        return hash('sha256', implode('|', $fields));
     }
 
     public function companyId(): Uuid
@@ -225,6 +252,11 @@ class MarketplaceExpenseFact
     public function amount(): Money
     {
         return Money::ofMinor($this->amountMinor, $this->currency);
+    }
+
+    public function quantity(): int
+    {
+        return $this->quantity;
     }
 
     public function rawDocumentId(): Uuid

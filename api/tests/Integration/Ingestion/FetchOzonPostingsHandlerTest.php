@@ -14,6 +14,7 @@ use App\Identity\Domain\UserRepository;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonPostingsHandler;
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonPostingsFetcher;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonPostingFboListClient;
 use App\Tests\Support\Builder\CompanyBuilder;
@@ -277,6 +278,47 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
         }
     }
 
+    public function testDayWhoseRawWasSavedButNotParsedIsMarkedFailedUntilARepeat(): void
+    {
+        $container = $this->bootedContainer();
+        $companies = $this->companies($container);
+        $marketplaceAccounts = $this->marketplaceAccounts($container);
+        $account = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany(CompanyBuilder::aCompany()->persistWith($companies))
+            ->withExternalShopId('shop-day-load')
+            ->withPlaintextCredentials(['client_id' => 'shop-day-load', 'api_key' => 'key-1'], $this->credentialsEncryptor($container))
+            ->persistWith($companies, $marketplaceAccounts);
+
+        // Ответ, который разбор не знает: raw сохраняется до разбора,
+        // и без отметки день выглядел бы загруженным (ADR-038).
+        $container->set(OzonPostingFboListClient::class, new FakeSequentialOzonPostingsFetcher(['{"unexpected":true}', $this->fixtureBody()]));
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+        $message = new FetchOzonPostingsMessage(
+            companyId: $account->companyId()->toRfc4122(),
+            marketplaceAccountId: $account->id()->toRfc4122(),
+            businessDate: '2026-07-01',
+        );
+
+        try {
+            ($handler)($message);
+            self::fail('Неизвестная форма ответа должна остановить загрузку дня.');
+        } catch (\UnexpectedValueException) {
+        }
+
+        $connection = $this->connection($container);
+        $mark = $this->dayLoad($connection, $account);
+        self::assertNotNull($mark['failed_at']);
+        self::assertNull($mark['completed_at']);
+
+        ($handler)($message);
+
+        $mark = $this->dayLoad($connection, $account);
+        self::assertNull($mark['failed_at']);
+        self::assertNotNull($mark['completed_at']);
+        self::assertSame(86, $this->factCount($connection, $account));
+    }
+
     public function testNonAuthorizationFailureDoesNotLogBrokenAccountReason(): void
     {
         $container = $this->bootedContainer();
@@ -324,6 +366,21 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
      * (MarkMarketplaceAccountBrokenAction). Остальные тесты файла не ломают
      * подключение и обходятся без участника.
      */
+    /**
+     * @return array{completed_at: ?string, failed_at: ?string}
+     */
+    private function dayLoad(Connection $connection, MarketplaceAccount $account): array
+    {
+        /** @var array{completed_at: ?string, failed_at: ?string}|false $row */
+        $row = $connection->fetchAssociative(
+            'SELECT completed_at, failed_at FROM marketplace_day_load WHERE company_id = ? AND marketplace_account_id = ? AND report_type = ? AND period = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), MarketplaceReportType::OzonPostingFboList, '2026-07-01'],
+        );
+        self::assertIsArray($row);
+
+        return $row;
+    }
+
     private function companyWithOwner(ContainerInterface $container): Company
     {
         $companies = $this->companies($container);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Query\Dashboard;
 
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Infrastructure\Query\DayLoadSql;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
 
@@ -17,7 +18,8 @@ use Doctrine\DBAL\Query\QueryBuilder;
  * после остановки синхронизации — отсутствие данных, и по фактам их
  * не различить. Признак — raw-документ: period входит в его естественный
  * ключ (ADR-006), строка есть за каждый обработанный день, даже с пустым
- * ответом площадки.
+ * ответом площадки. День, последний прогон которого отказал, не считается,
+ * хоть raw за него и есть (ADR-038): записано могло быть не всё.
  *
  * **По подключению, а не по компании**, как у `ExpenseCoverageQuery`:
  * загруженный день одного кабинета не означает загруженный день другого.
@@ -54,7 +56,8 @@ final readonly class DashboardLoadsQuery
      */
     public function complete(string $companyId, \DateTimeImmutable $from, \DateTimeImmutable $to): QueryBuilder
     {
-        $days = <<<'SQL'
+        $notRejected = DayLoadSql::NOT_REJECTED;
+        $days = <<<SQL
             (
                 SELECT marketplace_account_id,
                        MIN(period) AS first_load,
@@ -63,9 +66,10 @@ final readonly class DashboardLoadsQuery
                            AND period >= :from AND period <= :to) AS sales_days,
                        COUNT(DISTINCT period) FILTER (WHERE report_type = :accrualsReportType
                            AND period >= :from AND period <= :to) AS accruals_days
-                FROM marketplace_raw_document
+                FROM marketplace_raw_document AS d
                 WHERE company_id = :companyId
                   AND report_type IN (:salesReportType, :accrualsReportType)
+                  AND {$notRejected}
                 GROUP BY marketplace_account_id
             ) AS loads
             SQL;

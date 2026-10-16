@@ -15,7 +15,8 @@ use Doctrine\DBAL\Connection;
  * поправят одну и забудут другую.
  *
  * ON CONFLICT DO UPDATE с `WHERE row_hash IS DISTINCT FROM` — апдейт
- * только при реально изменившейся сумме; first_loaded_at в SET не входит
+ * только при реально изменившейся строке (сумма, дата, отправление,
+ * количество); first_loaded_at в SET не входит
  * вовсе.
  */
 final readonly class DoctrineMarketplaceExpenseFactWriter implements MarketplaceExpenseFactRepository
@@ -48,7 +49,7 @@ final readonly class DoctrineMarketplaceExpenseFactWriter implements Marketplace
         foreach ($facts as $i => $fact) {
             $valuesSql[] = "(:companyId{$i}, :marketplaceAccountId{$i}, :sourceRowId{$i}, :businessDate{$i}, "
                 .":marketplaceSku{$i}, :feeTypeId{$i}, :unitNumber{$i}, :amountMinor{$i}, "
-                .":currency{$i}, :rawDocumentId{$i}, :rowHash{$i}, :firstLoadedAt{$i}, :lastUpdatedAt{$i})";
+                .":currency{$i}, :quantity{$i}, :rawDocumentId{$i}, :rowHash{$i}, :firstLoadedAt{$i}, :lastUpdatedAt{$i})";
 
             $params["companyId{$i}"] = $fact->companyId()->toRfc4122();
             $params["marketplaceAccountId{$i}"] = $fact->marketplaceAccountId()->toRfc4122();
@@ -59,6 +60,7 @@ final readonly class DoctrineMarketplaceExpenseFactWriter implements Marketplace
             $params["unitNumber{$i}"] = $fact->unitNumber();
             $params["amountMinor{$i}"] = $fact->amount()->minorAmount();
             $params["currency{$i}"] = $fact->amount()->currency();
+            $params["quantity{$i}"] = $fact->quantity();
             $params["rawDocumentId{$i}"] = $fact->rawDocumentId()->toRfc4122();
             $params["rowHash{$i}"] = $fact->rowHash();
             $params["firstLoadedAt{$i}"] = $fact->firstLoadedAt()->format('Y-m-d H:i:sP');
@@ -68,7 +70,7 @@ final readonly class DoctrineMarketplaceExpenseFactWriter implements Marketplace
         $sql = <<<SQL
             INSERT INTO marketplace_expense_fact
                 (company_id, marketplace_account_id, source_row_id, business_date, marketplace_sku,
-                 fee_type_id, unit_number, amount_minor, currency, raw_document_id, row_hash,
+                 fee_type_id, unit_number, amount_minor, currency, quantity, raw_document_id, row_hash,
                  first_loaded_at, last_updated_at)
             VALUES {$this->joinValues($valuesSql)}
             ON CONFLICT (company_id, marketplace_account_id, source_row_id)
@@ -77,6 +79,7 @@ final readonly class DoctrineMarketplaceExpenseFactWriter implements Marketplace
                 unit_number = EXCLUDED.unit_number,
                 amount_minor = EXCLUDED.amount_minor,
                 currency = EXCLUDED.currency,
+                quantity = EXCLUDED.quantity,
                 raw_document_id = EXCLUDED.raw_document_id,
                 row_hash = EXCLUDED.row_hash,
                 last_updated_at = EXCLUDED.last_updated_at
