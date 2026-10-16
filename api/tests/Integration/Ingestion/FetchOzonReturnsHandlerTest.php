@@ -21,6 +21,7 @@ use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\Fake\ExpiringLockStore;
 use App\Tests\Support\Fake\FakeOzonReturnsFetcher;
 use App\Tests\Support\Fake\LeaseProbeOzonReturnsFetcher;
+use App\Tests\Support\Probe\DayLoadMarks;
 use Doctrine\DBAL\Connection;
 use Monolog\Handler\TestHandler;
 use Monolog\LogRecord;
@@ -52,6 +53,11 @@ final class FetchOzonReturnsHandlerTest extends KernelTestCase
         self::assertSame('2026-08-03T20:59:59+00:00', $fetcher->requests[0]['to']->format(\DateTimeInterface::ATOM));
         self::assertSame(2, $this->rawCount($container, $account));
         self::assertSame(6, $this->returnCount($container, $account));
+        // Весь диапазон перечитан — каждый его день загружен (ADR-038).
+        self::assertSame(
+            ['2026-08-01' => 'ok', '2026-08-02' => 'ok', '2026-08-03' => 'ok'],
+            DayLoadMarks::of($this->connection($container), $account, MarketplaceReportType::OzonReturnsList),
+        );
         self::assertEquals(0, $this->connection($container)->fetchOne(
             'SELECT COUNT(*) FROM marketplace_return_fact f WHERE f.company_id = ? AND NOT EXISTS (SELECT 1 FROM marketplace_raw_document d WHERE d.id = f.raw_document_id)',
             [$account->companyId()->toRfc4122()],
@@ -229,6 +235,11 @@ final class FetchOzonReturnsHandlerTest extends KernelTestCase
 
         self::assertSame(100, $this->rawCount($container, $account));
         self::assertSame(0, $this->returnCount($container, $account));
+        // Raw есть, фактов нет: без отметки дни выглядели бы загруженными.
+        self::assertSame(
+            ['2026-08-01' => 'failed', '2026-08-02' => 'failed', '2026-08-03' => 'failed'],
+            DayLoadMarks::of($this->connection($container), $account, MarketplaceReportType::OzonReturnsList),
+        );
     }
 
     public function testPublishingPagesRollsBackIfALaterPageCannotBeWritten(): void

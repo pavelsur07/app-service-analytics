@@ -9,6 +9,8 @@ use App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage;
 use App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonAdvertisingWindows;
+use App\Ingestion\Domain\DayLoadMark;
+use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\OzonAdReportKind;
 use App\Ingestion\Domain\OzonAdvertisingFetcher;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
@@ -29,6 +31,12 @@ use Symfony\Component\Messenger\Stamp\DelayStamp;
  * с разбросом, не дольше суток; прочий отказ 4xx — предупреждение в журнал. Повторная доставка
  * сообщения закажет отчёт ещё раз: это согласованное отступление
  * от CLAUDE.md §4 (ADR-026 п. 4), лишняя выгрузка из суточного лимита.
+ *
+ * Отказ заказа отчёта «Оплаты за заказ» отмечается на дни его периода
+ * (ADR-038); успех ставит проверка, скачав отчёт. SKU-отчёты отметок
+ * не ставят: на один день их несколько, по пачкам кампаний, а отметка
+ * одна на день — успех одной пачки стёр бы отказ другой. Их отказы
+ * экран покрытия берёт из очереди `failed`.
  */
 #[AsMessageHandler]
 final readonly class OrderOzonAdSkuReportHandler
@@ -56,6 +64,7 @@ final readonly class OrderOzonAdSkuReportHandler
         private OzonAdvertisingFetcher $client,
         private MessageBusInterface $bus,
         private LoggerInterface $logger,
+        private MarketplaceDayLoadRepository $dayLoads,
     ) {
     }
 
@@ -87,15 +96,17 @@ final readonly class OrderOzonAdSkuReportHandler
             $body = OzonAdReportKind::Sku === $kind
                 ? $this->client->orderSkuReport($token, $message->campaignIds, $from, $to)
                 : $this->client->orderCpoOrdersReport($token, $from, $to);
+            $uuid = self::uuid($body);
         } catch (\Throwable $failure) {
             if (OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
+                $this->markFailed($message, $from, $to, 'Рекламный ключ отозван: '.$failure->getMessage());
                 $this->brokenLogger->log($target->companyId, $target->marketplaceAccountId, 'advertising', $failure, $target->performanceClientSecret);
                 $this->identityFacade->markOzonAdvertisingBroken($target->companyId, $target->marketplaceAccountId, $target->version);
 
                 return;
             }
             if (OzonRateLimited::is($failure)) {
-                $this->retryLater($message);
+                $this->retryLater($message, $from, $to);
 
                 return;
             }
@@ -104,18 +115,33 @@ final readonly class OrderOzonAdSkuReportHandler
                 // Отказ площадки 4xx — заказ точно не состоялся, и повтор
                 // того же запроса ответ не изменит (например, период
                 // глубже истории отчёта).
-                $this->giveUp($message, "площадка отклонила заказ: HTTP {$status}");
+                $this->giveUp($message, $from, $to, "площадка отклонила заказ: HTTP {$status}");
 
                 return;
             }
+
+            $this->markFailed($message, $from, $to, $failure->getMessage());
 
             throw $failure;
         }
 
         $this->bus->dispatch(
-            new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, self::uuid($body), 1, $kind, $message->to),
+            new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $uuid, 1, $kind, $message->to),
             [new DelayStamp(self::FIRST_CHECK_DELAY_MS)],
         );
+    }
+
+    /**
+     * Отметка отказа (ADR-038) — только у отчёта «Оплаты за заказ»;
+     * почему не у SKU-отчёта — в описании класса.
+     */
+    private function markFailed(OrderOzonAdSkuReportMessage $message, \DateTimeImmutable $from, \DateTimeImmutable $to, string $failure): void
+    {
+        if (OzonAdReportKind::CpoOrders !== $message->reportKind()) {
+            return;
+        }
+
+        $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(OzonAdReportKind::rawType(OzonAdReportKind::CpoOrders), $from, $to, 'Отчёт не заказан: '.$failure)], new \DateTimeImmutable());
     }
 
     /**
@@ -124,12 +150,12 @@ final readonly class OrderOzonAdSkuReportHandler
      * у повтора есть потолок, и постоянный отказ (исчерпан суточный лимит)
      * заканчивается предупреждением, а не бесконечной петлёй.
      */
-    private function retryLater(OrderOzonAdSkuReportMessage $message): void
+    private function retryLater(OrderOzonAdSkuReportMessage $message, \DateTimeImmutable $from, \DateTimeImmutable $to): void
     {
         $now = new \DateTimeImmutable();
         $refusedSince = null === $message->refusedSince ? $now : new \DateTimeImmutable($message->refusedSince);
         if ($refusedSince->add(new \DateInterval(self::GIVE_UP_AFTER)) <= $now) {
-            $this->giveUp($message, 'отказ лимита площадки (429) дольше суток');
+            $this->giveUp($message, $from, $to, 'отказ лимита площадки (429) дольше суток');
 
             return;
         }
@@ -153,8 +179,10 @@ final readonly class OrderOzonAdSkuReportHandler
      * Сигнал, а не тишина: незаказанный отчёт виден в журнале уровнем
      * `warning` (порог prod-журнала).
      */
-    private function giveUp(OrderOzonAdSkuReportMessage $message, string $reason): void
+    private function giveUp(OrderOzonAdSkuReportMessage $message, \DateTimeImmutable $from, \DateTimeImmutable $to, string $reason): void
     {
+        $this->markFailed($message, $from, $to, $reason);
+
         $this->logger->warning('Отчёт рекламы Ozon не заказан', [
             'kind' => $message->reportKind(),
             'company_id' => $message->companyId,

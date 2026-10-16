@@ -107,6 +107,9 @@ final class FakeOzonAdvertisingFetcher implements OzonAdvertisingFetcher
 
     public function orderCpoOrdersReport(string $token, \DateTimeImmutable $from, \DateTimeImmutable $to): string
     {
+        if (null !== $this->orderFailure) {
+            throw $this->orderFailure;
+        }
         $this->cpoOrders[] = ['from' => $from->format('Y-m-d'), 'to' => $to->format('Y-m-d')];
 
         return $this->reportRequest;

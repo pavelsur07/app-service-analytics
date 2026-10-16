@@ -526,7 +526,11 @@ ADR-034, план — `docs/plan/ozon-stock-placement-report.md`. Формати
 в `Infrastructure/Query/Coverage/CoverageDocumentsQuery`, дни с отказом
 по отметке загрузки (ADR-038) — `CoverageDayLoadsQuery`, упавшие загрузки
 без отметки — `FailedMessagesQuery` (очередь `failed`)
-и `Application/Coverage/FailedLoads`.
+и `Application/Coverage/FailedLoads`. Отметку ставят обработчики всех
+выгрузок отчёта: дневные — на свой день, диапазонные (возвраты, реклама)
+— на каждый день диапазона, снимки — на день снимка. Исключение —
+SKU-отчёты рекламы: их на один день несколько, по пачкам кампаний,
+а отметка одна на день; их отказы видны только из очереди.
 
 **Текущее состояние.** Первая настоящая фича — `features/ingestion/`
 (список продаж Ozon), вместе с ней появились `app/` (роутер,

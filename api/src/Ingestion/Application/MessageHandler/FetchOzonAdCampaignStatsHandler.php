@@ -10,6 +10,8 @@ use App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Application\StoreOzonAdSkuExpenses;
+use App\Ingestion\Domain\DayLoadMark;
+use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
@@ -56,6 +58,12 @@ use Symfony\Component\Uid\Uuid;
  * сообщения, — не ошибка: сообщение завершается без загрузки.
  *
  * Повтор идемпотентен: raw дедуплицируется по содержимому (ADR-006).
+ *
+ * Отметки загрузки (ADR-038) — по каждой выгрузке куска отдельно:
+ * `expense` и `daily` — на все дни куска, список кампаний — на последний,
+ * `products/sku` — на свой день. Сделанное отмечается успехом, не
+ * сделанное к отказу (сеть, разбор, отзыв ключа) — отказом. SKU-отчёты
+ * и отчёт «Оплаты за заказ» отмечают свои обработчики.
  */
 #[AsMessageHandler]
 final readonly class FetchOzonAdCampaignStatsHandler
@@ -70,6 +78,7 @@ final readonly class FetchOzonAdCampaignStatsHandler
         private MessageBusInterface $bus,
         private LoggerInterface $logger,
         private StoreOzonAdSkuExpenses $skuExpenses,
+        private MarketplaceDayLoadRepository $dayLoads,
     ) {
     }
 
@@ -90,18 +99,36 @@ final readonly class FetchOzonAdCampaignStatsHandler
         $companyId = Uuid::fromString($target->companyId);
         $accountId = Uuid::fromString($target->marketplaceAccountId);
 
+        $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
+        $headChunk = OzonAdvertisingWindows::isHeadChunk($to, $today);
+        $skuDays = $headChunk ? OzonAdvertisingWindows::skuDays($from, $to, $today) : [];
+        // Что кусок обязан загрузить: [raw-тип, первый день, последний день].
+        $planned = [
+            [MarketplaceReportType::OzonAdExpense, $from, $to],
+            [MarketplaceReportType::OzonAdDaily, $from, $to],
+        ];
+        if ($headChunk) {
+            $planned[] = [MarketplaceReportType::OzonAdCampaigns, $to, $to];
+            foreach ($skuDays as $day) {
+                $planned[] = [MarketplaceReportType::OzonAdSkuDay, $day, $day];
+            }
+        }
+        /** @var array<string, true> $done ключи `piece()` загруженных выгрузок */
+        $done = [];
+
         try {
             $token = $this->client->token($target->performanceClientId, $target->performanceClientSecret);
             $expense = $this->client->expense($token, $from, $to);
             $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdExpense, $from, $expense);
+            $done[self::piece(MarketplaceReportType::OzonAdExpense, $from)] = true;
             $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdDaily, $from, $this->client->daily($token, $from, $to));
+            $done[self::piece(MarketplaceReportType::OzonAdDaily, $from)] = true;
 
             /** @var list<\Throwable> $parseFailures */
             $parseFailures = [];
 
-            $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
-            if (OzonAdvertisingWindows::isHeadChunk($to, $today)) {
-                $parseFailures = [...$parseFailures, ...$this->captureCampaignsAndSku($companyId, $accountId, $token, $to, OzonAdvertisingWindows::skuDays($from, $to, $today), $expense)];
+            if ($headChunk) {
+                $parseFailures = [...$parseFailures, ...$this->captureCampaignsAndSku($companyId, $accountId, $token, $to, $skuDays, $expense, $done)];
             }
 
             if (true === ($message->withReports ?? false)) {
@@ -128,12 +155,44 @@ final readonly class FetchOzonAdCampaignStatsHandler
             }
         } catch (\Throwable $failure) {
             if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
+                $this->markPieces($message, $planned, $done, $failure->getMessage());
+
                 throw $failure;
             }
 
+            $this->markPieces($message, $planned, $done, 'Рекламный ключ отозван: '.$failure->getMessage());
             $this->brokenLogger->log($target->companyId, $target->marketplaceAccountId, 'advertising', $failure, $target->performanceClientSecret);
             $this->identityFacade->markOzonAdvertisingBroken($target->companyId, $target->marketplaceAccountId, $target->version);
+
+            return;
         }
+
+        $this->markPieces($message, $planned, $done, null);
+    }
+
+    /**
+     * Отметки загрузки куска (ADR-038): загруженное — успехом, остальное
+     * из запланированного — отказом с причиной.
+     *
+     * @param list<array{string, \DateTimeImmutable, \DateTimeImmutable}> $planned
+     * @param array<string, true>                                         $done
+     */
+    private function markPieces(FetchOzonAdCampaignStatsMessage $message, array $planned, array $done, ?string $failure): void
+    {
+        $marks = [];
+        foreach ($planned as [$reportType, $first, $last]) {
+            $marks[] = isset($done[self::piece($reportType, $first)])
+                ? DayLoadMark::completed($reportType, $first, $last)
+                : DayLoadMark::failed($reportType, $first, $last, $failure ?? 'Выгрузка куска не выполнена.');
+        }
+
+        // Одним вызовом — одним запросом, не циклом (CLAUDE.md §6).
+        $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, $marks, new \DateTimeImmutable());
+    }
+
+    private static function piece(string $reportType, \DateTimeImmutable $first): string
+    {
+        return $reportType.'|'.$first->format('Y-m-d');
     }
 
     private function capture(Uuid $companyId, Uuid $accountId, string $reportType, \DateTimeImmutable $period, string $body): void
@@ -174,10 +233,11 @@ final readonly class FetchOzonAdCampaignStatsHandler
 
     /**
      * @param list<\DateTimeImmutable> $days
+     * @param array<string, true>      $done загруженные выгрузки — дополняется
      *
      * @return list<\Throwable> неудачи разбора
      */
-    private function captureCampaignsAndSku(Uuid $companyId, Uuid $accountId, string $token, \DateTimeImmutable $to, array $days, string $expense): array
+    private function captureCampaignsAndSku(Uuid $companyId, Uuid $accountId, string $token, \DateTimeImmutable $to, array $days, string $expense, array &$done): array
     {
         // Список кампаний снимает только головной кусок — один запрос
         // метода на тик: второй одновременный упирался в лимит площадки (429).
@@ -186,6 +246,7 @@ final readonly class FetchOzonAdCampaignStatsHandler
         // попадает в тот же документ.
         $campaigns = $this->client->campaigns($token);
         $this->capture($companyId, $accountId, MarketplaceReportType::OzonAdCampaigns, $to, $campaigns);
+        $done[self::piece(MarketplaceReportType::OzonAdCampaigns, $to)] = true;
         $failures = [];
         foreach ($days as $day) {
             try {
@@ -195,11 +256,18 @@ final readonly class FetchOzonAdCampaignStatsHandler
                 return [$failure];
             }
 
+            $dayFailed = false;
             foreach (array_chunk($campaignIds, OzonAdvertisingWindows::SKU_CAMPAIGNS_PER_REQUEST) as $batch) {
                 $failure = $this->captureSkuDay($companyId, $accountId, $day, $this->client->productsSku($token, $batch, $day));
                 if (null !== $failure) {
                     $failures[] = $failure;
+                    $dayFailed = true;
                 }
+            }
+            // День загружен, когда разобраны все пачки; кампаний с расходом
+            // нет — загружать было нечего, это тоже успех.
+            if (!$dayFailed) {
+                $done[self::piece(MarketplaceReportType::OzonAdSkuDay, $day)] = true;
             }
         }
 

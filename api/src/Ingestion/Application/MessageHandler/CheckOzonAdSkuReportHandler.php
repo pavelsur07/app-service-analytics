@@ -9,6 +9,8 @@ use App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Application\StoreOzonAdSkuExpenses;
+use App\Ingestion\Domain\DayLoadMark;
+use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\OzonAdReportKind;
@@ -34,6 +36,10 @@ use Symfony\Component\Uid\Uuid;
  * SKU-отчёт после сохранения в raw разбирается в факты рекламы по SKU
  * (ADR-035 п. 3); отчёт заказов «Оплаты за заказ» не разбирается —
  * форма его строки неизвестна (ADR-035 п. 7).
+ *
+ * Отчёт «Оплаты за заказ» отмечается на дни своего периода (ADR-038):
+ * скачан — успех, `ERROR`, потолок проверок или сбой — отказ. SKU-отчёт
+ * отметок не ставит — почему, в `OrderOzonAdSkuReportHandler`.
  */
 #[AsMessageHandler]
 final readonly class CheckOzonAdSkuReportHandler
@@ -53,6 +59,7 @@ final readonly class CheckOzonAdSkuReportHandler
         private MessageBusInterface $bus,
         private LoggerInterface $logger,
         private StoreOzonAdSkuExpenses $skuExpenses,
+        private MarketplaceDayLoadRepository $dayLoads,
     ) {
     }
 
@@ -87,6 +94,8 @@ final readonly class CheckOzonAdSkuReportHandler
                 );
                 $rawDocumentId = $this->rawDocuments->add($captured);
 
+                $this->mark($message, null);
+
                 if (OzonAdReportKind::Sku === $message->reportKind()) {
                     try {
                         $this->skuExpenses->fromReport($captured, $rawDocumentId);
@@ -108,9 +117,12 @@ final readonly class CheckOzonAdSkuReportHandler
                 return;
             }
             if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
+                $this->mark($message, $failure->getMessage());
+
                 throw $failure;
             }
 
+            $this->mark($message, 'Рекламный ключ отозван: '.$failure->getMessage());
             $this->brokenLogger->log($target->companyId, $target->marketplaceAccountId, 'advertising', $failure, $target->performanceClientSecret);
             $this->identityFacade->markOzonAdvertisingBroken($target->companyId, $target->marketplaceAccountId, $target->version);
 
@@ -146,6 +158,8 @@ final readonly class CheckOzonAdSkuReportHandler
      */
     private function giveUp(CheckOzonAdSkuReportMessage $message, string $reason): void
     {
+        $this->mark($message, 'Отчёт не загружен: '.$reason);
+
         $this->logger->warning('Отчёт рекламы Ozon не загружен', [
             'kind' => $message->reportKind(),
             'company_id' => $message->companyId,
@@ -155,6 +169,32 @@ final readonly class CheckOzonAdSkuReportHandler
             'attempt' => $message->attempt,
             'reason' => $reason,
         ]);
+    }
+
+    /**
+     * Отметка загрузки отчёта «Оплаты за заказ» (ADR-038) на дни его
+     * периода; `$failure` null — отчёт скачан и сохранён.
+     */
+    private function mark(CheckOzonAdSkuReportMessage $message, ?string $failure): void
+    {
+        if (OzonAdReportKind::CpoOrders !== $message->reportKind()) {
+            return;
+        }
+
+        $timezone = new \DateTimeZone(OzonAdvertisingWindows::TIMEZONE);
+        $from = \DateTimeImmutable::createFromFormat('!Y-m-d', $message->from, $timezone);
+        $to = \DateTimeImmutable::createFromFormat('!Y-m-d', $message->periodTo(), $timezone);
+        if (false === $from || false === $to) {
+            throw new \InvalidArgumentException('Ozon advertising report check needs valid period dates.');
+        }
+
+        $reportType = OzonAdReportKind::rawType(OzonAdReportKind::CpoOrders);
+        $at = new \DateTimeImmutable();
+        if (null === $failure) {
+            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::completed($reportType, $from, $to)], $at);
+        } else {
+            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed($reportType, $from, $to, $failure)], $at);
+        }
     }
 
     private static function state(string $body): string
