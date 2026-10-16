@@ -184,6 +184,32 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         self::assertSame([$this->key($account, MarketplaceReportType::OzonAccrualByDay)], $alerted);
     }
 
+    public function testRecentSuccessFollowedByAFailureOfTheSameDayIsStale(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container);
+        $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
+        $this->snapshotted($container, $account);
+        /** @var MarketplaceDayLoadRepository $dayLoads */
+        $dayLoads = $container->get(MarketplaceDayLoadRepository::class);
+        $today = MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
+            ->withCompanyId($account->companyId())
+            ->withMarketplaceAccountId($account->id())
+            ->withReportType(MarketplaceReportType::OzonAccrualByDay)
+            ->withPeriod(new \DateTimeImmutable('today'));
+
+        // В полночь день загрузился пустым, потом пришло начисление,
+        // которое разбор не знает, и с тех пор каждый тик отказывает.
+        // Время прошлого успеха у отметки осталось — свежестью оно не
+        // считается (ADR-038).
+        $today->withAt(new \DateTimeImmutable('-5 hours'))->persistWith($dayLoads);
+        $today->failed()->withAt(new \DateTimeImmutable('-10 minutes'))->persistWith($dayLoads);
+
+        $alerted = ($this->action($container, $this->recordingMailer()))();
+
+        self::assertSame([$this->key($account, MarketplaceReportType::OzonAccrualByDay)], $alerted);
+    }
+
     public function testAdvertisingIsWatchedOnlyWhereItIsConnected(): void
     {
         $container = $this->bootedContainer();

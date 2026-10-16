@@ -27,8 +27,9 @@ use Symfony\Component\Uid\Uuid;
 // Межарендаторное чтение сторожа свежести (RecentlyIngestedAccountsQuery)
 // отбирает по времени успеха — ведущий столбец completed_at, остальные
 // (с period — отбор недавнего дня) ради index-only scan (CLAUDE.md §1,
-// «Индекс следует за запросом»).
-#[ORM\Index(name: 'idx_marketplace_day_load_completed_at', columns: ['completed_at', 'company_id', 'marketplace_account_id', 'report_type', 'period'])]
+// «Индекс следует за запросом»). Частичный: свежим считается только
+// день без отказа, и условие запроса совпадает с условием индекса.
+#[ORM\Index(name: 'idx_marketplace_day_load_completed_at', columns: ['completed_at', 'company_id', 'marketplace_account_id', 'report_type', 'period'], options: ['where' => '(failed_at IS NULL)'])]
 class MarketplaceDayLoad
 {
     #[ORM\Id]
