@@ -16,9 +16,11 @@
  * **Цена с Ozon Картой** читается отдельно (`readCardPrice`) из состояния
  * блока цены — JSON в `data-state` у `[id^="state-webPrice"]`, поле
  * `cardPrice` (образец 2026-10-16: «1 413 ₽» при `price` «1 570 ₽»,
- * docs/plan/extension-hardening.md). Это внутреннее состояние их
- * фронтенда, не контракт, поэтому оно сверяется с разметкой: `price`
- * в нём обязан совпасть с `offers.price`, иначе мы читаем не тот блок.
+ * ADR-039). Это внутреннее состояние их фронтенда, не контракт, поэтому
+ * оно сверяется дважды: `product_id` в ссылке блока обязан совпасть
+ * с артикулом карточки, а `price` — с `offers.price` разметки. Одной
+ * цены мало: у соседнего товара может быть та же цена без карты
+ * и другая цена с картой.
  *
  * **Артикул сверяется, а не принимается на веру.** В той же разметке
  * лежит `sku`, и если он не тот, за которым пришли, — значит Ozon
@@ -43,7 +45,10 @@ export type OzonPriceResult =
 
 /** Почему цена с картой не прочитана, хотя блок с ней на странице есть. */
 type CardPriceFailure =
-  'state-unreadable' | 'state-price-mismatch' | 'card-price-unreadable'
+  | 'state-unreadable'
+  | 'state-sku-mismatch'
+  | 'state-price-mismatch'
+  | 'card-price-unreadable'
 
 /**
  * `price: null` — на карточке нет цены с картой (скидки по карте нет)
@@ -57,56 +62,83 @@ export type CardPriceResult =
 const RUBLE_SIGN = '₽'
 
 /**
- * Цена с Ozon Картой. `withoutCard` — уже прочитанная цена из разметки:
- * по ней проверяется, что состояние принадлежит той же карточке.
+ * Цена с Ozon Картой. `expectedSku` и `withoutCard` — артикул карточки
+ * и уже прочитанная цена из разметки: по ним выбирается и проверяется
+ * блок состояния именно этого товара.
  */
 export function readCardPrice(
   root: ParentNode,
+  expectedSku: string,
   withoutCard: OzonPrice,
 ): CardPriceResult {
-  const holder = root.querySelector('[id^="state-webPrice"]')
-  const raw = holder?.getAttribute('data-state') ?? null
-  if (null === raw) {
+  const holders = [...root.querySelectorAll('[id^="state-webPrice"]')]
+  if (0 === holders.length) {
+    // Блока нет — на карточке нет и цены с картой.
     return { ok: true, price: null }
+  }
+
+  const states = holders
+    .map((holder) => parseState(holder.getAttribute('data-state')))
+    .filter((state) => null !== state)
+  if (0 === states.length) {
+    return { ok: false, reason: 'state-unreadable' }
+  }
+
+  // Блоков цены на странице бывает несколько (подборки, «похожие»):
+  // берётся тот, чья ссылка ведёт на наш артикул, а не первый.
+  const fields = states.find((state) => productIdOf(state) === expectedSku)
+  if (undefined === fields) {
+    return { ok: false, reason: 'state-sku-mismatch' }
+  }
+
+  if ('RUB' !== withoutCard.currency) {
+    // Знак в тексте — рубль; для другой валюты сопоставить его не с чем.
+    return { ok: false, reason: 'card-price-unreadable' }
+  }
+
+  // Вторая сверка: цена без карты из состояния совпадает с разметкой.
+  if (rublesToMinor(fields.price) !== withoutCard.amountMinor) {
+    return { ok: false, reason: 'state-price-mismatch' }
+  }
+
+  const raw = fields.cardPrice
+  if (undefined === raw || null === raw || '' === raw) {
+    return { ok: true, price: null }
+  }
+
+  const amountMinor = rublesToMinor(raw)
+  if (null === amountMinor) {
+    return { ok: false, reason: 'card-price-unreadable' }
+  }
+
+  return { ok: true, price: { amountMinor, currency: withoutCard.currency } }
+}
+
+function parseState(raw: string | null): Record<string, unknown> | null {
+  if (null === raw) {
+    return null
   }
 
   let state: unknown
   try {
     state = JSON.parse(raw)
   } catch {
-    return { ok: false, reason: 'state-unreadable' }
-  }
-  if (null === state || 'object' !== typeof state) {
-    return { ok: false, reason: 'state-unreadable' }
+    return null
   }
 
-  const fields = state as Record<string, unknown>
-  if ('RUB' !== withoutCard.currency) {
-    // Знак в тексте — рубль; для другой валюты сопоставить его не с чем.
-    return { ok: false, reason: 'card-price-unreadable' }
+  return null !== state && 'object' === typeof state && !Array.isArray(state)
+    ? (state as Record<string, unknown>)
+    : null
+}
+
+/** «/modal/pdpListOfBanks?product_id=308520421» → «308520421». */
+function productIdOf(state: Record<string, unknown>): string | null {
+  const link = state.link
+  if ('string' !== typeof link) {
+    return null
   }
 
-  // Цена без карты из состояния обязана совпасть с разметкой: иначе
-  // состояние от другого товара (подборка, «похожие»), и его цена
-  // с картой легла бы под чужой артикул.
-  if (rublesToMinor(fields.price) !== withoutCard.amountMinor) {
-    return { ok: false, reason: 'state-price-mismatch' }
-  }
-
-  if (
-    undefined === fields.cardPrice ||
-    null === fields.cardPrice ||
-    '' === fields.cardPrice
-  ) {
-    return { ok: true, price: null }
-  }
-
-  const amountMinor = rublesToMinor(fields.cardPrice)
-  if (null === amountMinor) {
-    return { ok: false, reason: 'card-price-unreadable' }
-  }
-
-  return { ok: true, price: { amountMinor, currency: withoutCard.currency } }
+  return /[?&]product_id=(\d+)/.exec(link)?.[1] ?? null
 }
 
 /**

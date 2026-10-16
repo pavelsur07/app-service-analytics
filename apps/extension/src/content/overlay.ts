@@ -244,7 +244,7 @@ async function sendObservation(marketplaceSku: string): Promise<void> {
 
   // Цена с картой — дополнение, а не условие: не прочитали — уходит
   // цена без карты, а поломка видна в консоли, как и с основной.
-  const card = readCardPrice(document, result.price)
+  const card = readCardPrice(document, marketplaceSku, result.price)
   if (!card.ok) {
     console.warn('[conwix] цена с Ozon Картой не прочитана', {
       marketplaceSku,

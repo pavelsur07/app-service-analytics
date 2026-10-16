@@ -129,17 +129,18 @@ describe('витринная цена из разметки карточки', (
  * любые, и случай с неразрывными проверен отдельно.
  */
 describe('цена с Ozon Картой из состояния блока цены', () => {
+  const CARD_SKU = '308520421'
   const WITHOUT_CARD = { amountMinor: 157_000, currency: 'RUB' }
+  const REAL_STATE = JSON.stringify(webPriceState)
 
-  function pageWithState(state: string | null): ParentNode {
+  function pageWithStates(...states: readonly string[]): ParentNode {
+    const holders = states.map((state) => ({
+      getAttribute: (name: string) => ('data-state' === name ? state : null),
+    }))
+
     return {
-      querySelector: (selector: string) =>
-        null !== state && selector.includes('state-webPrice')
-          ? {
-              getAttribute: (name: string) =>
-                'data-state' === name ? state : null,
-            }
-          : null,
+      querySelectorAll: (selector: string) =>
+        selector.includes('state-webPrice') ? holders : [],
     } as unknown as ParentNode
   }
 
@@ -147,9 +148,16 @@ describe('цена с Ozon Картой из состояния блока це�
     return JSON.stringify({ ...webPriceState, ...fields })
   }
 
+  function neighbourWith(fields: Record<string, unknown>): string {
+    return stateWith({
+      link: '/modal/pdpListOfBanks?product_id=111111111',
+      ...fields,
+    })
+  }
+
   it('читает цену с картой с настоящей карточки', () => {
     expect(
-      readCardPrice(pageWithState(JSON.stringify(webPriceState)), WITHOUT_CARD),
+      readCardPrice(pageWithStates(REAL_STATE), CARD_SKU, WITHOUT_CARD),
     ).toEqual({ ok: true, price: { amountMinor: 141_300, currency: 'RUB' } })
   })
 
@@ -159,30 +167,47 @@ describe('цена с Ozon Картой из состояния блока це�
       price: '1\u202f570 ₽',
     })
 
-    expect(readCardPrice(pageWithState(state), WITHOUT_CARD)).toEqual({
-      ok: true,
-      price: { amountMinor: 141_300, currency: 'RUB' },
-    })
+    expect(
+      readCardPrice(pageWithStates(state), CARD_SKU, WITHOUT_CARD),
+    ).toEqual({ ok: true, price: { amountMinor: 141_300, currency: 'RUB' } })
   })
 
   it('без блока состояния или без поля цены с картой нет — это не поломка', () => {
-    expect(readCardPrice(pageWithState(null), WITHOUT_CARD)).toEqual({
+    expect(readCardPrice(pageWithStates(), CARD_SKU, WITHOUT_CARD)).toEqual({
       ok: true,
       price: null,
     })
     expect(
       readCardPrice(
-        pageWithState(stateWith({ cardPrice: undefined })),
+        pageWithStates(stateWith({ cardPrice: undefined })),
+        CARD_SKU,
         WITHOUT_CARD,
       ),
     ).toEqual({ ok: true, price: null })
   })
 
-  it('не берёт цену с картой из блока другого товара', () => {
-    // Цена без карты в состоянии не совпала с разметкой карточки:
-    // состояние чужое, и его цена с картой легла бы под наш артикул.
+  it('выбирает блок своего товара, даже если он не первый', () => {
+    const neighbour = neighbourWith({ cardPrice: '999 ₽' })
+
     expect(
-      readCardPrice(pageWithState(JSON.stringify(webPriceState)), {
+      readCardPrice(
+        pageWithStates(neighbour, REAL_STATE),
+        CARD_SKU,
+        WITHOUT_CARD,
+      ),
+    ).toEqual({ ok: true, price: { amountMinor: 141_300, currency: 'RUB' } })
+  })
+
+  it('не берёт цену с картой из блока другого товара с той же ценой', () => {
+    // Цена без карты совпала, артикул — нет: одной цены для опознания мало.
+    expect(
+      readCardPrice(pageWithStates(neighbourWith({})), CARD_SKU, WITHOUT_CARD),
+    ).toEqual({ ok: false, reason: 'state-sku-mismatch' })
+  })
+
+  it('не берёт цену с картой, если цена без карты не сошлась с разметкой', () => {
+    expect(
+      readCardPrice(pageWithStates(REAL_STATE), CARD_SKU, {
         amountMinor: 111_700,
         currency: 'RUB',
       }),
@@ -192,13 +217,13 @@ describe('цена с Ozon Картой из состояния блока це�
   it('не принимает число без знака рубля и испорченное состояние', () => {
     expect(
       readCardPrice(
-        pageWithState(stateWith({ cardPrice: '1413' })),
+        pageWithStates(stateWith({ cardPrice: '1413' })),
+        CARD_SKU,
         WITHOUT_CARD,
       ),
     ).toEqual({ ok: false, reason: 'card-price-unreadable' })
-    expect(readCardPrice(pageWithState('{не json'), WITHOUT_CARD)).toEqual({
-      ok: false,
-      reason: 'state-unreadable',
-    })
+    expect(
+      readCardPrice(pageWithStates('{не json'), CARD_SKU, WITHOUT_CARD),
+    ).toEqual({ ok: false, reason: 'state-unreadable' })
   })
 })
