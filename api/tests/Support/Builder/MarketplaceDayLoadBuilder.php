@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support\Builder;
 
+use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use Symfony\Component\Uid\Uuid;
@@ -90,11 +91,11 @@ final class MarketplaceDayLoadBuilder
         $at = new \DateTimeImmutable();
 
         if (null === $this->failure) {
-            $repository->markCompleted($companyId, $accountId, $this->reportType, $this->period, $this->period, $at);
+            $repository->mark($companyId, $accountId, [DayLoadMark::completed($this->reportType, $this->period, $this->period)], $at);
 
             return;
         }
 
-        $repository->markFailed($companyId, $accountId, $this->reportType, $this->period, $this->period, $at, $this->failure);
+        $repository->mark($companyId, $accountId, [DayLoadMark::failed($this->reportType, $this->period, $this->period, $this->failure)], $at);
     }
 }

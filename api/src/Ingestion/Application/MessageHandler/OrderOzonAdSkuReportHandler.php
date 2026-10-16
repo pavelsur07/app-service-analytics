@@ -9,6 +9,7 @@ use App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage;
 use App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonAdvertisingWindows;
+use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\OzonAdReportKind;
 use App\Ingestion\Domain\OzonAdvertisingFetcher;
@@ -140,7 +141,7 @@ final readonly class OrderOzonAdSkuReportHandler
             return;
         }
 
-        $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, OzonAdReportKind::rawType(OzonAdReportKind::CpoOrders), $from, $to, new \DateTimeImmutable(), 'Отчёт не заказан: '.$failure);
+        $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(OzonAdReportKind::rawType(OzonAdReportKind::CpoOrders), $from, $to, 'Отчёт не заказан: '.$failure)], new \DateTimeImmutable());
     }
 
     /**

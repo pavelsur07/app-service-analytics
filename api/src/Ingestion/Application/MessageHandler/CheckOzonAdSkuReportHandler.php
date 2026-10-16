@@ -9,6 +9,7 @@ use App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Application\StoreOzonAdSkuExpenses;
+use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
@@ -190,9 +191,9 @@ final readonly class CheckOzonAdSkuReportHandler
         $reportType = OzonAdReportKind::rawType(OzonAdReportKind::CpoOrders);
         $at = new \DateTimeImmutable();
         if (null === $failure) {
-            $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, $reportType, $from, $to, $at);
+            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::completed($reportType, $from, $to)], $at);
         } else {
-            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, $reportType, $from, $to, $at, $failure);
+            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed($reportType, $from, $to, $failure)], $at);
         }
     }
 

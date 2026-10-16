@@ -11,16 +11,19 @@ namespace App\Ingestion\Domain;
  *
  * Отметка ставится на каждый день `from..to` включительно: дневная
  * выгрузка — диапазон из одного дня, диапазонная (возвраты, реклама) —
- * все дни, которые она загружает, снимок — день снимка.
+ * все дни, которые она загружает, снимок — день снимка. Все отметки
+ * прогона пишутся одним вызовом — одним запросом, не циклом (§6).
  */
 interface MarketplaceDayLoadRepository
 {
     /** Потолок диапазона одной отметки — больше года выгрузки не бывает. */
     public const int MAX_DAYS = 366;
 
-    /** Все страницы выгрузки записаны. */
-    public function markCompleted(string $companyId, string $marketplaceAccountId, string $reportType, \DateTimeImmutable $from, \DateTimeImmutable $to, \DateTimeImmutable $at): void;
-
-    /** Прогон отказал после начала — часть страниц могла записаться. */
-    public function markFailed(string $companyId, string $marketplaceAccountId, string $reportType, \DateTimeImmutable $from, \DateTimeImmutable $to, \DateTimeImmutable $at, string $failure): void;
+    /**
+     * Дни одного типа в списке не пересекаются — иначе исход дня
+     * неоднозначен, и вызов отклоняется.
+     *
+     * @param list<DayLoadMark> $marks
+     */
+    public function mark(string $companyId, string $marketplaceAccountId, array $marks, \DateTimeImmutable $at): void;
 }

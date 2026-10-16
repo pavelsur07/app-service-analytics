@@ -8,6 +8,7 @@ use App\Identity\Application\Facade\IdentityFacade;
 use App\Identity\Application\Facade\OzonSyncTarget;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
+use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
@@ -85,7 +86,7 @@ final readonly class FetchOzonReturnsHandler
         try {
             $this->load($message, $target, $fromDay, $toDay, $lock);
         } catch (\Throwable $failure) {
-            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, new \DateTimeImmutable(), $failure->getMessage());
+            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, $failure->getMessage())], new \DateTimeImmutable());
 
             throw $failure;
         }
@@ -120,7 +121,7 @@ final readonly class FetchOzonReturnsHandler
 
                 $this->brokenLogger->log($message->companyId, $message->marketplaceAccountId, 'returns', $failure, $target->apiKey);
                 $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
-                $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, new \DateTimeImmutable(), 'Подключение отозвано: '.$failure->getMessage());
+                $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, 'Подключение отозвано: '.$failure->getMessage())], new \DateTimeImmutable());
 
                 return;
             }
@@ -156,7 +157,7 @@ final readonly class FetchOzonReturnsHandler
                         $this->returns->upsertAll($facts);
                     }
                 });
-                $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, new \DateTimeImmutable());
+                $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::completed(MarketplaceReportType::OzonReturnsList, $fromDay, $toDay)], new \DateTimeImmutable());
 
                 return;
             }

@@ -8,6 +8,7 @@ use App\Identity\Application\Facade\IdentityFacade;
 use App\Identity\Application\Facade\OzonSyncTarget;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
+use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceListing;
 use App\Ingestion\Domain\MarketplaceListingPrice;
@@ -262,14 +263,14 @@ final readonly class FetchOzonCatalogHandler
      */
     private function markSnapshot(FetchOzonCatalogMessage $message, \DateTimeImmutable $period, ?string $failure): void
     {
-        $at = new \DateTimeImmutable();
-        foreach ([MarketplaceReportType::OzonProductList, MarketplaceReportType::OzonProductInfoList] as $reportType) {
-            if (null === $failure) {
-                $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, $reportType, $period, $period, $at);
-            } else {
-                $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, $reportType, $period, $period, $at, $failure);
-            }
-        }
+        $marks = array_map(
+            static fn (string $reportType): DayLoadMark => null === $failure
+                ? DayLoadMark::completed($reportType, $period, $period)
+                : DayLoadMark::failed($reportType, $period, $period, $failure),
+            [MarketplaceReportType::OzonProductList, MarketplaceReportType::OzonProductInfoList],
+        );
+
+        $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, $marks, new \DateTimeImmutable());
     }
 
     /**

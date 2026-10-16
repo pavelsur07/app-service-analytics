@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Persistence;
 
+use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use Doctrine\DBAL\Connection;
 
 /**
- * DBAL, не ORM (CLAUDE.md §6): upsert отметки по ключу с перехватом
+ * DBAL, не ORM (CLAUDE.md §6): upsert отметок по ключу с перехватом
  * конфликта на вставке (§4) — «найти и, если нет, записать» здесь нет.
- * Диапазон — одним запросом через generate_series, не циклом запросов
- * (§6).
+ * Все отметки прогона и все их дни — одним запросом: список отметок
+ * разворачивается в дни через generate_series, без цикла запросов (§6).
  *
  * Успех стирает отметку отказа, отказ успех не трогает: день отклонён,
  * пока `failed_at` не пуст (`DayLoadSql`). Какой прогон последний, решает
@@ -28,50 +29,69 @@ final readonly class DoctrineMarketplaceDayLoadWriter implements MarketplaceDayL
     ) {
     }
 
-    public function markCompleted(string $companyId, string $marketplaceAccountId, string $reportType, \DateTimeImmutable $from, \DateTimeImmutable $to, \DateTimeImmutable $at): void
+    public function mark(string $companyId, string $marketplaceAccountId, array $marks, \DateTimeImmutable $at): void
     {
-        $this->connection->executeStatement(<<<'SQL'
-            INSERT INTO marketplace_day_load (company_id, marketplace_account_id, report_type, period, completed_at)
-            SELECT :companyId, :marketplaceAccountId, :reportType, day::date, :at
-            FROM generate_series(CAST(:from AS date), CAST(:to AS date), interval '1 day') AS day
-            ON CONFLICT (company_id, marketplace_account_id, report_type, period)
-            DO UPDATE SET completed_at = EXCLUDED.completed_at, failed_at = NULL, failure = NULL
-            SQL, self::parameters($companyId, $marketplaceAccountId, $reportType, $from, $to, $at));
-    }
+        if ([] === $marks) {
+            return;
+        }
 
-    public function markFailed(string $companyId, string $marketplaceAccountId, string $reportType, \DateTimeImmutable $from, \DateTimeImmutable $to, \DateTimeImmutable $at, string $failure): void
-    {
-        $this->connection->executeStatement(<<<'SQL'
-            INSERT INTO marketplace_day_load (company_id, marketplace_account_id, report_type, period, failed_at, failure)
-            SELECT :companyId, :marketplaceAccountId, :reportType, day::date, :at, :failure
-            FROM generate_series(CAST(:from AS date), CAST(:to AS date), interval '1 day') AS day
+        $values = [];
+        $params = ['companyId' => $companyId, 'marketplaceAccountId' => $marketplaceAccountId];
+        /** @var array<string, list<array{int, int}>> $ranges */
+        $ranges = [];
+        foreach ($marks as $i => $mark) {
+            [$first, $last] = self::range($mark);
+            foreach ($ranges[$mark->reportType] ?? [] as [$otherFirst, $otherLast]) {
+                if ($first <= $otherLast && $otherFirst <= $last) {
+                    throw new \InvalidArgumentException("Отметки типа {$mark->reportType} пересекаются по дням — исход дня неоднозначен.");
+                }
+            }
+            $ranges[$mark->reportType][] = [$first, $last];
+
+            $values[] = "(:reportType{$i}, CAST(:from{$i} AS date), CAST(:to{$i} AS date), CAST(:completedAt{$i} AS timestamp), CAST(:failedAt{$i} AS timestamp), CAST(:failure{$i} AS varchar))";
+            $params["reportType{$i}"] = $mark->reportType;
+            $params["from{$i}"] = $mark->from->format('Y-m-d');
+            $params["to{$i}"] = $mark->to->format('Y-m-d');
+            $params["completedAt{$i}"] = null === $mark->failure ? $at->format('Y-m-d H:i:sP') : null;
+            $params["failedAt{$i}"] = null === $mark->failure ? null : $at->format('Y-m-d H:i:sP');
+            $params["failure{$i}"] = null === $mark->failure ? null : mb_substr($mark->failure, 0, self::FAILURE_LENGTH);
+        }
+
+        $valuesSql = implode(', ', $values);
+        // Успех: completed_at — новое время, отказ стёрт. Отказ:
+        // completed_at прежний (COALESCE), failed_at и причина — новые.
+        $this->connection->executeStatement(<<<SQL
+            INSERT INTO marketplace_day_load (company_id, marketplace_account_id, report_type, period, completed_at, failed_at, failure)
+            SELECT :companyId, :marketplaceAccountId, m.report_type, day::date, m.completed_at, m.failed_at, m.failure
+            FROM (VALUES {$valuesSql}) AS m (report_type, first_day, last_day, completed_at, failed_at, failure)
+            CROSS JOIN LATERAL generate_series(m.first_day, m.last_day, interval '1 day') AS day
             ON CONFLICT (company_id, marketplace_account_id, report_type, period)
-            DO UPDATE SET failed_at = EXCLUDED.failed_at, failure = EXCLUDED.failure
-            SQL, [
-            ...self::parameters($companyId, $marketplaceAccountId, $reportType, $from, $to, $at),
-            'failure' => mb_substr($failure, 0, self::FAILURE_LENGTH),
-        ]);
+            DO UPDATE SET completed_at = COALESCE(EXCLUDED.completed_at, marketplace_day_load.completed_at),
+                          failed_at = EXCLUDED.failed_at,
+                          failure = EXCLUDED.failure
+            SQL, $params);
     }
 
     /**
-     * @return array<string, string>
+     * Дни отметки номерами дней — для проверки потолка и пересечений.
+     *
+     * @return array{int, int}
      */
-    private static function parameters(string $companyId, string $marketplaceAccountId, string $reportType, \DateTimeImmutable $from, \DateTimeImmutable $to, \DateTimeImmutable $at): array
+    private static function range(DayLoadMark $mark): array
     {
-        $first = $from->format('Y-m-d');
-        $last = $to->format('Y-m-d');
-        $days = (int) (new \DateTimeImmutable($first))->diff(new \DateTimeImmutable($last))->format('%r%a') + 1;
+        $first = self::dayNumber($mark->from);
+        $last = self::dayNumber($mark->to);
+        $days = $last - $first + 1;
         if ($days < 1 || $days > self::MAX_DAYS) {
-            throw new \InvalidArgumentException("Отметка загрузки на {$days} дн. ({$first}..{$last}) — диапазон пуст или длиннее ".self::MAX_DAYS.' дней.');
+            throw new \InvalidArgumentException(\sprintf('Отметка загрузки %s на %d дн. (%s..%s) — диапазон пуст или длиннее %d дней.', $mark->reportType, $days, $mark->from->format('Y-m-d'), $mark->to->format('Y-m-d'), self::MAX_DAYS));
         }
 
-        return [
-            'companyId' => $companyId,
-            'marketplaceAccountId' => $marketplaceAccountId,
-            'reportType' => $reportType,
-            'from' => $first,
-            'to' => $last,
-            'at' => $at->format('Y-m-d H:i:sP'),
-        ];
+        return [$first, $last];
+    }
+
+    /** Номер календарного дня от эпохи — по дате, без часового пояса. */
+    private static function dayNumber(\DateTimeImmutable $day): int
+    {
+        return intdiv((new \DateTimeImmutable($day->format('Y-m-d'), new \DateTimeZone('UTC')))->getTimestamp(), 86_400);
     }
 }

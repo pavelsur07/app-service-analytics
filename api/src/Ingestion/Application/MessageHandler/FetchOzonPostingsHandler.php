@@ -8,6 +8,7 @@ use App\Identity\Application\Facade\IdentityFacade;
 use App\Identity\Application\Facade\OzonSyncTarget;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
+use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
@@ -101,7 +102,7 @@ final readonly class FetchOzonPostingsHandler
         } catch (\Throwable $failure) {
             // Отметка загрузки (ADR-038): raw за день мог уже сохраниться,
             // а факты — нет, и без отметки день выглядел бы загруженным.
-            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, self::REPORT_TYPE, $since, $since, new \DateTimeImmutable(), $failure->getMessage());
+            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(self::REPORT_TYPE, $since, $since, $failure->getMessage())], new \DateTimeImmutable());
 
             throw $failure;
         }
@@ -123,7 +124,7 @@ final readonly class FetchOzonPostingsHandler
 
             $this->brokenLogger->log($message->companyId, $message->marketplaceAccountId, 'sales', $failure, $target->apiKey);
             $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
-            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, self::REPORT_TYPE, $since, $since, new \DateTimeImmutable(), 'Подключение отозвано: '.$failure->getMessage());
+            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(self::REPORT_TYPE, $since, $since, 'Подключение отозвано: '.$failure->getMessage())], new \DateTimeImmutable());
 
             return;
         }
@@ -156,7 +157,7 @@ final readonly class FetchOzonPostingsHandler
         $facts = $this->parser->parse($rawBody, $companyId, $marketplaceAccountId, $rawDocumentId);
         $this->postingStatuses->recordChanged($target->companyId, $statuses);
         $this->salesFacts->upsertAll($facts);
-        $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, self::REPORT_TYPE, $since, $since, new \DateTimeImmutable());
+        $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::completed(self::REPORT_TYPE, $since, $since)], new \DateTimeImmutable());
     }
 
     /**

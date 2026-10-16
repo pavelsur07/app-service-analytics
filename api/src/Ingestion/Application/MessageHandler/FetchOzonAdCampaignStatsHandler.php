@@ -10,6 +10,7 @@ use App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Application\StoreOzonAdSkuExpenses;
+use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
@@ -178,14 +179,15 @@ final readonly class FetchOzonAdCampaignStatsHandler
      */
     private function markPieces(FetchOzonAdCampaignStatsMessage $message, array $planned, array $done, ?string $failure): void
     {
-        $at = new \DateTimeImmutable();
+        $marks = [];
         foreach ($planned as [$reportType, $first, $last]) {
-            if (isset($done[self::piece($reportType, $first)])) {
-                $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, $reportType, $first, $last, $at);
-            } else {
-                $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, $reportType, $first, $last, $at, $failure ?? 'Выгрузка куска не выполнена.');
-            }
+            $marks[] = isset($done[self::piece($reportType, $first)])
+                ? DayLoadMark::completed($reportType, $first, $last)
+                : DayLoadMark::failed($reportType, $first, $last, $failure ?? 'Выгрузка куска не выполнена.');
         }
+
+        // Одним вызовом — одним запросом, не циклом (CLAUDE.md §6).
+        $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, $marks, new \DateTimeImmutable());
     }
 
     private static function piece(string $reportType, \DateTimeImmutable $first): string
