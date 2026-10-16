@@ -90,11 +90,11 @@ final class MarketplaceDayLoadBuilder
         $at = new \DateTimeImmutable();
 
         if (null === $this->failure) {
-            $repository->markCompleted($companyId, $accountId, $this->reportType, $this->period, $at);
+            $repository->markCompleted($companyId, $accountId, $this->reportType, $this->period, $this->period, $at);
 
             return;
         }
 
-        $repository->markFailed($companyId, $accountId, $this->reportType, $this->period, $at, $this->failure);
+        $repository->markFailed($companyId, $accountId, $this->reportType, $this->period, $this->period, $at, $this->failure);
     }
 }

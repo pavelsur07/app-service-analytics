@@ -77,7 +77,7 @@ final readonly class FetchOzonExpensesHandler
         try {
             $this->loadDay($message, $target, $companyId, $marketplaceAccountId, $day);
         } catch (\Throwable $failure) {
-            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonAccrualByDay, $day, new \DateTimeImmutable(), $failure->getMessage());
+            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonAccrualByDay, $day, $day, new \DateTimeImmutable(), $failure->getMessage());
 
             throw $failure;
         }
@@ -98,7 +98,7 @@ final readonly class FetchOzonExpensesHandler
 
                 $this->brokenLogger->log($message->companyId, $message->marketplaceAccountId, 'expenses', $failure, $target->apiKey);
                 $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
-                $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonAccrualByDay, $day, new \DateTimeImmutable(), 'Подключение отозвано: '.$failure->getMessage());
+                $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonAccrualByDay, $day, $day, new \DateTimeImmutable(), 'Подключение отозвано: '.$failure->getMessage());
 
                 return;
             }
@@ -115,7 +115,7 @@ final readonly class FetchOzonExpensesHandler
             $this->expenses->upsertAll($parsed['facts']);
 
             if ('' === $parsed['lastId']) {
-                $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonAccrualByDay, $day, new \DateTimeImmutable());
+                $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonAccrualByDay, $day, $day, new \DateTimeImmutable());
 
                 return;
             }

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Ingestion\Application\MessageHandler;
 
 use App\Identity\Application\Facade\IdentityFacade;
+use App\Identity\Application\Facade\OzonSyncTarget;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
+use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
@@ -23,6 +25,11 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * Paginated /v1/returns/list -> immutable raw pages -> return fact upsert.
+ *
+ * Отметка загрузки (ADR-038) ставится на каждый день диапазона: факты
+ * пишутся одной транзакцией после последней страницы, и успех означает,
+ * что весь диапазон перечитан. Отказ после начала — разбор, сеть, отзыв
+ * ключа — отмечает отказом все его дни.
  */
 #[AsMessageHandler]
 final readonly class FetchOzonReturnsHandler
@@ -40,6 +47,7 @@ final readonly class FetchOzonReturnsHandler
         private MarketplaceReturnFactRepository $returns,
         private Connection $connection,
         private LockFactory $lockFactory,
+        private MarketplaceDayLoadRepository $dayLoads,
     ) {
     }
 
@@ -74,6 +82,17 @@ final readonly class FetchOzonReturnsHandler
             throw new \InvalidArgumentException('Ozon returns range must contain valid inclusive Y-m-d dates.');
         }
 
+        try {
+            $this->load($message, $target, $fromDay, $toDay, $lock);
+        } catch (\Throwable $failure) {
+            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, new \DateTimeImmutable(), $failure->getMessage());
+
+            throw $failure;
+        }
+    }
+
+    private function load(FetchOzonReturnsMessage $message, OzonSyncTarget $target, \DateTimeImmutable $fromDay, \DateTimeImmutable $toDay, SharedLockInterface $lock): void
+    {
         $utc = new \DateTimeZone('UTC');
         $from = $fromDay->setTimezone($utc);
         $to = $toDay->modify('+1 day')->modify('-1 second')->setTimezone($utc);
@@ -101,6 +120,7 @@ final readonly class FetchOzonReturnsHandler
 
                 $this->brokenLogger->log($message->companyId, $message->marketplaceAccountId, 'returns', $failure, $target->apiKey);
                 $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
+                $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, new \DateTimeImmutable(), 'Подключение отозвано: '.$failure->getMessage());
 
                 return;
             }
@@ -136,6 +156,7 @@ final readonly class FetchOzonReturnsHandler
                         $this->returns->upsertAll($facts);
                     }
                 });
+                $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, new \DateTimeImmutable());
 
                 return;
             }

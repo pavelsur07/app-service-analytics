@@ -101,7 +101,7 @@ final readonly class FetchOzonPostingsHandler
         } catch (\Throwable $failure) {
             // Отметка загрузки (ADR-038): raw за день мог уже сохраниться,
             // а факты — нет, и без отметки день выглядел бы загруженным.
-            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, self::REPORT_TYPE, $since, new \DateTimeImmutable(), $failure->getMessage());
+            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, self::REPORT_TYPE, $since, $since, new \DateTimeImmutable(), $failure->getMessage());
 
             throw $failure;
         }
@@ -123,7 +123,7 @@ final readonly class FetchOzonPostingsHandler
 
             $this->brokenLogger->log($message->companyId, $message->marketplaceAccountId, 'sales', $failure, $target->apiKey);
             $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
-            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, self::REPORT_TYPE, $since, new \DateTimeImmutable(), 'Подключение отозвано: '.$failure->getMessage());
+            $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, self::REPORT_TYPE, $since, $since, new \DateTimeImmutable(), 'Подключение отозвано: '.$failure->getMessage());
 
             return;
         }
@@ -156,7 +156,7 @@ final readonly class FetchOzonPostingsHandler
         $facts = $this->parser->parse($rawBody, $companyId, $marketplaceAccountId, $rawDocumentId);
         $this->postingStatuses->recordChanged($target->companyId, $statuses);
         $this->salesFacts->upsertAll($facts);
-        $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, self::REPORT_TYPE, $since, new \DateTimeImmutable());
+        $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, self::REPORT_TYPE, $since, $since, new \DateTimeImmutable());
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Identity\Application\Facade\IdentityFacade;
 use App\Identity\Application\Facade\OzonSyncTarget;
 use App\Ingestion\Application\Message\FetchOzonCatalogMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
+use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceListing;
 use App\Ingestion\Domain\MarketplaceListingPrice;
 use App\Ingestion\Domain\MarketplaceListingPriceRepository;
@@ -105,6 +106,7 @@ final readonly class FetchOzonCatalogHandler
         private MarketplaceListingRepository $listings,
         private MarketplaceListingPriceRepository $listingPrices,
         private MarketplaceRawDocumentRepository $rawDocuments,
+        private MarketplaceDayLoadRepository $dayLoads,
     ) {
     }
 
@@ -149,6 +151,17 @@ final readonly class FetchOzonCatalogHandler
         $syncedAt = new \DateTimeImmutable();
         $period = (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))->setTime(0, 0);
 
+        try {
+            $this->load($message, $target, $companyId, $marketplaceAccountId, $syncedAt, $period);
+        } catch (\Throwable $failure) {
+            $this->markSnapshot($message, $period, $failure->getMessage());
+
+            throw $failure;
+        }
+    }
+
+    private function load(FetchOzonCatalogMessage $message, OzonSyncTarget $target, Uuid $companyId, Uuid $marketplaceAccountId, \DateTimeImmutable $syncedAt, \DateTimeImmutable $period): void
+    {
         $listings = [];
         $lastId = '';
         $seenCursors = [];
@@ -166,6 +179,7 @@ final readonly class FetchOzonCatalogHandler
                 // бы остальные товары продавца.
                 $this->brokenLogger->log($message->companyId, $message->marketplaceAccountId, 'products', $failure, $target->apiKey);
                 $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
+                $this->markSnapshot($message, $period, 'Подключение отозвано: '.$failure->getMessage());
 
                 return;
             }
@@ -223,6 +237,7 @@ final readonly class FetchOzonCatalogHandler
             // числе товаров — уходила бы на пустую страницу.
             if ('' === $parsed->lastId || $parsed->itemsOnPage < self::PAGE_SIZE) {
                 $this->listings->replaceForAccount($target->companyId, $marketplaceAccountId, $listings);
+                $this->markSnapshot($message, $period, null);
 
                 return;
             }
@@ -238,6 +253,23 @@ final readonly class FetchOzonCatalogHandler
         // нельзя: replaceForAccount удаляет всё, чего нет в переданном
         // списке, — неполный каталог стёр бы половину товаров продавца.
         throw new \RuntimeException(\sprintf('Каталог подключения %s не уместился в %d страниц — выгрузка не записана.', $message->marketplaceAccountId, self::MAX_PAGES));
+    }
+
+    /**
+     * Отметка загрузки (ADR-038) — на день снимка, обоим типам каталога:
+     * список и карточки грузятся одним прогоном и записываются вместе.
+     * `$failure` null — снимок записан целиком.
+     */
+    private function markSnapshot(FetchOzonCatalogMessage $message, \DateTimeImmutable $period, ?string $failure): void
+    {
+        $at = new \DateTimeImmutable();
+        foreach ([MarketplaceReportType::OzonProductList, MarketplaceReportType::OzonProductInfoList] as $reportType) {
+            if (null === $failure) {
+                $this->dayLoads->markCompleted($message->companyId, $message->marketplaceAccountId, $reportType, $period, $period, $at);
+            } else {
+                $this->dayLoads->markFailed($message->companyId, $message->marketplaceAccountId, $reportType, $period, $period, $at, $failure);
+            }
+        }
     }
 
     /**

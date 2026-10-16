@@ -24,6 +24,7 @@ use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\Fake\FakeOzonCatalogFetcher;
 use App\Tests\Support\Fake\FakeOzonProductInfoFetcher;
+use App\Tests\Support\Probe\DayLoadMarks;
 use Doctrine\DBAL\Connection;
 use Monolog\Handler\TestHandler;
 use Monolog\LogRecord;
@@ -54,6 +55,11 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
 
         self::assertSame(62, $this->skuCount($container, $account));
         self::assertTrue($this->hasSku($container, $account, '220280923'));
+        // Снимок записан целиком — день снимка загружен у обоих типов (ADR-038).
+        $today = (new \DateTimeImmutable('now', new \DateTimeZone('Europe/Moscow')))->format('Y-m-d');
+        foreach ([MarketplaceReportType::OzonProductList, MarketplaceReportType::OzonProductInfoList] as $reportType) {
+            self::assertSame([$today => 'ok'], DayLoadMarks::of($this->connection($container), $account, $reportType));
+        }
     }
 
     public function testHandlingTheSameCatalogTwiceChangesNothing(): void
@@ -147,9 +153,17 @@ final class FetchOzonCatalogHandlerTest extends KernelTestCase
 
         $this->fetcher($container, [$page, $page]);
 
-        $this->expectException(\RuntimeException::class);
+        try {
+            $this->syncCatalog($container, $account);
+            self::fail('Повторяющийся курсор должен остановить выгрузку.');
+        } catch (\RuntimeException) {
+        }
 
-        $this->syncCatalog($container, $account);
+        // Raw первой страницы есть, каталог не заменён: день снимка — отказ.
+        $today = (new \DateTimeImmutable('now', new \DateTimeZone('Europe/Moscow')))->format('Y-m-d');
+        foreach ([MarketplaceReportType::OzonProductList, MarketplaceReportType::OzonProductInfoList] as $reportType) {
+            self::assertSame([$today => 'failed'], DayLoadMarks::of($this->connection($container), $account, $reportType));
+        }
     }
 
     private function transport(ContainerInterface $container): InMemoryTransport

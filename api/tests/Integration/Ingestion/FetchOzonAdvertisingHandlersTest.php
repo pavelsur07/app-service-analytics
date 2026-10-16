@@ -26,6 +26,7 @@ use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\Fake\FakeOzonAdvertisingFetcher;
+use App\Tests\Support\Probe\DayLoadMarks;
 use Doctrine\DBAL\Connection;
 use Monolog\Handler\TestHandler;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -105,6 +106,16 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         // Список, по которому выбраны кампании, сохранён до разбора
         // с днём снимка из сообщения (ADR-006).
         self::assertSame([$chunk['to']], $this->rawPeriods($container, $account, MarketplaceReportType::OzonAdCampaigns));
+
+        // Отметки загрузки (ADR-038): каждая выгрузка куска — на свои дни.
+        $connection = $this->connection($container);
+        self::assertSame(['ok' => 30], DayLoadMarks::counts($connection, $account, MarketplaceReportType::OzonAdExpense));
+        self::assertSame(['ok' => 30], DayLoadMarks::counts($connection, $account, MarketplaceReportType::OzonAdDaily));
+        self::assertSame([$chunk['to'] => 'ok'], DayLoadMarks::of($connection, $account, MarketplaceReportType::OzonAdCampaigns));
+        self::assertSame(
+            [$expectedDays[1] => 'ok', $expectedDays[0] => 'ok'],
+            DayLoadMarks::of($connection, $account, MarketplaceReportType::OzonAdSkuDay),
+        );
     }
 
     public function testSkuOfFreshDaysBecomesFactsAsTheCabinetGaveThem(): void
@@ -158,6 +169,13 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         self::assertSame(self::SPENDING_ON_LAST_DAY, $this->orderedSkuCampaigns($container));
         self::assertCount(1, array_filter($this->sent($container, OrderOzonAdSkuReportMessage::class), static fn (OrderOzonAdSkuReportMessage $o): bool => OzonAdReportKind::CpoOrders === $o->kind));
         self::assertCount(2, array_unique(array_column($fetcher->skuRequests, 'day')));
+
+        // Неразобранные дни products/sku — отказ, остальное из куска
+        // загружено (ADR-038).
+        $connection = $this->connection($container);
+        self::assertSame(['failed' => 2], DayLoadMarks::counts($connection, $account, MarketplaceReportType::OzonAdSkuDay));
+        self::assertSame(['ok' => 30], DayLoadMarks::counts($connection, $account, MarketplaceReportType::OzonAdExpense));
+        self::assertSame([$chunk['to'] => 'ok'], DayLoadMarks::of($connection, $account, MarketplaceReportType::OzonAdCampaigns));
     }
 
     public function testUnparsableExpenseStillOrdersTheCpoReportAndReachesTheTracker(): void
@@ -365,6 +383,46 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
         self::assertSame([], $this->rawBodies($container, $account, MarketplaceReportType::OzonAdSkuReport));
         // Форма строки заказов неизвестна — фактов из него нет (ADR-035 п. 7).
         self::assertSame(0, $this->factTotals($container, $account)['rows']);
+        // Скачан — все дни периода загружены (ADR-038).
+        self::assertSame(['ok' => 31], DayLoadMarks::counts($this->connection($container), $account, MarketplaceReportType::OzonAdCpoOrders));
+    }
+
+    public function testRejectedOrOverdueOrdersReportMarksItsDaysFailed(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+        $connection = $this->connection($container);
+
+        // Площадка отклонила заказ — отчёт не будет загружен (ADR-038).
+        $fetcher->failOrdersWith($this->httpFailure(400));
+        $handler = $container->get(OrderOzonAdSkuReportHandler::class);
+        \assert($handler instanceof OrderOzonAdSkuReportHandler);
+        $handler(new OrderOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-25', '2026-08-31', [], kind: OzonAdReportKind::CpoOrders));
+        self::assertSame(['failed' => 7], DayLoadMarks::counts($connection, $account, MarketplaceReportType::OzonAdCpoOrders));
+
+        // ERROR площадки при проверке — тоже отказ, на дни своего периода.
+        $fetcher->reportStates(['ERROR']);
+        $check = $container->get(CheckOzonAdSkuReportHandler::class);
+        \assert($check instanceof CheckOzonAdSkuReportHandler);
+        $check(new CheckOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-09-01', '054cd190-6514-4465-8792-e3e11f396886', 1, OzonAdReportKind::CpoOrders, '2026-09-02'));
+        self::assertSame(['failed' => 9], DayLoadMarks::counts($connection, $account, MarketplaceReportType::OzonAdCpoOrders));
+    }
+
+    public function testSkuReportsLeaveNoMarks(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+
+        // На один день SKU-отчётов несколько — по пачкам кампаний, отметка
+        // одна на день: успех одной пачки стёр бы отказ другой. Отказы
+        // SKU-отчётов экран покрытия берёт из очереди failed (ADR-038).
+        $this->check($container, $account, attempt: 1);
+        $fetcher->failOrdersWith($this->httpFailure(400));
+        $this->order($container, $account);
+
+        self::assertSame([], DayLoadMarks::of($this->connection($container), $account, MarketplaceReportType::OzonAdSkuReport));
     }
 
     public function testCheckQueuedBeforeTheKindFieldIsStillASkuReport(): void
