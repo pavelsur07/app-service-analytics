@@ -8,12 +8,16 @@ use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Domain\Coverage\DataCoverage;
 use App\Ingestion\Domain\Coverage\DataCoverageCalculator;
 use App\Ingestion\Domain\Coverage\DataCoverageSource;
+use App\Ingestion\Infrastructure\Query\Coverage\CoverageDayLoadsQuery;
 use App\Ingestion\Infrastructure\Query\Coverage\CoverageDocumentsQuery;
 
 /**
  * Отчёт о полноте данных кабинета за месяц: какие эндпоинты Ozon за какие
- * дни загружены. Только чтение того, что уже лежит в raw-слое и в очереди
- * `failed`, — ни одного запроса к площадке.
+ * дни загружены. Только чтение того, что уже лежит в raw-слое, в отметках
+ * загрузки дня (ADR-038) и в очереди `failed`, — ни одного запроса
+ * к площадке. Отметка — у выгрузок, которые её ставят (отправления,
+ * начисления); очередь — запасной признак для остальных и для отказов
+ * до начала дня.
  *
  * Кабинет ищется в подключениях компании через Facade: чужой или
  * несуществующий — `null`, для вызывающего это 404 (CLAUDE.md §1).
@@ -24,6 +28,7 @@ final readonly class BuildDataCoverageAction
     public function __construct(
         private IdentityFacade $identityFacade,
         private CoverageDocumentsQuery $documents,
+        private CoverageDayLoadsQuery $dayLoads,
         private FailedLoads $failedLoads,
         private DataCoverageCalculator $calculator,
     ) {
@@ -66,6 +71,17 @@ final readonly class BuildDataCoverageAction
             $this->documents->buildFirstPeriods($companyId, $marketplaceAccountId, $types)->executeQuery()->fetchAllAssociative(),
         );
 
+        $rejected = $this->dayLoads->rejected(
+            $companyId,
+            $marketplaceAccountId,
+            $types,
+            $monthStart,
+            $monthStart->modify('last day of this month'),
+        )->executeQuery()->fetchAllAssociative();
+        if (\count($rejected) > CoverageDayLoadsQuery::MAX_RESULTS) {
+            throw new \RuntimeException('Day load marks for the coverage report exceed the safety ceiling.');
+        }
+
         return $this->calculator->calculate(
             $sources,
             array_map(CoverageDocumentsQuery::mapRow(...), $rows),
@@ -73,6 +89,7 @@ final readonly class BuildDataCoverageAction
             $monthStart,
             $today,
             $firstPeriods,
+            array_map(CoverageDayLoadsQuery::mapRow(...), $rejected),
         );
     }
 }

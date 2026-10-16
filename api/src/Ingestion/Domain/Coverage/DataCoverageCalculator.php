@@ -12,6 +12,9 @@ namespace App\Ingestion\Domain\Coverage;
  *   диапазона (`rangeEndLagDays`, SKU-отчёт) «ещё рано» и последние дни
  *   до сегодня: за них отвечает другой эндпоинт (`products/sku`),
  *   и этот их не покроет никогда.
+ * - Последний прогон дня отказал по отметке загрузки (ADR-038) — «ошибка»,
+ *   даже если выгрузка за день есть: raw сохраняется до разбора, и день,
+ *   отклонённый посреди страниц, записан не весь.
  * - Выгрузка покрывает день — «загружено», даже если по этому дню в
  *   `failed` лежит старое сообщение: данные есть, повтор уже не нужен.
  * - Нет выгрузки, но загрузка дня лежит в `failed` — «ошибка».
@@ -24,8 +27,9 @@ final class DataCoverageCalculator
     /**
      * @param list<DataCoverageSource> $sources
      * @param list<CoverageDocument>   $documents
-     * @param list<CoverageFailure>    $failures
+     * @param list<CoverageFailure>    $failures     загрузки из очереди `failed`
      * @param array<string, string>    $firstPeriods raw-тип → первый `period` за всё время, Y-m-d
+     * @param list<CoverageFailure>    $rejections   дни с отказом по отметке загрузки (ADR-038)
      */
     public function calculate(
         array $sources,
@@ -34,6 +38,7 @@ final class DataCoverageCalculator
         \DateTimeImmutable $monthStart,
         \DateTimeImmutable $today,
         array $firstPeriods = [],
+        array $rejections = [],
     ): DataCoverage {
         $days = self::days($monthStart);
 
@@ -41,6 +46,7 @@ final class DataCoverageCalculator
         foreach ($sources as $source) {
             $covered = $this->coveredDays($source, $documents);
             $failed = $this->failedDays($source, $failures);
+            $rejected = $this->failedDays($source, $rejections);
             $dueUntil = $today->modify('-'.$source->rangeEndLagDays.' days')->format('Y-m-d');
             // Источник «только на сейчас» до первой выгрузки не должен ничего;
             // ни одной выгрузки — не должен ни одного дня.
@@ -53,6 +59,7 @@ final class DataCoverageCalculator
                 $received[] = $covered[$key] ?? null;
                 $statuses[] = match (true) {
                     $key > $dueUntil => DataCoverageStatus::Pending,
+                    isset($rejected[$key]) => DataCoverageStatus::Failed,
                     isset($covered[$key]) => DataCoverageStatus::Loaded,
                     // Упавшая загрузка — ошибка и до первой выгрузки
                     // источника: иначе источник, падающий с самого
