@@ -24,6 +24,10 @@ use Symfony\Component\Uid\Uuid;
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'marketplace_day_load')]
+// Межарендаторное чтение сторожа свежести (RecentlyIngestedAccountsQuery)
+// отбирает по времени успеха — ведущий столбец completed_at, остальные
+// ради index-only scan (CLAUDE.md §1, «Индекс следует за запросом»).
+#[ORM\Index(name: 'idx_marketplace_day_load_completed_at', columns: ['completed_at', 'company_id', 'marketplace_account_id', 'report_type'])]
 class MarketplaceDayLoad
 {
     #[ORM\Id]

@@ -21,6 +21,7 @@ final class MarketplaceDayLoadBuilder
     private string $reportType = MarketplaceReportType::OzonAccrualByDay;
     private \DateTimeImmutable $period;
     private ?string $failure = null;
+    private ?\DateTimeImmutable $at = null;
 
     private function __construct()
     {
@@ -84,11 +85,20 @@ final class MarketplaceDayLoadBuilder
         return $clone;
     }
 
+    /** Момент прогона; по умолчанию — сейчас. */
+    public function withAt(\DateTimeImmutable $at): self
+    {
+        $clone = clone $this;
+        $clone->at = $at;
+
+        return $clone;
+    }
+
     public function persistWith(MarketplaceDayLoadRepository $repository): void
     {
         $companyId = $this->companyId->toRfc4122();
         $accountId = $this->marketplaceAccountId->toRfc4122();
-        $at = new \DateTimeImmutable();
+        $at = $this->at ?? new \DateTimeImmutable();
 
         if (null === $this->failure) {
             $repository->mark($companyId, $accountId, [DayLoadMark::completed($this->reportType, $this->period, $this->period)], $at);

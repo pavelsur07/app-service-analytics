@@ -10,12 +10,14 @@ use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Infrastructure\Query\ActiveOzonAccountsQuery;
 use App\Ingestion\Application\NotifyStaleAccountsAction;
+use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Infrastructure\Persistence\DoctrineStockSnapshotWriter;
 use App\Ingestion\Infrastructure\Query\RecentlyIngestedAccountsQuery;
 use App\Ingestion\Infrastructure\Query\RecentStockSnapshotAccountsQuery;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
+use App\Tests\Support\Builder\MarketplaceDayLoadBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -33,7 +35,7 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
     {
         $container = $this->bootedContainer();
         $account = $this->activeAccount($container);
-        // Ни одного raw-документа: синхронизация не проходит вовсе —
+        // Ни одной успешной загрузки: синхронизация не проходит вовсе —
         // ни ошибки в трекере, ни пустого экрана у клиента не будет,
         // цифры просто останутся вчерашними.
 
@@ -100,6 +102,61 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
 
         self::assertSame([], $alerted);
         self::assertSame([], $mailer->messages);
+    }
+
+    public function testSavedButUnparsedUploadIsNotAliveness(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container);
+        $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
+        $this->snapshotted($container, $account);
+
+        // Ответ площадки сохраняется каждый тик, но разбор отказывает:
+        // raw свежий, загрузки нет. Раньше сторож молчал бы — данных
+        // нет, а raw «доказывает», что связь жива (ADR-038).
+        MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
+            ->withCompanyId($account->companyId())
+            ->withMarketplaceAccountId($account->id())
+            ->withReportType(MarketplaceReportType::OzonAccrualByDay)
+            ->withReceivedAt(new \DateTimeImmutable('-10 minutes'))
+            ->persistWith(MarketplaceRawDocumentBuilder::repository($container));
+        /** @var MarketplaceDayLoadRepository $dayLoads */
+        $dayLoads = $container->get(MarketplaceDayLoadRepository::class);
+        MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
+            ->withCompanyId($account->companyId())
+            ->withMarketplaceAccountId($account->id())
+            ->withReportType(MarketplaceReportType::OzonAccrualByDay)
+            ->withPeriod(new \DateTimeImmutable('today'))
+            ->failed()
+            ->withAt(new \DateTimeImmutable('-10 minutes'))
+            ->persistWith($dayLoads);
+
+        $alerted = ($this->action($container, $this->recordingMailer()))();
+
+        self::assertSame([$this->key($account, MarketplaceReportType::OzonAccrualByDay)], $alerted);
+    }
+
+    public function testSuccessLongAgoIsStaleEvenWithAFreshFailure(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container);
+        $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
+        $this->snapshotted($container, $account);
+        /** @var MarketplaceDayLoadRepository $dayLoads */
+        $dayLoads = $container->get(MarketplaceDayLoadRepository::class);
+        $mark = MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
+            ->withCompanyId($account->companyId())
+            ->withMarketplaceAccountId($account->id())
+            ->withReportType(MarketplaceReportType::OzonAccrualByDay)
+            ->withPeriod(new \DateTimeImmutable('-3 days'));
+
+        // Последний успех три дня назад, с тех пор только отказы.
+        $mark->withAt(new \DateTimeImmutable('-3 days'))->persistWith($dayLoads);
+        $mark->failed()->withAt(new \DateTimeImmutable('-1 hour'))->persistWith($dayLoads);
+
+        $alerted = ($this->action($container, $this->recordingMailer()))();
+
+        self::assertSame([$this->key($account, MarketplaceReportType::OzonAccrualByDay)], $alerted);
     }
 
     public function testAdvertisingIsWatchedOnlyWhereItIsConnected(): void
@@ -327,14 +384,20 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         );
     }
 
+    /**
+     * Успешная загрузка дня час назад — отметка (ADR-038), а не raw.
+     */
     private function uploaded(ContainerInterface $container, MarketplaceAccount $account, string $reportType): void
     {
-        MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
+        /** @var MarketplaceDayLoadRepository $dayLoads */
+        $dayLoads = $container->get(MarketplaceDayLoadRepository::class);
+        MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
             ->withCompanyId($account->companyId())
             ->withMarketplaceAccountId($account->id())
             ->withReportType($reportType)
-            ->withReceivedAt(new \DateTimeImmutable('-1 hour'))
-            ->persistWith(MarketplaceRawDocumentBuilder::repository($container));
+            ->withPeriod(new \DateTimeImmutable('today'))
+            ->withAt(new \DateTimeImmutable('-1 hour'))
+            ->persistWith($dayLoads);
     }
 
     /**
