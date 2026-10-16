@@ -10,9 +10,15 @@
  *
  * Проверено на живой карточке 2026-08-18 (спайк ADR-015): в разметке
  * лежит `offers.price` = «1117» при цене кабинета 2537 — то есть именно
- * то, что видит покупатель после соинвеста Ozon. Зачёркнутая цена
- * (4799) и цена с картой (1005) в разметку не попадают: первая живёт
- * только в DOM, вторая — тоже, и без единой подписи.
+ * то, что видит покупатель после соинвеста Ozon, без Ozon Карты.
+ * Зачёркнутая цена и цена с картой в разметку не попадают.
+ *
+ * **Цена с Ozon Картой** читается отдельно (`readCardPrice`) из состояния
+ * блока цены — JSON в `data-state` у `[id^="state-webPrice"]`, поле
+ * `cardPrice` (образец 2026-10-16: «1 413 ₽» при `price` «1 570 ₽»,
+ * docs/plan/extension-hardening.md). Это внутреннее состояние их
+ * фронтенда, не контракт, поэтому оно сверяется с разметкой: `price`
+ * в нём обязан совпасть с `offers.price`, иначе мы читаем не тот блок.
  *
  * **Артикул сверяется, а не принимается на веру.** В той же разметке
  * лежит `sku`, и если он не тот, за которым пришли, — значит Ozon
@@ -34,6 +40,92 @@ type OzonPriceFailure =
 export type OzonPriceResult =
   | { readonly ok: true; readonly price: OzonPrice }
   | { readonly ok: false; readonly reason: OzonPriceFailure }
+
+/** Почему цена с картой не прочитана, хотя блок с ней на странице есть. */
+type CardPriceFailure =
+  'state-unreadable' | 'state-price-mismatch' | 'card-price-unreadable'
+
+/**
+ * `price: null` — на карточке нет цены с картой (скидки по карте нет)
+ * или нет блока состояния вовсе. Это обычный случай, а не поломка.
+ */
+export type CardPriceResult =
+  | { readonly ok: true; readonly price: OzonPrice | null }
+  | { readonly ok: false; readonly reason: CardPriceFailure }
+
+/** Знак рубля в тексте цены — единственная валюта витрины Ozon сегодня. */
+const RUBLE_SIGN = '₽'
+
+/**
+ * Цена с Ozon Картой. `withoutCard` — уже прочитанная цена из разметки:
+ * по ней проверяется, что состояние принадлежит той же карточке.
+ */
+export function readCardPrice(
+  root: ParentNode,
+  withoutCard: OzonPrice,
+): CardPriceResult {
+  const holder = root.querySelector('[id^="state-webPrice"]')
+  const raw = holder?.getAttribute('data-state') ?? null
+  if (null === raw) {
+    return { ok: true, price: null }
+  }
+
+  let state: unknown
+  try {
+    state = JSON.parse(raw)
+  } catch {
+    return { ok: false, reason: 'state-unreadable' }
+  }
+  if (null === state || 'object' !== typeof state) {
+    return { ok: false, reason: 'state-unreadable' }
+  }
+
+  const fields = state as Record<string, unknown>
+  if ('RUB' !== withoutCard.currency) {
+    // Знак в тексте — рубль; для другой валюты сопоставить его не с чем.
+    return { ok: false, reason: 'card-price-unreadable' }
+  }
+
+  // Цена без карты из состояния обязана совпасть с разметкой: иначе
+  // состояние от другого товара (подборка, «похожие»), и его цена
+  // с картой легла бы под чужой артикул.
+  if (rublesToMinor(fields.price) !== withoutCard.amountMinor) {
+    return { ok: false, reason: 'state-price-mismatch' }
+  }
+
+  if (
+    undefined === fields.cardPrice ||
+    null === fields.cardPrice ||
+    '' === fields.cardPrice
+  ) {
+    return { ok: true, price: null }
+  }
+
+  const amountMinor = rublesToMinor(fields.cardPrice)
+  if (null === amountMinor) {
+    return { ok: false, reason: 'card-price-unreadable' }
+  }
+
+  return { ok: true, price: { amountMinor, currency: withoutCard.currency } }
+}
+
+/**
+ * «1 413 ₽» или «1 413,50 ₽» → минорные единицы. Пробелы любые: Ozon
+ * разделяет разряды неразрывными и узкими пробелами. Без знака рубля
+ * текст не принимается — иначе число из чужого поля сошло бы за цену.
+ */
+function rublesToMinor(value: unknown): number | null {
+  if ('string' !== typeof value) {
+    return null
+  }
+
+  const compact = value.replace(/\s/g, '')
+  if (!compact.endsWith(RUBLE_SIGN)) {
+    return null
+  }
+
+  return toMinor(compact.slice(0, -RUBLE_SIGN.length).replace(',', '.'))
+}
 
 export function readDisplayedPrice(
   root: ParentNode,

@@ -107,6 +107,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         marketplaceSku: message.marketplaceSku,
         observedAt: message.observedAt,
         amountMinor: message.amountMinor,
+        cardAmountMinor: message.cardAmountMinor,
         currency: message.currency,
       },
       sender.tab?.windowId,

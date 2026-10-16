@@ -182,6 +182,48 @@ final class PriceObservationControllerTest extends WebTestCase
         self::assertSame(PriceObservation::SourceExtension, $row['source']);
         self::assertSame($fixture->user->id()->toRfc4122(), $row['captured_by_user_id']);
         self::assertSame('0.1.0', $row['extension_version']);
+        // Сборка без цены с картой — та, что работает сегодня у продавцов:
+        // её наблюдение принимается, и пустое поле — не ноль.
+        self::assertNull($row['card_price_minor']);
+    }
+
+    public function testCardPriceIsStoredNextToThePriceWithoutCard(): void
+    {
+        $client = static::createClient();
+        $fixture = $this->trackingCompany();
+
+        $this->post($client, $fixture, displayedMinor: 157_000, cardPrice: ['amount' => 141_300, 'currency' => 'RUB']);
+
+        self::assertResponseStatusCodeSame(200);
+        $row = $this->observationRow($fixture);
+        self::assertSame(157_000, self::intColumn($row, 'displayed_price_minor'));
+        self::assertSame(141_300, self::intColumn($row, 'card_price_minor'));
+    }
+
+    /**
+     * Цена с картой проверяется так же строго, как основная: это то же
+     * тело с чужой машины. Две цены одной карточки в разных валютах —
+     * ошибка разбора страницы, и записать её значило бы получить строку,
+     * у которой валюта колонки неверна для одной из цен.
+     */
+    public function testMalformedCardPriceIsRejected(): void
+    {
+        $client = static::createClient();
+        $fixture = $this->trackingCompany();
+
+        $this->post($client, $fixture, cardPrice: ['amount' => 141_300, 'currency' => 'KZT']);
+        self::assertResponseStatusCodeSame(422);
+        self::assertSame('card_price_currency_mismatch', $this->payload($client)['code']);
+
+        $this->post($client, $fixture, cardPrice: ['amount' => -1, 'currency' => 'RUB']);
+        self::assertResponseStatusCodeSame(422);
+        self::assertSame('card_price_negative', $this->payload($client)['code']);
+
+        $this->post($client, $fixture, cardPrice: ['amount' => 1413.5, 'currency' => 'RUB']);
+        self::assertResponseStatusCodeSame(422);
+        self::assertSame('card_price_required', $this->payload($client)['code']);
+
+        self::assertSame(0, $this->countObservations($fixture));
     }
 
     /**
@@ -247,14 +289,18 @@ final class PriceObservationControllerTest extends WebTestCase
         self::assertNotNull($client->getResponse()->headers->get('Retry-After'));
     }
 
+    /**
+     * @param array{amount: int|float, currency: string}|null $cardPrice
+     */
     private function post(
         KernelBrowser $client,
         TrackingCompany $fixture,
         string $marketplaceSku = '100000001',
         string $observedAt = self::OBSERVED_AT,
         int $displayedMinor = 111_700,
+        ?array $cardPrice = null,
     ): void {
-        $this->postRaw($client, $fixture, $this->body($marketplaceSku, $observedAt, $displayedMinor));
+        $this->postRaw($client, $fixture, $this->body($marketplaceSku, $observedAt, $displayedMinor, $cardPrice));
     }
 
     private function postRaw(KernelBrowser $client, TrackingCompany $fixture, string $body): void
@@ -267,17 +313,26 @@ final class PriceObservationControllerTest extends WebTestCase
         );
     }
 
+    /**
+     * @param array{amount: int|float, currency: string}|null $cardPrice
+     */
     private function body(
         string $marketplaceSku = '100000001',
         string $observedAt = self::OBSERVED_AT,
         int $displayedMinor = 111_700,
+        ?array $cardPrice = null,
     ): string {
-        return json_encode([
+        $body = [
             'marketplaceSku' => $marketplaceSku,
             'observedAt' => $observedAt,
             'displayedPrice' => ['amount' => $displayedMinor, 'currency' => 'RUB'],
             'extensionVersion' => '0.1.0',
-        ], \JSON_THROW_ON_ERROR);
+        ];
+        if (null !== $cardPrice) {
+            $body['cardPrice'] = $cardPrice;
+        }
+
+        return json_encode($body, \JSON_THROW_ON_ERROR);
     }
 
     /**

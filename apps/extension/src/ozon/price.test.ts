@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import markup from './__fixtures__/product-markup-308403988.json'
-import { readDisplayedPrice } from './price'
+import webPriceState from './__fixtures__/web-price-state-308520421.json'
+import { readCardPrice, readDisplayedPrice } from './price'
 
 /**
  * Фикстура — настоящая разметка карточки, снятая спайком ADR-015
@@ -116,5 +117,88 @@ describe('витринная цена из разметки карточки', (
     expect(
       readDisplayedPrice(pageWith(broken, ldJson(markup)), SKU),
     ).toMatchObject({ ok: true })
+  })
+})
+
+/**
+ * Фикстура — состояние блока цены живой карточки 308520421, снятое
+ * владельцем 2026-10-16 из консоли (покупатель вошёл в аккаунт):
+ * `cardPrice` «1 413 ₽» — с Ozon Картой, `price` «1 570 ₽» — без неё,
+ * совпадает с `offers.price` разметки той же карточки. Пробелы в суммах
+ * при копировании через консоль могли стать обычными; разбор принимает
+ * любые, и случай с неразрывными проверен отдельно.
+ */
+describe('цена с Ozon Картой из состояния блока цены', () => {
+  const WITHOUT_CARD = { amountMinor: 157_000, currency: 'RUB' }
+
+  function pageWithState(state: string | null): ParentNode {
+    return {
+      querySelector: (selector: string) =>
+        null !== state && selector.includes('state-webPrice')
+          ? {
+              getAttribute: (name: string) =>
+                'data-state' === name ? state : null,
+            }
+          : null,
+    } as unknown as ParentNode
+  }
+
+  function stateWith(fields: Record<string, unknown>): string {
+    return JSON.stringify({ ...webPriceState, ...fields })
+  }
+
+  it('читает цену с картой с настоящей карточки', () => {
+    expect(
+      readCardPrice(pageWithState(JSON.stringify(webPriceState)), WITHOUT_CARD),
+    ).toEqual({ ok: true, price: { amountMinor: 141_300, currency: 'RUB' } })
+  })
+
+  it('принимает неразрывные и узкие пробелы между разрядами', () => {
+    const state = stateWith({
+      cardPrice: '1\u00a0413\u2009₽',
+      price: '1\u202f570 ₽',
+    })
+
+    expect(readCardPrice(pageWithState(state), WITHOUT_CARD)).toEqual({
+      ok: true,
+      price: { amountMinor: 141_300, currency: 'RUB' },
+    })
+  })
+
+  it('без блока состояния или без поля цены с картой нет — это не поломка', () => {
+    expect(readCardPrice(pageWithState(null), WITHOUT_CARD)).toEqual({
+      ok: true,
+      price: null,
+    })
+    expect(
+      readCardPrice(
+        pageWithState(stateWith({ cardPrice: undefined })),
+        WITHOUT_CARD,
+      ),
+    ).toEqual({ ok: true, price: null })
+  })
+
+  it('не берёт цену с картой из блока другого товара', () => {
+    // Цена без карты в состоянии не совпала с разметкой карточки:
+    // состояние чужое, и его цена с картой легла бы под наш артикул.
+    expect(
+      readCardPrice(pageWithState(JSON.stringify(webPriceState)), {
+        amountMinor: 111_700,
+        currency: 'RUB',
+      }),
+    ).toEqual({ ok: false, reason: 'state-price-mismatch' })
+  })
+
+  it('не принимает число без знака рубля и испорченное состояние', () => {
+    expect(
+      readCardPrice(
+        pageWithState(stateWith({ cardPrice: '1413' })),
+        WITHOUT_CARD,
+      ),
+    ).toEqual({ ok: false, reason: 'card-price-unreadable' })
+    expect(readCardPrice(pageWithState('{не json'), WITHOUT_CARD)).toEqual({
+      ok: false,
+      reason: 'state-unreadable',
+    })
   })
 })

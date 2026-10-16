@@ -31,7 +31,7 @@ const EXTENSION_KEY =
  * сообщает версию с каждым снимком (ADR-014), и разъехавшиеся числа
  * означали бы, что по журналу нельзя понять, какая сборка их прислала.
  */
-export const EXTENSION_VERSION = '0.2.0'
+export const EXTENSION_VERSION = '0.3.0'
 
 const PROD_HOSTS = ['https://app.conwix.com/*']
 const DEV_HOSTS = [

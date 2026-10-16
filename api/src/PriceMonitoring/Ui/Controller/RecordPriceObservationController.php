@@ -21,7 +21,8 @@ use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\Requirement\Requirement;
 
 /**
- * Приём снимка двух цен с карточки Ozon (ADR-014).
+ * Приём снимка витринных цен с карточки Ozon (ADR-014): без Ozon Карты
+ * и, если есть, с картой.
  *
  * Путь под /api/extension/ — отдельный firewall с токеном (ADR-010).
  * companyId первым сегментом (CLAUDE.md §1): членство проверяет
@@ -56,12 +57,22 @@ final class RecordPriceObservationController
             new OA\Property(property: 'observedAt', type: 'string', format: 'date-time', description: 'Момент снимка, ISO 8601 в UTC (Date.toISOString)'),
             new OA\Property(
                 property: 'displayedPrice',
-                description: 'Витринная цена Ozon — то, что видит покупатель, до скидки банка. Цену продавца расширение не присылает: на карточке её нет (ADR-015)',
+                description: 'Витринная цена Ozon без Ozon Карты («С другими банками»). Цену продавца расширение не присылает: на карточке её нет (ADR-015)',
                 properties: [
                     new OA\Property(property: 'amount', type: 'integer', description: 'Сумма в минорных единицах; дробные числа не принимаются (ADR-004)'),
                     new OA\Property(property: 'currency', type: 'string', description: 'Код ISO 4217'),
                 ],
                 type: 'object',
+            ),
+            new OA\Property(
+                property: 'cardPrice',
+                description: 'Цена с Ozon Картой («С банками»). Нет поля или null — на карточке её нет. Валюта обязана совпадать с displayedPrice',
+                properties: [
+                    new OA\Property(property: 'amount', type: 'integer', description: 'Сумма в минорных единицах'),
+                    new OA\Property(property: 'currency', type: 'string', description: 'Код ISO 4217'),
+                ],
+                type: 'object',
+                nullable: true,
             ),
             new OA\Property(property: 'extensionVersion', type: 'string', description: 'Версия сборки расширения — по ней читаются массовые пропуски'),
         ],
@@ -124,6 +135,7 @@ final class RecordPriceObservationController
             $observation->marketplaceSku,
             $observation->observedAt,
             Money::ofMinor($observation->displayedPriceMinor, $observation->currency),
+            null === $observation->cardPriceMinor ? null : Money::ofMinor($observation->cardPriceMinor, $observation->currency),
             $actorUserId,
             $observation->extensionVersion,
             new \DateTimeImmutable(),

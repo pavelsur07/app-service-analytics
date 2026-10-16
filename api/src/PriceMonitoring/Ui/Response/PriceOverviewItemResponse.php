@@ -19,7 +19,10 @@ final readonly class PriceOverviewItemResponse
         public string $marketplaceSku,
         public ?string $name,
         public ?int $sellerPriceMinor,
+        /** Витринная цена без Ozon Карты. */
         public ?int $displayedPriceMinor,
+        /** Витринная цена с Ozon Картой; null — на карточке её не было. */
+        public ?int $cardPriceMinor,
         public ?int $coInvestmentMinor,
         public ?string $currency,
         /** ISO 8601 в UTC; null — наблюдений ещё не было. */

@@ -1,5 +1,5 @@
 import { findAnchor } from '../ozon/anchor'
-import { readDisplayedPrice } from '../ozon/price'
+import { readCardPrice, readDisplayedPrice } from '../ozon/price'
 import { ozonProductIdFromUrl } from '../ozon/productUrl'
 import {
   removePanel,
@@ -242,12 +242,24 @@ async function sendObservation(marketplaceSku: string): Promise<void> {
     return
   }
 
+  // Цена с картой — дополнение, а не условие: не прочитали — уходит
+  // цена без карты, а поломка видна в консоли, как и с основной.
+  const card = readCardPrice(document, result.price)
+  if (!card.ok) {
+    console.warn('[conwix] цена с Ozon Картой не прочитана', {
+      marketplaceSku,
+      reason: card.reason,
+      url: location.href,
+    })
+  }
+
   try {
     await chrome.runtime.sendMessage(
       observationMessage(
         marketplaceSku,
         new Date().toISOString(),
         result.price.amountMinor,
+        card.ok ? (card.price?.amountMinor ?? null) : null,
         result.price.currency,
       ),
     )

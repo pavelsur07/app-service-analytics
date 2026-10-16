@@ -42,12 +42,17 @@ export interface OverlayData {
   readonly capture: boolean
 }
 
-/** Снятая с карточки витринная цена — от content-script к service worker. */
+/**
+ * Снятые с карточки витринные цены — от content-script к service worker.
+ * `amountMinor` — без Ozon Карты, `cardAmountMinor` — с картой, null,
+ * если её на карточке нет. Валюта у обеих одна.
+ */
 export interface ObservationMessage {
   readonly type: 'conwix:observation'
   readonly marketplaceSku: string
   readonly observedAt: string
   readonly amountMinor: number
+  readonly cardAmountMinor: number | null
   readonly currency: string
 }
 
@@ -77,6 +82,7 @@ export function observationMessage(
   marketplaceSku: string,
   observedAt: string,
   amountMinor: number,
+  cardAmountMinor: number | null,
   currency: string,
 ): ObservationMessage {
   return {
@@ -84,6 +90,7 @@ export function observationMessage(
     marketplaceSku,
     observedAt,
     amountMinor,
+    cardAmountMinor,
     currency,
   }
 }
@@ -100,6 +107,9 @@ export function isObservationMessage(
     isNonEmptyString(candidate.observedAt) &&
     'number' === typeof candidate.amountMinor &&
     Number.isInteger(candidate.amountMinor) &&
+    (null === candidate.cardAmountMinor ||
+      ('number' === typeof candidate.cardAmountMinor &&
+        Number.isInteger(candidate.cardAmountMinor))) &&
     isNonEmptyString(candidate.currency)
   )
 }

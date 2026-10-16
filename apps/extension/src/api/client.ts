@@ -133,8 +133,9 @@ export async function stopTracking(
 }
 
 /**
- * Снимок витринной цены. Одно число: цену продавца расширение прислать
- * не может — на карточке её нет вовсе (ADR-015), она приходит из каталога.
+ * Снимок витринных цен: без Ozon Карты и, если есть, с картой. Цену
+ * продавца расширение прислать не может — на карточке её нет вовсе
+ * (ADR-015), она приходит из каталога.
  */
 export async function recordObservation(
   token: string,
@@ -143,6 +144,7 @@ export async function recordObservation(
     marketplaceSku: string
     observedAt: string
     amountMinor: number
+    cardAmountMinor: number | null
     currency: string
     extensionVersion: string
   },
@@ -159,6 +161,13 @@ export async function recordObservation(
           amount: observation.amountMinor,
           currency: observation.currency,
         },
+        cardPrice:
+          null === observation.cardAmountMinor
+            ? null
+            : {
+                amount: observation.cardAmountMinor,
+                currency: observation.currency,
+              },
         extensionVersion: observation.extensionVersion,
       }),
     },

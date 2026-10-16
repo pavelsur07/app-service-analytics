@@ -1,0 +1,67 @@
+{
+  "isAvailable": true,
+  "cardPrice": "1 413 ₽",
+  "price": "1 570 ₽",
+  "originalPrice": "3 948 ₽",
+  "showOriginalPrice": true,
+  "link": "/modal/pdpListOfBanks?product_id=308520421",
+  "lexemes": {
+    "currency": "Валюта",
+    "includeVatTextMobile": "Цена с НДС",
+    "moreText": "Подробнее",
+    "notRefundVatText": "НДС не возмещается",
+    "withOzonCard": "С банками",
+    "withoutOzonCard": "С другими банками",
+    "withoutVatText": "без НДС",
+    "withoutVatTextCapitalize": "Без НДС",
+    "withoutVatTextMobile": "Цена без НДС"
+  },
+  "trackingInfo": {
+    "view": { "actionType": "view", "key": "1pSo1Sqz5G61J_fPpfO_wk_sHpr4rfrs" }
+  },
+  "trackingInfoOzonBank": {
+    "click": {
+      "actionType": "click",
+      "key": "1pSo1YSpE_moU4J3btVtL2C5H-esuO4O"
+    }
+  },
+  "colorBlockRightContent": {
+    "images": [
+      {
+        "image": "https://ir.ozone.ru/s3/payments-cdn/ozon-price-compact-new-ozon-light.png",
+        "aspectRatio": "RATIO_1_1",
+        "imageWidth": 23,
+        "cdnSettings": { "size": 64 },
+        "fitType": "FIT_CENTER"
+      },
+      {
+        "image": "https://ir.ozone.ru/s3/payments-cdn/ozon_other_sovkombank_dark.png",
+        "aspectRatio": "RATIO_1_1",
+        "imageWidth": 20,
+        "cdnSettings": { "size": 64 },
+        "fitType": "FIT_CENTER"
+      },
+      {
+        "image": "https://ir.ozone.ru/s3/payments-cdn/ozon_other_otp_light.png",
+        "aspectRatio": "RATIO_1_1",
+        "imageWidth": 20,
+        "cdnSettings": { "size": 64 },
+        "fitType": "FIT_CENTER"
+      },
+      {
+        "image": "https://ir.ozone.ru/s3/payments-cdn/ozon_other_crediteurope_black.png",
+        "aspectRatio": "RATIO_1_1",
+        "imageWidth": 20,
+        "cdnSettings": { "size": 64 },
+        "fitType": "FIT_CENTER"
+      }
+    ]
+  },
+  "params": {
+    "ladderPriceHide": false,
+    "showPpu": true,
+    "withOzonAccount": "/modal/withOzonAccount",
+    "withOzonAccountLegal": "/modal/OzoneAccountForLegal",
+    "withoutOzonAccount": "/modal/withoutOzonAccount"
+  }
+}

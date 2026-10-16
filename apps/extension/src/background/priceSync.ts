@@ -378,6 +378,7 @@ export async function submitObservation(
     marketplaceSku: string
     observedAt: string
     amountMinor: number
+    cardAmountMinor: number | null
     currency: string
   },
   windowId: number | undefined,

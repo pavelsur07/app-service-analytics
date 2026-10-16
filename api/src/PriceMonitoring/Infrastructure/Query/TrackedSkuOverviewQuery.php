@@ -39,6 +39,7 @@ final readonly class TrackedSkuOverviewQuery
                 'tracked.marketplace_sku',
                 'tracked.marketplace_account_id',
                 'latest.displayed_price_minor',
+                'latest.card_price_minor',
                 'latest.currency',
                 'latest.observed_at',
             )
@@ -62,6 +63,7 @@ final readonly class TrackedSkuOverviewQuery
             tracked_sku tracked
             LEFT JOIN LATERAL (
                 SELECT observation.displayed_price_minor,
+                       observation.card_price_minor,
                        observation.currency,
                        observation.observed_at
                 FROM price_observation observation
@@ -85,6 +87,7 @@ final readonly class TrackedSkuOverviewQuery
 
         $observedAt = $row['observed_at'];
         $price = $row['displayed_price_minor'];
+        $cardPrice = $row['card_price_minor'];
         $currency = $row['currency'];
 
         $accountId = $row['marketplace_account_id'];
@@ -96,6 +99,7 @@ final readonly class TrackedSkuOverviewQuery
             marketplaceSku: $sku,
             marketplaceAccountId: $accountId,
             displayedPriceMinor: null === $price ? null : self::intValue($price),
+            cardPriceMinor: null === $cardPrice ? null : self::intValue($cardPrice),
             currency: \is_string($currency) ? $currency : null,
             // Postgres отдаёт timestamp without time zone строкой;
             // приложение пишет эти колонки в UTC (date.timezone=UTC),

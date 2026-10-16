@@ -22,6 +22,8 @@ final readonly class TrackedSkuOverviewRow
          */
         public string $marketplaceAccountId,
         public ?int $displayedPriceMinor,
+        /** null — на карточке не было цены с Ozon Картой либо её не читали. */
+        public ?int $cardPriceMinor,
         public ?string $currency,
         public ?\DateTimeImmutable $observedAt,
     ) {
@@ -39,5 +41,14 @@ final readonly class TrackedSkuOverviewRow
         }
 
         return Money::ofMinor($this->displayedPriceMinor, $this->currency);
+    }
+
+    public function cardPrice(): ?Money
+    {
+        if (null === $this->cardPriceMinor || null === $this->currency) {
+            return null;
+        }
+
+        return Money::ofMinor($this->cardPriceMinor, $this->currency);
     }
 }
