@@ -11,10 +11,12 @@ use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
+use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
+use App\Tests\Support\Builder\MarketplaceDayLoadBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
@@ -25,6 +27,7 @@ use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Stamp\ErrorDetailsStamp;
 use Symfony\Component\Messenger\Stamp\StampInterface;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Отчёт о полноте данных через HTTP: изоляция компаний (членство проверяет
@@ -110,6 +113,39 @@ final class DataCoverageControllerTest extends WebTestCase
         $this->failed(new FetchOzonExpensesMessage('019fe6ea-0000-7000-8000-00000000c0de', $account->id()->toRfc4122(), '2026-08-05'));
 
         self::assertSame('missing', $this->coverage($client, $company, $account, '2026-08')['rows'][1]['statuses'][4]);
+    }
+
+    public function testRejectedDayMarkIsAnErrorOnlyForItsCompanyAndCabinet(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $account = $this->account($company, advertising: false);
+        $other = $this->account($company, advertising: false);
+        /** @var MarketplaceDayLoadRepository $dayLoads */
+        $dayLoads = static::getContainer()->get(MarketplaceDayLoadRepository::class);
+        foreach (['2026-08-05', '2026-08-06'] as $day) {
+            MarketplaceRawDocumentBuilder::aMarketplaceRawDocument()
+                ->withCompanyId($company->id())
+                ->withMarketplaceAccountId($account->id())
+                ->withReportType(MarketplaceReportType::OzonAccrualByDay)
+                ->withPeriod(new \DateTimeImmutable($day))
+                ->persistWith(MarketplaceRawDocumentBuilder::repository(static::getContainer()));
+        }
+        $mark = MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
+            ->withReportType(MarketplaceReportType::OzonAccrualByDay)
+            ->withPeriod(new \DateTimeImmutable('2026-08-05'))
+            ->failed();
+        // Raw за 5 августа есть, но последний прогон отказал (ADR-038):
+        // в очереди failed ничего нет, отметка — единственный след.
+        $mark->withCompanyId($company->id())->withMarketplaceAccountId($account->id())->persistWith($dayLoads);
+        // Отказ того же дня другого кабинета и чужой компании — не наш.
+        $mark->withCompanyId($company->id())->withMarketplaceAccountId($other->id())->persistWith($dayLoads);
+        $mark->withCompanyId(Uuid::v7())->withMarketplaceAccountId($account->id())->withPeriod(new \DateTimeImmutable('2026-08-06'))->persistWith($dayLoads);
+
+        $statuses = $this->coverage($client, $company, $account, '2026-08')['rows'][1]['statuses'];
+
+        self::assertSame('failed', $statuses[4]);
+        self::assertSame('loaded', $statuses[5]);
     }
 
     public function testFailedLoadWithBase64BodyIsStillShown(): void

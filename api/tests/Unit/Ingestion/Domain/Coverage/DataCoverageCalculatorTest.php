@@ -124,6 +124,36 @@ final class DataCoverageCalculatorTest extends TestCase
         self::assertSame(['loaded', 'failed', 'missing'], $this->statuses($coverage->rows[0]->statuses, 3));
     }
 
+    public function testRejectedDayIsAFailureEvenWithItsRawDocument(): void
+    {
+        // Raw за 1 сентября есть, но прогон отказал посреди страниц —
+        // день записан не весь (ADR-038). Отметка держится и после
+        // очистки очереди failed: загрузки там уже нет.
+        $sources = array_values(array_filter(
+            DataCoverageSource::all(),
+            static fn (DataCoverageSource $source): bool => MarketplaceReportType::OzonAccrualByDay === $source->reportType,
+        ));
+        $coverage = (new DataCoverageCalculator())->calculate(
+            $sources,
+            [
+                $this->document(MarketplaceReportType::OzonAccrualByDay, '2026-09-01', '2026-09-02 01:00'),
+                $this->document(MarketplaceReportType::OzonAccrualByDay, '2026-09-02', '2026-09-03 01:00'),
+            ],
+            [],
+            $this->day('2026-09-01'),
+            $this->day('2026-09-03'),
+            [],
+            [
+                new CoverageFailure(MarketplaceReportType::OzonAccrualByDay, $this->day('2026-09-01'), $this->day('2026-09-01')),
+                // Отказ без raw — сеть упала на первой странице.
+                new CoverageFailure(MarketplaceReportType::OzonAccrualByDay, $this->day('2026-09-03'), $this->day('2026-09-03')),
+            ],
+        );
+
+        self::assertSame(['failed', 'loaded', 'failed'], $this->statuses($coverage->rows[0]->statuses, 3));
+        self::assertSame(1, $coverage->rows[0]->covered);
+    }
+
     public function testTotalShowsTheWorstStatusOfTheDay(): void
     {
         $coverage = $this->calculate(
