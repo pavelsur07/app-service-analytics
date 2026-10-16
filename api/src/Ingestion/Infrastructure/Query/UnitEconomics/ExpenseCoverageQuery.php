@@ -53,19 +53,22 @@ final readonly class ExpenseCoverageQuery
         // сверху потолком days у контроллера, так что и объём чтения
         // ограничен. Свой индекс окупится, когда документов станет
         // сотни тысяч, — тогда (company_id, report_type, period).
+        // Отметка отказа (ADR-038) — только у начислений. День продаж
+        // остаётся днём продаж и с отказом: юнит-экономика продажи
+        // не читает, а отзыв ключа ставит отказ обеим выгрузкам дня —
+        // фильтр по обеим спрятал бы именно тот день, который неполон.
         $notRejected = DayLoadSql::NOT_REJECTED;
         $uncovered = <<<SQL
             (
                 SELECT period
                 FROM marketplace_raw_document AS d
                 WHERE company_id = :companyId
-                  AND {$notRejected}
                   AND period >= :from
                   AND period <= :to
                   AND report_type IN (:salesReportType, :expensesReportType)
                 GROUP BY marketplace_account_id, period
                 HAVING bool_or(report_type = :salesReportType)
-                   AND NOT bool_or(report_type = :expensesReportType)
+                   AND NOT bool_or(report_type = :expensesReportType AND {$notRejected})
             ) AS uncovered
             SQL;
 

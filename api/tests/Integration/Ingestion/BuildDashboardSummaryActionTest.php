@@ -16,6 +16,7 @@ use App\Ingestion\Domain\OzonFeeTypeNames;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\CompanyBuilder;
+use App\Tests\Support\Builder\MarketplaceDayLoadBuilder;
 use App\Tests\Support\Builder\MarketplaceExpenseFactBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
@@ -306,26 +307,56 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         $this->loaded($container, $company, '2026-07-25');
         /** @var MarketplaceDayLoadRepository $dayLoads */
         $dayLoads = $container->get(MarketplaceDayLoadRepository::class);
-        $companyId = $company->id()->toRfc4122();
+        $mark = MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
+            ->withCompanyId($company->id())
+            ->withMarketplaceAccountId(Uuid::fromString(self::ACCOUNT_ID))
+            ->withReportType(MarketplaceReportType::OzonAccrualByDay)
+            ->withPeriod(new \DateTimeImmutable('2026-08-10'));
 
         // Отказ того же дня у другой компании — её отметка, не наша.
-        $dayLoads->markFailed(Uuid::v7()->toRfc4122(), self::ACCOUNT_ID, MarketplaceReportType::OzonAccrualByDay, new \DateTimeImmutable('2026-08-10'), new \DateTimeImmutable(), 'чужой отказ');
+        $mark->withCompanyId(Uuid::v7())->failed('чужой отказ')->persistWith($dayLoads);
         self::assertTrue($this->summary($container, $company)->current->dataComplete);
 
         // Raw за 10 августа есть, но прогон начислений отказал посреди
         // страниц — записано не всё (ADR-038).
-        $dayLoads->markFailed($companyId, self::ACCOUNT_ID, MarketplaceReportType::OzonAccrualByDay, new \DateTimeImmutable('2026-08-10'), new \DateTimeImmutable(), 'разбор не понял');
+        $mark->failed()->persistWith($dayLoads);
 
         $summary = $this->summary($container, $company);
         self::assertSame(1, $summary->current->daysWithoutAccruals);
         self::assertFalse($summary->current->dataComplete);
         self::assertNull($summary->changes->ordersAmountBps);
 
-        $dayLoads->markCompleted($companyId, self::ACCOUNT_ID, MarketplaceReportType::OzonAccrualByDay, new \DateTimeImmutable('2026-08-10'), new \DateTimeImmutable());
+        $mark->completed()->persistWith($dayLoads);
 
         $summary = $this->summary($container, $company);
         self::assertSame(0, $summary->current->daysWithoutAccruals);
         self::assertTrue($summary->current->dataComplete);
+    }
+
+    public function testRevokedKeyDayStaysADayWithoutAccruals(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->loaded($container, $company, '2026-07-25');
+        /** @var MarketplaceDayLoadRepository $dayLoads */
+        $dayLoads = $container->get(MarketplaceDayLoadRepository::class);
+
+        // Отзыв ключа ставит отказ обеим выгрузкам дня. День продаж
+        // от этого днём продаж быть не перестаёт, и неполные начисления
+        // за него обязаны остаться видны (ADR-038).
+        foreach ([MarketplaceReportType::OzonPostingFboList, MarketplaceReportType::OzonAccrualByDay] as $reportType) {
+            MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
+                ->withCompanyId($company->id())
+                ->withMarketplaceAccountId(Uuid::fromString(self::ACCOUNT_ID))
+                ->withReportType($reportType)
+                ->withPeriod(new \DateTimeImmutable('2026-08-10'))
+                ->failed('Подключение отозвано')
+                ->persistWith($dayLoads);
+        }
+
+        $summary = $this->summary($container, $company);
+        self::assertSame(1, $summary->current->daysWithoutAccruals);
+        self::assertFalse($summary->current->dataComplete);
     }
 
     public function testDaysCoverEveryDateOfEachPeriodWithZeros(): void
