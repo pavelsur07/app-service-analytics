@@ -1408,7 +1408,10 @@ export interface components {
             marketplaceSku: string;
             name?: string | null;
             sellerPriceMinor?: number | null;
+            /** Витринная цена без Ozon Карты. */
             displayedPriceMinor?: number | null;
+            /** Витринная цена с Ozon Картой; null — на карточке её не было. */
+            cardPriceMinor?: number | null;
             coInvestmentMinor?: number | null;
             currency?: string | null;
             /** ISO 8601 в UTC; null — наблюдений ещё не было. */
@@ -3583,13 +3586,20 @@ export interface operations {
                      * @description Момент снимка, ISO 8601 в UTC (Date.toISOString)
                      */
                     observedAt: string;
-                    /** @description Витринная цена Ozon — то, что видит покупатель, до скидки банка. Цену продавца расширение не присылает: на карточке её нет (ADR-015) */
+                    /** @description Витринная цена Ozon без Ozon Карты («С другими банками»). Цену продавца расширение не присылает: на карточке её нет (ADR-015) */
                     displayedPrice: {
                         /** @description Сумма в минорных единицах; дробные числа не принимаются (ADR-004) */
                         amount?: number;
                         /** @description Код ISO 4217 */
                         currency?: string;
                     };
+                    /** @description Цена с Ozon Картой («С банками»). Нет поля или null — на карточке её нет. Валюта обязана совпадать с displayedPrice */
+                    cardPrice?: {
+                        /** @description Сумма в минорных единицах */
+                        amount?: number;
+                        /** @description Код ISO 4217 */
+                        currency?: string;
+                    } | null;
                     /** @description Версия сборки расширения — по ней читаются массовые пропуски */
                     extensionVersion: string;
                 };

@@ -93,6 +93,7 @@ final class ListPriceOverviewController
                 name: $row->name,
                 sellerPriceMinor: $row->sellerPrice?->minorAmount(),
                 displayedPriceMinor: $row->displayedPrice?->minorAmount(),
+                cardPriceMinor: $row->cardPrice?->minorAmount(),
                 coInvestmentMinor: $row->coInvestment?->minorAmount(),
                 // Валюта одна на строку: обе цены одного товара
                 // в одной валюте, иначе разницу считать нельзя вовсе

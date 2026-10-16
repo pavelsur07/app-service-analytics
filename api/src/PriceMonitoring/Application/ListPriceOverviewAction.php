@@ -82,6 +82,7 @@ final class ListPriceOverviewAction
             name: $snapshot?->name,
             sellerPrice: $seller,
             displayedPrice: $displayed,
+            cardPrice: $row->cardPrice(),
             // Обе величины или ничего: посчитать разницу с одной
             // означало бы выдать половину за целое.
             coInvestment: (null !== $seller && null !== $displayed) ? $seller->minus($displayed) : null,

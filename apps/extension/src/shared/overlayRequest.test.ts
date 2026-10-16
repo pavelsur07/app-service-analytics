@@ -77,6 +77,7 @@ describe('разбор сообщений оверлея', () => {
           '123456789',
           '2026-08-18T09:00:00.000Z',
           111_700,
+          100_500,
           'RUB',
         ),
       ),
@@ -90,6 +91,17 @@ describe('разбор сообщений оверлея', () => {
         marketplaceSku: '1',
         observedAt: '2026-08-18T09:00:00.000Z',
         amountMinor: 1117.5,
+        cardAmountMinor: null,
+        currency: 'RUB',
+      }),
+    ).toBe(false)
+    expect(
+      isObservationMessage({
+        type: 'conwix:observation',
+        marketplaceSku: '1',
+        observedAt: '2026-08-18T09:00:00.000Z',
+        amountMinor: 111_700,
+        cardAmountMinor: 1005.5,
         currency: 'RUB',
       }),
     ).toBe(false)

@@ -22,8 +22,9 @@ use Symfony\Component\Uid\Uuid;
  * самые связи, изоляцию которых он проверяет.
  *
  * Цена задаётся целиком через Money — билдер не вычисляет ни СПП,
- * ни разницу, потому что именно их проверяет тест (ADR-005). Цена одна:
- * вторую слагаемую СПП расширение не присылает вовсе (ADR-015).
+ * ни разницу, потому что именно их проверяет тест (ADR-005). Цены
+ * продавца нет: вторую слагаемую СПП расширение не присылает (ADR-015).
+ * Цена с Ozon Картой по умолчанию пустая — как у сборок, её не читавших.
  */
 final class PriceObservationBuilder
 {
@@ -32,6 +33,7 @@ final class PriceObservationBuilder
     private string $marketplaceSku = '100000001';
     private ?\DateTimeImmutable $observedAt = null;
     private ?Money $displayedPrice = null;
+    private ?Money $cardPrice = null;
     private ?Uuid $capturedByUserId = null;
     private string $extensionVersion = '0.1.0';
     private ?\DateTimeImmutable $receivedAt = null;
@@ -101,6 +103,14 @@ final class PriceObservationBuilder
         return $clone;
     }
 
+    public function withCardPrice(?Money $cardPrice): self
+    {
+        $clone = clone $this;
+        $clone->cardPrice = $cardPrice;
+
+        return $clone;
+    }
+
     public function withCapturedBy(User $user): self
     {
         $clone = clone $this;
@@ -135,6 +145,7 @@ final class PriceObservationBuilder
             marketplaceSku: $this->marketplaceSku,
             observedAt: $observedAt,
             displayedPrice: $this->displayedPrice ?? Money::ofMinor(111_700, 'RUB'),
+            cardPrice: $this->cardPrice,
             capturedByUserId: $this->capturedByUserId ?? Uuid::v7(),
             extensionVersion: $this->extensionVersion,
             receivedAt: $this->receivedAt ?? $observedAt,

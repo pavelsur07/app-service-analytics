@@ -10,9 +10,10 @@ namespace App\PriceMonitoring\Ui\Request;
  * Тело приходит от кода на машине клиента — это граница доверия,
  * и проверяется здесь всё, что дальше уедет в базу.
  *
- * Цена одна — витринная (ADR-015). Цену продавца расширение прислать
- * не может: на карточке её нет, она приходит из каталога и живёт
- * историей в Ingestion.
+ * Цены только витринные: без Ozon Карты — обязательно, с картой —
+ * если она есть на карточке (ADR-039).
+ * Цену продавца расширение прислать не может (ADR-015): на карточке её
+ * нет, она приходит из каталога и живёт историей в Ingestion.
  *
  * Сумма — целые минорные единицы. Рубли с копейками дробным числом
  * не принимаются вовсе: JSON-число это double, и `420.10` приезжает
@@ -34,6 +35,7 @@ final readonly class PriceObservationRequest
         public \DateTimeImmutable $observedAt,
         public int $displayedPriceMinor,
         public string $currency,
+        public ?int $cardPriceMinor,
         public string $extensionVersion,
     ) {
     }
@@ -65,11 +67,25 @@ final readonly class PriceObservationRequest
 
         $displayed = self::price($decoded, 'displayedPrice', 'displayed_price');
 
+        // Поле необязательно: сборки до этапа 1 его не присылают, а на
+        // карточке без скидки по карте его нет вовсе. Явный null — то же
+        // самое, что отсутствие.
+        $card = null;
+        if (null !== ($decoded['cardPrice'] ?? null)) {
+            $card = self::price($decoded, 'cardPrice', 'card_price');
+            if ($card['currency'] !== $displayed['currency']) {
+                // Две цены одной карточки в разных валютах — ошибка
+                // разбора страницы, а не курс: принимать её нельзя.
+                throw new \InvalidArgumentException('card_price_currency_mismatch');
+            }
+        }
+
         return new self(
             $sku,
             self::observedAt($decoded),
             $displayed['amount'],
             $displayed['currency'],
+            $card['amount'] ?? null,
             trim($version),
         );
     }

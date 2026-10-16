@@ -68,8 +68,9 @@ export function PriceOverviewPage() {
         <h1 className="text-xl font-semibold">Цены и соинвест</h1>
         <p className="text-sm text-text-muted">
           Соинвест — сколько Ozon доплачивает поверх вашей скидки: разница между
-          ценой кабинета и той, что видит покупатель. Снимки делает расширение,
-          пока запущен браузер.
+          ценой кабинета и ценой на витрине без Ozon Карты. Цена с картой —
+          отдельно, если она есть на карточке. Снимки делает расширение, пока
+          запущен браузер.
         </p>
       </header>
 
@@ -80,6 +81,9 @@ export function PriceOverviewPage() {
               <th className="py-2 pr-3 font-medium">Товар</th>
               <th className="py-2 pr-3 text-right font-medium">В кабинете</th>
               <th className="py-2 pr-3 text-right font-medium">На витрине</th>
+              <th className="py-2 pr-3 text-right font-medium">
+                С Ozon Картой
+              </th>
               <th className="py-2 pr-3 text-right font-medium">Соинвест</th>
               <th className="py-2 text-right font-medium">Снято</th>
             </tr>
@@ -116,6 +120,9 @@ function PriceRow({ item }: { item: PriceOverviewItem }) {
       </td>
       <td className="py-2 pr-3 text-right tabular-nums">
         {money(item.displayedPriceMinor, currency)}
+      </td>
+      <td className="py-2 pr-3 text-right tabular-nums">
+        {money(item.cardPriceMinor, currency)}
       </td>
       <td className="py-2 pr-3 text-right tabular-nums">
         {null === item.coInvestmentMinor ||

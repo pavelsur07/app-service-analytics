@@ -43,10 +43,11 @@ use Symfony\Component\Uid\Uuid;
  * приходит в ответе `/v3/product/info/list`, за которым синхронизация
  * каталога и так ходит, и живёт историей в `marketplace_listing_price`.
  *
- * Поэтому наблюдение несёт ровно одно число — то единственное, чего
- * не отдаёт ни один API площадки. СПП считается при чтении как разница
- * цены продавца, действовавшей на момент снимка, и этой витринной
- * (ADR-013 §4: не хранить то, что выводится).
+ * Поэтому наблюдение несёт только витринные цены — то, чего не отдаёт
+ * ни один API площадки: цену без Ozon Карты и, если она есть на карточке,
+ * цену с картой (ADR-039). СПП считается
+ * при чтении как разница цены продавца, действовавшей на момент снимка,
+ * и цены без карты (ADR-013 §4: не хранить то, что выводится).
  *
  * `captured_by_user_id` — ссылка на `User` чужого модуля, и §6 требует
  * для такой ссылки индекс. Здесь его сознательно нет: по этой колонке
@@ -86,9 +87,22 @@ class PriceObservation
     #[ORM\Column]
     private readonly \DateTimeImmutable $observedAt;
 
-    /** Витринная цена Ozon — до скидки банка и платёжной системы. */
+    /**
+     * Витринная цена Ozon без Ozon Карты — подпись «С другими банками»,
+     * она же `offers.price` разметки schema.org.
+     */
     #[ORM\Column(type: 'money_minor_amount')]
     private readonly int $displayedPriceMinor;
+
+    /**
+     * Цена с Ozon Картой — поле `cardPrice` блока цены карточки,
+     * подпись «С банками». NULL — на карточке её нет (скидки по карте
+     * нет) либо наблюдение прислала сборка, которая её не читала.
+     * Валюта общая со строкой: две цены одной карточки в разных валютах
+     * означали бы ошибку разбора, и такое наблюдение не принимается.
+     */
+    #[ORM\Column(type: 'money_minor_amount', nullable: true)]
+    private readonly ?int $cardPriceMinor;
 
     /**
      * Остаток от прежней схемы, где расширение присылало две цены
@@ -131,6 +145,7 @@ class PriceObservation
         string $marketplaceSku,
         \DateTimeImmutable $observedAt,
         Money $displayedPrice,
+        ?Money $cardPrice,
         string $source,
         Uuid $capturedByUserId,
         string $extensionVersion,
@@ -140,7 +155,12 @@ class PriceObservation
         $this->marketplaceAccountId = $marketplaceAccountId;
         $this->marketplaceSku = $marketplaceSku;
         $this->observedAt = $observedAt;
+        if (null !== $cardPrice && $cardPrice->currency() !== $displayedPrice->currency()) {
+            throw new \InvalidArgumentException('Card price currency must match the displayed price currency.');
+        }
+
         $this->displayedPriceMinor = $displayedPrice->minorAmount();
+        $this->cardPriceMinor = $cardPrice?->minorAmount();
         $this->sellerPriceMinor = null;
         $this->currency = $displayedPrice->currency();
         $this->source = $source;
@@ -161,6 +181,7 @@ class PriceObservation
         string $marketplaceSku,
         \DateTimeImmutable $observedAt,
         Money $displayedPrice,
+        ?Money $cardPrice,
         Uuid $capturedByUserId,
         string $extensionVersion,
         \DateTimeImmutable $receivedAt,
@@ -171,6 +192,7 @@ class PriceObservation
             $marketplaceSku,
             $observedAt,
             $displayedPrice,
+            $cardPrice,
             self::SourceExtension,
             $capturedByUserId,
             $extensionVersion,
@@ -201,6 +223,11 @@ class PriceObservation
     public function displayedPrice(): Money
     {
         return Money::ofMinor($this->displayedPriceMinor, $this->currency);
+    }
+
+    public function cardPrice(): ?Money
+    {
+        return null === $this->cardPriceMinor ? null : Money::ofMinor($this->cardPriceMinor, $this->currency);
     }
 
     public function source(): string
