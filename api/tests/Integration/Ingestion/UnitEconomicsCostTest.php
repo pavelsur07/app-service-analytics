@@ -111,6 +111,52 @@ final class UnitEconomicsCostTest extends KernelTestCase
         self::assertSame(-42_000, $sku->costTotalMinor);
     }
 
+    public function testRevenueRowOfSeveralUnitsCostsEveryUnit(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        /** @var MarketplaceExpenseFactRepository $expenseFacts */
+        $expenseFacts = $container->get(MarketplaceExpenseFactRepository::class);
+
+        // Одна строка выручки на три штуки (ADR-038): площадка назвала
+        // штуки в quantity, и себестоимость — три закупки, а не одна.
+        $this->cost($container, $company, '2026-07-01', 42_000);
+        MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
+            ->withCompanyId($company->id())
+            ->withMarketplaceAccountId(Uuid::fromString(self::ACCOUNT_ID))
+            ->withBusinessDate(new \DateTimeImmutable('2026-07-05'))
+            ->withMarketplaceSku(self::SKU)
+            ->withFeeTypeId(OzonFeeTypeNames::REVENUE)
+            ->withAmount(Money::ofMinor(300_000, 'RUB'))
+            ->withQuantity(3)
+            ->persistWith($expenseFacts);
+        // Штуки без цены считаются так же — по quantity.
+        MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
+            ->withCompanyId($company->id())
+            ->withMarketplaceAccountId(Uuid::fromString(self::ACCOUNT_ID))
+            ->withBusinessDate(new \DateTimeImmutable('2026-07-06'))
+            ->withMarketplaceSku('222')
+            ->withAccrualId(2)
+            ->withFeeTypeId(OzonFeeTypeNames::REVENUE)
+            ->withAmount(Money::ofMinor(100_000, 'RUB'))
+            ->withQuantity(2)
+            ->persistWith($expenseFacts);
+
+        $skus = [];
+        foreach ($this->report($container, $company)->skus as $row) {
+            $skus[$row->marketplaceSku] = $row;
+        }
+
+        $priced = $skus[self::SKU] ?? null;
+        $unpriced = $skus['222'] ?? null;
+        self::assertNotNull($priced);
+        self::assertNotNull($unpriced);
+        self::assertSame(3, $priced->deliveredQuantity);
+        self::assertSame(-126_000, $priced->costTotalMinor);
+        self::assertSame(0, $priced->quantityWithoutCost);
+        self::assertSame(2, $unpriced->quantityWithoutCost);
+    }
+
     public function testCostOfAnotherCompanyIsNotUsed(): void
     {
         $container = $this->bootedContainer();

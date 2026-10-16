@@ -23,7 +23,8 @@ use Symfony\Component\Uid\Uuid;
  *
  * Блок `commission` у товара отправления — продажа или возврат — даёт
  * ещё две строки: выручку (`sale_amount`, код 0) и вознаграждение
- * за продажу (`sale_commission`, код 69). Юнит-экономика считается
+ * за продажу (`commission`, код 69; ADR-038). Строки товара отправления
+ * несут его `quantity` — штук в строке бывает больше одной. Юнит-экономика считается
  * по начислениям и `sales_fact` не читает, поэтому двойного счёта нет
  * (ADR-036).
  *
@@ -112,7 +113,7 @@ final class OzonAccrualByDayParser
         self::assertUniqueKeys($rows, $accrualId);
 
         $facts = [];
-        foreach ($rows as [$sku, $feeTypeId, $amount]) {
+        foreach ($rows as [$sku, $feeTypeId, $amount, $quantity]) {
             $facts[] = MarketplaceExpenseFact::normalize(
                 companyId: $companyId,
                 marketplaceAccountId: $marketplaceAccountId,
@@ -122,6 +123,7 @@ final class OzonAccrualByDayParser
                 feeTypeId: $feeTypeId,
                 unitNumber: $unitNumber,
                 amount: $amount,
+                quantity: $quantity,
                 rawDocumentId: $rawDocumentId,
             );
         }
@@ -132,7 +134,7 @@ final class OzonAccrualByDayParser
     /**
      * @param array<array-key, mixed> $accrual
      *
-     * @return list<array{0: string, 1: int, 2: Money}>
+     * @return list<array{0: string, 1: int, 2: Money, 3: int}>
      */
     private function rows(array $accrual, int $accrualId): array
     {
@@ -142,18 +144,19 @@ final class OzonAccrualByDayParser
         if (\is_array($posting)) {
             foreach (self::requireList($posting, 'products') as $product) {
                 $sku = (string) self::requireInt($product, 'sku');
+                $quantity = self::quantity($product, $accrualId);
 
                 $delivery = $product['delivery'] ?? null;
                 if (\is_array($delivery)) {
                     foreach (self::requireList($delivery, 'services') as $service) {
-                        $rows[] = [$sku, self::requireInt($service, 'type_id'), self::money($service['accrued'] ?? null)];
+                        $rows[] = [$sku, self::requireInt($service, 'type_id'), self::money($service['accrued'] ?? null), $quantity ?? 1];
                     }
                 }
 
                 $commission = $product['commission'] ?? null;
                 if (\is_array($commission)) {
-                    foreach (self::saleRows($commission, $accrualId) as [$feeTypeId, $amount]) {
-                        $rows[] = [$sku, $feeTypeId, $amount];
+                    foreach (self::saleRows($commission, $quantity, $accrualId) as [$feeTypeId, $amount]) {
+                        $rows[] = [$sku, $feeTypeId, $amount, $quantity ?? 1];
                     }
                 }
             }
@@ -164,7 +167,7 @@ final class OzonAccrualByDayParser
             foreach (self::requireList($itemFees, 'fees') as $perSku) {
                 $sku = (string) self::requireInt($perSku, 'sku');
                 foreach (self::requireList($perSku, 'fees') as $fee) {
-                    $rows[] = [$sku, self::requireInt($fee, 'type_id'), self::money($fee['accrued'] ?? null)];
+                    $rows[] = [$sku, self::requireInt($fee, 'type_id'), self::money($fee['accrued'] ?? null), 1];
                 }
             }
         }
@@ -174,7 +177,7 @@ final class OzonAccrualByDayParser
             // Артикула нет и быть не может: реклама и хранение относятся
             // к кабинету, а не к товару. Пустая строка, не NULL —
             // значение входит в склеенный ключ (ADR-012).
-            $rows[] = ['', self::requireInt($nonItemFee, 'type_id'), self::money($nonItemFee['accrued'] ?? null)];
+            $rows[] = ['', self::requireInt($nonItemFee, 'type_id'), self::money($nonItemFee['accrued'] ?? null), 1];
         }
 
         return $rows;
@@ -185,32 +188,61 @@ final class OzonAccrualByDayParser
      * Знак — площадки: у возврата выручка отрицательная, вознаграждение
      * положительное.
      *
-     * Штука — одна строка выручки: количества в ответе нет. Держится это
-     * на равенстве `sale_amount` и `seller_price` (цена одной штуки);
-     * разойдутся — строка на несколько штук, и посчитать её одной значило
-     * бы ошибиться в количестве, ничем себя не выдав.
+     * Вознаграждение — поле `commission`, а не `sale_commission`
+     * (ADR-038): продав дороже цены продавца, площадка забирает наценку
+     * назад именно в нём, и баланс начисления сходится только с ним.
+     * Без наценки поля равны.
+     *
+     * Штуки названы площадкой в `quantity` товара. Ответ без этого поля —
+     * прежняя форма (ADR-036 п. 4): штука одна, и держится это на
+     * равенстве `sale_amount` и `seller_price`; разойдутся — строка
+     * на несколько штук без количества, и посчитать её одной значило бы
+     * ошибиться в количестве, ничем себя не выдав.
      *
      * @param array<array-key, mixed> $commission
      *
      * @return list<array{0: int, 1: Money}>
      */
-    private static function saleRows(array $commission, int $accrualId): array
+    private static function saleRows(array $commission, ?int $quantity, int $accrualId): array
     {
         $revenue = self::money($commission['sale_amount'] ?? null);
-        $sellerPrice = self::money($commission['seller_price'] ?? null);
 
         if (0 === $revenue->minorAmount()) {
             throw new \UnexpectedValueException("Начисление {$accrualId}: нулевая sale_amount — ни продажа, ни возврат (ADR-036).");
         }
 
-        if ($revenue->currency() !== $sellerPrice->currency() || $revenue->minorAmount() !== $sellerPrice->minorAmount()) {
-            throw new \UnexpectedValueException("Начисление {$accrualId}: sale_amount не равна seller_price — строка не на одну штуку (ADR-036).");
+        if (null === $quantity) {
+            $sellerPrice = self::money($commission['seller_price'] ?? null);
+            if ($revenue->currency() !== $sellerPrice->currency() || $revenue->minorAmount() !== $sellerPrice->minorAmount()) {
+                throw new \UnexpectedValueException("Начисление {$accrualId}: sale_amount не равна seller_price, а quantity нет — строка не на одну штуку (ADR-038).");
+            }
         }
 
         return [
             [OzonFeeTypeNames::REVENUE, $revenue],
-            [OzonFeeTypeNames::SALE_COMMISSION, self::money($commission['sale_commission'] ?? null)],
+            [OzonFeeTypeNames::SALE_COMMISSION, self::money($commission['commission'] ?? null)],
         ];
+    }
+
+    /**
+     * Штук товара в отправлении (ADR-038). Поля нет — прежняя форма
+     * ответа, решение за `saleRows`; есть — только целое не меньше
+     * единицы: ноль или дробь — форма, которой разбор не знает.
+     *
+     * @param array<array-key, mixed> $product
+     */
+    private static function quantity(array $product, int $accrualId): ?int
+    {
+        if (!\array_key_exists('quantity', $product)) {
+            return null;
+        }
+
+        $quantity = $product['quantity'];
+        if (!\is_int($quantity) || $quantity < 1) {
+            throw new \UnexpectedValueException("Начисление {$accrualId}: quantity товара — не целое число штук (ADR-038).");
+        }
+
+        return $quantity;
     }
 
     /**
@@ -220,7 +252,7 @@ final class OzonAccrualByDayParser
      * строку вместо двух. Отказ, а не сложение: сколько здесь штук,
      * по ответу не определить (ADR-036 п. 4).
      *
-     * @param list<array{0: string, 1: int, 2: Money}> $rows
+     * @param list<array{0: string, 1: int, 2: Money, 3: int}> $rows
      */
     private static function assertUniqueKeys(array $rows, int $accrualId): void
     {
@@ -235,7 +267,7 @@ final class OzonAccrualByDayParser
     }
 
     /**
-     * @param list<array{0: string, 1: int, 2: Money}> $rows
+     * @param list<array{0: string, 1: int, 2: Money, 3: int}> $rows
      */
     private static function assertBalanced(array $rows, Money $total, int $accrualId): void
     {

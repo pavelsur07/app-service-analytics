@@ -125,6 +125,11 @@ final class OzonAccrualByDayParserTest extends TestCase
 
         self::assertCount(30, array_filter($revenue, static fn (int $amount): bool => $amount > 0));
         self::assertCount(1, array_filter($revenue, static fn (int $amount): bool => $amount < 0));
+        // quantity в июльском ответе ещё не было — каждая строка на штуку.
+        self::assertSame([1], array_values(array_unique(array_map(
+            static fn (MarketplaceExpenseFact $f): int => $f->quantity(),
+            $facts,
+        ))));
     }
 
     public function testRowsOfEveryAccrualAddUpToItsTotal(): void
@@ -171,19 +176,86 @@ final class OzonAccrualByDayParserTest extends TestCase
         $this->expectException(\UnexpectedValueException::class);
         $this->expectExceptionMessage('дважды');
 
-        $product = '{"sku":1,"delivery":null,"commission":{"seller_price":{"amount":"2000","currency":"RUB"},"sale_amount":{"amount":"2000","currency":"RUB"},"sale_commission":{"amount":"-1200","currency":"RUB"}}}';
+        $product = '{"sku":1,"delivery":null,"commission":{"seller_price":{"amount":"2000","currency":"RUB"},"sale_amount":{"amount":"2000","currency":"RUB"},"sale_commission":{"amount":"-1200","currency":"RUB"},"commission":{"amount":"-1200","currency":"RUB"}}}';
         $this->parse('{"accruals":[{"accrual_id":1,"date":"2026-07-01","unit_number":"x","accrued_category":"POSTING","total_amount":{"amount":"1600","currency":"RUB"},"posting":{"delivery_schema":"Fbo","products":['.$product.','.$product.']},"item_fees":null,"non_item_fee":null,"container_fees":null}],"last_id":""}');
     }
 
-    public function testRevenueOfSeveralUnitsStopsTheParse(): void
+    public function testRevenueOfSeveralUnitsWithoutQuantityStopsTheParse(): void
     {
-        // Количества в ответе нет, штука — строка выручки. sale_amount,
-        // не равная цене одной штуки, означает строку на несколько —
-        // посчитать её одной значило бы ошибиться в количестве.
+        // Прежняя форма ответа — без quantity: штука одна. sale_amount,
+        // не равная цене одной штуки, означает строку на несколько без
+        // количества — посчитать её одной значило бы ошибиться (ADR-038 п. 2).
         $this->expectException(\UnexpectedValueException::class);
         $this->expectExceptionMessage('seller_price');
 
-        $this->parse('{"accruals":[{"accrual_id":1,"date":"2026-07-01","unit_number":"x","accrued_category":"POSTING","total_amount":{"amount":"2800","currency":"RUB"},"posting":{"delivery_schema":"Fbo","products":[{"sku":1,"delivery":null,"commission":{"seller_price":{"amount":"2000","currency":"RUB"},"sale_amount":{"amount":"4000","currency":"RUB"},"sale_commission":{"amount":"-1200","currency":"RUB"}}}]},"item_fees":null,"non_item_fee":null,"container_fees":null}],"last_id":""}');
+        $this->parse('{"accruals":[{"accrual_id":1,"date":"2026-07-01","unit_number":"x","accrued_category":"POSTING","total_amount":{"amount":"2800","currency":"RUB"},"posting":{"delivery_schema":"Fbo","products":[{"sku":1,"delivery":null,"commission":{"seller_price":{"amount":"2000","currency":"RUB"},"sale_amount":{"amount":"4000","currency":"RUB"},"sale_commission":{"amount":"-1200","currency":"RUB"},"commission":{"amount":"-1200","currency":"RUB"}}}]},"item_fees":null,"non_item_fee":null,"container_fees":null}],"last_id":""}');
+    }
+
+    public function testQuantityOfProductIsCarriedByItsRows(): void
+    {
+        // Две штуки одним товаром: выручка — две цены продавца, и штуки
+        // названы в quantity (ADR-038). Строки товара — услуги доставки,
+        // выручка, вознаграждение — несут его количество.
+        $facts = $this->parse(self::posting(
+            '{"sku":7,"quantity":2,"delivery":{"services":[{"type_id":32,"accrued":{"amount":"-100","currency":"RUB"}}]},"commission":{"seller_price":{"amount":"395","currency":"RUB"},"sale_amount":{"amount":"790","currency":"RUB"},"sale_commission":{"amount":"-94.8","currency":"RUB"},"commission":{"amount":"-94.8","currency":"RUB"}}}',
+            '595.2',
+        ));
+
+        $quantities = [];
+        $amounts = [];
+        foreach ($facts as $fact) {
+            $quantities[$fact->feeTypeId()] = $fact->quantity();
+            $amounts[$fact->feeTypeId()] = $fact->amount()->minorAmount();
+        }
+
+        self::assertSame([32 => 2, OzonFeeTypeNames::REVENUE => 2, OzonFeeTypeNames::SALE_COMMISSION => 2], $quantities);
+        self::assertSame(79000, $amounts[OzonFeeTypeNames::REVENUE]);
+    }
+
+    public function testMarkupStaysRevenueAndIsTakenBackInCommission(): void
+    {
+        // Площадка продала дороже цены продавца (7 345,73 при 6 595)
+        // и забрала разницу в вознаграждении: commission = sale_commission
+        // − наценка. Баланс сходится только с commission (ADR-038 п. 3).
+        $facts = $this->parse(self::posting(
+            '{"sku":7,"quantity":1,"delivery":null,"commission":{"seller_price":{"amount":"6595","currency":"RUB"},"sale_amount":{"amount":"7345.73","currency":"RUB"},"sale_commission":{"amount":"-989.25","currency":"RUB"},"commission":{"amount":"-1739.98","currency":"RUB"}}}',
+            '5605.75',
+        ));
+
+        $amounts = [];
+        foreach ($facts as $fact) {
+            $amounts[$fact->feeTypeId()] = $fact->amount()->minorAmount();
+        }
+
+        self::assertSame([OzonFeeTypeNames::REVENUE => 734573, OzonFeeTypeNames::SALE_COMMISSION => -173998], $amounts);
+    }
+
+    public function testQuantityThatIsNotAWholeNumberOfUnitsStopsTheParse(): void
+    {
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('quantity');
+
+        $this->parse(self::posting(
+            '{"sku":7,"quantity":0,"delivery":null,"commission":{"seller_price":{"amount":"395","currency":"RUB"},"sale_amount":{"amount":"395","currency":"RUB"},"sale_commission":{"amount":"-94.8","currency":"RUB"},"commission":{"amount":"-94.8","currency":"RUB"}}}',
+            '300.2',
+        ));
+    }
+
+    public function testRowHashOfOneUnitIsTheSameAsBeforeQuantity(): void
+    {
+        // Строки, записанные до колонки quantity, — на одну штуку, и их
+        // хэш не меняется: иначе пересчёт «обновил» бы всю таблицу (ADR-038).
+        $one = $this->parse(self::posting(
+            '{"sku":7,"quantity":1,"delivery":null,"commission":{"seller_price":{"amount":"395","currency":"RUB"},"sale_amount":{"amount":"395","currency":"RUB"},"sale_commission":{"amount":"-94.8","currency":"RUB"},"commission":{"amount":"-94.8","currency":"RUB"}}}',
+            '300.2',
+        ))[0];
+        $two = $this->parse(self::posting(
+            '{"sku":7,"quantity":2,"delivery":null,"commission":{"seller_price":{"amount":"197.5","currency":"RUB"},"sale_amount":{"amount":"395","currency":"RUB"},"sale_commission":{"amount":"-94.8","currency":"RUB"},"commission":{"amount":"-94.8","currency":"RUB"}}}',
+            '300.2',
+        ))[0];
+
+        self::assertSame(hash('sha256', '2026-07-01|x|39500|RUB'), $one->rowHash());
+        self::assertNotSame($one->rowHash(), $two->rowHash());
     }
 
     public function testKeyIsGluedFromAccrualSkuAndFeeType(): void
@@ -278,6 +350,11 @@ final class OzonAccrualByDayParserTest extends TestCase
         ];
 
         return json_encode(['accruals' => [$body], 'last_id' => ''], \JSON_THROW_ON_ERROR);
+    }
+
+    private static function posting(string $product, string $total): string
+    {
+        return '{"accruals":[{"accrual_id":1,"date":"2026-07-01","unit_number":"x","accrued_category":"POSTING","total_amount":{"amount":"'.$total.'","currency":"RUB"},"posting":{"delivery_schema":"Fbo","products":['.$product.']},"item_fees":null,"non_item_fee":null,"container_fees":null}],"last_id":""}';
     }
 
     private function fixture(): string

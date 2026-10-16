@@ -13,6 +13,7 @@ use App\Identity\Domain\UserRepository;
 use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonExpensesHandler;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
+use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonExpensesFetcher;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonAccrualByDayClient;
 use App\Tests\Support\Builder\CompanyBuilder;
@@ -102,6 +103,42 @@ final class FetchOzonExpensesHandlerTest extends KernelTestCase
         // что день прочитан не весь, и остановка на ней потеряла бы
         // расходы молча.
         self::assertSame(['', 'cursor-2'], $fetcher->cursors);
+        self::assertSame(2, $this->expenseCount($container, $account));
+    }
+
+    public function testRejectedPageMarksTheDayFailedUntilARepeatLoadsItWhole(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $firstPage = $this->day([['accrual_id' => 1, 'sku' => '111', 'type_id' => 32, 'amount' => '-10']], 'cursor-2');
+        // Строки начисления не сходятся с total_amount — разбор отклоняет
+        // страницу (ADR-036 п. 5), первая уже записана.
+        $unbalanced = str_replace('"total_amount":{"amount":"-20"', '"total_amount":{"amount":"-30"', $this->day([['accrual_id' => 2, 'sku' => '222', 'type_id' => 1, 'amount' => '-20']]));
+        // Второй прогон — повтор дня после исправления: те же страницы,
+        // вторая уже разбирается. Подменить клиент после первого вызова
+        // контейнер не даёт, поэтому все четыре ответа — сразу.
+        $repaired = $this->day([['accrual_id' => 2, 'sku' => '222', 'type_id' => 1, 'amount' => '-20']]);
+        $this->fetcher($container, [$firstPage, $unbalanced, $firstPage, $repaired]);
+
+        try {
+            $this->sync($container, $account);
+            self::fail('Отклонённая страница должна остановить загрузку дня.');
+        } catch (\UnexpectedValueException) {
+        }
+
+        // Raw за день есть, факты — частично: без отметки день выглядел бы
+        // загруженным (ADR-038).
+        self::assertSame(1, $this->expenseCount($container, $account));
+        $mark = $this->dayLoad($container, $account);
+        self::assertNotNull($mark['failed_at']);
+        self::assertStringContainsString('разбор не понял', (string) $mark['failure']);
+
+        $this->sync($container, $account);
+
+        $mark = $this->dayLoad($container, $account);
+        self::assertNull($mark['failed_at']);
+        self::assertNull($mark['failure']);
+        self::assertNotNull($mark['completed_at']);
         self::assertSame(2, $this->expenseCount($container, $account));
     }
 
@@ -352,6 +389,21 @@ final class FetchOzonExpensesHandlerTest extends KernelTestCase
             marketplaceAccountId: $account->id()->toRfc4122(),
             accrualDate: '2026-07-01',
         ));
+    }
+
+    /**
+     * @return array{completed_at: ?string, failed_at: ?string, failure: ?string}
+     */
+    private function dayLoad(ContainerInterface $container, MarketplaceAccount $account): array
+    {
+        /** @var array{completed_at: ?string, failed_at: ?string, failure: ?string}|false $row */
+        $row = $this->connection($container)->fetchAssociative(
+            'SELECT completed_at, failed_at, failure FROM marketplace_day_load WHERE company_id = ? AND marketplace_account_id = ? AND report_type = ? AND period = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), MarketplaceReportType::OzonAccrualByDay, '2026-07-01'],
+        );
+        self::assertIsArray($row);
+
+        return $row;
     }
 
     private function expenseCount(ContainerInterface $container, MarketplaceAccount $account): int

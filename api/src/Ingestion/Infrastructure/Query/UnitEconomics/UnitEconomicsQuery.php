@@ -94,21 +94,22 @@ final readonly class UnitEconomicsQuery
         // возвратом дала бы прибыль или убыток, которых не было. Продажа
         // раньше загруженной истории — по дате самого возврата.
         //
-        // Умножать нечего: штука одна на строку. Знак себестоимости
+        // Себестоимость строки — цена штуки × quantity: строка выручки
+        // бывает на несколько штук (ADR-038). Знак себестоимости
         // отрицательный намеренно — как у комиссии и расходов площадки;
         // у возврата — положительный, это сторно. CASE, а не SIGN():
         // SIGN над bigint PostgreSQL вправе посчитать в double precision.
         $sales = <<<'SQL'
             SELECT f.marketplace_sku,
                    f.currency,
-                   COUNT(*) FILTER (WHERE f.fee_type_id = :revenueType AND f.amount_minor > 0) AS delivered_quantity,
-                   COUNT(*) FILTER (WHERE f.fee_type_id = :revenueType AND f.amount_minor < 0) AS returned_quantity,
+                   COALESCE(SUM(f.quantity) FILTER (WHERE f.fee_type_id = :revenueType AND f.amount_minor > 0), 0) AS delivered_quantity,
+                   COALESCE(SUM(f.quantity) FILTER (WHERE f.fee_type_id = :revenueType AND f.amount_minor < 0), 0) AS returned_quantity,
                    COALESCE(SUM(f.amount_minor) FILTER (WHERE f.fee_type_id = :revenueType), 0) AS delivered_amount_minor,
                    COALESCE(SUM(f.amount_minor) FILTER (WHERE f.fee_type_id = :revenueType AND f.amount_minor < 0), 0) AS returns_amount_minor,
                    COALESCE(SUM(f.amount_minor) FILTER (WHERE f.fee_type_id = :saleCommissionType), 0) AS commission_amount_minor,
-                   COALESCE(SUM(CASE WHEN f.amount_minor > 0 THEN -c.unit_cost_minor ELSE c.unit_cost_minor END)
+                   COALESCE(SUM(CASE WHEN f.amount_minor > 0 THEN -c.unit_cost_minor ELSE c.unit_cost_minor END * f.quantity)
                        FILTER (WHERE f.fee_type_id = :revenueType), 0) AS cost_total_minor,
-                   COUNT(*) FILTER (WHERE f.fee_type_id = :revenueType AND c.unit_cost_minor IS NULL) AS quantity_without_cost,
+                   COALESCE(SUM(f.quantity) FILTER (WHERE f.fee_type_id = :revenueType AND c.unit_cost_minor IS NULL), 0) AS quantity_without_cost,
                    MAX(c.updated_at) FILTER (WHERE f.fee_type_id = :revenueType AND c.updated_at > c.recorded_at) AS cost_corrected_at
             FROM marketplace_expense_fact AS f
             LEFT JOIN LATERAL (
