@@ -31,6 +31,12 @@ use Doctrine\DBAL\Types\Types;
  * до разбора, и выгрузка, которая каждый тик получает ответ и отказывает
  * на разборе, по raw выглядела бы живой (ADR-038).
  *
+ * Успех засчитывается только недавнему дню — `period` не раньше дня
+ * начала окна. Окно пересчёта каждый тик успешно перезагружает старые
+ * дни, и по успеху любого дня выгрузка, у которой новый день отказывает
+ * каждый тик, выглядела бы свежей бесконечно — с данными, которые
+ * перестали поступать.
+ *
  * Тип отчёта в условии обязателен. Отметки общие для всех выгрузок
  * подключения, и без фильтра исправная синхронизация каталога — она идёт
  * тем же тиком — обновляла бы свежесть за вставшую синхронизацию продаж.
@@ -59,6 +65,8 @@ final readonly class RecentlyIngestedAccountsQuery
      */
     public const int MAX_ACCOUNTS = 200;
 
+    private const string TIMEZONE = 'Europe/Moscow';
+
     public function __construct(
         private Connection $connection,
     ) {
@@ -81,7 +89,10 @@ final readonly class RecentlyIngestedAccountsQuery
             // каждого подключения.
             ->where('completed_at >= :since')
             ->andWhere('report_type IN (:reportTypes)')
+            ->andWhere('period >= :sinceDay')
             ->setParameter('since', $since, Types::DATETIME_IMMUTABLE)
+            // День — по часам площадки, как и period отметки.
+            ->setParameter('sinceDay', $since->setTimezone(new \DateTimeZone(self::TIMEZONE))->format('Y-m-d'))
             ->setParameter('reportTypes', $reportTypes, ArrayParameterType::STRING)
             ->groupBy('company_id')
             ->addGroupBy('marketplace_account_id')

@@ -159,6 +159,31 @@ final class NotifyStaleAccountsActionTest extends KernelTestCase
         self::assertSame([$this->key($account, MarketplaceReportType::OzonAccrualByDay)], $alerted);
     }
 
+    public function testOldDaysReloadedByTheWindowDoNotHideAFailingNewDay(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->activeAccount($container);
+        $this->uploaded($container, $account, MarketplaceReportType::OzonPostingFboList);
+        $this->snapshotted($container, $account);
+        /** @var MarketplaceDayLoadRepository $dayLoads */
+        $dayLoads = $container->get(MarketplaceDayLoadRepository::class);
+        $mark = MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
+            ->withCompanyId($account->companyId())
+            ->withMarketplaceAccountId($account->id())
+            ->withReportType(MarketplaceReportType::OzonAccrualByDay);
+
+        // Окно пересчёта только что успешно перечитало день недельной
+        // давности, а новые дни отказывают на каждом тике: данные
+        // перестали поступать, и успех старого дня этого не скрывает.
+        $mark->withPeriod(new \DateTimeImmutable('-7 days'))->withAt(new \DateTimeImmutable('-10 minutes'))->persistWith($dayLoads);
+        $mark->withPeriod(new \DateTimeImmutable('-1 day'))->failed()->withAt(new \DateTimeImmutable('-10 minutes'))->persistWith($dayLoads);
+        $mark->withPeriod(new \DateTimeImmutable('today'))->failed()->withAt(new \DateTimeImmutable('-10 minutes'))->persistWith($dayLoads);
+
+        $alerted = ($this->action($container, $this->recordingMailer()))();
+
+        self::assertSame([$this->key($account, MarketplaceReportType::OzonAccrualByDay)], $alerted);
+    }
+
     public function testAdvertisingIsWatchedOnlyWhereItIsConnected(): void
     {
         $container = $this->bootedContainer();
