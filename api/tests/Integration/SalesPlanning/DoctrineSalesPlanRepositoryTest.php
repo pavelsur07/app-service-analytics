@@ -72,19 +72,46 @@ final class DoctrineSalesPlanRepositoryTest extends KernelTestCase
         $loaded = $repository->get($plan->companyId()->toRfc4122(), $plan->id());
         self::assertNotNull($loaded);
         self::assertSame(1, $loaded->version());
-        $line = $entityManager->createQuery(
-            'SELECT l FROM '.SalesPlanLine::class.' l WHERE l.companyId = :companyId AND l.salesPlanId = :planId ORDER BY l.planDate',
-        )
-            ->setParameter('companyId', $plan->companyId(), 'uuid')
-            ->setParameter('planId', $plan->id(), 'uuid')
-            ->setMaxResults(1)
-            ->getSingleResult();
-        \assert($line instanceof SalesPlanLine);
+        $line = $this->firstLine($loaded);
 
         $line->changeTo($loaded, 5, Money::ofMinor(99_900, 'RUB'), new \DateTimeImmutable('2026-06-26 09:00:00'));
         $entityManager->flush();
 
         self::assertSame(2, $loaded->version());
+    }
+
+    public function testRepeatedChangeAtTheSameMomentStillRaisesVersion(): void
+    {
+        self::bootKernel();
+        $entityManager = $this->entityManager();
+        $repository = new DoctrineSalesPlanRepository($entityManager);
+        $plan = SalesPlanBuilder::aSalesPlan()->build();
+        $repository->add($plan, SalesPlanLineBuilder::linesOf($plan)->build());
+        $entityManager->clear();
+
+        $loaded = $repository->get($plan->companyId()->toRfc4122(), $plan->id());
+        self::assertNotNull($loaded);
+        $line = $this->firstLine($loaded);
+        $at = new \DateTimeImmutable('2026-06-26 09:00:00');
+
+        $line->changeTo($loaded, 5, Money::ofMinor(99_900, 'RUB'), $at);
+        $entityManager->flush();
+        $line->changeTo($loaded, 6, Money::ofMinor(99_900, 'RUB'), $at);
+        $entityManager->flush();
+
+        self::assertSame(3, $loaded->version());
+    }
+
+    public function testRefusesLinesOfAnotherPlan(): void
+    {
+        self::bootKernel();
+        $repository = new DoctrineSalesPlanRepository($this->entityManager());
+        $plan = SalesPlanBuilder::aSalesPlan()->build();
+        $foreign = SalesPlanLineBuilder::linesOf(SalesPlanBuilder::aSalesPlan()->build())->build();
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $repository->add($plan, $foreign);
     }
 
     public function testSecondDraftInOneLineageIsRefusedByDatabase(): void
@@ -137,6 +164,20 @@ final class DoctrineSalesPlanRepositoryTest extends KernelTestCase
             'updated_at' => '2026-06-25 12:00:00',
             ...$overrides,
         ]);
+    }
+
+    private function firstLine(SalesPlan $plan): SalesPlanLine
+    {
+        $line = $this->entityManager()->createQuery(
+            'SELECT l FROM '.SalesPlanLine::class.' l WHERE l.companyId = :companyId AND l.salesPlanId = :planId ORDER BY l.planDate',
+        )
+            ->setParameter('companyId', $plan->companyId(), 'uuid')
+            ->setParameter('planId', $plan->id(), 'uuid')
+            ->setMaxResults(1)
+            ->getSingleResult();
+        \assert($line instanceof SalesPlanLine);
+
+        return $line;
     }
 
     private function entityManager(): EntityManagerInterface

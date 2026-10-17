@@ -65,7 +65,7 @@ class SalesPlanLine
         int $quantity,
         Money $price,
     ) {
-        $planDate = $planDate->setTime(0, 0);
+        $planDate = SalesPlan::calendarDay($planDate);
         if (!$plan->covers($planDate)) {
             throw new \InvalidArgumentException(\sprintf('День %s вне периода плана.', $planDate->format('Y-m-d')));
         }

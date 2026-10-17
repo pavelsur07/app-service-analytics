@@ -36,6 +36,22 @@ final class SalesPlanTest extends TestCase
         self::assertFalse($plan->covers(new \DateTimeImmutable('2026-07-04')));
     }
 
+    public function testDatesInDifferentTimeZonesAreTheSameCalendarDays(): void
+    {
+        $plan = SalesPlanBuilder::aSalesPlan()
+            ->withPeriod(
+                new \DateTimeImmutable('2026-07-01 00:00:00', new \DateTimeZone('UTC')),
+                new \DateTimeImmutable('2026-07-31 00:00:00', new \DateTimeZone('Europe/Moscow')),
+            )
+            ->build();
+
+        self::assertSame(31, $plan->periodDays());
+        self::assertCount(31, $plan->days());
+        self::assertSame('2026-07-31', $plan->days()[30]->format('Y-m-d'));
+        self::assertTrue($plan->covers(new \DateTimeImmutable('2026-07-31 23:30:00', new \DateTimeZone('Asia/Vladivostok'))));
+        self::assertFalse($plan->covers(new \DateTimeImmutable('2026-08-01 00:30:00', new \DateTimeZone('Europe/Moscow'))));
+    }
+
     public function testOneDayPlanIsAllowed(): void
     {
         $day = new \DateTimeImmutable('2026-07-15');
@@ -101,5 +117,16 @@ final class SalesPlanTest extends TestCase
         $plan->recordLinesChanged(new \DateTimeImmutable('2026-06-25 11:00:00'));
 
         self::assertSame('2026-06-25 11:00:00', $plan->updatedAt()->format('Y-m-d H:i:s'));
+    }
+
+    public function testEveryLineChangeChangesThePlanEvenAtTheSameMoment(): void
+    {
+        $plan = SalesPlanBuilder::aSalesPlan()->build();
+        $at = new \DateTimeImmutable('2026-06-25 11:00:00');
+
+        $plan->recordLinesChanged($at);
+        $plan->recordLinesChanged($at);
+
+        self::assertSame(2, $plan->lineEdits());
     }
 }

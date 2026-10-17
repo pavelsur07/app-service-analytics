@@ -35,8 +35,9 @@ API и экрана ещё нет — сценарии появляются в 0
 **3. Схема — одна миграция**
 - `sales_plan`: PK `id`; индекс `(company_id, marketplace_account_id)`;
   частичные уникальные `(company_id, lineage_id) WHERE status = 'draft'`
-  и `… WHERE status = 'approved'`; `CHECK` на статус, порядок дат, длину периода,
-  валюту.
+  и `… WHERE status = 'approved'`; `CHECK` на статус, порядок дат, форму
+  кода валюты. Длины периода в CHECK нет: это обратимая константа (ADR-040
+  п. 13), её смена не должна требовать миграции.
 - `sales_plan_line`: PK `id` (UUIDv7); уникальный
   `(company_id, sales_plan_id, sku, plan_date)`;
   `CHECK quantity >= 0`, `price_minor > 0`.

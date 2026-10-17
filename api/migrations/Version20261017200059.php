@@ -30,7 +30,8 @@ use Doctrine\Migrations\AbstractMigration;
  * уникальный индекс»), иначе migrations:diff предлагал бы пересоздание.
  *
  * CHECK держат инварианты, которые домен проверяет и так: статус,
- * порядок дат, неотрицательные штуки, положительная цена. Длины периода
+ * порядок дат, форма кода валюты, неотрицательные штуки, положительная
+ * цена. Длины периода
  * среди них нет: это стартовый лимит (п. 13), обратимая константа,
  * и её смена не должна требовать миграции.
  * Домен — первая линия, база — последняя: строка в обход домена
@@ -49,7 +50,7 @@ final class Version20261017200059 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
-        $this->addSql('CREATE TABLE sales_plan (id UUID NOT NULL, company_id UUID NOT NULL, marketplace_account_id UUID NOT NULL, name VARCHAR(200) NOT NULL, date_from DATE NOT NULL, date_to DATE NOT NULL, currency CHAR(3) NOT NULL, status VARCHAR(16) NOT NULL, lineage_id UUID NOT NULL, version_number INT NOT NULL, created_by_user_id UUID NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, updated_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, version INT DEFAULT 1 NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE TABLE sales_plan (id UUID NOT NULL, company_id UUID NOT NULL, marketplace_account_id UUID NOT NULL, name VARCHAR(200) NOT NULL, date_from DATE NOT NULL, date_to DATE NOT NULL, currency CHAR(3) NOT NULL, status VARCHAR(16) NOT NULL, lineage_id UUID NOT NULL, version_number INT NOT NULL, created_by_user_id UUID NOT NULL, created_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, updated_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, line_edits INT DEFAULT 0 NOT NULL, version INT DEFAULT 1 NOT NULL, PRIMARY KEY (id))');
         $this->addSql('CREATE INDEX idx_sales_plan_company_account ON sales_plan (company_id, marketplace_account_id)');
         $this->addSql('CREATE INDEX idx_sales_plan_company_created_by ON sales_plan (company_id, created_by_user_id)');
         $this->addSql('CREATE UNIQUE INDEX uq_sales_plan_lineage_draft ON sales_plan (company_id, lineage_id) WHERE ((status)::text = \'draft\'::text)');
@@ -61,6 +62,10 @@ final class Version20261017200059 extends AbstractMigration
         $this->addSql(<<<'SQL'
             ALTER TABLE sales_plan ADD CONSTRAINT chk_sales_plan_period
                 CHECK (date_from <= date_to)
+            SQL);
+        $this->addSql(<<<'SQL'
+            ALTER TABLE sales_plan ADD CONSTRAINT chk_sales_plan_currency
+                CHECK (currency ~ '^[A-Z]{3}$')
             SQL);
         $this->addSql(<<<'SQL'
             ALTER TABLE sales_plan ADD CONSTRAINT chk_sales_plan_version_number

@@ -24,6 +24,17 @@ final readonly class DoctrineSalesPlanRepository implements SalesPlanRepository
 
     public function add(SalesPlan $plan, array $lines): void
     {
+        // Строки чужого плана — тем более чужой компании — сюда не
+        // попадут: склейка строк под не той шапкой обошла бы и границу
+        // согласованности (ADR-040 п. 10), и изоляцию (CLAUDE.md §1).
+        // Внешнего ключа нет по причине ADR-022: Doctrine не видит
+        // FK скалярных UUID-ссылок и предлагает удалить его в diff.
+        foreach ($lines as $line) {
+            if (!$line->salesPlanId()->equals($plan->id()) || !$line->companyId()->equals($plan->companyId())) {
+                throw new \InvalidArgumentException('Строка принадлежит другому плану.');
+            }
+        }
+
         $this->entityManager->wrapInTransaction(function () use ($plan, $lines): void {
             $this->entityManager->persist($plan);
             $this->entityManager->flush();

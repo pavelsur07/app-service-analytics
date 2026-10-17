@@ -96,6 +96,13 @@ class SalesPlan
     #[ORM\Column]
     private \DateTimeImmutable $updatedAt;
 
+    // Счётчик правок строк: растёт на каждой, и потому шапка меняется
+    // всегда — даже если время правки совпало с прошлым. На updatedAt
+    // одном это держаться не может: то же значение ORM за изменение
+    // не считает, и версия не выросла бы (ADR-040 п. 10).
+    #[ORM\Column(options: ['default' => 0])]
+    private int $lineEdits = 0;
+
     #[ORM\Version]
     #[ORM\Column(type: 'integer')]
     private int $version = 1;
@@ -132,7 +139,8 @@ class SalesPlan
      * Первая версия новой линии — черновик.
      *
      * Даты — календарные дни в часовом поясе площадки (п. 5): время
-     * отбрасывается, чтобы 15 июля 23:00 и 15 июля 00:00 были одним днём.
+     * и пояс отбрасываются (`calendarDay`), 15 июля 23:00 и 15 июля
+     * 00:00 — один день.
      */
     public static function draft(
         Uuid $companyId,
@@ -144,8 +152,8 @@ class SalesPlan
         Uuid $createdByUserId,
         \DateTimeImmutable $createdAt,
     ): self {
-        $dateFrom = $dateFrom->setTime(0, 0);
-        $dateTo = $dateTo->setTime(0, 0);
+        $dateFrom = self::calendarDay($dateFrom);
+        $dateTo = self::calendarDay($dateTo);
 
         if ($dateTo < $dateFrom) {
             throw new \InvalidArgumentException('Конец периода плана раньше начала.');
@@ -183,6 +191,7 @@ class SalesPlan
     {
         $this->assertEditable();
         $this->updatedAt = $changedAt;
+        ++$this->lineEdits;
     }
 
     public function assertEditable(): void
@@ -194,14 +203,30 @@ class SalesPlan
 
     public function covers(\DateTimeImmutable $date): bool
     {
-        $date = $date->setTime(0, 0);
+        $date = self::calendarDay($date);
 
-        return $date >= $this->dateFrom && $date <= $this->dateTo;
+        return $date >= self::calendarDay($this->dateFrom) && $date <= self::calendarDay($this->dateTo);
+    }
+
+    /**
+     * Календарный день без часового пояса (п. 5): дата берётся такой,
+     * какой её прочли, — `Y-m-d` входа, — и переводится в один общий
+     * пояс. Сравнивать моменты в разных поясах нельзя: 31 июля 00:00
+     * МСК раньше 31 июля 00:00 UTC, и последний день периода пропал бы.
+     * Колонка `DATE` хранит тот же `Y-m-d`, поэтому дата из базы
+     * и дата из запроса совпадают независимо от пояса гидрации.
+     */
+    public static function calendarDay(\DateTimeImmutable $date): \DateTimeImmutable
+    {
+        $day = \DateTimeImmutable::createFromFormat('!Y-m-d', $date->format('Y-m-d'), new \DateTimeZone('UTC'));
+        \assert(false !== $day);
+
+        return $day;
     }
 
     public function periodDays(): int
     {
-        return self::daysBetween($this->dateFrom, $this->dateTo);
+        return self::daysBetween(self::calendarDay($this->dateFrom), self::calendarDay($this->dateTo));
     }
 
     /**
@@ -210,7 +235,8 @@ class SalesPlan
     public function days(): array
     {
         $days = [];
-        for ($day = $this->dateFrom; $day <= $this->dateTo; $day = $day->modify('+1 day')) {
+        $last = self::calendarDay($this->dateTo);
+        for ($day = self::calendarDay($this->dateFrom); $day <= $last; $day = $day->modify('+1 day')) {
             $days[] = $day;
         }
 
@@ -280,6 +306,11 @@ class SalesPlan
     public function updatedAt(): \DateTimeImmutable
     {
         return $this->updatedAt;
+    }
+
+    public function lineEdits(): int
+    {
+        return $this->lineEdits;
     }
 
     public function version(): int
