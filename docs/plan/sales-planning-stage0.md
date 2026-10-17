@@ -13,9 +13,9 @@
 
 ```
 sales_plan            id, company_id, marketplace_account_id, name, date_from, date_to,
-                      currency, status (draft | approved | superseded),
+                      currency, status (draft | approved | superseded | discarded | cancelled),
                       lineage_id, version_number, version
-sales_plan_line       PK (company_id, sales_plan_id, sku, plan_date) → quantity, price_minor
+sales_plan_line       PK id; UNIQUE (company_id, sales_plan_id, sku, plan_date) → quantity, price_minor
 sales_plan_day_claim  PK (company_id, marketplace_account_id, sku, plan_date) → sales_plan_id
 ```
 
@@ -23,7 +23,8 @@ sales_plan_day_claim  PK (company_id, marketplace_account_id, sku, plan_date) �
 - Выручка плана = `quantity × price` — вычисляется, не хранится.
 - Цена — минорные единицы; валюта одна на план, в шапке.
 - Один утверждённый план на SKU × день — ключ `sales_plan_day_claim`.
-- Лимиты: период до 184 дней, до 1000 SKU в плане.
+- Лимиты: период до 184 дней, до 1000 SKU, строк на версию — по замеру
+  в 0.4 (до замера 30 тыс.).
 
 ## Ввод
 
