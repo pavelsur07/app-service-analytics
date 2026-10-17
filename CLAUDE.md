@@ -81,13 +81,17 @@ PriceMonitoring  список отслеживаемых артикулов и �
               данные приносит клиент, мы их не забираем у площадки.
 Links         короткие ссылки для собственных кампаний и сырые события
               переходов; публичный redirect остаётся частью монолита (ADR-022).
+SalesPlanning план продаж по SKU и дням: штуки и РРЦ, версии,
+              утверждение (ADR-040). Ingestion читает только через Facade.
 ```
 
 Новый модуль создаётся, когда появляется задача, которую некуда положить,
 и решение по нему записано в ADR. Заранее пустые модули не заводятся.
 
 **Зависимости строго вниз.** Ingestion → Identity → Shared;
-PriceMonitoring → Identity → Shared; Links → Identity → Shared.
+PriceMonitoring → Identity → Shared; Links → Identity → Shared;
+SalesPlanning → Identity → Shared. SalesPlanning читает Ingestion
+только через его Facade: каталог SKU (ADR-040).
 PriceMonitoring читает Ingestion
 только через его Facade и только на чтение экрана СПП (ADR-016);
 обратного вызова нет. Обратных вызовов нет ни одного. Межмодульное общение — только через Facade
