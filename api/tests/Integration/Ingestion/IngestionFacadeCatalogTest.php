@@ -40,17 +40,24 @@ final class IngestionFacadeCatalogTest extends KernelTestCase
         $this->catalog($companyId, $accountId, [
             ['308520421', 'KR-100', 'Крем дневной'],
             ['308520422', 'KR_200', 'Крем ночной 50%'],
+            ['308520423', 'KR-50', 'Крем 50 мл'],
             ['999000111', 'SH-300', 'Шампунь'],
+            ['999000112', 'TB-1', 'Tube!box'],
+            ['999000113', 'BT-1', 'bottle'],
         ]);
         $search = fn (string $text): array => $this->skus(
             $this->facade()->searchAccountCatalogSkus($companyId->toRfc4122(), $accountId->toRfc4122(), $text, null, 50)->items,
         );
 
-        self::assertSame(['999000111'], $search('9990'));
+        self::assertSame(['999000111'], $search('000111'));
         self::assertSame(['308520421'], $search('kr-1'));
-        self::assertSame(['308520421', '308520422'], $search('крем'));
+        self::assertSame(['308520421', '308520422', '308520423'], $search('крем'));
+        // Каждая проверка различает буквальный символ и шаблон: без
+        // экранирования `%` нашёлся бы и «Крем 50 мл», `_` — «KR-100»
+        // и «KR-50», а `!b` превратился бы в «b» и нашёл «bottle».
         self::assertSame(['308520422'], $search('50%'));
         self::assertSame(['308520422'], $search('KR_'));
+        self::assertSame(['999000112'], $search('!b'));
     }
 
     public function testAnotherCompanyGetsNothingFromTheSameAccountId(): void
