@@ -25,4 +25,30 @@ interface SalesPlanRepository
     public function add(SalesPlan $plan, array $lines): void;
 
     public function get(string $companyId, Uuid $id): ?SalesPlan;
+
+    /**
+     * Строки перечисленных SKU плана — одним запросом на весь набор,
+     * не SKU за запросом (CLAUDE.md §6).
+     *
+     * @param list<string> $marketplaceSkus
+     *
+     * @return array<string, list<SalesPlanLine>> по SKU; SKU без строк не входит
+     */
+    public function linesOfSkus(string $companyId, Uuid $planId, array $marketplaceSkus): array;
+
+    /**
+     * Сколько разных SKU в плане — для лимита плана (ADR-040 п. 13).
+     */
+    public function skuCount(string $companyId, Uuid $planId): int;
+
+    /**
+     * Фиксирует правку плана одной транзакцией: изменённые строки,
+     * новые строки порциями, шапку с версией и записи журнала,
+     * поставленные сценарием.
+     *
+     * @param list<SalesPlanLine> $newLines
+     *
+     * @throws \Doctrine\ORM\OptimisticLockException план изменил кто-то ещё
+     */
+    public function saveChanges(array $newLines): void;
 }

@@ -308,8 +308,7 @@ return static function (DeptracConfig $config): void {
             ),
 
             // SalesPlanning (ADR-040) — четыре обычных слоя, межарендаторных
-            // чтений нет. Доступ к IngestionFacade и IdentityFacade выдаётся
-            // вместе с первым вызовом (этапы 0.3–0.4), а не вперёд.
+            // чтений нет.
             $salesPlanningDomain = Layer::withName('SalesPlanningDomain')->collectors(
                 DirectoryConfig::create('src/SalesPlanning/Domain/.*'),
             ),
@@ -520,7 +519,10 @@ return static function (DeptracConfig $config): void {
             // Ui границу модуля не пересекает даже через Facade, как
             // в остальных модулях.
             Ruleset::forLayer($salesPlanningUi)->accesses($salesPlanningApplication, $salesPlanningDomain, $salesPlanningInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
-            Ruleset::forLayer($salesPlanningApplication)->accesses($salesPlanningDomain, $salesPlanningInfrastructure, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
+            // identityFacade — подключения компании и аудит-журнал;
+            // ingestionFacade — каталог SKU подключения (ADR-040 п. 2, 4).
+            // Только у Application: Ui границу модуля не пересекает.
+            Ruleset::forLayer($salesPlanningApplication)->accesses($salesPlanningDomain, $salesPlanningInfrastructure, $identityFacade, $ingestionFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($salesPlanningInfrastructure)->accesses($salesPlanningDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($salesPlanningDomain)->accesses($sharedDomain, $symfonyUid),
         )

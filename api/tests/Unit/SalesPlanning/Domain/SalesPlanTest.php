@@ -105,7 +105,7 @@ final class SalesPlanTest extends TestCase
 
     public function testRejectsUnknownCurrency(): void
     {
-        $this->expectException(\Throwable::class);
+        $this->expectException(\InvalidArgumentException::class);
 
         SalesPlanBuilder::aSalesPlan()->withCurrency('XXZ')->build();
     }

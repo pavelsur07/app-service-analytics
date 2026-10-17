@@ -107,6 +107,73 @@ class SalesPlanLine
     }
 
     /**
+     * Повторный ввод SKU за период: те же дни раскладываются заново,
+     * строки правятся на месте — дни у SKU те же, строки плотные.
+     * Ручные правки дней при этом заменяются; прежние значения
+     * остаются в журнале (ADR-040 п. 10).
+     *
+     * @param list<self> $lines все строки одного SKU этого плана
+     */
+    public static function respread(
+        SalesPlan $plan,
+        array $lines,
+        int $totalQuantity,
+        Money $price,
+        EvenDayDistribution $distribution,
+        \DateTimeImmutable $changedAt,
+    ): void {
+        $days = $plan->days();
+        if (\count($lines) !== \count($days)) {
+            throw new \InvalidArgumentException('У SKU должна быть строка на каждый день периода.');
+        }
+
+        usort($lines, static fn (self $a, self $b): int => $a->planDate <=> $b->planDate);
+
+        $sku = null;
+        foreach ($lines as $index => $line) {
+            $line->assertBelongsTo($plan);
+            $sku ??= $line->marketplaceSku;
+            if ($line->marketplaceSku !== $sku || $line->planDate->format('Y-m-d') !== $days[$index]->format('Y-m-d')) {
+                throw new \InvalidArgumentException('Строки не совпадают с днями периода одного SKU.');
+            }
+        }
+
+        $quantities = $distribution->split($totalQuantity, \count($days));
+        $priceMinor = self::validPriceMinor($plan, $price);
+
+        foreach ($lines as $index => $line) {
+            $line->quantity = $quantities[$index];
+            $line->priceMinor = $priceMinor;
+        }
+
+        $plan->recordLinesChanged($changedAt);
+    }
+
+    /**
+     * Точные значения дней SKU для аудит-журнала (ADR-040 п. 10):
+     * дата, штуки, цена в минорных единицах — по порядку дней.
+     * Итог периода прежнюю раскладку не определяет, поэтому день за днём.
+     *
+     * @param list<self> $lines строки одного SKU
+     */
+    public static function describeDays(SalesPlan $plan, string $marketplaceSku, array $lines): string
+    {
+        usort($lines, static fn (self $a, self $b): int => $a->planDate <=> $b->planDate);
+
+        $days = [];
+        foreach ($lines as $line) {
+            $line->assertBelongsTo($plan);
+            $days[] = [$line->planDate->format('Y-m-d'), $line->quantity, $line->priceMinor];
+        }
+
+        return json_encode([
+            'marketplaceSku' => $marketplaceSku,
+            'currency' => $plan->currency(),
+            'days' => $days,
+        ], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
      * Правка отдельного дня черновика — например, акция с другой ценой.
      */
     public function changeTo(SalesPlan $plan, int $quantity, Money $price, \DateTimeImmutable $changedAt): void
