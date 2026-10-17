@@ -52,6 +52,12 @@ doctrine:
                 dir: '%kernel.project_dir%/src/Links/Domain'
                 prefix: 'App\Links\Domain'
                 alias: Links
+            SalesPlanning:
+                type: attribute
+                is_bundle: false
+                dir: '%kernel.project_dir%/src/SalesPlanning/Domain'
+                prefix: 'App\SalesPlanning\Domain'
+                alias: SalesPlanning
 
 when@test:
     doctrine:

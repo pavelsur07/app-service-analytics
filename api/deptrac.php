@@ -307,6 +307,22 @@ return static function (DeptracConfig $config): void {
                 DirectoryConfig::create('src/PriceMonitoring/Ui/.*'),
             ),
 
+            // SalesPlanning (ADR-040) — четыре обычных слоя, межарендаторных
+            // чтений нет. Доступ к IngestionFacade и IdentityFacade выдаётся
+            // вместе с первым вызовом (этапы 0.3–0.4), а не вперёд.
+            $salesPlanningDomain = Layer::withName('SalesPlanningDomain')->collectors(
+                DirectoryConfig::create('src/SalesPlanning/Domain/.*'),
+            ),
+            $salesPlanningApplication = Layer::withName('SalesPlanningApplication')->collectors(
+                DirectoryConfig::create('src/SalesPlanning/Application/.*'),
+            ),
+            $salesPlanningInfrastructure = Layer::withName('SalesPlanningInfrastructure')->collectors(
+                DirectoryConfig::create('src/SalesPlanning/Infrastructure/.*'),
+            ),
+            $salesPlanningUi = Layer::withName('SalesPlanningUi')->collectors(
+                DirectoryConfig::create('src/SalesPlanning/Ui/.*'),
+            ),
+
             // Внешние библиотеки — не наши модули, но зависимость на них
             // реальна и должна быть покрыта правилом, а не висеть Uncovered.
             $brickMoney = Layer::withName('BrickMoney')->collectors(
@@ -499,6 +515,14 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($priceMonitoringApplication)->accesses($priceMonitoringDomain, $priceMonitoringInfrastructure, $identityFacade, $ingestionFacade, $sharedApplication, $sharedDomain, $symfonyUid),
             Ruleset::forLayer($priceMonitoringInfrastructure)->accesses($priceMonitoringDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($priceMonitoringDomain)->accesses($sharedDomain, $symfonyUid),
+
+            // SalesPlanning — ниже Ingestion и Identity (ADR-040 п. 2).
+            // Ui границу модуля не пересекает даже через Facade, как
+            // в остальных модулях.
+            Ruleset::forLayer($salesPlanningUi)->accesses($salesPlanningApplication, $salesPlanningDomain, $salesPlanningInfrastructure, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($salesPlanningApplication)->accesses($salesPlanningDomain, $salesPlanningInfrastructure, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($salesPlanningInfrastructure)->accesses($salesPlanningDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($salesPlanningDomain)->accesses($sharedDomain, $symfonyUid),
         )
     ;
 };
