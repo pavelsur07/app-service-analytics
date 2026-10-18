@@ -120,7 +120,8 @@ export interface ChangeDayInput {
   marketplaceSku: string
   date: string
   quantity: number
-  priceMinor: number
+  /** null — у дня остаётся прежняя цена. */
+  priceMinor: number | null
 }
 
 /** Правка одного дня SKU в черновике (ADR-040 п. 7). */

@@ -47,7 +47,7 @@ final readonly class ChangeSalesPlanDayAction
         string $marketplaceSku,
         \DateTimeImmutable $date,
         int $quantity,
-        int $priceMinor,
+        ?int $priceMinor,
         string $actorUserId,
     ): EditSalesPlanResult {
         $plan = $this->plans->get($companyId, Uuid::fromString($planId));
@@ -71,7 +71,9 @@ final readonly class ChangeSalesPlanDayAction
             throw new \InvalidArgumentException(\sprintf('Штук в дне — от 0 до %d.', SkuPeriodPlan::MaxTotalQuantity));
         }
 
-        $priceMinor = SalesPlanLine::validPriceMinor($plan, Money::ofMinor($priceMinor, $plan->currency()));
+        if (null !== $priceMinor) {
+            $priceMinor = SalesPlanLine::validPriceMinor($plan, Money::ofMinor($priceMinor, $plan->currency()));
+        }
 
         $days = $this->plans->daysOfSkus($companyId, $plan->id(), [$marketplaceSku])[$marketplaceSku] ?? null;
         if (null === $days) {
@@ -99,7 +101,8 @@ final readonly class ChangeSalesPlanDayAction
             return EditSalesPlanResult::of(EditSalesPlanOutcome::TotalTooLarge);
         }
 
-        $changed = new PlannedDay($day, $quantity, $priceMinor);
+        // Без цены у дня остаётся прежняя (правка одних штук).
+        $changed = new PlannedDay($day, $quantity, $priceMinor ?? $previous->priceMinor);
 
         $this->identity->recordAuditEntry(
             companyId: $companyId,

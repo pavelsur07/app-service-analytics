@@ -37,13 +37,13 @@ final class ChangeSalesPlanDayController
     }
 
     #[OA\RequestBody(content: new OA\JsonContent(
-        required: ['version', 'marketplaceSku', 'date', 'quantity', 'priceMinor'],
+        required: ['version', 'marketplaceSku', 'date', 'quantity'],
         properties: [
             new OA\Property(property: 'version', type: 'integer', description: 'Версия плана из ответа чтения (ADR-008)'),
             new OA\Property(property: 'marketplaceSku', type: 'string', maxLength: 64),
             new OA\Property(property: 'date', type: 'string', format: 'date'),
             new OA\Property(property: 'quantity', type: 'integer', maximum: SkuPeriodPlan::MaxTotalQuantity, minimum: 0),
-            new OA\Property(property: 'priceMinor', type: 'integer', maximum: SalesPlanLine::MaxPriceMinor, minimum: 1, description: 'РРЦ за штуку в минорных единицах валюты плана'),
+            new OA\Property(property: 'priceMinor', type: 'integer', maximum: SalesPlanLine::MaxPriceMinor, minimum: 1, nullable: true, description: 'РРЦ за штуку в минорных единицах валюты плана; без неё у дня остаётся прежняя'),
         ],
     ))]
     #[OA\Response(response: 200, description: 'Сохранено; новая версия плана', content: new Model(type: SalesPlanVersionResponse::class))]

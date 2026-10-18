@@ -194,6 +194,51 @@ final class SalesPlanScenariosTest extends KernelTestCase
         self::assertSame(3, array_sum(array_column($this->lines($plan), 2)));
     }
 
+    public function testDayChangeWithoutPriceKeepsTheDaysPrice(): void
+    {
+        self::bootKernel();
+        [$company, $plan] = $this->planWithCatalog(['101'], '2026-07-01', '2026-07-02');
+        $version = (int) $this->setSkus($company, $plan, $plan->version(), [new SkuPeriodInput('101', 4, 129_900)])->version;
+
+        $result = $this->changeDay($company, $plan, $version, '101', '2026-07-01', 0, null);
+
+        self::assertSame(EditSalesPlanOutcome::Saved, $result->outcome);
+        self::assertSame([['101', '2026-07-01', 0, 129_900], ['101', '2026-07-02', 2, 129_900]], $this->lines($plan));
+    }
+
+    public function testEditsAreRefusedOnceThePlanIsNoLongerADraft(): void
+    {
+        self::bootKernel();
+        [$company, $plan] = $this->planWithCatalog(['101'], '2026-07-01', '2026-07-02');
+        $version = (int) $this->setSkus($company, $plan, $plan->version(), [new SkuPeriodInput('101', 2, 100)])->version;
+        // Утверждения до этапа 0.7 нет — статус ставится в обход сценария.
+        $this->connection()->executeStatement(
+            "UPDATE sales_plan SET status = 'approved' WHERE company_id = :companyId AND id = :planId",
+            ['companyId' => $plan->companyId()->toRfc4122(), 'planId' => $plan->id()->toRfc4122()],
+        );
+        $this->service(\Doctrine\ORM\EntityManagerInterface::class)->clear();
+
+        self::assertSame(EditSalesPlanOutcome::NotEditable, $this->changeDay($company, $plan, $version, '101', '2026-07-01', 9, 100)->outcome);
+        self::assertSame(
+            EditSalesPlanOutcome::NotEditable,
+            $this->service(RemoveSalesPlanSkuAction::class)($company->id()->toRfc4122(), $plan->id()->toRfc4122(), $version, '101', self::Actor)->outcome,
+        );
+        self::assertSame(2, array_sum(array_column($this->lines($plan), 2)));
+    }
+
+    public function testStaleVersionCannotRemoveASku(): void
+    {
+        self::bootKernel();
+        [$company, $plan] = $this->planWithCatalog(['101'], '2026-07-01', '2026-07-02');
+        $stale = (int) $this->setSkus($company, $plan, $plan->version(), [new SkuPeriodInput('101', 2, 100)])->version;
+        $this->changeDay($company, $plan, $stale, '101', '2026-07-01', 5, null);
+
+        $result = $this->service(RemoveSalesPlanSkuAction::class)($company->id()->toRfc4122(), $plan->id()->toRfc4122(), $stale, '101', self::Actor);
+
+        self::assertSame(EditSalesPlanOutcome::VersionConflict, $result->outcome);
+        self::assertCount(2, $this->lines($plan));
+    }
+
     public function testDayChangeKeepsSkuTotalUnderTheCeiling(): void
     {
         self::bootKernel();
@@ -369,7 +414,7 @@ final class SalesPlanScenariosTest extends KernelTestCase
         );
     }
 
-    private function changeDay(Company $company, SalesPlan $plan, int $version, string $sku, string $date, int $quantity, int $priceMinor): EditSalesPlanResult
+    private function changeDay(Company $company, SalesPlan $plan, int $version, string $sku, string $date, int $quantity, ?int $priceMinor): EditSalesPlanResult
     {
         return $this->service(ChangeSalesPlanDayAction::class)(
             $company->id()->toRfc4122(),

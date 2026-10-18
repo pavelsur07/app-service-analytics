@@ -3885,8 +3885,8 @@ export interface operations {
                     /** Format: date */
                     date: string;
                     quantity: number;
-                    /** @description РРЦ за штуку в минорных единицах валюты плана */
-                    priceMinor: number;
+                    /** @description РРЦ за штуку в минорных единицах валюты плана; без неё у дня остаётся прежняя */
+                    priceMinor?: number | null;
                 };
             };
         };

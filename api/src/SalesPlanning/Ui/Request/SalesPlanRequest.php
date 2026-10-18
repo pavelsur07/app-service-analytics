@@ -103,7 +103,10 @@ final class SalesPlanRequest
     /**
      * Правка одного дня: SKU, дата, штуки, цена и версия плана.
      *
-     * @return array{version: int, marketplaceSku: string, date: \DateTimeImmutable, quantity: int, priceMinor: int}
+     * Цена необязательна: без неё у дня остаётся прежняя — правка штук
+     * не должна заставлять вводить цену заново.
+     *
+     * @return array{version: int, marketplaceSku: string, date: \DateTimeImmutable, quantity: int, priceMinor: int|null}
      *
      * @throws \InvalidArgumentException
      */
@@ -127,7 +130,7 @@ final class SalesPlanRequest
         }
 
         $price = $decoded['priceMinor'] ?? null;
-        if (!\is_int($price) || $price <= 0 || $price > SalesPlanLine::MaxPriceMinor) {
+        if (null !== $price && (!\is_int($price) || $price <= 0 || $price > SalesPlanLine::MaxPriceMinor)) {
             throw new \InvalidArgumentException('price_minor_invalid');
         }
 

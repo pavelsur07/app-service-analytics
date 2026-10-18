@@ -3457,8 +3457,7 @@
                                     "version",
                                     "marketplaceSku",
                                     "date",
-                                    "quantity",
-                                    "priceMinor"
+                                    "quantity"
                                 ],
                                 "properties": {
                                     "version": {
@@ -3479,8 +3478,9 @@
                                         "minimum": 0
                                     },
                                     "priceMinor": {
-                                        "description": "\u0420\u0420\u0426 \u0437\u0430 \u0448\u0442\u0443\u043a\u0443 \u0432 \u043c\u0438\u043d\u043e\u0440\u043d\u044b\u0445 \u0435\u0434\u0438\u043d\u0438\u0446\u0430\u0445 \u0432\u0430\u043b\u044e\u0442\u044b \u043f\u043b\u0430\u043d\u0430",
+                                        "description": "\u0420\u0420\u0426 \u0437\u0430 \u0448\u0442\u0443\u043a\u0443 \u0432 \u043c\u0438\u043d\u043e\u0440\u043d\u044b\u0445 \u0435\u0434\u0438\u043d\u0438\u0446\u0430\u0445 \u0432\u0430\u043b\u044e\u0442\u044b \u043f\u043b\u0430\u043d\u0430; \u0431\u0435\u0437 \u043d\u0435\u0451 \u0443 \u0434\u043d\u044f \u043e\u0441\u0442\u0430\u0451\u0442\u0441\u044f \u043f\u0440\u0435\u0436\u043d\u044f\u044f",
                                         "type": "integer",
+                                        "nullable": true,
                                         "maximum": 1000000000,
                                         "minimum": 1
                                     }

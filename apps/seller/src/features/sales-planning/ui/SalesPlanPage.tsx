@@ -149,7 +149,12 @@ function SalesPlanScreen() {
                 // в группировке по дням и только у черновика.
                 onPickDay={
                   plan.data.plan.status === 'draft' && groupBy === 'day'
-                    ? setPickedDay
+                    ? (cell) => {
+                        setPickedDay({
+                          ...cell,
+                          version: plan.data.plan.version,
+                        })
+                      }
                     : null
                 }
                 removeAction={
@@ -262,10 +267,20 @@ function PlanHeader({ plan }: { plan: SalesPlan }) {
  * одни и те же (строки плотные, ADR-040 п. 3), поэтому заголовок
  * берётся у первого SKU. При группировке по дням таблица прокручивается.
  */
-interface PickedDay {
+interface PickedCell {
   marketplaceSku: string
   date: string
   quantity: number
+}
+
+/**
+ * Снимок дня на момент открытия формы — вместе с версией плана.
+ * Версия берётся отсюда, а не из перечитанного плана: иначе фоновое
+ * перечитывание после чужой правки подменило бы её, и сохранение
+ * молча затёрло бы чужое значение вместо конфликта (ADR-008).
+ */
+interface PickedDay extends PickedCell {
+  version: number
 }
 
 function PlanGrid({
@@ -276,7 +291,7 @@ function PlanGrid({
 }: {
   skus: SalesPlanSku[]
   currency: string
-  onPickDay: ((day: PickedDay) => void) | null
+  onPickDay: ((cell: PickedCell) => void) | null
   removeAction: ((marketplaceSku: string) => ReactNode) | null
 }) {
   const columns = skus[0]?.buckets ?? []
@@ -537,8 +552,8 @@ function SkuInputForm({
 
 /**
  * Правка одного дня (ADR-040 п. 7): акция с другой ценой, выходной.
- * Цена не подставляется из корзины: вывести её делением выручки на штуки
- * значило бы считать деньги в компоненте (§10).
+ * Цена необязательна — пустая оставляет у дня прежнюю: вывести её
+ * делением выручки на штуки значило бы считать деньги в компоненте (§10).
  */
 function DayEditForm({
   companyId,
@@ -556,12 +571,15 @@ function DayEditForm({
   const changeDay = useChangeSalesPlanDay(companyId, plan.id)
 
   const parsedQuantity = parseQuantity(quantity)
-  const parsedPrice = parseAmountToMinor(price)
-  const ready =
-    parsedQuantity !== null && parsedPrice !== null && parsedPrice > 0
+  const parsedPrice = price.trim() === '' ? null : parseAmountToMinor(price)
+  const priceInvalid =
+    price.trim() !== '' && (parsedPrice === null || parsedPrice === 0)
   const conflict =
     changeDay.error instanceof ApiError &&
     changeDay.error.code === 'version_conflict'
+  // После конфликта форма держит устаревший снимок: повтор возможен
+  // только из заново открытого дня — с новыми штуками и версией.
+  const ready = parsedQuantity !== null && !priceInvalid && !conflict
 
   return (
     <form
@@ -574,7 +592,7 @@ function DayEditForm({
 
         changeDay.mutate(
           {
-            version: plan.version,
+            version: picked.version,
             marketplaceSku: picked.marketplaceSku,
             date: picked.date,
             quantity: parsedQuantity,
@@ -600,11 +618,8 @@ function DayEditForm({
           }}
         />
         <Input
-          error={
-            price !== '' && (parsedPrice === null || parsedPrice === 0)
-              ? 'Сумма больше нуля'
-              : undefined
-          }
+          error={priceInvalid ? 'Сумма больше нуля' : undefined}
+          hint="Пусто — цена дня не изменится"
           inputMode="decimal"
           label="РРЦ в этот день, ₽"
           placeholder="1299,90"
@@ -618,7 +633,7 @@ function DayEditForm({
       {changeDay.error !== null && (
         <p className="text-sm text-negative-text" role="alert">
           {conflict
-            ? 'План изменил кто-то ещё — он перечитан, повторите правку.'
+            ? 'План изменил кто-то ещё — он перечитан. Откройте день заново и повторите правку.'
             : changeDay.error instanceof ApiError
               ? changeDay.error.message
               : 'Не удалось сохранить день.'}
@@ -656,25 +671,37 @@ function RemoveSkuButton({
   marketplaceSku: string
 }) {
   const removeSku = useRemoveSalesPlanSku(companyId, plan.id)
+  const failure =
+    removeSku.error === null
+      ? null
+      : removeSku.error instanceof ApiError &&
+          removeSku.error.code === 'version_conflict'
+        ? 'План изменил кто-то ещё — он перечитан, повторите.'
+        : removeSku.error instanceof ApiError
+          ? removeSku.error.message
+          : 'Не удалось убрать.'
 
   return (
-    <button
-      className="text-text-muted hover:text-negative-text"
-      type="button"
-      aria-label={`Убрать ${marketplaceSku} из плана`}
-      disabled={removeSku.isPending}
-      title={
-        removeSku.error instanceof ApiError
-          ? removeSku.error.message
-          : 'Убрать из плана'
-      }
-      onClick={() => {
-        if (window.confirm(`Убрать ${marketplaceSku} из плана?`)) {
-          removeSku.mutate({ version: plan.version, marketplaceSku })
-        }
-      }}
-    >
-      <Trash2 aria-hidden="true" size={14} />
-    </button>
+    <>
+      <button
+        className="text-text-muted hover:text-negative-text"
+        type="button"
+        aria-label={`Убрать ${marketplaceSku} из плана`}
+        disabled={removeSku.isPending}
+        title="Убрать из плана"
+        onClick={() => {
+          if (window.confirm(`Убрать ${marketplaceSku} из плана?`)) {
+            removeSku.mutate({ version: plan.version, marketplaceSku })
+          }
+        }}
+      >
+        <Trash2 aria-hidden="true" size={14} />
+      </button>
+      {failure !== null && (
+        <span className="text-xs font-normal text-negative-text" role="alert">
+          {failure}
+        </span>
+      )}
+    </>
   )
 }
