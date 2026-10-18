@@ -34,6 +34,18 @@ type SalesPlanSku = components['schemas']['SalesPlanSkuResponse']
  * месяц и весь период считает сервер суммой дней.
  */
 export function SalesPlanPage() {
+  const { companyId, planId } = useParams<{
+    companyId: string
+    planId: string
+  }>()
+
+  // Ключ по компании и плану: курсор, группировка и форма ввода
+  // принадлежат одному плану одной компании и при смене любого
+  // из них начинаются заново.
+  return <SalesPlanScreen key={`${companyId ?? ''}:${planId ?? ''}`} />
+}
+
+function SalesPlanScreen() {
   const navigate = useNavigate()
   const { companyId, planId } = useParams<{
     companyId: string
@@ -315,8 +327,12 @@ function SkuInputForm({
     parsedPrice !== null &&
     parsedPrice > 0
 
+  // 409 бывает двух видов: версия устарела (план перечитан — повторить
+  // ввод) и план уже не черновик. Различаются кодом сервера, а не
+  // статусом; во втором случае показывается текст сервера (patterns.md).
   const conflict =
-    setSkus.error instanceof ApiError && setSkus.error.status === 409
+    setSkus.error instanceof ApiError &&
+    setSkus.error.code === 'version_conflict'
 
   return (
     <Card>

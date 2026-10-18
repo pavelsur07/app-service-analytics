@@ -24,6 +24,15 @@ const CURRENCY = 'RUB'
  * уже по ней.
  */
 export function SalesPlansPage() {
+  const { companyId } = useParams<{ companyId: string }>()
+
+  // Ключ по компании: переключатель компании оставляет тот же маршрут,
+  // и без ключа курсор страницы и выбранное подключение компании A
+  // уехали бы в запросы компании B.
+  return <SalesPlansScreen key={companyId ?? ''} />
+}
+
+function SalesPlansScreen() {
   const navigate = useNavigate()
   const { companyId } = useParams<{ companyId: string }>()
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null])
