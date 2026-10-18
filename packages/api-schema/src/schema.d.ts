@@ -4048,13 +4048,13 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
-            /** @description Тело некорректно, SKU нет в каталоге подключения или превышен лимит плана */
+            /** @description Тело некорректно, превышен лимит плана (ValidationErrorResponse) либо SKU нет в каталоге подключения (UnknownSkusResponse, code=unknown_skus) */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UnknownSkusResponse"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"] | components["schemas"]["UnknownSkusResponse"];
                 };
             };
         };

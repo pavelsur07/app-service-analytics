@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\SalesPlanning\Ui\Request;
 
 use App\SalesPlanning\Application\SkuPeriodInput;
+use App\SalesPlanning\Domain\SalesPlanLine;
+use App\SalesPlanning\Domain\SkuPeriodPlan;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -83,12 +85,12 @@ final class SalesPlanRequest
             }
 
             $quantity = $raw['totalQuantity'] ?? null;
-            if (!\is_int($quantity) || $quantity < 0) {
+            if (!\is_int($quantity) || $quantity < 0 || $quantity > SkuPeriodPlan::MaxTotalQuantity) {
                 throw new \InvalidArgumentException('total_quantity_invalid');
             }
 
             $price = $raw['priceMinor'] ?? null;
-            if (!\is_int($price) || $price <= 0) {
+            if (!\is_int($price) || $price <= 0 || $price > SalesPlanLine::MaxPriceMinor) {
                 throw new \InvalidArgumentException('price_minor_invalid');
             }
 

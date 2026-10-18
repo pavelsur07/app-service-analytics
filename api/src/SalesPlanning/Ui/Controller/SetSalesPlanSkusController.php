@@ -7,6 +7,8 @@ namespace App\SalesPlanning\Ui\Controller;
 use App\SalesPlanning\Application\SetSalesPlanSkusAction;
 use App\SalesPlanning\Application\SetSalesPlanSkusOutcome;
 use App\SalesPlanning\Domain\SalesPlan;
+use App\SalesPlanning\Domain\SalesPlanLine;
+use App\SalesPlanning\Domain\SkuPeriodPlan;
 use App\SalesPlanning\Ui\Request\SalesPlanRequest;
 use App\SalesPlanning\Ui\Response\SalesPlanVersionResponse;
 use App\SalesPlanning\Ui\Response\UnknownSkusResponse;
@@ -51,8 +53,8 @@ final class SetSalesPlanSkusController
                     required: ['marketplaceSku', 'totalQuantity', 'priceMinor'],
                     properties: [
                         new OA\Property(property: 'marketplaceSku', type: 'string', maxLength: 64),
-                        new OA\Property(property: 'totalQuantity', type: 'integer', minimum: 0, description: 'Штук за весь период'),
-                        new OA\Property(property: 'priceMinor', type: 'integer', minimum: 1, description: 'РРЦ за штуку в минорных единицах валюты плана'),
+                        new OA\Property(property: 'totalQuantity', type: 'integer', maximum: SkuPeriodPlan::MaxTotalQuantity, minimum: 0, description: 'Штук за весь период'),
+                        new OA\Property(property: 'priceMinor', type: 'integer', maximum: SalesPlanLine::MaxPriceMinor, minimum: 1, description: 'РРЦ за штуку в минорных единицах валюты плана'),
                     ],
                     type: 'object',
                 ),
@@ -62,7 +64,16 @@ final class SetSalesPlanSkusController
     #[OA\Response(response: 200, description: 'Сохранено; новая версия плана', content: new Model(type: SalesPlanVersionResponse::class))]
     #[OA\Response(response: 404, description: 'У компании нет такого плана', content: new Model(type: ValidationErrorResponse::class))]
     #[OA\Response(response: 409, description: 'План изменил кто-то ещё либо он уже не черновик', content: new Model(type: ValidationErrorResponse::class))]
-    #[OA\Response(response: 422, description: 'Тело некорректно, SKU нет в каталоге подключения или превышен лимит плана', content: new Model(type: UnknownSkusResponse::class))]
+    // Две формы 422: общий отказ валидации и отказ по неизвестным SKU
+    // со списком — клиент различает их по наличию unknownSkus (и коду).
+    #[OA\Response(
+        response: 422,
+        description: 'Тело некорректно, превышен лимит плана (ValidationErrorResponse) либо SKU нет в каталоге подключения (UnknownSkusResponse, code=unknown_skus)',
+        content: new OA\JsonContent(oneOf: [
+            new OA\Schema(ref: new Model(type: ValidationErrorResponse::class)),
+            new OA\Schema(ref: new Model(type: UnknownSkusResponse::class)),
+        ]),
+    )]
     #[OA\Response(response: 403, description: 'Пользователь не состоит в этой компании', content: new Model(type: ValidationErrorResponse::class))]
     public function __invoke(string $companyId, string $planId, Request $request): JsonResponse
     {

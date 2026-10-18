@@ -13,6 +13,12 @@ use App\Shared\Domain\ValueObject\Money;
 final readonly class SkuPeriodPlan
 {
     /**
+     * Потолок штук SKU за период: день помещается в int колонки,
+     * а выручка плана — в bigint (см. SalesPlanLine::MaxPriceMinor).
+     */
+    public const int MaxTotalQuantity = 1_000_000;
+
+    /**
      * @param list<PlannedDay> $days по порядку дней периода
      */
     private function __construct(
@@ -32,6 +38,10 @@ final readonly class SkuPeriodPlan
         Money $price,
         EvenDayDistribution $distribution,
     ): self {
+        if ($totalQuantity > self::MaxTotalQuantity) {
+            throw new \InvalidArgumentException(\sprintf('Штук за период больше %d — похоже на опечатку.', self::MaxTotalQuantity));
+        }
+
         $sku = SalesPlanLine::validSku($marketplaceSku);
         $priceMinor = SalesPlanLine::validPriceMinor($plan, $price);
         $dates = $plan->days();

@@ -34,6 +34,14 @@ use Symfony\Component\Uid\Uuid;
 )]
 class SalesPlanLine
 {
+    /**
+     * Потолок РРЦ за штуку — 10 млн ₽ в копейках. С потолком штук SKU
+     * (SkuPeriodPlan::MaxTotalQuantity) и SKU плана выручка плана
+     * не выходит за bigint: 1 000 SKU × 10⁶ шт. × 10⁹ = 10¹⁸ < 9,2·10¹⁸.
+     * Без него план записывался, а чтение итогов падало на переполнении.
+     */
+    public const int MaxPriceMinor = 1_000_000_000;
+
     #[ORM\Id]
     #[ORM\Column(type: 'uuid')]
     private readonly Uuid $id;
@@ -191,6 +199,10 @@ class SalesPlanLine
 
         if ($price->minorAmount() <= 0) {
             throw new \InvalidArgumentException('РРЦ должна быть больше нуля.');
+        }
+
+        if ($price->minorAmount() > self::MaxPriceMinor) {
+            throw new \InvalidArgumentException('РРЦ за штуку больше 10 млн — похоже на опечатку.');
         }
 
         return $price->minorAmount();

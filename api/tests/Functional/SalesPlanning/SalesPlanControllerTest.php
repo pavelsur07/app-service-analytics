@@ -117,6 +117,10 @@ final class SalesPlanControllerTest extends WebTestCase
         yield 'дробная цена' => [['version' => 1, 'items' => [[...$item, 'priceMinor' => 1299.9]]], 'price_minor_invalid'];
         yield 'отрицательные штуки' => [['version' => 1, 'items' => [[...$item, 'totalQuantity' => -1]]], 'total_quantity_invalid'];
         yield 'пустой набор' => [['version' => 1, 'items' => []], 'items_required'];
+        // Выручка плана считается в bigint: цена и штуки без потолка
+        // записывались бы, а чтение итогов падало на переполнении.
+        yield 'цена за потолком' => [['version' => 1, 'items' => [[...$item, 'priceMinor' => \PHP_INT_MAX]]], 'price_minor_invalid'];
+        yield 'штуки за потолком' => [['version' => 1, 'items' => [[...$item, 'totalQuantity' => 2_147_483_648]]], 'total_quantity_invalid'];
     }
 
     /**
