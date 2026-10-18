@@ -246,8 +246,9 @@ Inventory обсуждались, но решения по ним не прин�
 только путь из семи base62-символов.
 
 `SalesPlanning` заведён вместе с ADR-040 и первой задачей под него —
-схемой и доменом плана продаж. Слоёв столько, сколько в них кода:
-`Domain` и `Infrastructure`; `Application` и `Ui` появятся со сценариями.
+схемой и доменом плана продаж. Сценарии и HTTP-контракт — с этапа 0.4:
+`Application` (создание, ввод SKU, чтение), `Infrastructure/Query`
+(списки и итоги DBAL), `Ui` (`/api/companies/{companyId}/sales-plans…`).
 Направление — `SalesPlanning → Ingestion` (только `IngestionFacade`)
 и `SalesPlanning → Identity → Shared`; грант на Facade выдаётся
 в `deptrac.php` вместе с первым вызовом, а не вперёд.

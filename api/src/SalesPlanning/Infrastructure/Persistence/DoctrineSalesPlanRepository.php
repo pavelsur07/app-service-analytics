@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\SalesPlanning\Infrastructure\Persistence;
 
+use App\SalesPlanning\Domain\PlannedDay;
 use App\SalesPlanning\Domain\SalesPlan;
 use App\SalesPlanning\Domain\SalesPlanLine;
 use App\SalesPlanning\Domain\SalesPlanRepository;
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -17,6 +19,10 @@ use Symfony\Component\Uid\Uuid;
 final readonly class DoctrineSalesPlanRepository implements SalesPlanRepository
 {
     private const int FlushBatchSize = 1000;
+
+    // Порция — один JSON-параметр; 10 000 строк — около мегабайта тела
+    // запроса, без заметной памяти на стороне базы.
+    private const int UpsertBatchSize = 10_000;
 
     public function __construct(
         private EntityManagerInterface $entityManager,
@@ -34,38 +40,48 @@ final readonly class DoctrineSalesPlanRepository implements SalesPlanRepository
         });
     }
 
-    public function saveChanges(array $newLines): void
+    public function saveSkuPlans(SalesPlan $plan, array $skuPlans): void
     {
-        $this->entityManager->wrapInTransaction(function () use ($newLines): void {
-            // Сначала изменения загруженного: шапка с проверкой версии
-            // в самом UPDATE — конфликт обнаруживается до вставки новых
-            // строк, и транзакция откатывается целиком.
+        $this->entityManager->wrapInTransaction(function () use ($plan, $skuPlans): void {
+            // Сначала шапка: версия проверяется в самом UPDATE, и
+            // конфликт обнаруживается до записи строк — транзакция
+            // откатывается целиком. Тот же flush пишет журнал.
             $this->entityManager->flush();
-            $this->persistInBatches($newLines);
+
+            $rows = [];
+            foreach ($skuPlans as $skuPlan) {
+                foreach ($skuPlan->days as $day) {
+                    $rows[] = [$skuPlan->marketplaceSku, $day];
+                }
+            }
+
+            foreach (array_chunk($rows, self::UpsertBatchSize) as $batch) {
+                $this->upsertDays($plan, $batch);
+            }
         });
     }
 
-    public function linesOfSkus(string $companyId, Uuid $planId, array $marketplaceSkus): array
+    public function daysOfSkus(string $companyId, Uuid $planId, array $marketplaceSkus): array
     {
         if ([] === $marketplaceSkus) {
             return [];
         }
 
-        /** @var list<SalesPlanLine> $lines */
-        $lines = $this->entityManager
-            ->createQuery(
-                'SELECT l FROM '.SalesPlanLine::class.' l
-                  WHERE l.companyId = :companyId AND l.salesPlanId = :planId AND l.marketplaceSku IN (:skus)
-                  ORDER BY l.marketplaceSku, l.planDate',
-            )
-            ->setParameter('companyId', Uuid::fromString($companyId), 'uuid')
-            ->setParameter('planId', $planId, 'uuid')
-            ->setParameter('skus', array_values(array_unique($marketplaceSkus)))
-            ->getResult();
+        /** @var list<array{marketplace_sku: string, plan_date: string, quantity: int, price_minor: int}> $rows */
+        $rows = $this->entityManager->getConnection()->fetchAllAssociative(
+            'SELECT marketplace_sku, plan_date, quantity, price_minor
+               FROM sales_plan_line
+              WHERE company_id = :companyId AND sales_plan_id = :planId AND marketplace_sku IN (:skus)
+              ORDER BY marketplace_sku, plan_date',
+            ['companyId' => $companyId, 'planId' => $planId->toRfc4122(), 'skus' => array_values(array_unique($marketplaceSkus))],
+            ['skus' => ArrayParameterType::STRING],
+        );
 
         $bySku = [];
-        foreach ($lines as $line) {
-            $bySku[$line->marketplaceSku()][] = $line;
+        foreach ($rows as $row) {
+            $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $row['plan_date'], new \DateTimeZone('UTC'));
+            \assert(false !== $date);
+            $bySku[$row['marketplace_sku']][] = new PlannedDay($date, $row['quantity'], $row['price_minor']);
         }
 
         return $bySku;
@@ -118,6 +134,45 @@ final readonly class DoctrineSalesPlanRepository implements SalesPlanRepository
                 $this->entityManager->detach($line);
             }
         }
+    }
+
+    /**
+     * Пакетная запись дней (ADR-041): порция уходит одним параметром —
+     * JSON-массивом, который PostgreSQL разворачивает в строки
+     * (`jsonb_to_recordset`). Тысячи именованных параметров разбирались
+     * бы дольше самой вставки. Строка, уже стоящая на том же SKU × дне
+     * плана, обновляется по уникальному ключу — не «проверить, затем
+     * записать» (CLAUDE.md §4). id новой строки — UUIDv7 из приложения
+     * (§2); у существующей остаётся прежний.
+     *
+     * @param list<array{string, PlannedDay}> $rows
+     */
+    private function upsertDays(SalesPlan $plan, array $rows): void
+    {
+        $records = array_map(
+            static fn (array $row): array => [
+                'id' => Uuid::v7()->toRfc4122(),
+                'marketplace_sku' => $row[0],
+                'plan_date' => $row[1]->date->format('Y-m-d'),
+                'quantity' => $row[1]->quantity,
+                'price_minor' => $row[1]->priceMinor,
+            ],
+            $rows,
+        );
+
+        $this->entityManager->getConnection()->executeStatement(
+            'INSERT INTO sales_plan_line (id, company_id, sales_plan_id, marketplace_sku, plan_date, quantity, price_minor)
+             SELECT r.id, :companyId, :planId, r.marketplace_sku, r.plan_date, r.quantity, r.price_minor
+               FROM jsonb_to_recordset(CAST(:rows AS jsonb))
+                 AS r(id uuid, marketplace_sku varchar(64), plan_date date, quantity int, price_minor bigint)
+             ON CONFLICT (company_id, sales_plan_id, marketplace_sku, plan_date)
+             DO UPDATE SET quantity = EXCLUDED.quantity, price_minor = EXCLUDED.price_minor',
+            [
+                'companyId' => $plan->companyId()->toRfc4122(),
+                'planId' => $plan->id()->toRfc4122(),
+                'rows' => json_encode($records, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE),
+            ],
+        );
     }
 
     public function get(string $companyId, Uuid $id): ?SalesPlan

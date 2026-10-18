@@ -91,7 +91,6 @@ final class SetSalesPlanSkusController
                 Response::HTTP_UNPROCESSABLE_ENTITY,
             ),
             SetSalesPlanSkusOutcome::TooManySkus => $this->error(Response::HTTP_UNPROCESSABLE_ENTITY, 'too_many_skus', \sprintf('В плане не больше %d артикулов.', SalesPlan::MaxSkus)),
-            SetSalesPlanSkusOutcome::TooManyLines => $this->error(Response::HTTP_UNPROCESSABLE_ENTITY, 'too_many_lines', \sprintf('В плане не больше %d строк (артикулы × дни). Сократите период или число артикулов.', SalesPlan::MaxLines)),
         };
     }
 

@@ -12,5 +12,4 @@ enum SetSalesPlanSkusOutcome
     case NotEditable;
     case UnknownSkus;
     case TooManySkus;
-    case TooManyLines;
 }
