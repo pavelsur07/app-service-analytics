@@ -173,7 +173,10 @@ function SalesPlanScreen() {
 
             {pickedDay !== null && plan.data.plan.status === 'draft' && (
               <DayEditForm
-                key={`${pickedDay.marketplaceSku}:${pickedDay.date}`}
+                // Версия в ключе: повторный клик по тому же дню после чужой
+                // правки пересоздаёт форму — со свежими штуками и версией,
+                // а не со старыми полями при новой версии (ADR-008).
+                key={`${pickedDay.marketplaceSku}:${pickedDay.date}:${pickedDay.version}`}
                 companyId={companyId}
                 plan={plan.data.plan}
                 picked={pickedDay}
