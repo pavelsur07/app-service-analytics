@@ -692,6 +692,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/sales-plans/{planId}/days": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_sales_planning_plan_day_change"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/sales-plans": {
         parameters: {
             query?: never;
@@ -703,6 +719,22 @@ export interface paths {
         put?: never;
         post: operations["post_sales_planning_plan_create"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/sales-plans/{planId}/skus/{marketplaceSku}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_sales_planning_plan_sku_remove"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1488,6 +1520,9 @@ export interface components {
             items: string[];
             nextCursor?: string | null;
         };
+        SalesPlanVersionResponse: {
+            version: number;
+        };
         SalesPlanResponse: {
             id: string;
             marketplaceAccountId: string;
@@ -1521,9 +1556,6 @@ export interface components {
         CatalogSkuListResponse: {
             items: components["schemas"]["CatalogSkuResponse"][];
             nextCursor?: string | null;
-        };
-        SalesPlanVersionResponse: {
-            version: number;
         };
         UnknownSkusResponse: {
             status: number;
@@ -3834,6 +3866,78 @@ export interface operations {
             };
         };
     };
+    put_sales_planning_plan_day_change: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Версия плана из ответа чтения (ADR-008) */
+                    version: number;
+                    marketplaceSku: string;
+                    /** Format: date */
+                    date: string;
+                    quantity: number;
+                    /** @description РРЦ за штуку в минорных единицах валюты плана */
+                    priceMinor: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Сохранено; новая версия плана */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanVersionResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description У компании нет такого плана */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description План изменил кто-то ещё либо он уже не черновик */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Тело некорректно, день вне периода, SKU нет в плане или превышен потолок штук */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     get_sales_planning_plan_list: {
         parameters: {
             query?: {
@@ -3929,6 +4033,69 @@ export interface operations {
                 };
             };
             /** @description Тело некорректно, период или подключение не годятся */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_sales_planning_plan_sku_remove: {
+        parameters: {
+            query: {
+                /** @description Версия плана из ответа чтения (ADR-008) */
+                version: number;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+                planId: string;
+                marketplaceSku: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SKU убран; новая версия плана */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanVersionResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description У компании нет такого плана */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description План изменил кто-то ещё либо он уже не черновик */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Нет версии либо SKU нет в плане */
             422: {
                 headers: {
                     [name: string]: unknown;

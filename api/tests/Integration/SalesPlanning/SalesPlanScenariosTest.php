@@ -10,14 +10,19 @@ use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Ingestion\Domain\MarketplaceListingRepository;
+use App\SalesPlanning\Application\ChangeSalesPlanDayAction;
 use App\SalesPlanning\Application\CreateSalesPlanAction;
+use App\SalesPlanning\Application\EditSalesPlanOutcome;
+use App\SalesPlanning\Application\EditSalesPlanResult;
 use App\SalesPlanning\Application\ListSalesPlansAction;
+use App\SalesPlanning\Application\RemoveSalesPlanSkuAction;
 use App\SalesPlanning\Application\SetSalesPlanSkusAction;
 use App\SalesPlanning\Application\SetSalesPlanSkusOutcome;
 use App\SalesPlanning\Application\ShowSalesPlanAction;
 use App\SalesPlanning\Application\SkuPeriodInput;
 use App\SalesPlanning\Domain\SalesPlan;
 use App\SalesPlanning\Domain\SalesPlanAuditAction;
+use App\SalesPlanning\Domain\SkuPeriodPlan;
 use App\SalesPlanning\Infrastructure\Query\SalesPlanGrouping;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
@@ -149,6 +154,98 @@ final class SalesPlanScenariosTest extends KernelTestCase
         self::assertSame(SetSalesPlanSkusOutcome::TooManySkus, $result->outcome);
     }
 
+    public function testChangesOneDayAndAuditsItsExactValues(): void
+    {
+        self::bootKernel();
+        [$company, $plan] = $this->planWithCatalog(['101'], '2026-07-01', '2026-07-03');
+        $saved = $this->setSkus($company, $plan, $plan->version(), [new SkuPeriodInput('101', 10, 129_900)]);
+
+        $result = $this->changeDay($company, $plan, (int) $saved->version, '101', '2026-07-02', 7, 99_900);
+
+        self::assertSame(EditSalesPlanOutcome::Saved, $result->outcome);
+        self::assertSame((int) $saved->version + 1, $result->version);
+        self::assertSame([
+            ['101', '2026-07-01', 4, 129_900],
+            ['101', '2026-07-02', 7, 99_900],
+            ['101', '2026-07-03', 3, 129_900],
+        ], $this->lines($plan));
+
+        $audit = $this->audit($plan, SalesPlanAuditAction::DayChanged);
+        self::assertCount(1, $audit);
+        self::assertSame(
+            ['marketplaceSku' => '101', 'currency' => 'RUB', 'days' => [['2026-07-02', 3, 129_900]]],
+            json_decode((string) $audit[0]['previous_value'], true, flags: \JSON_THROW_ON_ERROR),
+        );
+        self::assertSame(
+            ['marketplaceSku' => '101', 'currency' => 'RUB', 'days' => [['2026-07-02', 7, 99_900]]],
+            json_decode((string) $audit[0]['new_value'], true, flags: \JSON_THROW_ON_ERROR),
+        );
+    }
+
+    public function testDayChangeRefusesWhatIsNotInThePlan(): void
+    {
+        self::bootKernel();
+        [$company, $plan] = $this->planWithCatalog(['101', '102'], '2026-07-01', '2026-07-03');
+        $version = (int) $this->setSkus($company, $plan, $plan->version(), [new SkuPeriodInput('101', 3, 100)])->version;
+
+        self::assertSame(EditSalesPlanOutcome::DayOutOfPeriod, $this->changeDay($company, $plan, $version, '101', '2026-07-04', 1, 100)->outcome);
+        self::assertSame(EditSalesPlanOutcome::SkuNotInPlan, $this->changeDay($company, $plan, $version, '102', '2026-07-02', 1, 100)->outcome);
+        self::assertSame(EditSalesPlanOutcome::VersionConflict, $this->changeDay($company, $plan, $version - 1, '101', '2026-07-02', 1, 100)->outcome);
+        self::assertSame(3, array_sum(array_column($this->lines($plan), 2)));
+    }
+
+    public function testDayChangeKeepsSkuTotalUnderTheCeiling(): void
+    {
+        self::bootKernel();
+        [$company, $plan] = $this->planWithCatalog(['101'], '2026-07-01', '2026-07-02');
+        $version = (int) $this->setSkus($company, $plan, $plan->version(), [new SkuPeriodInput('101', SkuPeriodPlan::MaxTotalQuantity, 100)])->version;
+
+        $result = $this->changeDay($company, $plan, $version, '101', '2026-07-01', SkuPeriodPlan::MaxTotalQuantity, 100);
+
+        self::assertSame(EditSalesPlanOutcome::TotalTooLarge, $result->outcome);
+    }
+
+    public function testRemovesSkuAndKeepsItsDaysInTheAudit(): void
+    {
+        self::bootKernel();
+        [$company, $plan] = $this->planWithCatalog(['101', '102'], '2026-07-01', '2026-07-02');
+        $version = (int) $this->setSkus($company, $plan, $plan->version(), [
+            new SkuPeriodInput('101', 2, 100),
+            new SkuPeriodInput('102', 4, 200),
+        ])->version;
+
+        $result = $this->service(RemoveSalesPlanSkuAction::class)(
+            $company->id()->toRfc4122(),
+            $plan->id()->toRfc4122(),
+            $version,
+            '101',
+            self::Actor,
+        );
+
+        self::assertSame(EditSalesPlanOutcome::Saved, $result->outcome);
+        self::assertSame([['102', '2026-07-01', 2, 200], ['102', '2026-07-02', 2, 200]], $this->lines($plan));
+        $audit = $this->audit($plan, SalesPlanAuditAction::SkuRemoved);
+        self::assertNull($audit[0]['new_value']);
+        $previous = json_decode((string) $audit[0]['previous_value'], true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($previous);
+        self::assertSame([['2026-07-01', 1, 100], ['2026-07-02', 1, 100]], $previous['days']);
+    }
+
+    public function testEditsDoNotReachAnotherCompanysPlan(): void
+    {
+        self::bootKernel();
+        [$company, $plan] = $this->planWithCatalog(['101'], '2026-07-01', '2026-07-02');
+        $version = (int) $this->setSkus($company, $plan, $plan->version(), [new SkuPeriodInput('101', 2, 100)])->version;
+        $stranger = $this->company();
+
+        self::assertSame(EditSalesPlanOutcome::NotFound, $this->changeDay($stranger, $plan, $version, '101', '2026-07-01', 9, 100)->outcome);
+        self::assertSame(
+            EditSalesPlanOutcome::NotFound,
+            $this->service(RemoveSalesPlanSkuAction::class)($stranger->id()->toRfc4122(), $plan->id()->toRfc4122(), $version, '101', self::Actor)->outcome,
+        );
+        self::assertSame(2, array_sum(array_column($this->lines($plan), 2)));
+    }
+
     public function testShowsTotalsAndBucketsClippedToThePeriod(): void
     {
         self::bootKernel();
@@ -268,6 +365,20 @@ final class SalesPlanScenariosTest extends KernelTestCase
             $plan->id()->toRfc4122(),
             $version,
             $items,
+            self::Actor,
+        );
+    }
+
+    private function changeDay(Company $company, SalesPlan $plan, int $version, string $sku, string $date, int $quantity, int $priceMinor): EditSalesPlanResult
+    {
+        return $this->service(ChangeSalesPlanDayAction::class)(
+            $company->id()->toRfc4122(),
+            $plan->id()->toRfc4122(),
+            $version,
+            $sku,
+            new \DateTimeImmutable($date),
+            $quantity,
+            $priceMinor,
             self::Actor,
         );
     }

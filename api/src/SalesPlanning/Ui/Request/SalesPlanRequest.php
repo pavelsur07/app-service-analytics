@@ -101,6 +101,46 @@ final class SalesPlanRequest
     }
 
     /**
+     * Правка одного дня: SKU, дата, штуки, цена и версия плана.
+     *
+     * @return array{version: int, marketplaceSku: string, date: \DateTimeImmutable, quantity: int, priceMinor: int}
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function dayFromJson(string $body): array
+    {
+        $decoded = self::decode($body);
+
+        $version = $decoded['version'] ?? null;
+        if (!\is_int($version)) {
+            throw new \InvalidArgumentException('version_required');
+        }
+
+        $sku = $decoded['marketplaceSku'] ?? null;
+        if (!\is_string($sku) || '' === trim($sku) || \strlen(trim($sku)) > 64) {
+            throw new \InvalidArgumentException('marketplace_sku_required');
+        }
+
+        $quantity = $decoded['quantity'] ?? null;
+        if (!\is_int($quantity) || $quantity < 0 || $quantity > SkuPeriodPlan::MaxTotalQuantity) {
+            throw new \InvalidArgumentException('quantity_invalid');
+        }
+
+        $price = $decoded['priceMinor'] ?? null;
+        if (!\is_int($price) || $price <= 0 || $price > SalesPlanLine::MaxPriceMinor) {
+            throw new \InvalidArgumentException('price_minor_invalid');
+        }
+
+        return [
+            'version' => $version,
+            'marketplaceSku' => trim($sku),
+            'date' => self::date($decoded, 'date', 'date_invalid'),
+            'quantity' => $quantity,
+            'priceMinor' => $price,
+        ];
+    }
+
+    /**
      * @param array<array-key, mixed> $decoded
      */
     private static function date(array $decoded, string $field, string $code): \DateTimeImmutable

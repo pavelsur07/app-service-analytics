@@ -61,6 +61,18 @@ final class SalesPlanControllerTest extends WebTestCase
         ], \JSON_THROW_ON_ERROR));
         self::assertSame(404, $client->getResponse()->getStatusCode());
 
+        $client->request('PUT', "{$base}/days", server: ['CONTENT_TYPE' => 'application/json'], content: json_encode([
+            'version' => $foreignPlan->version(),
+            'marketplaceSku' => '101',
+            'date' => '2026-07-01',
+            'quantity' => 1,
+            'priceMinor' => 100,
+        ], \JSON_THROW_ON_ERROR));
+        self::assertSame(404, $client->getResponse()->getStatusCode());
+
+        $client->request('DELETE', "{$base}/skus/101?version={$foreignPlan->version()}");
+        self::assertSame(404, $client->getResponse()->getStatusCode());
+
         $client->request('GET', "/api/companies/{$company->id()->toRfc4122()}/sales-plans");
         self::assertSame([], $this->json($client)['items']);
     }
@@ -121,6 +133,40 @@ final class SalesPlanControllerTest extends WebTestCase
         // записывались бы, а чтение итогов падало на переполнении.
         yield 'цена за потолком' => [['version' => 1, 'items' => [[...$item, 'priceMinor' => \PHP_INT_MAX]]], 'price_minor_invalid'];
         yield 'штуки за потолком' => [['version' => 1, 'items' => [[...$item, 'totalQuantity' => 2_147_483_648]]], 'total_quantity_invalid'];
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('malformedDayBodies')]
+    public function testRejectsMalformedDayEditAtTheBoundary(array $body, string $code): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        $plan = SalesPlanBuilder::aSalesPlan()->withCompanyId($company->id())->persistWith($this->plans());
+
+        $client->request(
+            'PUT',
+            "/api/companies/{$company->id()->toRfc4122()}/sales-plans/{$plan->id()->toRfc4122()}/days",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: json_encode($body, \JSON_THROW_ON_ERROR),
+        );
+
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        self::assertSame($code, $this->json($client)['code']);
+    }
+
+    /**
+     * @return iterable<string, array{array<string, mixed>, string}>
+     */
+    public static function malformedDayBodies(): iterable
+    {
+        $day = ['version' => 1, 'marketplaceSku' => '101', 'date' => '2026-07-01', 'quantity' => 1, 'priceMinor' => 100];
+
+        yield 'нет версии' => [array_diff_key($day, ['version' => true]), 'version_required'];
+        yield 'несуществующая дата' => [[...$day, 'date' => '2026-02-30'], 'date_invalid'];
+        yield 'дробная цена' => [[...$day, 'priceMinor' => 1.5], 'price_minor_invalid'];
+        yield 'штуки за потолком' => [[...$day, 'quantity' => 2_000_000], 'quantity_invalid'];
     }
 
     /**
