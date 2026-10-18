@@ -25,4 +25,31 @@ interface SalesPlanRepository
     public function add(SalesPlan $plan, array $lines): void;
 
     public function get(string $companyId, Uuid $id): ?SalesPlan;
+
+    /**
+     * Дни перечисленных SKU плана — одним запросом на весь набор,
+     * не SKU за запросом (CLAUDE.md §6).
+     *
+     * @param list<string> $marketplaceSkus
+     *
+     * @return array<array-key, list<PlannedDay>> по SKU; SKU без строк не входит
+     */
+    public function daysOfSkus(string $companyId, Uuid $planId, array $marketplaceSkus): array;
+
+    /**
+     * Сколько разных SKU в плане — для лимита плана (ADR-040 п. 13).
+     */
+    public function skuCount(string $companyId, Uuid $planId): int;
+
+    /**
+     * Фиксирует ввод SKU одной транзакцией (ADR-041): сначала шапка
+     * с проверкой версии в самом UPDATE и записи журнала, поставленные
+     * сценарием, затем дни SKU — пакетной вставкой с обновлением
+     * существующих по естественному ключу строки.
+     *
+     * @param list<SkuPeriodPlan> $skuPlans
+     *
+     * @throws \Doctrine\ORM\OptimisticLockException план изменил кто-то ещё
+     */
+    public function saveSkuPlans(SalesPlan $plan, array $skuPlans): void;
 }

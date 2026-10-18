@@ -692,6 +692,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/sales-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_sales_planning_plan_list"];
+        put?: never;
+        post: operations["post_sales_planning_plan_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/sales-plans/catalog-skus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_sales_planning_catalog_skus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/sales-plans/{planId}/skus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_sales_planning_plan_skus_set"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/sales-plans/{planId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_sales_planning_plan_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/ping": {
         parameters: {
             query?: never;
@@ -1422,6 +1486,68 @@ export interface components {
         };
         TrackedSkuListResponse: {
             items: string[];
+            nextCursor?: string | null;
+        };
+        SalesPlanResponse: {
+            id: string;
+            marketplaceAccountId: string;
+            name: string;
+            dateFrom: string;
+            dateTo: string;
+            currency: string;
+            /** draft | approved | superseded | discarded | cancelled */
+            status: string;
+            lineageId: string;
+            versionNumber: number;
+            version: number;
+            createdAt: string;
+            skuCount: number;
+            totalQuantity: number;
+            revenueMinor: number;
+        };
+        SalesPlanListResponse: {
+            items: components["schemas"]["SalesPlanResponse"][];
+            nextCursor?: string | null;
+        };
+        SalesPlanCreatedResponse: {
+            id: string;
+            version: number;
+        };
+        CatalogSkuResponse: {
+            marketplaceSku: string;
+            offerId?: string | null;
+            name?: string | null;
+        };
+        CatalogSkuListResponse: {
+            items: components["schemas"]["CatalogSkuResponse"][];
+            nextCursor?: string | null;
+        };
+        SalesPlanVersionResponse: {
+            version: number;
+        };
+        UnknownSkusResponse: {
+            status: number;
+            code: string;
+            message: string;
+            unknownSkus: string[];
+        };
+        SalesPlanBucketResponse: {
+            dateFrom: string;
+            dateTo: string;
+            quantity: number;
+            revenueMinor: number;
+        };
+        SalesPlanSkuResponse: {
+            marketplaceSku: string;
+            totalQuantity: number;
+            revenueMinor: number;
+            buckets: components["schemas"]["SalesPlanBucketResponse"][];
+        };
+        SalesPlanDetailResponse: {
+            plan: components["schemas"]["SalesPlanResponse"];
+            /** day | week | month | period */
+            groupBy: string;
+            skus: components["schemas"]["SalesPlanSkuResponse"][];
             nextCursor?: string | null;
         };
         AppInfoResponse: {
@@ -3699,6 +3825,286 @@ export interface operations {
             };
             /** @description Этот артикул компания не отслеживает */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sales_planning_plan_list: {
+        parameters: {
+            query?: {
+                marketplaceAccountId?: string;
+                limit?: number;
+                /** @description nextCursor предыдущей страницы */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Планы с итогами */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanListResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректные limit, cursor или marketplaceAccountId */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_sales_planning_plan_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    marketplaceAccountId: string;
+                    name: string;
+                    /**
+                     * Format: date
+                     * @description Первый день периода, календарь площадки
+                     */
+                    dateFrom: string;
+                    /**
+                     * Format: date
+                     * @description Последний день периода включительно; период до 184 дней
+                     */
+                    dateTo: string;
+                    /** @description ISO 4217, одна на план (ADR-004) */
+                    currency: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Черновик создан */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanCreatedResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Тело некорректно, период или подключение не годятся */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sales_planning_catalog_skus: {
+        parameters: {
+            query: {
+                marketplaceAccountId: string;
+                /** @description Артикул площадки, артикул продавца или название */
+                search?: string;
+                limit?: number;
+                /** @description nextCursor предыдущей страницы */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Страница каталога подключения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogSkuListResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректные параметры */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    put_sales_planning_plan_skus_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Версия плана из ответа чтения (ADR-008) */
+                    version: number;
+                    items: {
+                        marketplaceSku: string;
+                        /** @description Штук за весь период */
+                        totalQuantity: number;
+                        /** @description РРЦ за штуку в минорных единицах валюты плана */
+                        priceMinor: number;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Сохранено; новая версия плана */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanVersionResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description У компании нет такого плана */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description План изменил кто-то ещё либо он уже не черновик */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Тело некорректно, превышен лимит плана (ValidationErrorResponse) либо SKU нет в каталоге подключения (UnknownSkusResponse, code=unknown_skus) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"] | components["schemas"]["UnknownSkusResponse"];
+                };
+            };
+        };
+    };
+    get_sales_planning_plan_show: {
+        parameters: {
+            query?: {
+                groupBy?: "day" | "week" | "month" | "period";
+                limit?: number;
+                /** @description nextCursor предыдущей страницы SKU */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description План со страницей SKU */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanDetailResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description У компании нет такого плана */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректные groupBy, limit или cursor */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

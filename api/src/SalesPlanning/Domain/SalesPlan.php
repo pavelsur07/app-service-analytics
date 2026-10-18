@@ -54,6 +54,13 @@ class SalesPlan
 
     public const int MaxNameLength = 200;
 
+    /**
+     * SKU в одном плане (ADR-040 п. 13). Вместе с периодом даёт и предел
+     * строк версии: 1 000 × 184 дня. Пакетная запись (ADR-041) держит его
+     * в синхронном бюджете — замер в docs/plan/sales-planning-0.4-api.md.
+     */
+    public const int MaxSkus = 1000;
+
     #[ORM\Id]
     #[ORM\Column(type: 'uuid')]
     private readonly Uuid $id;
@@ -173,9 +180,7 @@ class SalesPlan
             self::validName($name),
             $dateFrom,
             $dateTo,
-            // Неизвестный код валюты — исключение здесь, а не строка
-            // без смысла в базе (ADR-004: валюта обязательна и настоящая).
-            Money::ofMinor(0, $currency)->currency(),
+            self::knownCurrency($currency),
             $id,
             1,
             $createdByUserId,
@@ -324,6 +329,20 @@ class SalesPlan
         \assert(false !== $diff->days);
 
         return $diff->days + 1;
+    }
+
+    /**
+     * Неизвестный код валюты — отказ здесь, а не строка без смысла
+     * в базе (ADR-004: валюта обязательна и настоящая). Исключение
+     * библиотеки денег наружу не выходит: она живёт только внутри Money.
+     */
+    private static function knownCurrency(string $currency): string
+    {
+        try {
+            return Money::ofMinor(0, $currency)->currency();
+        } catch (\Exception $unknown) {
+            throw new \InvalidArgumentException(\sprintf('Неизвестный код валюты %s.', $currency), previous: $unknown);
+        }
     }
 
     private static function validName(string $name): string

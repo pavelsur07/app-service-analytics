@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\SalesPlanning\Domain;
 
+use App\SalesPlanning\Domain\EvenDayDistribution;
 use App\SalesPlanning\Domain\SalesPlanLine;
+use App\SalesPlanning\Domain\SkuPeriodPlan;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\SalesPlanBuilder;
 use App\Tests\Support\Builder\SalesPlanLineBuilder;
@@ -63,6 +65,33 @@ final class SalesPlanLineTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
 
         SalesPlanLineBuilder::linesOf($plan)->withPrice(Money::ofMinor(0, 'RUB'))->build();
+    }
+
+    public function testRejectsPriceOverTheCeiling(): void
+    {
+        $plan = SalesPlanBuilder::aSalesPlan()->build();
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        SkuPeriodPlan::spread($plan, '101', 1, Money::ofMinor(SalesPlanLine::MaxPriceMinor + 1, 'RUB'), new EvenDayDistribution());
+    }
+
+    public function testRejectsQuantityOverTheCeiling(): void
+    {
+        $plan = SalesPlanBuilder::aSalesPlan()->build();
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        SkuPeriodPlan::spread($plan, '101', SkuPeriodPlan::MaxTotalQuantity + 1, Money::ofMinor(100, 'RUB'), new EvenDayDistribution());
+    }
+
+    public function testAcceptsBothCeilings(): void
+    {
+        $plan = SalesPlanBuilder::aSalesPlan()->build();
+
+        $skuPlan = SkuPeriodPlan::spread($plan, '101', SkuPeriodPlan::MaxTotalQuantity, Money::ofMinor(SalesPlanLine::MaxPriceMinor, 'RUB'), new EvenDayDistribution());
+
+        self::assertSame(SkuPeriodPlan::MaxTotalQuantity, array_sum(array_map(static fn ($day): int => $day->quantity, $skuPlan->days)));
     }
 
     public function testRejectsBlankSku(): void

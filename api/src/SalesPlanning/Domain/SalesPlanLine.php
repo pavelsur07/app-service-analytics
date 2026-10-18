@@ -34,6 +34,14 @@ use Symfony\Component\Uid\Uuid;
 )]
 class SalesPlanLine
 {
+    /**
+     * Потолок РРЦ за штуку — 10 млн ₽ в копейках. С потолком штук SKU
+     * (SkuPeriodPlan::MaxTotalQuantity) и SKU плана выручка плана
+     * не выходит за bigint: 1 000 SKU × 10⁶ шт. × 10⁹ = 10¹⁸ < 9,2·10¹⁸.
+     * Без него план записывался, а чтение итогов падало на переполнении.
+     */
+    public const int MaxPriceMinor = 1_000_000_000;
+
     #[ORM\Id]
     #[ORM\Column(type: 'uuid')]
     private readonly Uuid $id;
@@ -80,8 +88,9 @@ class SalesPlanLine
     }
 
     /**
-     * Ввод SKU за весь период: штуки раскладываются по дням (п. 7),
-     * цена копируется в каждый день — она не делится.
+     * Строки плана SKU на весь период — для пути через ORM (сохранение
+     * нового плана со строками). Сценарий ввода пишет те же значения
+     * пакетом (ADR-041).
      *
      * @return list<self> по строке на каждый день периода
      */
@@ -93,12 +102,11 @@ class SalesPlanLine
         EvenDayDistribution $distribution,
         \DateTimeImmutable $changedAt,
     ): array {
-        $days = $plan->days();
-        $quantities = $distribution->split($totalQuantity, \count($days));
+        $skuPlan = SkuPeriodPlan::spread($plan, $marketplaceSku, $totalQuantity, $price, $distribution);
 
         $lines = [];
-        foreach ($days as $index => $day) {
-            $lines[] = new self($plan, $marketplaceSku, $day, $quantities[$index], $price);
+        foreach ($skuPlan->days as $day) {
+            $lines[] = new self($plan, $skuPlan->marketplaceSku, $day->date, $day->quantity, $price);
         }
 
         $plan->recordLinesChanged($changedAt);
@@ -164,7 +172,7 @@ class SalesPlanLine
         }
     }
 
-    private static function validSku(string $marketplaceSku): string
+    public static function validSku(string $marketplaceSku): string
     {
         $marketplaceSku = trim($marketplaceSku);
         if ('' === $marketplaceSku || \strlen($marketplaceSku) > 64) {
@@ -183,7 +191,7 @@ class SalesPlanLine
         return $quantity;
     }
 
-    private static function validPriceMinor(SalesPlan $plan, Money $price): int
+    public static function validPriceMinor(SalesPlan $plan, Money $price): int
     {
         if ($price->currency() !== $plan->currency()) {
             throw new \InvalidArgumentException(\sprintf('Цена в %s, а план в %s: смешивать валюты нельзя (ADR-004).', $price->currency(), $plan->currency()));
@@ -191,6 +199,10 @@ class SalesPlanLine
 
         if ($price->minorAmount() <= 0) {
             throw new \InvalidArgumentException('РРЦ должна быть больше нуля.');
+        }
+
+        if ($price->minorAmount() > self::MaxPriceMinor) {
+            throw new \InvalidArgumentException('РРЦ за штуку больше 10 млн — похоже на опечатку.');
         }
 
         return $price->minorAmount();

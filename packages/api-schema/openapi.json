@@ -3426,6 +3426,492 @@
                 ]
             }
         },
+        "/api/companies/{companyId}/sales-plans": {
+            "get": {
+                "operationId": "get_sales_planning_plan_list",
+                "parameters": [
+                    {
+                        "name": "marketplaceAccountId",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 200,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "description": "nextCursor \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0435\u0439 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u041f\u043b\u0430\u043d\u044b \u0441 \u0438\u0442\u043e\u0433\u0430\u043c\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SalesPlanListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0435 limit, cursor \u0438\u043b\u0438 marketplaceAccountId",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "operationId": "post_sales_planning_plan_create",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "marketplaceAccountId",
+                                    "name",
+                                    "dateFrom",
+                                    "dateTo",
+                                    "currency"
+                                ],
+                                "properties": {
+                                    "marketplaceAccountId": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 200
+                                    },
+                                    "dateFrom": {
+                                        "description": "\u041f\u0435\u0440\u0432\u044b\u0439 \u0434\u0435\u043d\u044c \u043f\u0435\u0440\u0438\u043e\u0434\u0430, \u043a\u0430\u043b\u0435\u043d\u0434\u0430\u0440\u044c \u043f\u043b\u043e\u0449\u0430\u0434\u043a\u0438",
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "dateTo": {
+                                        "description": "\u041f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0439 \u0434\u0435\u043d\u044c \u043f\u0435\u0440\u0438\u043e\u0434\u0430 \u0432\u043a\u043b\u044e\u0447\u0438\u0442\u0435\u043b\u044c\u043d\u043e; \u043f\u0435\u0440\u0438\u043e\u0434 \u0434\u043e 184 \u0434\u043d\u0435\u0439",
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "currency": {
+                                        "description": "ISO 4217, \u043e\u0434\u043d\u0430 \u043d\u0430 \u043f\u043b\u0430\u043d (ADR-004)",
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "\u0427\u0435\u0440\u043d\u043e\u0432\u0438\u043a \u0441\u043e\u0437\u0434\u0430\u043d",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SalesPlanCreatedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u0422\u0435\u043b\u043e \u043d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u043e, \u043f\u0435\u0440\u0438\u043e\u0434 \u0438\u043b\u0438 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u043d\u0435 \u0433\u043e\u0434\u044f\u0442\u0441\u044f",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/sales-plans/catalog-skus": {
+            "get": {
+                "operationId": "get_sales_planning_catalog_skus",
+                "parameters": [
+                    {
+                        "name": "marketplaceAccountId",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "\u0410\u0440\u0442\u0438\u043a\u0443\u043b \u043f\u043b\u043e\u0449\u0430\u0434\u043a\u0438, \u0430\u0440\u0442\u0438\u043a\u0443\u043b \u043f\u0440\u043e\u0434\u0430\u0432\u0446\u0430 \u0438\u043b\u0438 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 100
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 200,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "description": "nextCursor \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0435\u0439 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u0421\u0442\u0440\u0430\u043d\u0438\u0446\u0430 \u043a\u0430\u0442\u0430\u043b\u043e\u0433\u0430 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CatalogSkuListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/sales-plans/{planId}/skus": {
+            "put": {
+                "operationId": "put_sales_planning_plan_skus_set",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "planId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "version",
+                                    "items"
+                                ],
+                                "properties": {
+                                    "version": {
+                                        "description": "\u0412\u0435\u0440\u0441\u0438\u044f \u043f\u043b\u0430\u043d\u0430 \u0438\u0437 \u043e\u0442\u0432\u0435\u0442\u0430 \u0447\u0442\u0435\u043d\u0438\u044f (ADR-008)",
+                                        "type": "integer"
+                                    },
+                                    "items": {
+                                        "type": "array",
+                                        "items": {
+                                            "required": [
+                                                "marketplaceSku",
+                                                "totalQuantity",
+                                                "priceMinor"
+                                            ],
+                                            "properties": {
+                                                "marketplaceSku": {
+                                                    "type": "string",
+                                                    "maxLength": 64
+                                                },
+                                                "totalQuantity": {
+                                                    "description": "\u0428\u0442\u0443\u043a \u0437\u0430 \u0432\u0435\u0441\u044c \u043f\u0435\u0440\u0438\u043e\u0434",
+                                                    "type": "integer",
+                                                    "maximum": 1000000,
+                                                    "minimum": 0
+                                                },
+                                                "priceMinor": {
+                                                    "description": "\u0420\u0420\u0426 \u0437\u0430 \u0448\u0442\u0443\u043a\u0443 \u0432 \u043c\u0438\u043d\u043e\u0440\u043d\u044b\u0445 \u0435\u0434\u0438\u043d\u0438\u0446\u0430\u0445 \u0432\u0430\u043b\u044e\u0442\u044b \u043f\u043b\u0430\u043d\u0430",
+                                                    "type": "integer",
+                                                    "maximum": 1000000000,
+                                                    "minimum": 1
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "maxItems": 100,
+                                        "minItems": 1
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "\u0421\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u043e; \u043d\u043e\u0432\u0430\u044f \u0432\u0435\u0440\u0441\u0438\u044f \u043f\u043b\u0430\u043d\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SalesPlanVersionResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u0423 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438 \u043d\u0435\u0442 \u0442\u0430\u043a\u043e\u0433\u043e \u043f\u043b\u0430\u043d\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u041f\u043b\u0430\u043d \u0438\u0437\u043c\u0435\u043d\u0438\u043b \u043a\u0442\u043e-\u0442\u043e \u0435\u0449\u0451 \u043b\u0438\u0431\u043e \u043e\u043d \u0443\u0436\u0435 \u043d\u0435 \u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u0422\u0435\u043b\u043e \u043d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u043e, \u043f\u0440\u0435\u0432\u044b\u0448\u0435\u043d \u043b\u0438\u043c\u0438\u0442 \u043f\u043b\u0430\u043d\u0430 (ValidationErrorResponse) \u043b\u0438\u0431\u043e SKU \u043d\u0435\u0442 \u0432 \u043a\u0430\u0442\u0430\u043b\u043e\u0433\u0435 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f (UnknownSkusResponse, code=unknown_skus)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "$ref": "#/components/schemas/ValidationErrorResponse"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/UnknownSkusResponse"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/sales-plans/{planId}": {
+            "get": {
+                "operationId": "get_sales_planning_plan_show",
+                "parameters": [
+                    {
+                        "name": "groupBy",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "period",
+                            "enum": [
+                                "day",
+                                "week",
+                                "month",
+                                "period"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 200,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "description": "nextCursor \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0435\u0439 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b SKU",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "planId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u041f\u043b\u0430\u043d \u0441\u043e \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0435\u0439 SKU",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SalesPlanDetailResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u0423 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438 \u043d\u0435\u0442 \u0442\u0430\u043a\u043e\u0433\u043e \u043f\u043b\u0430\u043d\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0435 groupBy, limit \u0438\u043b\u0438 cursor",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/ping": {
             "get": {
                 "operationId": "get_admin_ping",
@@ -5972,6 +6458,253 @@
                         "type": "array",
                         "items": {
                             "type": "string"
+                        }
+                    },
+                    "nextCursor": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "SalesPlanResponse": {
+                "required": [
+                    "id",
+                    "marketplaceAccountId",
+                    "name",
+                    "dateFrom",
+                    "dateTo",
+                    "currency",
+                    "status",
+                    "lineageId",
+                    "versionNumber",
+                    "version",
+                    "createdAt",
+                    "skuCount",
+                    "totalQuantity",
+                    "revenueMinor"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "marketplaceAccountId": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "dateFrom": {
+                        "type": "string"
+                    },
+                    "dateTo": {
+                        "type": "string"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "title": "draft | approved | superseded | discarded | cancelled",
+                        "type": "string"
+                    },
+                    "lineageId": {
+                        "type": "string"
+                    },
+                    "versionNumber": {
+                        "type": "integer"
+                    },
+                    "version": {
+                        "type": "integer"
+                    },
+                    "createdAt": {
+                        "type": "string"
+                    },
+                    "skuCount": {
+                        "type": "integer"
+                    },
+                    "totalQuantity": {
+                        "type": "integer"
+                    },
+                    "revenueMinor": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "SalesPlanListResponse": {
+                "required": [
+                    "items"
+                ],
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SalesPlanResponse"
+                        }
+                    },
+                    "nextCursor": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "SalesPlanCreatedResponse": {
+                "required": [
+                    "id",
+                    "version"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "version": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "CatalogSkuResponse": {
+                "required": [
+                    "marketplaceSku"
+                ],
+                "properties": {
+                    "marketplaceSku": {
+                        "type": "string"
+                    },
+                    "offerId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "CatalogSkuListResponse": {
+                "required": [
+                    "items"
+                ],
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CatalogSkuResponse"
+                        }
+                    },
+                    "nextCursor": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "SalesPlanVersionResponse": {
+                "required": [
+                    "version"
+                ],
+                "properties": {
+                    "version": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "UnknownSkusResponse": {
+                "required": [
+                    "status",
+                    "code",
+                    "message",
+                    "unknownSkus"
+                ],
+                "properties": {
+                    "status": {
+                        "type": "integer"
+                    },
+                    "code": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "unknownSkus": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "type": "object"
+            },
+            "SalesPlanBucketResponse": {
+                "required": [
+                    "dateFrom",
+                    "dateTo",
+                    "quantity",
+                    "revenueMinor"
+                ],
+                "properties": {
+                    "dateFrom": {
+                        "type": "string"
+                    },
+                    "dateTo": {
+                        "type": "string"
+                    },
+                    "quantity": {
+                        "type": "integer"
+                    },
+                    "revenueMinor": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "SalesPlanSkuResponse": {
+                "required": [
+                    "marketplaceSku",
+                    "totalQuantity",
+                    "revenueMinor",
+                    "buckets"
+                ],
+                "properties": {
+                    "marketplaceSku": {
+                        "type": "string"
+                    },
+                    "totalQuantity": {
+                        "type": "integer"
+                    },
+                    "revenueMinor": {
+                        "type": "integer"
+                    },
+                    "buckets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SalesPlanBucketResponse"
+                        }
+                    }
+                },
+                "type": "object"
+            },
+            "SalesPlanDetailResponse": {
+                "required": [
+                    "plan",
+                    "groupBy",
+                    "skus"
+                ],
+                "properties": {
+                    "plan": {
+                        "$ref": "#/components/schemas/SalesPlanResponse"
+                    },
+                    "groupBy": {
+                        "title": "day | week | month | period",
+                        "type": "string"
+                    },
+                    "skus": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SalesPlanSkuResponse"
                         }
                     },
                     "nextCursor": {
