@@ -65,11 +65,13 @@ final class SetSalesPlanSkusController
     #[OA\Response(response: 404, description: 'У компании нет такого плана', content: new Model(type: ValidationErrorResponse::class))]
     #[OA\Response(response: 409, description: 'План изменил кто-то ещё либо он уже не черновик', content: new Model(type: ValidationErrorResponse::class))]
     // Две формы 422: общий отказ валидации и отказ по неизвестным SKU
-    // со списком — клиент различает их по наличию unknownSkus (и коду).
+    // со списком — клиент различает их по коду (unknown_skus). anyOf,
+    // а не oneOf: ответ со списком содержит все поля общей формы и подошёл
+    // бы под обе ветви, а oneOf требует ровно одну.
     #[OA\Response(
         response: 422,
         description: 'Тело некорректно, превышен лимит плана (ValidationErrorResponse) либо SKU нет в каталоге подключения (UnknownSkusResponse, code=unknown_skus)',
-        content: new OA\JsonContent(oneOf: [
+        content: new OA\JsonContent(anyOf: [
             new OA\Schema(ref: new Model(type: ValidationErrorResponse::class)),
             new OA\Schema(ref: new Model(type: UnknownSkusResponse::class)),
         ]),
