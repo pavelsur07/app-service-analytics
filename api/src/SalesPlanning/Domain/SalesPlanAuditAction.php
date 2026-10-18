@@ -21,6 +21,12 @@ final class SalesPlanAuditAction
      */
     public const string SkuSet = 'sales_plan.sku_set';
 
+    /** Правка одного дня: «было/стало» — значения этого дня. */
+    public const string DayChanged = 'sales_plan.day_changed';
+
+    /** SKU убран из черновика: «было» — все его дни, «стало» — null. */
+    public const string SkuRemoved = 'sales_plan.sku_removed';
+
     private function __construct()
     {
     }

@@ -52,4 +52,20 @@ interface SalesPlanRepository
      * @throws \Doctrine\ORM\OptimisticLockException план изменил кто-то ещё
      */
     public function saveSkuPlans(SalesPlan $plan, array $skuPlans): void;
+
+    /**
+     * Правка одного дня SKU (ADR-041): шапка с версией и журнал — первыми,
+     * затем UPDATE строки по естественному ключу.
+     *
+     * @throws \Doctrine\ORM\OptimisticLockException план изменил кто-то ещё
+     */
+    public function saveDay(SalesPlan $plan, string $marketplaceSku, PlannedDay $day): void;
+
+    /**
+     * SKU убран из черновика (ADR-040 п. 8): шапка с версией и журнал —
+     * первыми, затем DELETE строк SKU. Прежние дни — в журнале.
+     *
+     * @throws \Doctrine\ORM\OptimisticLockException план изменил кто-то ещё
+     */
+    public function removeSku(SalesPlan $plan, string $marketplaceSku): void;
 }

@@ -1,5 +1,5 @@
-import { useDeferredValue, useEffect, useState } from 'react'
-import { ArrowLeft, CircleX, PackagePlus } from 'lucide-react'
+import { type ReactNode, useDeferredValue, useEffect, useState } from 'react'
+import { ArrowLeft, CircleX, PackagePlus, Trash2 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../../api/ApiError'
 import type { components } from '../../../api/schema'
@@ -21,6 +21,8 @@ import {
 } from '../lib/salesPlan'
 import {
   useCatalogSkus,
+  useChangeSalesPlanDay,
+  useRemoveSalesPlanSku,
   useSalesPlan,
   useSetSalesPlanSkus,
 } from '../model/useSalesPlans'
@@ -54,6 +56,7 @@ function SalesPlanScreen() {
   const [groupBy, setGroupBy] = useState<Grouping>('period')
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null])
   const cursor = cursorStack[cursorStack.length - 1] ?? null
+  const [pickedDay, setPickedDay] = useState<PickedDay | null>(null)
 
   const plan = useSalesPlan(companyId ?? '', planId ?? '', groupBy, cursor)
 
@@ -123,6 +126,7 @@ function SalesPlanScreen() {
                   onClick={() => {
                     setGroupBy(option.value)
                     setCursorStack([null])
+                    setPickedDay(null)
                   }}
                 >
                   {option.label}
@@ -141,6 +145,44 @@ function SalesPlanScreen() {
               <PlanGrid
                 currency={plan.data.plan.currency}
                 skus={plan.data.skus}
+                // Правится день, а не неделя: ячейка кликабельна только
+                // в группировке по дням и только у черновика.
+                onPickDay={
+                  plan.data.plan.status === 'draft' && groupBy === 'day'
+                    ? (cell) => {
+                        setPickedDay({
+                          ...cell,
+                          version: plan.data.plan.version,
+                        })
+                      }
+                    : null
+                }
+                removeAction={
+                  plan.data.plan.status === 'draft'
+                    ? (sku) => (
+                        <RemoveSkuButton
+                          companyId={companyId}
+                          plan={plan.data.plan}
+                          marketplaceSku={sku}
+                        />
+                      )
+                    : null
+                }
+              />
+            )}
+
+            {pickedDay !== null && plan.data.plan.status === 'draft' && (
+              <DayEditForm
+                // Версия в ключе: повторный клик по тому же дню после чужой
+                // правки пересоздаёт форму — со свежими штуками и версией,
+                // а не со старыми полями при новой версии (ADR-008).
+                key={`${pickedDay.marketplaceSku}:${pickedDay.date}:${pickedDay.version}`}
+                companyId={companyId}
+                plan={plan.data.plan}
+                picked={pickedDay}
+                onClose={() => {
+                  setPickedDay(null)
+                }}
               />
             )}
 
@@ -228,12 +270,32 @@ function PlanHeader({ plan }: { plan: SalesPlan }) {
  * одни и те же (строки плотные, ADR-040 п. 3), поэтому заголовок
  * берётся у первого SKU. При группировке по дням таблица прокручивается.
  */
+interface PickedCell {
+  marketplaceSku: string
+  date: string
+  quantity: number
+}
+
+/**
+ * Снимок дня на момент открытия формы — вместе с версией плана.
+ * Версия берётся отсюда, а не из перечитанного плана: иначе фоновое
+ * перечитывание после чужой правки подменило бы её, и сохранение
+ * молча затёрло бы чужое значение вместо конфликта (ADR-008).
+ */
+interface PickedDay extends PickedCell {
+  version: number
+}
+
 function PlanGrid({
   skus,
   currency,
+  onPickDay,
+  removeAction,
 }: {
   skus: SalesPlanSku[]
   currency: string
+  onPickDay: ((cell: PickedCell) => void) | null
+  removeAction: ((marketplaceSku: string) => ReactNode) | null
 }) {
   const columns = skus[0]?.buckets ?? []
 
@@ -269,7 +331,10 @@ function PlanGrid({
               className="border-b border-border-subtle"
             >
               <th className="px-3 py-2 text-left font-medium" scope="row">
-                {sku.marketplaceSku}
+                <span className="flex items-center gap-2">
+                  {sku.marketplaceSku}
+                  {removeAction?.(sku.marketplaceSku)}
+                </span>
               </th>
               <td className="px-3 py-2 text-right tabular-nums">
                 {sku.totalQuantity}
@@ -284,7 +349,24 @@ function PlanGrid({
                   key={bucket.dateFrom}
                   className="px-3 py-2 text-right tabular-nums"
                 >
-                  {bucket.quantity}
+                  {onPickDay === null ? (
+                    bucket.quantity
+                  ) : (
+                    <button
+                      className="rounded px-1 hover:bg-surface-hover"
+                      type="button"
+                      aria-label={`Править ${sku.marketplaceSku} за ${bucket.dateFrom}`}
+                      onClick={() => {
+                        onPickDay({
+                          marketplaceSku: sku.marketplaceSku,
+                          date: bucket.dateFrom,
+                          quantity: bucket.quantity,
+                        })
+                      }}
+                    >
+                      {bucket.quantity}
+                    </button>
+                  )}
                 </td>
               ))}
             </tr>
@@ -468,5 +550,161 @@ function SkuInputForm({
         </div>
       </form>
     </Card>
+  )
+}
+
+/**
+ * Правка одного дня (ADR-040 п. 7): акция с другой ценой, выходной.
+ * Цена необязательна — пустая оставляет у дня прежнюю: вывести её
+ * делением выручки на штуки значило бы считать деньги в компоненте (§10).
+ */
+function DayEditForm({
+  companyId,
+  plan,
+  picked,
+  onClose,
+}: {
+  companyId: string
+  plan: SalesPlan
+  picked: PickedDay
+  onClose: () => void
+}) {
+  const [quantity, setQuantity] = useState(String(picked.quantity))
+  const [price, setPrice] = useState('')
+  const changeDay = useChangeSalesPlanDay(companyId, plan.id)
+
+  const parsedQuantity = parseQuantity(quantity)
+  const parsedPrice = price.trim() === '' ? null : parseAmountToMinor(price)
+  const priceInvalid =
+    price.trim() !== '' && (parsedPrice === null || parsedPrice === 0)
+  const conflict =
+    changeDay.error instanceof ApiError &&
+    changeDay.error.code === 'version_conflict'
+  // После конфликта форма держит устаревший снимок: повтор возможен
+  // только из заново открытого дня — с новыми штуками и версией.
+  const ready = parsedQuantity !== null && !priceInvalid && !conflict
+
+  return (
+    <form
+      className="mt-4 flex flex-col gap-3 border-t border-border-subtle pt-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (!ready) {
+          return
+        }
+
+        changeDay.mutate(
+          {
+            version: picked.version,
+            marketplaceSku: picked.marketplaceSku,
+            date: picked.date,
+            quantity: parsedQuantity,
+            priceMinor: parsedPrice,
+          },
+          { onSuccess: onClose },
+        )
+      }}
+    >
+      <h2 className="font-semibold">
+        День {picked.date}, SKU {picked.marketplaceSku}
+      </h2>
+      <div className="flex flex-wrap gap-3">
+        <Input
+          error={
+            parsedQuantity === null ? 'Целое число до 1 000 000' : undefined
+          }
+          inputMode="numeric"
+          label="Штук в этот день"
+          value={quantity}
+          onChange={(event) => {
+            setQuantity(event.target.value)
+          }}
+        />
+        <Input
+          error={priceInvalid ? 'Сумма больше нуля' : undefined}
+          hint="Пусто — цена дня не изменится"
+          inputMode="decimal"
+          label="РРЦ в этот день, ₽"
+          placeholder="1299,90"
+          value={price}
+          onChange={(event) => {
+            setPrice(event.target.value)
+          }}
+        />
+      </div>
+
+      {changeDay.error !== null && (
+        <p className="text-sm text-negative-text" role="alert">
+          {conflict
+            ? 'План изменил кто-то ещё — он перечитан. Откройте день заново и повторите правку.'
+            : changeDay.error instanceof ApiError
+              ? changeDay.error.message
+              : 'Не удалось сохранить день.'}
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <Button
+          type="submit"
+          size="compact"
+          disabled={!ready || changeDay.isPending}
+        >
+          Сохранить день
+        </Button>
+        <Button type="button" variant="ghost" size="compact" onClick={onClose}>
+          Отмена
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+/**
+ * SKU убирается из черновика целиком (ADR-040 п. 8) — после
+ * подтверждения: ручные правки его дней пропадут с экрана, хотя
+ * останутся в журнале.
+ */
+function RemoveSkuButton({
+  companyId,
+  plan,
+  marketplaceSku,
+}: {
+  companyId: string
+  plan: SalesPlan
+  marketplaceSku: string
+}) {
+  const removeSku = useRemoveSalesPlanSku(companyId, plan.id)
+  const failure =
+    removeSku.error === null
+      ? null
+      : removeSku.error instanceof ApiError &&
+          removeSku.error.code === 'version_conflict'
+        ? 'План изменил кто-то ещё — он перечитан, повторите.'
+        : removeSku.error instanceof ApiError
+          ? removeSku.error.message
+          : 'Не удалось убрать.'
+
+  return (
+    <>
+      <button
+        className="text-text-muted hover:text-negative-text"
+        type="button"
+        aria-label={`Убрать ${marketplaceSku} из плана`}
+        disabled={removeSku.isPending}
+        title="Убрать из плана"
+        onClick={() => {
+          if (window.confirm(`Убрать ${marketplaceSku} из плана?`)) {
+            removeSku.mutate({ version: plan.version, marketplaceSku })
+          }
+        }}
+      >
+        <Trash2 aria-hidden="true" size={14} />
+      </button>
+      {failure !== null && (
+        <span className="text-xs font-normal text-negative-text" role="alert">
+          {failure}
+        </span>
+      )}
+    </>
   )
 }

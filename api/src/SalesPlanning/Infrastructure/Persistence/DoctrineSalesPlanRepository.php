@@ -61,6 +61,45 @@ final readonly class DoctrineSalesPlanRepository implements SalesPlanRepository
         });
     }
 
+    public function saveDay(SalesPlan $plan, string $marketplaceSku, PlannedDay $day): void
+    {
+        $this->entityManager->wrapInTransaction(function () use ($plan, $marketplaceSku, $day): void {
+            // Шапка первой: версия проверяется в самом UPDATE (ADR-008).
+            $this->entityManager->flush();
+
+            $this->entityManager->getConnection()->executeStatement(
+                'UPDATE sales_plan_line SET quantity = :quantity, price_minor = :price
+                  WHERE company_id = :companyId AND sales_plan_id = :planId
+                    AND marketplace_sku = :sku AND plan_date = :date',
+                [
+                    'quantity' => $day->quantity,
+                    'price' => $day->priceMinor,
+                    'companyId' => $plan->companyId()->toRfc4122(),
+                    'planId' => $plan->id()->toRfc4122(),
+                    'sku' => $marketplaceSku,
+                    'date' => $day->date->format('Y-m-d'),
+                ],
+            );
+        });
+    }
+
+    public function removeSku(SalesPlan $plan, string $marketplaceSku): void
+    {
+        $this->entityManager->wrapInTransaction(function () use ($plan, $marketplaceSku): void {
+            $this->entityManager->flush();
+
+            $this->entityManager->getConnection()->executeStatement(
+                'DELETE FROM sales_plan_line
+                  WHERE company_id = :companyId AND sales_plan_id = :planId AND marketplace_sku = :sku',
+                [
+                    'companyId' => $plan->companyId()->toRfc4122(),
+                    'planId' => $plan->id()->toRfc4122(),
+                    'sku' => $marketplaceSku,
+                ],
+            );
+        });
+    }
+
     public function daysOfSkus(string $companyId, Uuid $planId, array $marketplaceSkus): array
     {
         if ([] === $marketplaceSkus) {

@@ -115,6 +115,44 @@ export function useSetSalesPlanSkus(companyId: string, planId: string) {
   })
 }
 
+export interface ChangeDayInput {
+  version: number
+  marketplaceSku: string
+  date: string
+  quantity: number
+  /** null — у дня остаётся прежняя цена. */
+  priceMinor: number | null
+}
+
+/** Правка одного дня SKU в черновике (ADR-040 п. 7). */
+export function useChangeSalesPlanDay(companyId: string, planId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: ChangeDayInput) =>
+      createCompanyApiClient(companyId).put<SalesPlanVersionResponse>(
+        `/sales-plans/${encodeURIComponent(planId)}/days`,
+        input,
+      ),
+    onSuccess: () => invalidate(queryClient, companyId),
+    onError: () => invalidate(queryClient, companyId),
+  })
+}
+
+/** SKU убирается из черновика целиком (ADR-040 п. 8). */
+export function useRemoveSalesPlanSku(companyId: string, planId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: { version: number; marketplaceSku: string }) =>
+      createCompanyApiClient(companyId).delete(
+        `/sales-plans/${encodeURIComponent(planId)}/skus/${encodeURIComponent(input.marketplaceSku)}${query({ version: String(input.version) })}`,
+      ),
+    onSuccess: () => invalidate(queryClient, companyId),
+    onError: () => invalidate(queryClient, companyId),
+  })
+}
+
 function invalidate(
   queryClient: ReturnType<typeof useQueryClient>,
   companyId: string,
