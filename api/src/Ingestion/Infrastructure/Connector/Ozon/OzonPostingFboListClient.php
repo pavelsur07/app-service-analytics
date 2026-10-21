@@ -9,9 +9,14 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * /v2/posting/fbo/list с with.financial_data=true (ADR-009: выбран вместо
- * finance/transaction/list и отчёта о реализации — живёт годами, отдаёт
- * разбивку сумм по товару без аллокации).
+ * /v3/posting/fbo/list с with.financial_data=true (ADR-042; v2 Ozon
+ * отключил 2026-10-19). Источник выбран в ADR-009 вместо
+ * finance/transaction/list и отчёта о реализации — отдаёт разбивку сумм
+ * по товару без аллокации.
+ *
+ * `translit: false`: v3, в отличие от v2, флаг выполняет — с `true`
+ * кластеры и тип оплаты приходят латиницей, и факты после перехода
+ * разошлись бы с загруженными раньше.
  *
  * Возвращает тело ответа как есть (без json_decode): raw-слой (ADR-006)
  * хранит и хэширует точные байты ответа, повторное декодирование могло бы
@@ -26,7 +31,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  */
 final readonly class OzonPostingFboListClient implements OzonPostingsFetcher
 {
-    private const string ENDPOINT = '/v2/posting/fbo/list';
+    private const string ENDPOINT = '/v3/posting/fbo/list';
 
     public function __construct(
         #[Autowire(service: 'ozon.client')]
@@ -34,13 +39,12 @@ final readonly class OzonPostingFboListClient implements OzonPostingsFetcher
     ) {
     }
 
-    public function fetch(
+    public function fetchPage(
         string $clientId,
         string $apiKey,
         \DateTimeImmutable $since,
         \DateTimeImmutable $to,
-        int $limit = OzonPostingsFetcher::MAX_LIMIT,
-        int $offset = 0,
+        string $cursor,
     ): string {
         $response = $this->httpClient->request('POST', self::ENDPOINT, [
             'headers' => [
@@ -48,14 +52,14 @@ final readonly class OzonPostingFboListClient implements OzonPostingsFetcher
                 'Api-Key' => $apiKey,
             ],
             'json' => [
+                'cursor' => $cursor,
                 'dir' => 'ASC',
                 'filter' => [
                     'since' => $since->format(\DateTimeInterface::ATOM),
                     'to' => $to->format(\DateTimeInterface::ATOM),
                 ],
-                'limit' => $limit,
-                'offset' => $offset,
-                'translit' => true,
+                'limit' => OzonPostingsFetcher::PAGE_LIMIT,
+                'translit' => false,
                 'with' => [
                     'analytics_data' => true,
                     'financial_data' => true,

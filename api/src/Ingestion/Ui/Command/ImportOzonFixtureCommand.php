@@ -20,7 +20,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Разбирает уже полученный ответ /v2/posting/fbo/list с диска — без HTTP
+ * Разбирает уже полученный ответ выгрузки продаж FBO (v2 или v3, ADR-042)
+ * с диска — без HTTP
  * (ADR-006: «разбор можно переиграть на сохранённом сырье без обращения
  * к API»). Ручное тестирование и e2e: реальных ключей Ozon в песочнице
  * нет (CLAUDE.md, «Периметр автономной работы»), поэтому синхронизация
@@ -30,7 +31,7 @@ use Symfony\Component\Uid\Uuid;
  */
 #[AsCommand(
     name: 'app:ingestion:import-ozon-fixture',
-    description: 'Разбирает сохранённый ответ /v2/posting/fbo/list в sales_fact, без обращения к Ozon',
+    description: 'Разбирает сохранённый ответ /v2 или /v3/posting/fbo/list в sales_fact, без обращения к Ozon',
 )]
 final class ImportOzonFixtureCommand extends Command
 {

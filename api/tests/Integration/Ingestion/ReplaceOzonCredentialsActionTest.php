@@ -269,7 +269,7 @@ final class ReplaceOzonCredentialsActionTest extends KernelTestCase
         $account = $this->brokenConnection($company);
         $this->stubCatalog(200);
         static::getContainer()->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
-            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
             {
                 throw new \RuntimeException('неожиданный дефект нашего кода');
             }
@@ -363,7 +363,7 @@ final class ReplaceOzonCredentialsActionTest extends KernelTestCase
             ) {
             }
 
-            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
             {
                 $client = new MockHttpClient(new MockResponse($this->body, ['http_code' => $this->status]));
 

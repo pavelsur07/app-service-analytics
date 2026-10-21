@@ -1,0 +1,10 @@
+server: nginx
+date: Wed, 21 Oct 2026 12:49:33 GMT
+content-type: application/json
+transfer-encoding: chunked
+connection: close
+ratelimit-remaining: 49
+vary: Origin, Accept-Encoding
+strict-transport-security: max-age=31536000; includeSubDomains;
+x-o3-trace-id: 837e910ef4111604
+strict-transport-security: max-age=31536000; includeSubDomains;

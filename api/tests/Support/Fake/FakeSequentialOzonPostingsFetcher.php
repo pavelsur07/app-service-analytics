@@ -10,6 +10,9 @@ final class FakeSequentialOzonPostingsFetcher implements OzonPostingsFetcher
 {
     private int $calls = 0;
 
+    /** @var list<string> */
+    private array $cursors = [];
+
     /**
      * @param non-empty-list<string> $bodies
      */
@@ -18,8 +21,9 @@ final class FakeSequentialOzonPostingsFetcher implements OzonPostingsFetcher
     ) {
     }
 
-    public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+    public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
     {
+        $this->cursors[] = $cursor;
         $index = min($this->calls, \count($this->bodies) - 1);
         ++$this->calls;
 
@@ -29,5 +33,16 @@ final class FakeSequentialOzonPostingsFetcher implements OzonPostingsFetcher
     public function calls(): int
     {
         return $this->calls;
+    }
+
+    /**
+     * Курсоры запросов по порядку — проверка, что листание передаёт
+     * курсор предыдущей страницы.
+     *
+     * @return list<string>
+     */
+    public function cursors(): array
+    {
+        return $this->cursors;
     }
 }

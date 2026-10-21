@@ -32,6 +32,7 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
+use Symfony\Contracts\HttpClient\Exception\ServerExceptionInterface;
 
 /**
  * Клиент -> raw -> парсер -> upsert facts, целиком через реальный Postgres
@@ -39,7 +40,11 @@ use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
  */
 final class FetchOzonPostingsHandlerTest extends KernelTestCase
 {
-    private const string FIXTURE = __DIR__.'/../../Fixtures/Marketplace/ozon/posting-fbo-list-2026-07-01.json';
+    private const string FIXTURE = __DIR__.'/../../Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-07-01-page-001.json';
+    private const string LONG_DAY_PAGE_1 = __DIR__.'/../../Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-10-19-page-001.json';
+    private const string LONG_DAY_PAGE_2 = __DIR__.'/../../Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-10-19-page-002.json';
+    private const string FULL_DAY_PAGE_1 = __DIR__.'/../../Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-10-20-page-001.json';
+    private const string FULL_DAY_PAGE_2 = __DIR__.'/../../Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-10-20-page-002.json';
     private const string BUYOUT_BEFORE = __DIR__.'/../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-before.json';
     private const string BUYOUT_AFTER = __DIR__.'/../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-after.json';
 
@@ -211,7 +216,7 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
             ->persistWith($companies, $marketplaceAccounts);
 
         $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
-            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
             {
                 $client = new MockHttpClient(new MockResponse('{"code":16}', ['http_code' => 401]));
 
@@ -254,7 +259,7 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
             ->persistWith($companies, $marketplaceAccounts);
 
         $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
-            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
             {
                 $client = new MockHttpClient(new MockResponse('{"code":16,"message":"api_key key-1 invalid"}', ['http_code' => 401]));
 
@@ -332,7 +337,7 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
             ->persistWith($companies, $marketplaceAccounts);
 
         $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
-            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
             {
                 $client = new MockHttpClient(new MockResponse('{"code":1,"message":"internal"}', ['http_code' => 503]));
 
@@ -374,7 +379,7 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
 
         // Причину 400 Ozon пишет только в теле; эхо ключа — худший случай.
         $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
-            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
             {
                 $client = new MockHttpClient(new MockResponse('{"code":3,"message":"invalid filter.since, api_key key-secret-1"}', ['http_code' => 400]));
 
@@ -414,12 +419,12 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
     /**
      * @return array{completed_at: ?string, failed_at: ?string}
      */
-    private function dayLoad(Connection $connection, MarketplaceAccount $account): array
+    private function dayLoad(Connection $connection, MarketplaceAccount $account, string $period = '2026-07-01'): array
     {
         /** @var array{completed_at: ?string, failed_at: ?string}|false $row */
         $row = $connection->fetchAssociative(
             'SELECT completed_at, failed_at FROM marketplace_day_load WHERE company_id = ? AND marketplace_account_id = ? AND report_type = ? AND period = ?',
-            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), MarketplaceReportType::OzonPostingFboList, '2026-07-01'],
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), MarketplaceReportType::OzonPostingFboList, $period],
         );
         self::assertIsArray($row);
 
@@ -482,8 +487,8 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
             ->persistWith($companies, $marketplaceAccounts);
 
         $client = new FakeSequentialOzonPostingsFetcher([
-            $this->fixture(self::BUYOUT_BEFORE),
-            $this->fixture(self::BUYOUT_AFTER),
+            $this->v3Page(self::BUYOUT_BEFORE),
+            $this->v3Page(self::BUYOUT_AFTER),
         ]);
         $container->set(OzonPostingFboListClient::class, $client);
         /** @var FetchOzonPostingsHandler $handler */
@@ -526,7 +531,7 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
             ->withExternalShopId('shop-status-lock')
             ->withPlaintextCredentials(['client_id' => 'shop-status-lock', 'api_key' => 'key'], $this->credentialsEncryptor($container))
             ->persistWith($companies, $marketplaceAccounts);
-        $client = new FakeSequentialOzonPostingsFetcher([$this->fixture(self::BUYOUT_AFTER)]);
+        $client = new FakeSequentialOzonPostingsFetcher([$this->v3Page(self::BUYOUT_AFTER)]);
         $container->set(OzonPostingFboListClient::class, $client);
         /** @var LockFactory $lockFactory */
         $lockFactory = $container->get(LockFactory::class);
@@ -558,7 +563,7 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
             ->withExternalShopId('shop-status-lock-date')
             ->withPlaintextCredentials(['client_id' => 'shop-status-lock-date', 'api_key' => 'key'], $this->credentialsEncryptor($container))
             ->persistWith($companies, $marketplaceAccounts);
-        $client = new FakeSequentialOzonPostingsFetcher([$this->fixture(self::BUYOUT_AFTER)]);
+        $client = new FakeSequentialOzonPostingsFetcher([$this->v3Page(self::BUYOUT_AFTER)]);
         $container->set(OzonPostingFboListClient::class, $client);
         /** @var LockFactory $lockFactory */
         $lockFactory = $container->get(LockFactory::class);
@@ -578,6 +583,189 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
         }
 
         self::assertSame(1, $client->calls());
+    }
+
+    public function testDayOfTwoPagesIsLoadedWholeFollowingTheCursor(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->syncableAccount($container, 'shop-long-day');
+        $pageOne = $this->fixture(self::LONG_DAY_PAGE_1);
+        $client = new FakeSequentialOzonPostingsFetcher([$pageOne, $this->fixture(self::LONG_DAY_PAGE_2)]);
+        $container->set(OzonPostingFboListClient::class, $client);
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+
+        ($handler)($this->messageFor($account, '2026-10-19'));
+
+        $connection = $this->connection($container);
+        $decoded = json_decode($pageOne, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($decoded);
+        self::assertSame(['', $decoded['cursor']], $client->cursors());
+        self::assertSame(105, $this->factCount($connection, $account));
+        self::assertSame(2, $this->rawCount($connection, $account));
+        self::assertNotNull($this->dayLoad($connection, $account, '2026-10-19')['completed_at']);
+    }
+
+    public function testRepeatingAPagedDayLeavesFactsAndRawDocumentsUntouched(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->syncableAccount($container, 'shop-long-day-repeat');
+        $container->set(OzonPostingFboListClient::class, new FakeSequentialOzonPostingsFetcher([
+            $this->fixture(self::LONG_DAY_PAGE_1),
+            $this->fixture(self::LONG_DAY_PAGE_2),
+            $this->fixture(self::LONG_DAY_PAGE_1),
+            $this->fixture(self::LONG_DAY_PAGE_2),
+        ]));
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+        $message = $this->messageFor($account, '2026-10-19');
+        $connection = $this->connection($container);
+
+        ($handler)($message);
+        $factsAfterFirst = $this->factRows($connection, $account);
+
+        ($handler)($message);
+
+        self::assertCount(105, $factsAfterFirst);
+        self::assertSame($factsAfterFirst, $this->factRows($connection, $account));
+        self::assertSame(2, $this->rawCount($connection, $account));
+    }
+
+    /**
+     * Ровно 100 отправлений: Ozon говорит has_next=true, а следующая
+     * страница пуста — день загружен, а не оборван.
+     */
+    public function testFullPageFollowedByAnEmptyOneCompletesTheDay(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->syncableAccount($container, 'shop-full-page');
+        $container->set(OzonPostingFboListClient::class, new FakeSequentialOzonPostingsFetcher([
+            $this->fixture(self::FULL_DAY_PAGE_1),
+            $this->fixture(self::FULL_DAY_PAGE_2),
+        ]));
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+
+        ($handler)($this->messageFor($account, '2026-10-20'));
+
+        $connection = $this->connection($container);
+        self::assertSame(100, $this->factCount($connection, $account));
+        self::assertNotNull($this->dayLoad($connection, $account, '2026-10-20')['completed_at']);
+    }
+
+    public function testFailureOnTheSecondPageWritesNoFactsAndKeepsTheFirstPageRaw(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->syncableAccount($container, 'shop-second-page-fails');
+        $pageOne = $this->fixture(self::LONG_DAY_PAGE_1);
+        $container->set(OzonPostingFboListClient::class, new class($pageOne) implements OzonPostingsFetcher {
+            public function __construct(private readonly string $pageOne)
+            {
+            }
+
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
+            {
+                if ('' === $cursor) {
+                    return $this->pageOne;
+                }
+
+                $client = new MockHttpClient(new MockResponse('{"code":13,"message":"internal error"}', ['http_code' => 500]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v3/posting/fbo/list')->getContent();
+            }
+        });
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+
+        try {
+            ($handler)($this->messageFor($account, '2026-10-19'));
+            self::fail('Отказ площадки на второй странице обязан дойти до ретрая.');
+        } catch (ServerExceptionInterface) {
+        }
+
+        $connection = $this->connection($container);
+        self::assertSame(0, $this->factCount($connection, $account));
+        self::assertSame(1, $this->rawCount($connection, $account));
+        $mark = $this->dayLoad($connection, $account, '2026-10-19');
+        self::assertNull($mark['completed_at']);
+        self::assertNotNull($mark['failed_at']);
+    }
+
+    public function testRepeatedCursorFailsTheDayInsteadOfLoopingOverIt(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->syncableAccount($container, 'shop-cursor-repeat');
+        $client = new FakeSequentialOzonPostingsFetcher([$this->fixture(self::LONG_DAY_PAGE_1)]);
+        $container->set(OzonPostingFboListClient::class, $client);
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+
+        try {
+            ($handler)($this->messageFor($account, '2026-10-19'));
+            self::fail('Повтор курсора обязан остановить листание.');
+        } catch (\RuntimeException $failure) {
+            self::assertStringContainsString('cursor repeated', $failure->getMessage());
+        }
+
+        $connection = $this->connection($container);
+        self::assertSame(2, $client->calls());
+        self::assertSame(0, $this->factCount($connection, $account));
+        self::assertNotNull($this->dayLoad($connection, $account, '2026-10-19')['failed_at']);
+    }
+
+    private function syncableAccount(ContainerInterface $container, string $shopId): MarketplaceAccount
+    {
+        $companies = $this->companies($container);
+
+        return MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany(CompanyBuilder::aCompany()->persistWith($companies))
+            ->withExternalShopId($shopId)
+            ->withPlaintextCredentials(['client_id' => $shopId, 'api_key' => 'key-1'], $this->credentialsEncryptor($container))
+            ->persistWith($companies, $this->marketplaceAccounts($container));
+    }
+
+    private function messageFor(MarketplaceAccount $account, string $businessDate): FetchOzonPostingsMessage
+    {
+        return new FetchOzonPostingsMessage(
+            companyId: $account->companyId()->toRfc4122(),
+            marketplaceAccountId: $account->id()->toRfc4122(),
+            businessDate: $businessDate,
+        );
+    }
+
+    private function rawCount(Connection $connection, MarketplaceAccount $account): int
+    {
+        $count = $connection->fetchOne(
+            'SELECT COUNT(*) FROM marketplace_raw_document WHERE company_id = ? AND marketplace_account_id = ? AND report_type = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), MarketplaceReportType::OzonPostingFboList],
+        );
+
+        \assert(\is_int($count) || \is_string($count));
+
+        return (int) $count;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function factRows(Connection $connection, MarketplaceAccount $account): array
+    {
+        return $connection->fetchAllAssociative(
+            'SELECT * FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? ORDER BY source_row_id',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122()],
+        );
+    }
+
+    /**
+     * Синтетические фикстуры выкупа сняты в форме v2; обработчик листает
+     * только v3 (ADR-042) — та же выборка отправлений одной страницей.
+     */
+    private function v3Page(string $path): string
+    {
+        $decoded = json_decode($this->fixture($path), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($decoded);
+
+        return json_encode(['postings' => $decoded['result'], 'has_next' => false, 'cursor' => ''], \JSON_THROW_ON_ERROR);
     }
 
     private function bootedContainer(): ContainerInterface

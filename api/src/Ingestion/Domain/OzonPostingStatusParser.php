@@ -7,8 +7,8 @@ namespace App\Ingestion\Domain;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Чистый разбор одного snapshot /v2/posting/fbo/list в одно наблюдение
- * на posting независимо от количества products (ADR-019).
+ * Чистый разбор одного snapshot выгрузки продаж FBO (v2 и v3, ADR-042)
+ * в одно наблюдение на posting независимо от количества products (ADR-019).
  */
 final class OzonPostingStatusParser
 {
@@ -22,17 +22,8 @@ final class OzonPostingStatusParser
         Uuid $rawDocumentId,
         \DateTimeImmutable $observedAt,
     ): array {
-        $decoded = json_decode($rawBody, true, flags: \JSON_THROW_ON_ERROR);
-        if (!\is_array($decoded) || !isset($decoded['result']) || !\is_array($decoded['result'])) {
-            throw new \UnexpectedValueException('Ozon /v2/posting/fbo/list response must contain a "result" array.');
-        }
-
         $statuses = [];
-        foreach ($decoded['result'] as $posting) {
-            if (!\is_array($posting)) {
-                throw new \UnexpectedValueException('Ozon posting entry must be an object.');
-            }
-
+        foreach (OzonPostingList::postings($rawBody) as $posting) {
             $statuses[] = MarketplacePostingStatus::observe(
                 companyId: $companyId,
                 marketplaceAccountId: $marketplaceAccountId,

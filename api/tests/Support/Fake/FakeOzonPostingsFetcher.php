@@ -18,7 +18,7 @@ final readonly class FakeOzonPostingsFetcher implements OzonPostingsFetcher
     ) {
     }
 
-    public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+    public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
     {
         return $this->body;
     }

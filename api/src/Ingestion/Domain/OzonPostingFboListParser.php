@@ -8,10 +8,10 @@ use App\Shared\Domain\ValueObject\Money;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Разбор /v2/posting/fbo/list в SalesFact (ADR-009). Domain, не
- * Infrastructure: применяет правила ADR-009 (состав source_row_id,
- * бизнес-дата, деньги), не делает ни одного вызова наружу — ни HTTP,
- * ни БД. Отдельный шаг от сохранения raw (ADR-006): неудача здесь
+ * Разбор выгрузки продаж FBO в SalesFact (ADR-009) — тела v2 и v3
+ * (ADR-042). Domain, не Infrastructure: применяет правила ADR-009
+ * (состав source_row_id, бизнес-дата, деньги), не делает ни одного
+ * вызова наружу — ни HTTP, ни БД. Отдельный шаг от сохранения raw (ADR-006): неудача здесь
  * не теряет сырьё, оно уже сохранено раньше.
  */
 final class OzonPostingFboListParser
@@ -24,19 +24,10 @@ final class OzonPostingFboListParser
      */
     public function parse(string $rawBody, Uuid $companyId, Uuid $marketplaceAccountId, Uuid $rawDocumentId): array
     {
-        $decoded = json_decode($rawBody, true, flags: \JSON_THROW_ON_ERROR);
-        if (!\is_array($decoded) || !isset($decoded['result']) || !\is_array($decoded['result'])) {
-            throw new \UnexpectedValueException('Ozon /v2/posting/fbo/list response must contain a "result" array.');
-        }
-
         $timezone = new \DateTimeZone(self::TIMEZONE);
         $facts = [];
 
-        foreach ($decoded['result'] as $posting) {
-            if (!\is_array($posting)) {
-                throw new \UnexpectedValueException('Ozon posting entry must be an object.');
-            }
-
+        foreach (OzonPostingList::postings($rawBody) as $posting) {
             foreach ($this->postingToFacts($posting, $companyId, $marketplaceAccountId, $rawDocumentId, $timezone) as $fact) {
                 $facts[] = $fact;
             }
@@ -129,7 +120,7 @@ final class OzonPostingFboListParser
                 marketplaceSku: $sku,
                 quantity: $quantity,
                 amount: self::money(self::requireNumber($financial, 'price')),
-                commissionAmount: self::money(self::requireNumber($financial, 'commission_amount')),
+                commissionAmount: self::commission($financial, $postingNumber),
                 rawDocumentId: $rawDocumentId,
                 postingNumber: $postingNumber,
                 orderNumber: $orderNumber,
@@ -160,6 +151,30 @@ final class OzonPostingFboListParser
         $minor = ((int) $whole * 100) + (int) $fraction;
 
         return Money::ofMinor($negative ? -$minor : $minor, self::CURRENCY);
+    }
+
+    /**
+     * Комиссия товара: `commission_amount` в v2, объект `commission`
+     * с валютой в v3 (ADR-042). Валюта v3 сверяется с рублём —
+     * молчаливое приведение по курсу запрещено (CLAUDE.md §3). Сумма
+     * идёт тем же путём, что и цена (`money()`), — своего числового
+     * промежуточного значения у метода нет.
+     *
+     * @param array<array-key, mixed> $financial
+     */
+    private static function commission(array $financial, string $postingNumber): Money
+    {
+        $commission = $financial['commission'] ?? null;
+        if (!\is_array($commission)) {
+            return self::money(self::requireNumber($financial, 'commission_amount'));
+        }
+
+        $currency = $commission['currency'] ?? null;
+        if (self::CURRENCY !== $currency) {
+            throw new \UnexpectedValueException(\sprintf('Posting %s: commission currency %s, expected %s.', $postingNumber, \is_string($currency) ? $currency : 'missing', self::CURRENCY));
+        }
+
+        return self::money(self::requireNumber($commission, 'amount'));
     }
 
     /**

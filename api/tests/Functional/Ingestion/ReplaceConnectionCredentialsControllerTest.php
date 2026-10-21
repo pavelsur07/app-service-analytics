@@ -447,7 +447,7 @@ final class ReplaceConnectionCredentialsControllerTest extends WebTestCase
             ) {
             }
 
-            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
             {
                 $client = new MockHttpClient(new MockResponse($this->body, ['http_code' => $this->status]));
 
