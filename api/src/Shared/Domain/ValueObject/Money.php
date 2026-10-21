@@ -6,6 +6,7 @@ namespace App\Shared\Domain\ValueObject;
 
 use Brick\Money\AllocationMode;
 use Brick\Money\Currency;
+use Brick\Money\Exception\UnknownCurrencyException;
 use Brick\Money\Money as BrickMoney;
 
 /**
@@ -41,8 +42,12 @@ final readonly class Money
 
         // Знаки считаются явно: brick молча принимает «10.000» для рубля,
         // отбросив нули, а правило — «больше знаков, чем у валюты, — отказ».
-        $fractionDigits = \strlen($parts[1] ?? '');
-        if ($fractionDigits > Currency::of($currency)->getDefaultFractionDigits()) {
+        try {
+            $allowedDigits = Currency::of($currency)->getDefaultFractionDigits();
+        } catch (UnknownCurrencyException) {
+            throw new \InvalidArgumentException(\sprintf('Unknown currency "%s".', $currency));
+        }
+        if (\strlen($parts[1] ?? '') > $allowedDigits) {
             throw new \InvalidArgumentException(\sprintf('Money amount "%s" has more fraction digits than %s allows.', $amount, $currency));
         }
 

@@ -41,6 +41,13 @@ final class MoneyTest extends TestCase
         yield 'leading zero fraction' => ['0.05', 5];
     }
 
+    public function testOfDecimalStringRefusesUnknownCurrencyWithoutLeakingTheLibrary(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        Money::ofDecimalString('100.00', 'ZZZ');
+    }
+
     #[DataProvider('notDecimalStrings')]
     public function testOfDecimalStringRefusesWhatItCannotParseExactly(string $amount): void
     {
