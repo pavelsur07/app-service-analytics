@@ -31,6 +31,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
 
 /**
  * Клиент -> raw -> парсер -> upsert facts, целиком через реальный Postgres
@@ -358,6 +359,50 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
         );
         self::assertNotSame('broken', $state);
         self::assertFalse($this->logHandler($container)->hasWarningThatContains('Ozon отклонил авторизацию'));
+    }
+
+    public function testRejectedRequestKeepsOzonResponseBodyInTheDayMarkWithoutTheApiKey(): void
+    {
+        $container = $this->bootedContainer();
+        $companies = $this->companies($container);
+        $marketplaceAccounts = $this->marketplaceAccounts($container);
+        $account = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany(CompanyBuilder::aCompany()->persistWith($companies))
+            ->withExternalShopId('shop-bad-request')
+            ->withPlaintextCredentials(['client_id' => 'shop-bad-request', 'api_key' => 'key-secret-1'], $this->credentialsEncryptor($container))
+            ->persistWith($companies, $marketplaceAccounts);
+
+        // Причину 400 Ozon пишет только в теле; эхо ключа — худший случай.
+        $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
+            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            {
+                $client = new MockHttpClient(new MockResponse('{"code":3,"message":"invalid filter.since, api_key key-secret-1"}', ['http_code' => 400]));
+
+                return $client->request('POST', 'https://api-seller.ozon.ru/v2/posting/fbo/list')->getContent();
+            }
+        });
+
+        /** @var FetchOzonPostingsHandler $handler */
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+
+        try {
+            ($handler)(new FetchOzonPostingsMessage(
+                companyId: $account->companyId()->toRfc4122(),
+                marketplaceAccountId: $account->id()->toRfc4122(),
+                businessDate: '2026-07-01',
+            ));
+            self::fail('Отказ площадки обязан пробрасываться исключением — ретрай и трекер.');
+        } catch (ClientExceptionInterface) {
+        }
+
+        $failure = $this->connection($container)->fetchOne(
+            'SELECT failure FROM marketplace_day_load WHERE company_id = ? AND marketplace_account_id = ? AND report_type = ? AND period = ?',
+            [$account->companyId()->toRfc4122(), $account->id()->toRfc4122(), MarketplaceReportType::OzonPostingFboList, '2026-07-01'],
+        );
+        self::assertIsString($failure);
+        self::assertStringContainsString('400 returned for', $failure);
+        self::assertStringContainsString('invalid filter.since', $failure);
+        self::assertStringNotContainsString('key-secret-1', $failure);
     }
 
     /**
