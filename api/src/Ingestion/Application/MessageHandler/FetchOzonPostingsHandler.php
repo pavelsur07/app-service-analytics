@@ -135,7 +135,7 @@ final readonly class FetchOzonPostingsHandler
         $cursor = '';
         /** @var array<string, true> $seenCursors */
         $seenCursors = [];
-        /** @var list<Uuid> $pages */
+        /** @var list<array{rawDocumentId: Uuid, rawBody: string}> $pages */
         $pages = [];
 
         for ($pageNumber = 1; $pageNumber <= self::MAX_PAGES; ++$pageNumber) {
@@ -162,13 +162,16 @@ final readonly class FetchOzonPostingsHandler
             // id реально сохранённой строки, не обязательно id нового
             // документа (ADR-006: конфликт по идентичному контенту сохраняет
             // более раннюю запись) — на него ссылаются факты ниже.
-            $pages[] = $this->rawDocuments->add(MarketplaceRawDocument::capture(
-                companyId: $companyId,
-                marketplaceAccountId: $marketplaceAccountId,
-                reportType: self::REPORT_TYPE,
-                period: $since,
-                rawBody: $rawBody,
-            ));
+            $pages[] = [
+                'rawDocumentId' => $this->rawDocuments->add(MarketplaceRawDocument::capture(
+                    companyId: $companyId,
+                    marketplaceAccountId: $marketplaceAccountId,
+                    reportType: self::REPORT_TYPE,
+                    period: $since,
+                    rawBody: $rawBody,
+                )),
+                'rawBody' => $rawBody,
+            ];
             $lock->refresh();
 
             $page = OzonPostingPage::fromBody($rawBody);
@@ -190,18 +193,19 @@ final readonly class FetchOzonPostingsHandler
     }
 
     /**
-     * Raw страниц перечитывается по одной: факты дня не копятся в памяти
-     * целиком, сколько бы страниц ни было.
+     * Страницы разбираются по одной: факты дня не копятся в памяти целиком.
+     * Тела — те, что пришли от Ozon, а не перечитанные из raw: байты те же
+     * (raw с тем же хэшем — то же содержимое), а чтение хранилища на каждую
+     * страницу было бы запросом в цикле. 50 страниц тел — единицы мегабайт.
      *
-     * @param list<Uuid> $pages
+     * @param list<array{rawDocumentId: Uuid, rawBody: string}> $pages
      */
     private function recordDay(OzonSyncTarget $target, Uuid $companyId, Uuid $marketplaceAccountId, array $pages): void
     {
         $observedAt = new \DateTimeImmutable();
 
         $this->connection->transactional(function () use ($target, $companyId, $marketplaceAccountId, $pages, $observedAt): void {
-            foreach ($pages as $rawDocumentId) {
-                $rawBody = $this->rawDocuments->body($target->companyId, $marketplaceAccountId, $rawDocumentId);
+            foreach ($pages as ['rawDocumentId' => $rawDocumentId, 'rawBody' => $rawBody]) {
                 $statuses = $this->statusParser->parse($rawBody, $companyId, $marketplaceAccountId, $rawDocumentId, $observedAt);
                 $facts = $this->parser->parse($rawBody, $companyId, $marketplaceAccountId, $rawDocumentId);
                 $this->postingStatuses->recordChanged($target->companyId, $statuses);
