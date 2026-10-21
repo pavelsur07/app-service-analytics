@@ -45,8 +45,13 @@ Ozon объявил замену на `/v3/posting/fbo/list` с 31.08.2026.
 
 ```json
 {"cursor":"","dir":"ASC","filter":{"since":"…+03:00","to":"…+03:00"},
- "limit":100,"translit":true,"with":{"analytics_data":true,"financial_data":true}}
+ "limit":100,"translit":false,"with":{"analytics_data":true,"financial_data":true}}
 ```
+
+`translit: false` обязателен: v3, в отличие от v2, флаг выполняет, и с
+`true` кластеры (`cluster_from`, `cluster_to`) и тип оплаты приходят
+латиницей. Первая съёмка 2026-10-21 была с `true` и это показала; фикстуры
+пересняты с `false` в тот же день, кластеры в них — кириллицей.
 
 Отличия от v2:
 
@@ -61,7 +66,10 @@ Ozon объявил замену на `/v3/posting/fbo/list` с 31.08.2026.
 **Сверка v2 ↔ v3 на 01.07, 86 отправлений:** совпадают состав отправлений,
 `posting_number`, `products[].sku`, `quantity`, `status`, `created_at`,
 `in_process_at`, `financial_data.products[].price`, `product_id`, `payout`
-и комиссия (сумма, процент, валюта) — расхождений 0.
+комиссия (сумма, процент, валюта), склад, город и кластеры — расхождений 0.
+Отличаются только поля, которые мы не читаем: форма `products[].price`,
+`legal_info` (пустой объект в v2, `null` в v3) и `payment_type_group_name`
+(пусто в v2, заполнено в v3).
 
 Следствие: `source_row_id = posting_number|sku` и бизнес-дата по
 `in_process_at` (ADR-009) на v3 дают те же ключи. Переход не создаёт
@@ -192,7 +200,7 @@ apiKey, since, to, cursor): string` с `PAGE_LIMIT = 100`;
 - [ ] интерфейс `OzonPostingsFetcher` переименован в `fetchPage` с курсором,
       `MAX_LIMIT` удалён
 - [ ] клиент: путь `/v3/posting/fbo/list`; тело — `cursor`, `dir`,
-      `filter.since/to`, `limit: 100`, `translit`, `with`; `offset` нет
+      `filter.since/to`, `limit: 100`, `translit: false`, `with`; `offset` нет
 - [ ] `OzonPostingPage`: `has_next=true` без курсора и тело без
       `postings` — исключение; для тела v2 не применяется
 - [ ] фейки тестов (`FakeOzonPostingsFetcher`,
