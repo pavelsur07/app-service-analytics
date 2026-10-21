@@ -8,6 +8,7 @@ use App\Identity\Application\Facade\IdentityFacade;
 use App\Identity\Application\Facade\OzonSyncTarget;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
+use App\Ingestion\Application\OzonFailureReason;
 use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplacePostingStatusRepository;
@@ -102,7 +103,8 @@ final readonly class FetchOzonPostingsHandler
         } catch (\Throwable $failure) {
             // Отметка загрузки (ADR-038): raw за день мог уже сохраниться,
             // а факты — нет, и без отметки день выглядел бы загруженным.
-            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(self::REPORT_TYPE, $since, $since, $failure->getMessage())], new \DateTimeImmutable());
+            // В причине — тело ответа: код без него не говорит, что не так.
+            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(self::REPORT_TYPE, $since, $since, OzonFailureReason::of($failure, $target->apiKey))], new \DateTimeImmutable());
 
             throw $failure;
         }
