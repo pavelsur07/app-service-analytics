@@ -98,7 +98,11 @@ final class OzonListingPriceParser
             throw new \UnexpectedValueException(\sprintf('Ozon product info %s must be a decimal string like "3300.00", got %s.', $field, get_debug_type($value)));
         }
 
-        $money = Money::ofDecimalString($value, $currency);
+        try {
+            $money = Money::ofDecimalString($value, $currency);
+        } catch (\InvalidArgumentException $failure) {
+            throw new \UnexpectedValueException(\sprintf('Ozon product info %s: %s', $field, $failure->getMessage()), 0, $failure);
+        }
 
         return 0 === $money->minorAmount() ? null : $money;
     }

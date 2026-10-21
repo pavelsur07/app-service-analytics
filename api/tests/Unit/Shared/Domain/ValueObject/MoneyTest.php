@@ -55,6 +55,7 @@ final class MoneyTest extends TestCase
     public static function notDecimalStrings(): iterable
     {
         yield 'three fraction digits' => ['10.005'];
+        yield 'three fraction digits ending in zeros' => ['10.000'];
         yield 'exponent' => ['1e3'];
         yield 'empty' => [''];
         yield 'spaces' => [' 10.00'];

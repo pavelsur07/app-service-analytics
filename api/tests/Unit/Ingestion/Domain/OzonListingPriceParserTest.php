@@ -65,6 +65,19 @@ final class OzonListingPriceParserTest extends TestCase
         self::assertSame('3', $prices[0]->marketplaceSku);
     }
 
+    /**
+     * Копейки у валюты без копеек — дрейф схемы, а не округление:
+     * отказ разбора тем же типом, что и прочие отказы парсера.
+     */
+    public function testFractionTheCurrencyDoesNotHaveIsAParseFailure(): void
+    {
+        $this->expectException(\UnexpectedValueException::class);
+
+        (new OzonListingPriceParser())->parse($this->response([
+            ['sku' => 1, 'currency_code' => 'JPY', 'price' => '100.50'],
+        ]));
+    }
+
     public function testResponseWithoutItemsIsRejected(): void
     {
         $this->expectException(\UnexpectedValueException::class);

@@ -57,13 +57,13 @@ final class OzonPostingList
     }
 
     /**
-     * Число целиком — до разделителя JSON; экспонента и прочее, что
-     * десятичной строкой не является, остаётся числом, и разбор суммы
-     * откажет громко, а не округлит.
+     * Любое JSON-число денежного ключа целиком, включая экспоненту:
+     * оставленное числом, оно стало бы float ещё в `json_decode`.
+     * Строку «1e3» затем громко отвергает `Money::ofDecimalString`.
      */
     private static function moneyAsStrings(string $rawBody): string
     {
-        $quoted = preg_replace('/("(?:'.self::MONEY_KEYS.')"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}\]])/', '$1"$2"', $rawBody);
+        $quoted = preg_replace('/("(?:'.self::MONEY_KEYS.')"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}\]])/', '$1"$2"', $rawBody);
         if (null === $quoted) {
             throw new \UnexpectedValueException('Ozon posting list response could not be prepared for decimal parsing.');
         }
