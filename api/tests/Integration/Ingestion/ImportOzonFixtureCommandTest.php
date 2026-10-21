@@ -13,6 +13,7 @@ use Symfony\Component\Uid\Uuid;
 final class ImportOzonFixtureCommandTest extends KernelTestCase
 {
     private const string FIXTURE = __DIR__.'/../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-after.json';
+    private const string V3_FIXTURE = __DIR__.'/../../Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-07-01-page-001.json';
 
     public function testFixtureTravelsThroughRawStatusAndSalesFactsIdempotently(): void
     {
@@ -43,6 +44,29 @@ final class ImportOzonFixtureCommandTest extends KernelTestCase
             [$companyId->toRfc4122()],
         ));
         self::assertEquals(7, $connection->fetchOne(
+            'SELECT COUNT(*) FROM sales_fact WHERE company_id = ?',
+            [$companyId->toRfc4122()],
+        ));
+    }
+
+    public function testImportsV3Response(): void
+    {
+        self::bootKernel();
+        $companyId = Uuid::v7();
+        /** @var ImportOzonFixtureCommand $command */
+        $command = self::getContainer()->get(ImportOzonFixtureCommand::class);
+        $tester = new CommandTester($command);
+
+        self::assertSame(0, $tester->execute([
+            'companyId' => $companyId->toRfc4122(),
+            'marketplaceAccountId' => Uuid::v7()->toRfc4122(),
+            'businessDate' => '2026-07-01',
+            'fixturePath' => self::V3_FIXTURE,
+        ]));
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        self::assertEquals(86, $connection->fetchOne(
             'SELECT COUNT(*) FROM sales_fact WHERE company_id = ?',
             [$companyId->toRfc4122()],
         ));

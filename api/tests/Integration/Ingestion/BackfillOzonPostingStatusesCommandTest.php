@@ -17,6 +17,7 @@ use Symfony\Component\Uid\Uuid;
 final class BackfillOzonPostingStatusesCommandTest extends KernelTestCase
 {
     private const string BEFORE = __DIR__.'/../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-before.json';
+    private const string V3_PAGE = __DIR__.'/../../Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-07-01-page-001.json';
     private const string AFTER = __DIR__.'/../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-after.json';
 
     public function testBackfillsOldestRawFirstWithinTheRequestedTenantAndIsIdempotent(): void
@@ -80,6 +81,35 @@ final class BackfillOzonPostingStatusesCommandTest extends KernelTestCase
         self::assertStringContainsString('new_statuses=0', $tester->getDisplay());
         self::assertEquals(12, $connection->fetchOne(
             'SELECT COUNT(*) FROM marketplace_posting_status WHERE company_id = ?',
+            [$companyId->toRfc4122()],
+        ));
+    }
+
+    /**
+     * Raw неизменяем: после перехода на v3 (ADR-042) история продаж
+     * одного подключения содержит тела обоих форматов, и backfill
+     * разбирает их одинаково.
+     */
+    public function testBackfillReadsV2AndV3RawOfTheSameAccount(): void
+    {
+        self::bootKernel();
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $repository = $this->rawDocuments();
+        $this->raw($companyId, $accountId, self::BEFORE, '2026-08-30 09:00:00')->persistWith($repository);
+        $this->raw($companyId, $accountId, self::V3_PAGE, '2026-08-30 10:00:00')->persistWith($repository);
+
+        $tester = $this->tester();
+        $tester->execute($this->arguments($companyId, $accountId));
+        $tester->assertCommandIsSuccessful();
+
+        $connection = $this->connection();
+        self::assertEquals(5 + 86, $connection->fetchOne(
+            'SELECT COUNT(*) FROM marketplace_posting_status WHERE company_id = ?',
+            [$companyId->toRfc4122()],
+        ));
+        self::assertEquals(5 + 86, $connection->fetchOne(
+            'SELECT COUNT(*) FROM sales_fact WHERE company_id = ?',
             [$companyId->toRfc4122()],
         ));
     }
