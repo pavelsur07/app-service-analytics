@@ -6,6 +6,7 @@ namespace App\Tests\Unit\Shared\Domain\ValueObject;
 
 use App\Shared\Domain\ValueObject\AllocationRule;
 use App\Shared\Domain\ValueObject\Money;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -17,6 +18,51 @@ use PHPUnit\Framework\TestCase;
  */
 final class MoneyTest extends TestCase
 {
+    #[DataProvider('decimalStrings')]
+    public function testOfDecimalStringParsesExactlyIntoMinorUnits(string $amount, int $expectedMinor): void
+    {
+        $money = Money::ofDecimalString($amount, 'RUB');
+
+        self::assertSame($expectedMinor, $money->minorAmount());
+        self::assertSame('RUB', $money->currency());
+    }
+
+    /**
+     * @return iterable<string, array{string, int}>
+     */
+    public static function decimalStrings(): iterable
+    {
+        // -1152.96: на нём (int)($x * 100) через float даёт -115295.
+        yield 'negative with kopecks' => ['-1152.96', -115296];
+        yield 'one fraction digit' => ['-873.6', -87360];
+        yield 'integer' => ['2073', 207300];
+        yield 'two zero digits' => ['2073.00', 207300];
+        yield 'zero' => ['0', 0];
+        yield 'leading zero fraction' => ['0.05', 5];
+    }
+
+    #[DataProvider('notDecimalStrings')]
+    public function testOfDecimalStringRefusesWhatItCannotParseExactly(string $amount): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        Money::ofDecimalString($amount, 'RUB');
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function notDecimalStrings(): iterable
+    {
+        yield 'three fraction digits' => ['10.005'];
+        yield 'exponent' => ['1e3'];
+        yield 'empty' => [''];
+        yield 'spaces' => [' 10.00'];
+        yield 'comma' => ['10,00'];
+        yield 'plus sign' => ['+10'];
+        yield 'trailing newline' => ["10\n"];
+    }
+
     public function testAllocationDistributesRemainderAndSumsBackToTheWhole(): void
     {
         $total = Money::ofMinor(10_000, 'RUB');

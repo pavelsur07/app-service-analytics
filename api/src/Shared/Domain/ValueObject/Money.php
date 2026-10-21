@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Domain\ValueObject;
 
+use Brick\Math\Exception\RoundingNecessaryException;
 use Brick\Money\AllocationMode;
 use Brick\Money\Money as BrickMoney;
 
@@ -22,6 +23,27 @@ final readonly class Money
     public static function ofMinor(int $minorAmount, string $currency): self
     {
         return new self(BrickMoney::ofMinor($minorAmount, $currency));
+    }
+
+    /**
+     * Сумма из десятичной строки площадки («-1152.96», «2073», «873.6») —
+     * без float на всём пути (ADR-004): строка разбирается brick/money
+     * как десятичное число. Больше знаков после запятой, чем у валюты,
+     * — исключение, а не округление: правило округления здесь назвать
+     * некому, и молча отрезанная копейка не сойдётся с отчётом площадки.
+     * Экспонента, пробелы и пустая строка — тоже исключение.
+     */
+    public static function ofDecimalString(string $amount, string $currency): self
+    {
+        if (1 !== preg_match('/^-?\d+(?:\.\d+)?$/D', $amount)) {
+            throw new \InvalidArgumentException(\sprintf('Money amount "%s" is not a plain decimal string.', $amount));
+        }
+
+        try {
+            return new self(BrickMoney::of($amount, $currency));
+        } catch (RoundingNecessaryException) {
+            throw new \InvalidArgumentException(\sprintf('Money amount "%s" has more fraction digits than %s allows.', $amount, $currency));
+        }
     }
 
     public function currency(): string

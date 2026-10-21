@@ -10,9 +10,22 @@ namespace App\Ingestion\Domain;
  * `result` — `/v2/posting/fbo/list` (отключён Ozon 2026-10-19),
  * `postings` — `/v3/posting/fbo/list`. Raw неизменяем (ADR-006),
  * и разбор старых тел нужен backfill статусов и истории выкупа.
+ *
+ * **Денежные поля приходят в разбор строками.** Ozon отдаёт цену
+ * и комиссию JSON-числом (`"commission_amount":-1152.96`), а `json_decode`
+ * превращает дробное число во float раньше любого нашего кода — флага,
+ * который это отключает, у PHP нет. Поэтому до разбора числовые значения
+ * ключей из `MONEY_KEYS` берутся в кавычки, и `Money::ofDecimalString`
+ * получает ровно те цифры, что прислала площадка (CLAUDE.md §3).
+ * Меняется копия для разбора; raw хранит ответ байт в байт (ADR-006).
+ * Значение-строку подмена не задевает: внутри строки JSON кавычки
+ * экранированы, и `"price":` там не встречается.
  */
 final class OzonPostingList
 {
+    /** Цена товара и комиссия: v2 — `price`, `commission_amount`; v3 — ещё `commission.amount`. */
+    private const string MONEY_KEYS = 'price|commission_amount|amount';
+
     private function __construct()
     {
     }
@@ -22,7 +35,7 @@ final class OzonPostingList
      */
     public static function postings(string $rawBody): array
     {
-        $decoded = json_decode($rawBody, true, flags: \JSON_THROW_ON_ERROR);
+        $decoded = json_decode(self::moneyAsStrings($rawBody), true, flags: \JSON_THROW_ON_ERROR);
         if (!\is_array($decoded)) {
             throw new \UnexpectedValueException('Ozon posting list response must be an object.');
         }
@@ -41,5 +54,20 @@ final class OzonPostingList
         }
 
         return $postings;
+    }
+
+    /**
+     * Число целиком — до разделителя JSON; экспонента и прочее, что
+     * десятичной строкой не является, остаётся числом, и разбор суммы
+     * откажет громко, а не округлит.
+     */
+    private static function moneyAsStrings(string $rawBody): string
+    {
+        $quoted = preg_replace('/("(?:'.self::MONEY_KEYS.')"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}\]])/', '$1"$2"', $rawBody);
+        if (null === $quoted) {
+            throw new \UnexpectedValueException('Ozon posting list response could not be prepared for decimal parsing.');
+        }
+
+        return $quoted;
     }
 }
