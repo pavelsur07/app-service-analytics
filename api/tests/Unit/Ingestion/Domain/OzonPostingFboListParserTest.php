@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Ingestion\Domain;
 
 use App\Ingestion\Domain\OzonPostingFboListParser;
+use App\Ingestion\Domain\SalesFact;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\SalesFactBuilder;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -14,6 +15,7 @@ use Symfony\Component\Uid\Uuid;
 final class OzonPostingFboListParserTest extends TestCase
 {
     private const string FIXTURE = __DIR__.'/../../../Fixtures/Marketplace/ozon/posting-fbo-list-2026-07-01.json';
+    private const string FIXTURE_V3 = __DIR__.'/../../../Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-07-01-page-001.json';
     private const string BUYOUT_FIXTURE = __DIR__.'/../../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-after.json';
 
     public function testParsesEveryProductLineInTheFixture(): void
@@ -35,6 +37,61 @@ final class OzonPostingFboListParserTest extends TestCase
         $facts = (new OzonPostingFboListParser())->parse($fixtureBody, Uuid::v7(), Uuid::v7(), Uuid::v7());
 
         self::assertSame($expectedCount, \count($facts));
+    }
+
+    /**
+     * Главный тест перехода на v3 (ADR-042): тот же день, снятый обеими
+     * версиями метода, даёт те же факты поле в поле. Иначе перезагрузка
+     * окна после перехода молча поменяла бы цифры или ключи.
+     */
+    public function testV3BodyYieldsTheSameFactsAsV2ForTheSameDay(): void
+    {
+        $v2 = file_get_contents(self::FIXTURE);
+        $v3 = file_get_contents(self::FIXTURE_V3);
+        self::assertIsString($v2);
+        self::assertIsString($v3);
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $parser = new OzonPostingFboListParser();
+
+        // Фикстура v3 снята с translit: true — кластеры в ней транслитом,
+        // а v2 этот флаг игнорировал. Клиент v3 шлёт translit: false
+        // (OzonPostingFboListClientTest); кластеры и зависящий от них
+        // хэш строки здесь не сравниваются до фикстуры с translit: false.
+        $withoutClusters = static fn (SalesFact $fact): array => array_diff_key(self::comparable($fact), ['clusterFrom' => true, 'clusterTo' => true, 'rowHash' => true]);
+        $fromV2 = array_map($withoutClusters, $parser->parse($v2, $companyId, $accountId, Uuid::v7()));
+        $fromV3 = array_map($withoutClusters, $parser->parse($v3, $companyId, $accountId, Uuid::v7()));
+        usort($fromV2, static fn (array $a, array $b): int => $a['sourceRowId'] <=> $b['sourceRowId']);
+        usort($fromV3, static fn (array $a, array $b): int => $a['sourceRowId'] <=> $b['sourceRowId']);
+
+        self::assertCount(86, $fromV3);
+        self::assertSame($fromV2, $fromV3);
+    }
+
+    public function testRefusesV3CommissionInAnotherCurrency(): void
+    {
+        $body = json_encode(['postings' => [[
+            'posting_number' => 'P-USD-1',
+            'order_number' => 'P-USD',
+            'status' => 'delivered',
+            'in_process_at' => '2026-10-19T09:00:00Z',
+            'products' => [['sku' => 111, 'quantity' => 1]],
+            'financial_data' => ['products' => [
+                ['product_id' => 111, 'price' => 100, 'commission' => ['amount' => -10, 'percent' => 10, 'currency' => 'USD']],
+            ]],
+        ]], 'has_next' => false, 'cursor' => ''], \JSON_THROW_ON_ERROR);
+
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('commission currency USD');
+
+        (new OzonPostingFboListParser())->parse($body, Uuid::v7(), Uuid::v7(), Uuid::v7());
+    }
+
+    public function testRefusesBodyWithoutPostingList(): void
+    {
+        $this->expectException(\UnexpectedValueException::class);
+
+        (new OzonPostingFboListParser())->parse('{"code":9,"message":"obsolete method cannot be used"}', Uuid::v7(), Uuid::v7(), Uuid::v7());
     }
 
     public function testMapsCancelledPostingFields(): void
@@ -361,5 +418,33 @@ final class OzonPostingFboListParserTest extends TestCase
         }
 
         return json_encode(['result' => [$posting]], \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Всё, что факт несёт в базу, кроме ссылки на raw-документ — она
+     * у двух тел разная по построению.
+     *
+     * @return array<string, mixed>
+     */
+    private static function comparable(SalesFact $fact): array
+    {
+        return [
+            'sourceRowId' => $fact->sourceRowId(),
+            'businessDate' => $fact->businessDate()->format('Y-m-d'),
+            'orderedAt' => $fact->orderedAt()?->format(\DATE_ATOM),
+            'status' => $fact->status(),
+            'sku' => $fact->marketplaceSku(),
+            'quantity' => $fact->quantity(),
+            'amount' => [$fact->amount()->minorAmount(), $fact->amount()->currency()],
+            'commission' => [$fact->commissionAmount()->minorAmount(), $fact->commissionAmount()->currency()],
+            'postingNumber' => $fact->postingNumber(),
+            'orderNumber' => $fact->orderNumber(),
+            'warehouseId' => $fact->warehouseId(),
+            'warehouseName' => $fact->warehouseName(),
+            'deliveryCity' => $fact->deliveryCity(),
+            'clusterFrom' => $fact->clusterFrom(),
+            'clusterTo' => $fact->clusterTo(),
+            'rowHash' => $fact->rowHash(),
+        ];
     }
 }

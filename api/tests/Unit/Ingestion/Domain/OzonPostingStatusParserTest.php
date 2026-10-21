@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Ingestion\Domain;
 
+use App\Ingestion\Domain\MarketplacePostingStatus;
 use App\Ingestion\Domain\OzonPostingStatusParser;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -12,6 +13,31 @@ use Symfony\Component\Uid\Uuid;
 final class OzonPostingStatusParserTest extends TestCase
 {
     private const string FIXTURE = __DIR__.'/../../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-after.json';
+    private const string FIXTURE_V2 = __DIR__.'/../../../Fixtures/Marketplace/ozon/posting-fbo-list-2026-07-01.json';
+    private const string FIXTURE_V3 = __DIR__.'/../../../Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-07-01-page-001.json';
+
+    /**
+     * Тот же день в v2 и v3 (ADR-042) — те же наблюдения статуса.
+     */
+    public function testV3BodyYieldsTheSameStatusesAsV2ForTheSameDay(): void
+    {
+        $v2 = file_get_contents(self::FIXTURE_V2);
+        $v3 = file_get_contents(self::FIXTURE_V3);
+        self::assertIsString($v2);
+        self::assertIsString($v3);
+        $observedAt = new \DateTimeImmutable('2026-10-21 12:00:00');
+        $comparable = static fn (MarketplacePostingStatus $s): array => [
+            $s->postingNumber(), $s->orderNumber(), $s->status(), $s->substatus(), $s->cancelReasonId(),
+        ];
+
+        $fromV2 = array_map($comparable, $this->parser()->parse($v2, Uuid::v7(), Uuid::v7(), Uuid::v7(), $observedAt));
+        $fromV3 = array_map($comparable, $this->parser()->parse($v3, Uuid::v7(), Uuid::v7(), Uuid::v7(), $observedAt));
+        sort($fromV2);
+        sort($fromV3);
+
+        self::assertCount(86, $fromV3);
+        self::assertSame($fromV2, $fromV3);
+    }
 
     public function testProducesOneObservationPerPostingRatherThanPerProduct(): void
     {
