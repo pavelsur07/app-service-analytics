@@ -17,11 +17,8 @@ use App\Shared\Domain\ValueObject\Money;
  * этот — историю цен в свою таблицу. Общий у них только источник,
  * а не судьба: наименование перезаписывается, цена накапливается.
  *
- * **Суммы приходят строками вида «3300.00», и это удача.** У продаж
- * Ozon отдаёт их JSON-числом, и `OzonPostingFboListParser` вынужден
- * сначала зафиксировать float через `number_format`. Здесь фиксировать
- * нечего — строка разбирается целочисленно как есть, и копейки
- * не размываются в принципе (ADR-004).
+ * **Суммы приходят строками вида «3300.00»** и разбираются
+ * `Money::ofDecimalString` как есть, без float (ADR-004).
  *
  * **Отсутствие цены и неожиданный формат — разные вещи.** Товар без
  * цены пропускается: он заведён, но не выставлен, и это не повод
@@ -101,12 +98,12 @@ final class OzonListingPriceParser
             throw new \UnexpectedValueException(\sprintf('Ozon product info %s must be a decimal string like "3300.00", got %s.', $field, get_debug_type($value)));
         }
 
-        [$whole, $fraction] = explode('.', $value.'.0');
-        $minor = ((int) $whole * 100) + (int) str_pad(substr($fraction, 0, 2), 2, '0');
-        if (0 === $minor) {
-            return null;
+        try {
+            $money = Money::ofDecimalString($value, $currency);
+        } catch (\InvalidArgumentException $failure) {
+            throw new \UnexpectedValueException(\sprintf('Ozon product info %s: %s', $field, $failure->getMessage()), 0, $failure);
         }
 
-        return Money::ofMinor($minor, $currency);
+        return 0 === $money->minorAmount() ? null : $money;
     }
 }

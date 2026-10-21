@@ -301,11 +301,11 @@ final class OzonAccrualByDayParser
         // Строкой, без float: число с плавающей точкой в денежных
         // вычислениях запрещено, включая промежуточные значения
         // (CLAUDE.md §3).
-        [$whole, $fraction] = array_pad(explode('.', $amount, 2), 2, '');
-        $negative = str_starts_with($whole, '-');
-        $minor = (int) ltrim($whole, '-') * 100 + (int) str_pad($fraction, 2, '0');
-
-        return Money::ofMinor($negative ? -$minor : $minor, $currency);
+        try {
+            return Money::ofDecimalString($amount, $currency);
+        } catch (\InvalidArgumentException $failure) {
+            throw new \UnexpectedValueException("Ozon accrual amount '{$amount}': {$failure->getMessage()}", 0, $failure);
+        }
     }
 
     /**

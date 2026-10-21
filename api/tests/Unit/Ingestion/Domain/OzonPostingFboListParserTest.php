@@ -82,6 +82,49 @@ final class OzonPostingFboListParserTest extends TestCase
         (new OzonPostingFboListParser())->parse($body, Uuid::v7(), Uuid::v7(), Uuid::v7());
     }
 
+    /**
+     * Суммы приходят числом, а разбираются строкой (CLAUDE.md §3):
+     * -1152.96 через float дал бы -115295 копеек.
+     */
+    public function testMoneyIsParsedFromTheDigitsOzonSentNotFromAFloat(): void
+    {
+        $facts = (new OzonPostingFboListParser())->parse(self::v3Body('1999.99', '-1152.96'), Uuid::v7(), Uuid::v7(), Uuid::v7());
+
+        self::assertSame(199999, $facts[0]->amount()->minorAmount());
+        self::assertSame(-115296, $facts[0]->commissionAmount()->minorAmount());
+    }
+
+    /**
+     * Ключ денежного поля внутри строкового значения — не число:
+     * подмена перед разбором его не трогает.
+     */
+    public function testMoneyKeyInsideAStringValueIsLeftIntact(): void
+    {
+        $body = str_replace('"P-DEC"', '"P-DEC \\"price\\":12.5"', self::v3Body('100', '-10'));
+
+        $facts = (new OzonPostingFboListParser())->parse($body, Uuid::v7(), Uuid::v7(), Uuid::v7());
+
+        self::assertSame('P-DEC "price":12.5', $facts[0]->orderNumber());
+        self::assertSame(10000, $facts[0]->amount()->minorAmount());
+    }
+
+    #[DataProvider('amountsThatAreNotExactKopecks')]
+    public function testRefusesAmountItCannotParseExactly(string $price): void
+    {
+        $this->expectException(\UnexpectedValueException::class);
+
+        (new OzonPostingFboListParser())->parse(self::v3Body($price, '-10'), Uuid::v7(), Uuid::v7(), Uuid::v7());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function amountsThatAreNotExactKopecks(): iterable
+    {
+        yield 'three fraction digits' => ['10.005'];
+        yield 'exponent' => ['1e3'];
+    }
+
     public function testRefusesBodyWithoutPostingList(): void
     {
         $this->expectException(\UnexpectedValueException::class);
@@ -441,5 +484,18 @@ final class OzonPostingFboListParserTest extends TestCase
             'clusterTo' => $fact->clusterTo(),
             'rowHash' => $fact->rowHash(),
         ];
+    }
+
+    /**
+     * Одно отправление v3; суммы — JSON-числами, как их шлёт Ozon,
+     * подставляются в тело как есть.
+     */
+    private static function v3Body(string $price, string $commission): string
+    {
+        return '{"postings":[{"posting_number":"P-DEC-1","order_number":"P-DEC","status":"delivered",'
+            .'"in_process_at":"2026-10-19T09:00:00Z","products":[{"sku":111,"quantity":1}],'
+            .'"financial_data":{"products":[{"product_id":111,"price":'.$price.','
+            .'"commission":{"amount":'.$commission.',"percent":10,"currency":"RUB"}}]}}],'
+            .'"has_next":false,"cursor":""}';
     }
 }

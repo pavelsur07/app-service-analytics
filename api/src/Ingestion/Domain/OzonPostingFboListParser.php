@@ -119,7 +119,7 @@ final class OzonPostingFboListParser
                 status: $status,
                 marketplaceSku: $sku,
                 quantity: $quantity,
-                amount: self::money(self::requireNumber($financial, 'price')),
+                amount: self::money(self::requireDecimal($financial, 'price'), $postingNumber),
                 commissionAmount: self::commission($financial, $postingNumber),
                 rawDocumentId: $rawDocumentId,
                 postingNumber: $postingNumber,
@@ -137,28 +137,22 @@ final class OzonPostingFboListParser
     }
 
     /**
-     * Ozon отдаёt суммы JSON-числом (float) — минорные единицы Money не
-     * принимают float (ADR-004). number_format фиксирует ровно 2 знака
-     * после запятой без домножения самого числа (не (int)($x * 100) —
-     * умножение float размывает копейки на значениях вроде -1152.96);
-     * дальше — целочисленный разбор уже зафиксированной строки.
+     * Сумма — десятичной строкой: числа денежных ключей `OzonPostingList`
+     * берёт в кавычки до разбора JSON, float не возникает (CLAUDE.md §3).
      */
-    private static function money(float $decimal): Money
+    private static function money(string $decimal, string $postingNumber): Money
     {
-        $formatted = number_format($decimal, 2, '.', '');
-        $negative = str_starts_with($formatted, '-');
-        [$whole, $fraction] = explode('.', ltrim($formatted, '-'));
-        $minor = ((int) $whole * 100) + (int) $fraction;
-
-        return Money::ofMinor($negative ? -$minor : $minor, self::CURRENCY);
+        try {
+            return Money::ofDecimalString($decimal, self::CURRENCY);
+        } catch (\InvalidArgumentException $failure) {
+            throw new \UnexpectedValueException("Posting {$postingNumber}: {$failure->getMessage()}", 0, $failure);
+        }
     }
 
     /**
      * Комиссия товара: `commission_amount` в v2, объект `commission`
      * с валютой в v3 (ADR-042). Валюта v3 сверяется с рублём —
-     * молчаливое приведение по курсу запрещено (CLAUDE.md §3). Сумма
-     * идёт тем же путём, что и цена (`money()`), — своего числового
-     * промежуточного значения у метода нет.
+     * молчаливое приведение по курсу запрещено (CLAUDE.md §3).
      *
      * @param array<array-key, mixed> $financial
      */
@@ -166,7 +160,7 @@ final class OzonPostingFboListParser
     {
         $commission = $financial['commission'] ?? null;
         if (!\is_array($commission)) {
-            return self::money(self::requireNumber($financial, 'commission_amount'));
+            return self::money(self::requireDecimal($financial, 'commission_amount'), $postingNumber);
         }
 
         $currency = $commission['currency'] ?? null;
@@ -174,7 +168,7 @@ final class OzonPostingFboListParser
             throw new \UnexpectedValueException(\sprintf('Posting %s: commission currency %s, expected %s.', $postingNumber, \is_string($currency) ? $currency : 'missing', self::CURRENCY));
         }
 
-        return self::money(self::requireNumber($commission, 'amount'));
+        return self::money(self::requireDecimal($commission, 'amount'), $postingNumber);
     }
 
     /**
@@ -230,13 +224,13 @@ final class OzonPostingFboListParser
     /**
      * @param array<array-key, mixed> $data
      */
-    private static function requireNumber(array $data, string $key): float
+    private static function requireDecimal(array $data, string $key): string
     {
         $value = $data[$key] ?? null;
-        if (!\is_int($value) && !\is_float($value)) {
-            throw new \UnexpectedValueException("Expected field \"{$key}\" to be numeric.");
+        if (!\is_string($value)) {
+            throw new \UnexpectedValueException("Expected field \"{$key}\" to be a decimal amount.");
         }
 
-        return (float) $value;
+        return $value;
     }
 }

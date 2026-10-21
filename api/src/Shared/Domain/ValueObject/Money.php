@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Shared\Domain\ValueObject;
 
 use Brick\Money\AllocationMode;
+use Brick\Money\Currency;
+use Brick\Money\Exception\UnknownCurrencyException;
 use Brick\Money\Money as BrickMoney;
 
 /**
@@ -22,6 +24,34 @@ final readonly class Money
     public static function ofMinor(int $minorAmount, string $currency): self
     {
         return new self(BrickMoney::ofMinor($minorAmount, $currency));
+    }
+
+    /**
+     * Сумма из десятичной строки площадки («-1152.96», «2073», «873.6») —
+     * без float на всём пути (ADR-004): строка разбирается brick/money
+     * как десятичное число. Больше знаков после запятой, чем у валюты,
+     * — исключение, а не округление: правило округления здесь назвать
+     * некому, и молча отрезанная копейка не сойдётся с отчётом площадки.
+     * Экспонента, пробелы и пустая строка — тоже исключение.
+     */
+    public static function ofDecimalString(string $amount, string $currency): self
+    {
+        if (1 !== preg_match('/^-?\d+(?:\.(\d+))?$/D', $amount, $parts)) {
+            throw new \InvalidArgumentException(\sprintf('Money amount "%s" is not a plain decimal string.', $amount));
+        }
+
+        // Знаки считаются явно: brick молча принимает «10.000» для рубля,
+        // отбросив нули, а правило — «больше знаков, чем у валюты, — отказ».
+        try {
+            $allowedDigits = Currency::of($currency)->getDefaultFractionDigits();
+        } catch (UnknownCurrencyException) {
+            throw new \InvalidArgumentException(\sprintf('Unknown currency "%s".', $currency));
+        }
+        if (\strlen($parts[1] ?? '') > $allowedDigits) {
+            throw new \InvalidArgumentException(\sprintf('Money amount "%s" has more fraction digits than %s allows.', $amount, $currency));
+        }
+
+        return new self(BrickMoney::of($amount, $currency));
     }
 
     public function currency(): string
