@@ -113,11 +113,12 @@ final readonly class FetchOzonPostingsHandler
     private function loadDay(FetchOzonPostingsMessage $message, OzonSyncTarget $target, \DateTimeImmutable $since, \DateTimeImmutable $to): void
     {
         try {
-            $rawBody = $this->client->fetch(
+            $rawBody = $this->client->fetchPage(
                 clientId: $target->clientId,
                 apiKey: $target->apiKey,
                 since: $since,
                 to: $to,
+                cursor: '',
             );
         } catch (\Throwable $failure) {
             if (!OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
@@ -146,8 +147,6 @@ final readonly class FetchOzonPostingsHandler
         // раннюю запись) — на него ссылаются факты ниже.
         $rawDocumentId = $this->rawDocuments->add($rawDocument);
 
-        $this->refuseSilentTruncation($rawBody, $message->businessDate);
-
         $observedAt = new \DateTimeImmutable();
         $statuses = $this->statusParser->parse(
             $rawBody,
@@ -160,28 +159,5 @@ final readonly class FetchOzonPostingsHandler
         $this->postingStatuses->recordChanged($target->companyId, $statuses);
         $this->salesFacts->upsertAll($facts);
         $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::completed(self::REPORT_TYPE, $since, $since)], new \DateTimeImmutable());
-    }
-
-    /**
-     * Ответ ровно в потолок — признак того, что день в него не поместился.
-     *
-     * Запрос страниц не листает: у продавца дни по сотне отправлений,
-     * до тысячи далеко, и пагинация ради ненаступившего случая была бы
-     * кодом без потребителя. Но потолок обязан быть громким: молча
-     * отдать девятьсот девяносто девять из полутора тысяч — это отчёт,
-     * который выглядит полным и врёт. Упереться в него — повод завести
-     * пагинацию, а не увеличить число.
-     */
-    private function refuseSilentTruncation(string $rawBody, string $businessDate): void
-    {
-        $decoded = json_decode($rawBody, true);
-        if (!\is_array($decoded) || !isset($decoded['result']) || !\is_array($decoded['result'])) {
-            // Разбор ответа — забота парсера, он же и объяснит, что не так.
-            return;
-        }
-
-        if (\count($decoded['result']) >= OzonPostingsFetcher::MAX_LIMIT) {
-            throw new \RuntimeException(\sprintf('Ozon вернул %d отправлений за %s — это потолок запроса. День в одну страницу не помещается, нужна пагинация.', \count($decoded['result']), $businessDate));
-        }
     }
 }

@@ -44,7 +44,7 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  * 1. Товары — `/v3/product/list` (`OzonCatalogFetcher`).
  * 2. Карточки товаров — `/v3/product/info/list` (`OzonProductInfoFetcher`),
  *    сразу после товаров, тем же product_id.
- * 3. Продажи — `/v2/posting/fbo/list` (`OzonPostingsFetcher`).
+ * 3. Продажи — `/v3/posting/fbo/list` (`OzonPostingsFetcher`).
  * 4. Расходы — `/v1/finance/accrual/by-day` (`OzonExpensesFetcher`).
  * 5. Возвраты — `/v1/returns/list` (`OzonReturnsFetcher`).
  *
@@ -189,7 +189,7 @@ final readonly class ConnectOzonAccountAction
         // в невозможность подключиться вовсе.
 
         try {
-            $this->postingsFetcher->fetch($clientId, $apiKey, $probeSince, $now);
+            $this->postingsFetcher->fetchPage($clientId, $apiKey, $probeSince, $now, '');
         } catch (\Throwable $failure) {
             return $this->classifyProbeFailure($failure, ConnectOzonAccountResult::RejectedSales, $clientId, 'sales');
         }

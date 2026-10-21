@@ -139,7 +139,7 @@ final readonly class ReplaceOzonCredentialsAction
         // ConnectOzonAccountAction::probeAllScopes.
 
         try {
-            $this->postingsFetcher->fetch($clientId, $apiKey, $probeSince, $now);
+            $this->postingsFetcher->fetchPage($clientId, $apiKey, $probeSince, $now, '');
         } catch (\Throwable $failure) {
             return $this->classifyProbeFailure($failure, ReplaceCredentialsResult::RejectedSales, $clientId, 'sales');
         }

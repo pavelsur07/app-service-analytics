@@ -52,7 +52,7 @@ final readonly class DataCoverageSource
     public static function all(): array
     {
         return [
-            new self(MarketplaceReportType::OzonPostingFboList, 'Продажи', 'POST /v2/posting/fbo/list', self::KindDay),
+            new self(MarketplaceReportType::OzonPostingFboList, 'Продажи', 'POST /v3/posting/fbo/list', self::KindDay),
             new self(MarketplaceReportType::OzonAccrualByDay, 'Расходы', 'POST /v1/finance/accrual/by-day', self::KindDay),
             new self(MarketplaceReportType::OzonReturnsList, 'Возвраты', 'POST /v1/returns/list', self::KindRange, rangeDays: 90),
             new self(MarketplaceReportType::OzonProductList, 'Каталог', 'POST /v3/product/list', self::KindSnapshot, forwardOnly: true),

@@ -211,7 +211,7 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
             ->persistWith($companies, $marketplaceAccounts);
 
         $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
-            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
             {
                 $client = new MockHttpClient(new MockResponse('{"code":16}', ['http_code' => 401]));
 
@@ -254,7 +254,7 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
             ->persistWith($companies, $marketplaceAccounts);
 
         $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
-            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
             {
                 $client = new MockHttpClient(new MockResponse('{"code":16,"message":"api_key key-1 invalid"}', ['http_code' => 401]));
 
@@ -332,7 +332,7 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
             ->persistWith($companies, $marketplaceAccounts);
 
         $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
-            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
             {
                 $client = new MockHttpClient(new MockResponse('{"code":1,"message":"internal"}', ['http_code' => 503]));
 
@@ -374,7 +374,7 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
 
         // Причину 400 Ozon пишет только в теле; эхо ключа — худший случай.
         $container->set(OzonPostingFboListClient::class, new class implements OzonPostingsFetcher {
-            public function fetch(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to): string
+            public function fetchPage(string $clientId, string $apiKey, \DateTimeImmutable $since, \DateTimeImmutable $to, string $cursor): string
             {
                 $client = new MockHttpClient(new MockResponse('{"code":3,"message":"invalid filter.since, api_key key-secret-1"}', ['http_code' => 400]));
 

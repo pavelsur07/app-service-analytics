@@ -13,20 +13,21 @@ namespace App\Ingestion\Domain;
 interface OzonPostingsFetcher
 {
     /**
-     * Потолок страницы у метода площадки. Живёт в контракте, а не
-     * в реализации: ответ ровно в потолок — признак непоместившегося
-     * дня, и распознаёт его вызывающий сценарий, который о конкретном
-     * HTTP-клиенте ничего не знает.
+     * Потолок страницы `/v3/posting/fbo/list` (ADR-042). День листается
+     * курсором, поэтому полная страница — не признак потери, а повод
+     * спросить следующую: решает `has_next` ответа (`OzonPostingPage`).
      */
-    public const int MAX_LIMIT = 1000;
+    public const int PAGE_LIMIT = 100;
 
     /**
-     * Возвращает тело ответа как есть, без разбора (см. OzonPostingFboListClient).
+     * Одна страница выгрузки; тело ответа как есть, без разбора
+     * (см. OzonPostingFboListClient). Пустой курсор — первая страница.
      */
-    public function fetch(
+    public function fetchPage(
         string $clientId,
         string $apiKey,
         \DateTimeImmutable $since,
         \DateTimeImmutable $to,
+        string $cursor,
     ): string;
 }
