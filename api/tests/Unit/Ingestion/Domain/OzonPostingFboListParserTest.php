@@ -54,13 +54,8 @@ final class OzonPostingFboListParserTest extends TestCase
         $accountId = Uuid::v7();
         $parser = new OzonPostingFboListParser();
 
-        // Фикстура v3 снята с translit: true — кластеры в ней транслитом,
-        // а v2 этот флаг игнорировал. Клиент v3 шлёт translit: false
-        // (OzonPostingFboListClientTest); кластеры и зависящий от них
-        // хэш строки здесь не сравниваются до фикстуры с translit: false.
-        $withoutClusters = static fn (SalesFact $fact): array => array_diff_key(self::comparable($fact), ['clusterFrom' => true, 'clusterTo' => true, 'rowHash' => true]);
-        $fromV2 = array_map($withoutClusters, $parser->parse($v2, $companyId, $accountId, Uuid::v7()));
-        $fromV3 = array_map($withoutClusters, $parser->parse($v3, $companyId, $accountId, Uuid::v7()));
+        $fromV2 = array_map(self::comparable(...), $parser->parse($v2, $companyId, $accountId, Uuid::v7()));
+        $fromV3 = array_map(self::comparable(...), $parser->parse($v3, $companyId, $accountId, Uuid::v7()));
         usort($fromV2, static fn (array $a, array $b): int => $a['sourceRowId'] <=> $b['sourceRowId']);
         usort($fromV3, static fn (array $a, array $b): int => $a['sourceRowId'] <=> $b['sourceRowId']);
 

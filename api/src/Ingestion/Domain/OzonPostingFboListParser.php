@@ -120,7 +120,7 @@ final class OzonPostingFboListParser
                 marketplaceSku: $sku,
                 quantity: $quantity,
                 amount: self::money(self::requireNumber($financial, 'price')),
-                commissionAmount: self::money(self::commission($financial, $postingNumber)),
+                commissionAmount: self::commission($financial, $postingNumber),
                 rawDocumentId: $rawDocumentId,
                 postingNumber: $postingNumber,
                 orderNumber: $orderNumber,
@@ -156,15 +156,17 @@ final class OzonPostingFboListParser
     /**
      * Комиссия товара: `commission_amount` в v2, объект `commission`
      * с валютой в v3 (ADR-042). Валюта v3 сверяется с рублём —
-     * молчаливое приведение по курсу запрещено (CLAUDE.md §3).
+     * молчаливое приведение по курсу запрещено (CLAUDE.md §3). Сумма
+     * идёт тем же путём, что и цена (`money()`), — своего числового
+     * промежуточного значения у метода нет.
      *
      * @param array<array-key, mixed> $financial
      */
-    private static function commission(array $financial, string $postingNumber): float
+    private static function commission(array $financial, string $postingNumber): Money
     {
         $commission = $financial['commission'] ?? null;
         if (!\is_array($commission)) {
-            return self::requireNumber($financial, 'commission_amount');
+            return self::money(self::requireNumber($financial, 'commission_amount'));
         }
 
         $currency = $commission['currency'] ?? null;
@@ -172,7 +174,7 @@ final class OzonPostingFboListParser
             throw new \UnexpectedValueException(\sprintf('Posting %s: commission currency %s, expected %s.', $postingNumber, \is_string($currency) ? $currency : 'missing', self::CURRENCY));
         }
 
-        return self::requireNumber($commission, 'amount');
+        return self::money(self::requireNumber($commission, 'amount'));
     }
 
     /**
