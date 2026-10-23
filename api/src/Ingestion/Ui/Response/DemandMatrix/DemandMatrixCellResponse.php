@@ -7,8 +7,9 @@ namespace App\Ingestion\Ui\Response\DemandMatrix;
 use OpenApi\Attributes as OA;
 
 /**
- * Ячейка SKU × кластер покупателя. Отдаётся, если были заказы или дни
- * нулевого остатка: пустая ячейка с дефицитом — «спрос неизвестен».
+ * Ячейка SKU × кластер покупателя. Отдаётся, если были заказы, или если
+ * SKU здесь когда-либо продавался и были дни нулевого остатка: пустая
+ * ячейка с дефицитом — «спрос неизвестен».
  */
 #[OA\Schema(required: [
     'cluster', 'orders7', 'orders14', 'orders28', 'demandMilliPerDay', 'shareBps', 'trendBps', 'stockoutDays', 'demandCensored',
