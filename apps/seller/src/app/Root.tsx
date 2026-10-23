@@ -24,6 +24,7 @@ import { SalesFactsPage } from '../features/ingestion/ui/SalesFactsPage'
 import { SignUpPage } from '../features/auth/ui/SignUpPage'
 import { SkuForecastFactPage } from '../features/sku-forecast-fact/ui/SkuForecastFactPage'
 import { StockPlacementPage } from '../features/stock-placement/ui/StockPlacementPage'
+import { DemandMatrixPage } from '../features/demand-matrix/ui/DemandMatrixPage'
 import { UnitEconomicsPage } from '../features/unit-economics/ui/UnitEconomicsPage'
 import { CompanyLayout } from './CompanyLayout'
 import { RequireAuth } from './RequireAuth'
@@ -80,6 +81,7 @@ const router = createBrowserRouter([
       { path: 'localization', element: <LocalizationPage /> },
       { path: 'delivery-speed', element: <DeliverySpeedPage /> },
       { path: 'stock-placement', element: <StockPlacementPage /> },
+      { path: 'demand-matrix', element: <DemandMatrixPage /> },
       { path: 'extension', element: <ExtensionConnectPage /> },
       { path: 'connections', element: <ConnectionsPage /> },
       { path: 'coverage', element: <DataCoveragePage /> },

@@ -509,8 +509,16 @@ apps/seller/
 ADR-034, план — `docs/plan/ozon-stock-placement-report.md`. Форматирование
 потерянных часов ожидания общее с «Доставкой» — `shared/lib/formatLostTime.ts`.
 Что считается спросом (кластер покупателя, без отменённых) — единственное
-определение в `Ingestion/Infrastructure/Query/Demand/DemandSql`, общее
-с матрицей спроса (`docs/plan/ozon-demand-matrix-report.md`).
+определение в `Ingestion/Infrastructure/Query/Demand/DemandSql`, дни без
+товара в кластере — `Demand/StockoutSql`; оба общие с матрицей спроса.
+
+Отчёт «Спрос» — `apps/seller/src/features/demand-matrix/` (`/demand-matrix`):
+матрица товар × кластер покупателя — заказы за 7/14/28 дней, спрос в день,
+доля кластера, тренд 7 к 28, пометка дней без товара. Бэкенд —
+`Ingestion/Infrastructure/Query/DemandMatrix`, сценарий —
+`Ingestion/Application/DemandMatrix`, план —
+`docs/plan/ozon-demand-matrix-report.md`. Форматирование спроса в день
+общее с «Остатками» — `shared/lib/formatDemand.ts`.
 
 Главная — `apps/seller/src/features/dashboard/` (`/dashboard`, стартовая
 страница компании): виджеты показателей кабинета за период с изменением
