@@ -6,6 +6,7 @@ namespace App\Ingestion\Infrastructure\Query\StockPlacement;
 
 use App\Ingestion\Infrastructure\Query\DeliverySpeed\DeliverySpeedSql;
 use App\Ingestion\Infrastructure\Query\Demand\DemandSql;
+use App\Ingestion\Infrastructure\Query\Demand\StockoutSql;
 
 /**
  * Рекомендация раскладки остатков Ozon FBO по кластерам
@@ -56,20 +57,7 @@ final class StockPlacementSql
      */
     public static function placementCte(): string
     {
-        return DemandSql::linesCte().', '.<<<'SQL'
-            stock_runs AS MATERIALIZED (
-                SELECT marketplace_account_id, snapshot_date, requested_skus
-                FROM stock_snapshot_run
-                WHERE company_id = :companyId
-                  AND started_at IS NOT NULL
-                  AND snapshot_date BETWEEN :demandFrom AND :windowEnd
-            ),
-            complete_days AS (
-                SELECT snapshot_date
-                FROM stock_runs
-                GROUP BY snapshot_date
-                HAVING COUNT(DISTINCT marketplace_account_id) = (SELECT COUNT(DISTINCT marketplace_account_id) FROM stock_runs)
-            ),
+        return DemandSql::linesCte().', '.StockoutSql::cte().', '.<<<'SQL'
             last_run AS (
                 SELECT DISTINCT ON (marketplace_account_id) marketplace_account_id, snapshot_date
                 FROM stock_snapshot_run
@@ -135,21 +123,6 @@ final class StockPlacementSql
                 FROM demand_lines
                 WHERE cluster IS NOT NULL
                 GROUP BY marketplace_sku, cluster
-            ),
-            requested_count AS (
-                SELECT sku.value AS marketplace_sku, COUNT(DISTINCT r.snapshot_date) AS days
-                FROM stock_runs r
-                JOIN complete_days d ON d.snapshot_date = r.snapshot_date
-                CROSS JOIN LATERAL jsonb_array_elements_text(r.requested_skus) AS sku(value)
-                GROUP BY sku.value
-            ),
-            positive_count AS (
-                SELECT f.marketplace_sku, f.cluster_name AS cluster, COUNT(DISTINCT f.snapshot_date) AS days
-                FROM stock_snapshot_fact f
-                JOIN complete_days d ON d.snapshot_date = f.snapshot_date
-                WHERE f.company_id = :companyId
-                  AND f.available > 0
-                GROUP BY f.marketplace_sku, f.cluster_name
             ),
             correction AS (
                 SELECT COUNT(*) >= :windowDays::int AS applied, COUNT(*)::int AS complete_days
