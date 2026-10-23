@@ -23,7 +23,7 @@ final readonly class DemandMatrixCellResponse
         public int $orders28,
         /** Штук в день × 1000 — без float в контракте. */
         public int $demandMilliPerDay,
-        /** Доля в заказах SKU по известным кластерам, базисные пункты; null — у ячейки без кластера. */
+        /** Доля в заказах SKU по известным кластерам, базисные пункты; null — у ячейки без кластера и когда у SKU нет заказов с известным кластером. */
         public ?int $shareBps,
         /** (заказы 7 дней ÷ 7) ÷ (заказы 28 дней ÷ 28), базисные пункты; null — меньше minSales заказов. */
         public ?int $trendBps,

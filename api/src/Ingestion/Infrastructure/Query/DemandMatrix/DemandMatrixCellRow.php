@@ -15,7 +15,7 @@ final readonly class DemandMatrixCellRow
         public int $orders28,
         /** Штук в день × 1000 — без float в контракте. */
         public int $demandMilliPerDay,
-        /** Доля в заказах SKU по известным кластерам; null — у ячейки без кластера. */
+        /** Доля в заказах SKU по известным кластерам, базисные пункты; null — у ячейки без кластера и когда у SKU нет заказов с известным кластером. */
         public ?int $shareBps,
         public ?int $trendBps,
         /** Полные дни окна без доступного остатка в кластере; > 0 — спрос занижен. */
