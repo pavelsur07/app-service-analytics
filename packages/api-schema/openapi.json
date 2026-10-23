@@ -2157,6 +2157,83 @@
                 }
             }
         },
+        "/api/companies/{companyId}/demand-matrix": {
+            "get": {
+                "operationId": "get_ingestion_demand_matrix_report",
+                "parameters": [
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "\u041f\u043e\u0434\u0441\u0442\u0440\u043e\u043a\u0430 \u0430\u0440\u0442\u0438\u043a\u0443\u043b\u0430 \u043f\u043b\u043e\u0449\u0430\u0434\u043a\u0438, \u0430\u0440\u0442\u0438\u043a\u0443\u043b\u0430 \u043f\u0440\u043e\u0434\u0430\u0432\u0446\u0430 \u0438\u043b\u0438 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044f",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 100
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 200,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u041c\u0430\u0442\u0440\u0438\u0446\u0430 \u0441\u043f\u0440\u043e\u0441\u0430 Ozon: SKU \u00d7 \u043a\u043b\u0430\u0441\u0442\u0435\u0440 \u043f\u043e\u043a\u0443\u043f\u0430\u0442\u0435\u043b\u044f",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DemandMatrixReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u043e\u0442\u0447\u0451\u0442\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/companies/{companyId}/localization": {
             "get": {
                 "operationId": "get_ingestion_localization_report",
@@ -5657,6 +5734,228 @@
                         "items": {
                             "$ref": "#/components/schemas/DeliverySpeedBucketResponse"
                         }
+                    }
+                },
+                "type": "object"
+            },
+            "DemandMatrixDefinitionsResponse": {
+                "required": [
+                    "windowDays",
+                    "middleDays",
+                    "shortDays",
+                    "windowEnd",
+                    "minSales",
+                    "excludedStatuses",
+                    "regionBasis",
+                    "periodBasis",
+                    "rounding"
+                ],
+                "properties": {
+                    "windowDays": {
+                        "type": "integer"
+                    },
+                    "middleDays": {
+                        "type": "integer"
+                    },
+                    "shortDays": {
+                        "type": "integer"
+                    },
+                    "windowEnd": {
+                        "title": "\u041f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0439 \u0434\u0435\u043d\u044c \u043e\u043a\u043e\u043d \u2014 \u0432\u0447\u0435\u0440\u0430 \u043f\u043e \u041c\u043e\u0441\u043a\u0432\u0435; \u0441\u0435\u0433\u043e\u0434\u043d\u044f\u0448\u043d\u0438\u0439 \u0435\u0449\u0451 \u043d\u0435 \u0437\u0430\u043a\u043e\u043d\u0447\u0438\u043b\u0441\u044f.",
+                        "type": "string"
+                    },
+                    "minSales": {
+                        "title": "\u041d\u0438\u0436\u0435 \u044d\u0442\u043e\u0433\u043e \u0447\u0438\u0441\u043b\u0430 \u0437\u0430\u043a\u0430\u0437\u043e\u0432 \u0437\u0430 windowDays \u0442\u0440\u0435\u043d\u0434 \u043d\u0435 \u0441\u0447\u0438\u0442\u0430\u0435\u0442\u0441\u044f.",
+                        "type": "integer"
+                    },
+                    "excludedStatuses": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "regionBasis": {
+                        "type": "string",
+                        "enum": [
+                            "buyer_cluster"
+                        ]
+                    },
+                    "periodBasis": {
+                        "type": "string",
+                        "enum": [
+                            "order_date_europe_moscow"
+                        ]
+                    },
+                    "rounding": {
+                        "type": "string",
+                        "enum": [
+                            "half_away_from_zero"
+                        ]
+                    }
+                },
+                "type": "object"
+            },
+            "DemandMatrixClusterResponse": {
+                "required": [
+                    "cluster",
+                    "orders28"
+                ],
+                "properties": {
+                    "cluster": {
+                        "title": "null \u2014 Ozon \u043d\u0435 \u043f\u0440\u0438\u0441\u043b\u0430\u043b \u043a\u043b\u0430\u0441\u0442\u0435\u0440 \u043f\u043e\u043a\u0443\u043f\u0430\u0442\u0435\u043b\u044f.",
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "orders28": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "DemandMatrixCellResponse": {
+                "required": [
+                    "cluster",
+                    "orders7",
+                    "orders14",
+                    "orders28",
+                    "demandMilliPerDay",
+                    "shareBps",
+                    "trendBps",
+                    "stockoutDays",
+                    "demandCensored"
+                ],
+                "properties": {
+                    "cluster": {
+                        "title": "null \u2014 Ozon \u043d\u0435 \u043f\u0440\u0438\u0441\u043b\u0430\u043b \u043a\u043b\u0430\u0441\u0442\u0435\u0440 \u043f\u043e\u043a\u0443\u043f\u0430\u0442\u0435\u043b\u044f.",
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "orders7": {
+                        "type": "integer"
+                    },
+                    "orders14": {
+                        "type": "integer"
+                    },
+                    "orders28": {
+                        "type": "integer"
+                    },
+                    "demandMilliPerDay": {
+                        "title": "\u0428\u0442\u0443\u043a \u0432 \u0434\u0435\u043d\u044c \u00d7 1000 \u2014 \u0431\u0435\u0437 float \u0432 \u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442\u0435.",
+                        "type": "integer"
+                    },
+                    "shareBps": {
+                        "title": "\u0414\u043e\u043b\u044f \u0432 \u0437\u0430\u043a\u0430\u0437\u0430\u0445 SKU \u043f\u043e \u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u043c \u043a\u043b\u0430\u0441\u0442\u0435\u0440\u0430\u043c, \u0431\u0430\u0437\u0438\u0441\u043d\u044b\u0435 \u043f\u0443\u043d\u043a\u0442\u044b; null \u2014 \u0443 \u044f\u0447\u0435\u0439\u043a\u0438 \u0431\u0435\u0437 \u043a\u043b\u0430\u0441\u0442\u0435\u0440\u0430.",
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "trendBps": {
+                        "title": "(\u0437\u0430\u043a\u0430\u0437\u044b 7 \u0434\u043d\u0435\u0439 \u00f7 7) \u00f7 (\u0437\u0430\u043a\u0430\u0437\u044b 28 \u0434\u043d\u0435\u0439 \u00f7 28), \u0431\u0430\u0437\u0438\u0441\u043d\u044b\u0435 \u043f\u0443\u043d\u043a\u0442\u044b; null \u2014 \u043c\u0435\u043d\u044c\u0448\u0435 minSales \u0437\u0430\u043a\u0430\u0437\u043e\u0432.",
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "stockoutDays": {
+                        "title": "\u041f\u043e\u043b\u043d\u044b\u0435 \u0434\u043d\u0438 \u043e\u043a\u043d\u0430 \u0431\u0435\u0437 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u043e\u0433\u043e \u043e\u0441\u0442\u0430\u0442\u043a\u0430 \u0432 \u043a\u043b\u0430\u0441\u0442\u0435\u0440\u0435.",
+                        "type": "integer"
+                    },
+                    "demandCensored": {
+                        "title": "\u0411\u044b\u043b\u0438 \u0434\u043d\u0438 \u0431\u0435\u0437 \u043e\u0441\u0442\u0430\u0442\u043a\u0430: \u0441\u043f\u0440\u043e\u0441 \u0432 \u044f\u0447\u0435\u0439\u043a\u0435 \u0437\u0430\u043d\u0438\u0436\u0435\u043d.",
+                        "type": "boolean"
+                    }
+                },
+                "type": "object"
+            },
+            "DemandMatrixItemResponse": {
+                "required": [
+                    "marketplaceSku",
+                    "offerId",
+                    "name",
+                    "orders7",
+                    "orders14",
+                    "orders28",
+                    "unknownClusterOrders28",
+                    "demandMilliPerDay",
+                    "trendBps",
+                    "cells"
+                ],
+                "properties": {
+                    "marketplaceSku": {
+                        "type": "string"
+                    },
+                    "offerId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "orders7": {
+                        "type": "integer"
+                    },
+                    "orders14": {
+                        "type": "integer"
+                    },
+                    "orders28": {
+                        "type": "integer"
+                    },
+                    "unknownClusterOrders28": {
+                        "title": "\u0417\u0430\u043a\u0430\u0437\u044b 28 \u0434\u043d\u0435\u0439 \u0431\u0435\u0437 \u043a\u043b\u0430\u0441\u0442\u0435\u0440\u0430 \u043f\u043e\u043a\u0443\u043f\u0430\u0442\u0435\u043b\u044f.",
+                        "type": "integer"
+                    },
+                    "demandMilliPerDay": {
+                        "title": "\u0428\u0442\u0443\u043a \u0432 \u0434\u0435\u043d\u044c \u00d7 1000 \u2014 \u0431\u0435\u0437 float \u0432 \u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442\u0435.",
+                        "type": "integer"
+                    },
+                    "trendBps": {
+                        "title": "\u0411\u0430\u0437\u0438\u0441\u043d\u044b\u0435 \u043f\u0443\u043d\u043a\u0442\u044b, 10000 \u2014 \u0431\u0435\u0437 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0439; null \u2014 \u043c\u0435\u043d\u044c\u0448\u0435 minSales \u0437\u0430\u043a\u0430\u0437\u043e\u0432.",
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "cells": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DemandMatrixCellResponse"
+                        }
+                    }
+                },
+                "type": "object"
+            },
+            "DemandMatrixReportResponse": {
+                "required": [
+                    "today",
+                    "definitions",
+                    "clusters",
+                    "incompleteSalesAccounts",
+                    "items",
+                    "nextCursor"
+                ],
+                "properties": {
+                    "today": {
+                        "type": "string"
+                    },
+                    "definitions": {
+                        "$ref": "#/components/schemas/DemandMatrixDefinitionsResponse"
+                    },
+                    "clusters": {
+                        "title": "\u041a\u043e\u043b\u043e\u043d\u043a\u0438: \u0431\u043e\u043b\u044c\u0448\u0435 \u0437\u0430\u043a\u0430\u0437\u043e\u0432 \u2014 \u043b\u0435\u0432\u0435\u0435, \u00ab\u043a\u043b\u0430\u0441\u0442\u0435\u0440 \u043d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u00bb \u2014 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0435\u0439. \u041e\u0434\u0438\u043d\u0430\u043a\u043e\u0432\u044b \u043d\u0430 \u0432\u0441\u0435\u0445 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0430\u0445.",
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DemandMatrixClusterResponse"
+                        }
+                    },
+                    "incompleteSalesAccounts": {
+                        "title": "\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f Ozon, \u0447\u044c\u0438 \u043f\u0440\u043e\u0434\u0430\u0436\u0438 \u043e\u043a\u043d\u0430 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d\u044b \u043d\u0435 \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e: \u0446\u0438\u0444\u0440\u044b \u043c\u043e\u0433\u0443\u0442 \u0431\u044b\u0442\u044c \u0437\u0430\u043d\u0438\u0436\u0435\u043d\u044b.",
+                        "type": "integer"
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DemandMatrixItemResponse"
+                        }
+                    },
+                    "nextCursor": {
+                        "type": "string",
+                        "nullable": true
                     }
                 },
                 "type": "object"

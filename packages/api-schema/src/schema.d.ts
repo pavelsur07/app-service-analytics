@@ -468,6 +468,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/demand-matrix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_demand_matrix_report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/localization": {
         parameters: {
             query?: never;
@@ -1224,6 +1240,69 @@ export interface components {
             items: components["schemas"]["DeliverySpeedSkuResponse"][];
             nextCursor: string | null;
             buyoutBySpeed: components["schemas"]["DeliverySpeedBucketResponse"][];
+        };
+        DemandMatrixDefinitionsResponse: {
+            windowDays: number;
+            middleDays: number;
+            shortDays: number;
+            /** Последний день окон — вчера по Москве; сегодняшний ещё не закончился. */
+            windowEnd: string;
+            /** Ниже этого числа заказов за windowDays тренд не считается. */
+            minSales: number;
+            excludedStatuses: string[];
+            /** @enum {string} */
+            regionBasis: "buyer_cluster";
+            /** @enum {string} */
+            periodBasis: "order_date_europe_moscow";
+            /** @enum {string} */
+            rounding: "half_away_from_zero";
+        };
+        DemandMatrixClusterResponse: {
+            /** null — Ozon не прислал кластер покупателя. */
+            cluster: string | null;
+            orders28: number;
+        };
+        DemandMatrixCellResponse: {
+            /** null — Ozon не прислал кластер покупателя. */
+            cluster: string | null;
+            orders7: number;
+            orders14: number;
+            orders28: number;
+            /** Штук в день × 1000 — без float в контракте. */
+            demandMilliPerDay: number;
+            /** Доля в заказах SKU по известным кластерам, базисные пункты; null — у ячейки без кластера. */
+            shareBps: number | null;
+            /** (заказы 7 дней ÷ 7) ÷ (заказы 28 дней ÷ 28), базисные пункты; null — меньше minSales заказов. */
+            trendBps: number | null;
+            /** Полные дни окна без доступного остатка в кластере. */
+            stockoutDays: number;
+            /** Были дни без остатка: спрос в ячейке занижен. */
+            demandCensored: boolean;
+        };
+        DemandMatrixItemResponse: {
+            marketplaceSku: string;
+            offerId: string | null;
+            name: string | null;
+            orders7: number;
+            orders14: number;
+            orders28: number;
+            /** Заказы 28 дней без кластера покупателя. */
+            unknownClusterOrders28: number;
+            /** Штук в день × 1000 — без float в контракте. */
+            demandMilliPerDay: number;
+            /** Базисные пункты, 10000 — без изменений; null — меньше minSales заказов. */
+            trendBps: number | null;
+            cells: components["schemas"]["DemandMatrixCellResponse"][];
+        };
+        DemandMatrixReportResponse: {
+            today: string;
+            definitions: components["schemas"]["DemandMatrixDefinitionsResponse"];
+            /** Колонки: больше заказов — левее, «кластер не указан» — последней. Одинаковы на всех страницах. */
+            clusters: components["schemas"]["DemandMatrixClusterResponse"][];
+            /** Подключения Ozon, чьи продажи окна загружены не полностью: цифры могут быть занижены. */
+            incompleteSalesAccounts: number;
+            items: components["schemas"]["DemandMatrixItemResponse"][];
+            nextCursor: string | null;
         };
         LocalizationDefinitionsResponse: {
             /**
@@ -3039,6 +3118,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeliverySpeedReportResponse"];
+                };
+            };
+            /** @description Пользователь не состоит в этой компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Некорректные параметры отчёта */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_demand_matrix_report: {
+        parameters: {
+            query?: {
+                /** @description Подстрока артикула площадки, артикула продавца или названия */
+                search?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Матрица спроса Ozon: SKU × кластер покупателя */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemandMatrixReportResponse"];
                 };
             };
             /** @description Пользователь не состоит в этой компании */
