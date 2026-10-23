@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Query\DemandMatrix;
 
+use App\Ingestion\Infrastructure\Query\Demand\DemandSql;
 use App\Ingestion\Infrastructure\Query\Demand\StockoutSql;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
@@ -13,10 +14,14 @@ use Doctrine\DBAL\Query\QueryBuilder;
  * Ячейки матрицы для SKU одной страницы — одним запросом, не в цикле.
  *
  * Сетка — SKU страницы × кластеры покупателя со спросом компании.
- * Ячейка отдаётся, если в ней были заказы или дни нулевого остатка:
- * пустая ячейка, где товара не было, — «спрос неизвестен», а не «спроса
- * нет» (план, решение 3). Ячейка без кластера — только с заказами:
- * остаток по неизвестному кластеру не бывает.
+ * Ячейка отдаётся, если в ней были заказы окна, или если товар здесь
+ * когда-либо продавался, а в окне были дни без товара: пустая ячейка
+ * там — «спрос неизвестен», а не «спроса нет» (план, решение 3). Где
+ * товар не продавался никогда, пустая ячейка с дефицитом не отдаётся:
+ * на проде такие пометки покрывали почти всю сетку и перестали что-либо
+ * значить (решение владельца 2026-10-23).
+ * Ячейка без кластера — только с заказами: остаток по неизвестному
+ * кластеру не бывает.
  */
 final readonly class DemandMatrixCellQuery
 {
@@ -30,6 +35,7 @@ final readonly class DemandMatrixCellQuery
     public function build(string $companyId, \DateTimeImmutable $today, array $skus): QueryBuilder
     {
         $rate = DemandMatrixSql::rateSelect('g');
+        $soldBefore = DemandSql::everSoldClustersCte();
         $source = 'WITH '.DemandMatrixSql::aggregatesCte().', '.StockoutSql::cte().<<<SQL
             ,
             page AS (
@@ -40,19 +46,22 @@ final readonly class DemandMatrixCellQuery
             clusters AS (
                 SELECT DISTINCT cluster FROM demand_lines WHERE cluster IS NOT NULL
             ),
+            {$soldBefore},
             grid AS (
                 SELECT p.marketplace_sku, c.cluster, p.known_orders28,
                        COALESCE(b.orders7, 0) AS orders7,
                        COALESCE(b.orders14, 0) AS orders14,
                        COALESCE(b.orders28, 0) AS orders28,
-                       GREATEST(0, COALESCE(rc.days, 0) - COALESCE(pc.days, 0))::int AS stockout_days
+                       GREATEST(0, COALESCE(rc.days, 0) - COALESCE(pc.days, 0))::int AS stockout_days,
+                       (es.marketplace_sku IS NOT NULL) AS ever_sold
                 FROM page p
                 CROSS JOIN clusters c
                 LEFT JOIN by_cell b ON b.marketplace_sku = p.marketplace_sku AND b.cluster = c.cluster
                 LEFT JOIN requested_count rc ON rc.marketplace_sku = p.marketplace_sku
                 LEFT JOIN positive_count pc ON pc.marketplace_sku = p.marketplace_sku AND pc.cluster = c.cluster
+                LEFT JOIN ever_sold es ON es.marketplace_sku = p.marketplace_sku AND es.cluster = c.cluster
                 UNION ALL
-                SELECT p.marketplace_sku, NULL, p.known_orders28, b.orders7, b.orders14, b.orders28, 0
+                SELECT p.marketplace_sku, NULL, p.known_orders28, b.orders7, b.orders14, b.orders28, 0, true
                 FROM page p
                 JOIN by_cell b ON b.marketplace_sku = p.marketplace_sku AND b.cluster IS NULL
             )
@@ -62,7 +71,7 @@ final readonly class DemandMatrixCellQuery
                    END AS share_bps,
                    {$rate}
             FROM grid g
-            WHERE g.orders28 > 0 OR g.stockout_days > 0
+            WHERE g.orders28 > 0 OR (g.stockout_days > 0 AND g.ever_sold)
             SQL;
 
         return $this->connection->createQueryBuilder()

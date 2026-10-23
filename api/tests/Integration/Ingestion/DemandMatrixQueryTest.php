@@ -34,6 +34,7 @@ final class DemandMatrixQueryTest extends KernelTestCase
     private const string OMSK = 'Омск';
     private const string KAZAN = 'Казань';
     private const string MOSCOW = 'Москва, МО и Дальние регионы';
+    private const string EKATERINBURG = 'Екатеринбург';
 
     private Uuid $companyId;
     private Uuid $accountId;
@@ -108,12 +109,19 @@ final class DemandMatrixQueryTest extends KernelTestCase
         self::assertNull($skus['B']->trendBps);
     }
 
-    public function testStockoutDaysMarkCellsIncludingEmptyOnes(): void
+    public function testStockoutDaysMarkCellsWhereTheSkuEverSold(): void
     {
         $this->sale('A', 3, clusterTo: self::OMSK);
         $this->sale('A', 1, clusterTo: self::KAZAN);
-        // B даёт компании кластер «Москва»; у A там заказов нет.
+        // B даёт компании кластеры «Москва» и «Екатеринбург»; у A там
+        // заказов в окне нет.
         $this->sale('B', 1, clusterTo: self::MOSCOW);
+        $this->sale('B', 1, clusterTo: self::EKATERINBURG);
+        // A продавался в Москве до окна; в Екатеринбурге — только
+        // отменённый заказ и заказ другой компании.
+        $this->sale('A', 2, day: '2026-07-01', clusterTo: self::MOSCOW);
+        $this->sale('A', 1, day: '2026-07-01', status: 'cancelled', clusterTo: self::EKATERINBURG);
+        $this->sale('A', 1, day: '2026-07-01', clusterTo: self::EKATERINBURG, company: Uuid::v7());
         // Остаток A только в Омске, два полных дня; B в снимок не запрошен.
         foreach (['2026-09-24', self::YESTERDAY] as $day) {
             $this->snapshot($this->accountId, $day, [$this->stock('A', self::OMSK, $day)], ['A']);
@@ -122,11 +130,14 @@ final class DemandMatrixQueryTest extends KernelTestCase
         $cells = $this->cells('A');
         self::assertSame(0, $cells[self::OMSK]->stockoutDays);
         self::assertSame(2, $cells[self::KAZAN]->stockoutDays);
-        // Пустая ячейка с дефицитом — «спрос неизвестен», не «спроса нет».
+        // Пустая ячейка с дефицитом там, где товар продавался, — «спрос
+        // неизвестен», не «спроса нет».
         self::assertSame(0, $cells[self::MOSCOW]->orders28);
         self::assertSame(2, $cells[self::MOSCOW]->stockoutDays);
+        // Где не продавался никогда, пустой ячейки нет.
+        self::assertArrayNotHasKey(self::EKATERINBURG, $cells);
         // Без снимка дефицита нет — ячеек без заказов тоже.
-        self::assertSame([self::MOSCOW], array_keys($this->cells('B')));
+        self::assertEqualsCanonicalizing([self::MOSCOW, self::EKATERINBURG], array_keys($this->cells('B')));
     }
 
     public function testDayWithoutACompleteSnapshotIsNotAStockoutDay(): void

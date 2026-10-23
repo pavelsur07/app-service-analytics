@@ -75,8 +75,9 @@
   `marketplaceSku`, `orders7/14/28`, `demandMilliPerDay`, `trendBps`,
   `cells[]` — `{cluster, orders7, orders14, orders28, demandMilliPerDay,
   shareBps, trendBps, stockoutDays, demandCensored}`; ячейка отдаётся,
-  если в ней были заказы или дни нулевого остатка (пустая ячейка, где
-  товара не было, — «спрос неизвестен», а не «спроса нет»).
+  если в ней были заказы или — там, где SKU когда-либо продавался, — дни
+  нулевого остатка (пустая ячейка, где товара не было, — «спрос
+  неизвестен», а не «спроса нет»).
 - `nextCursor` — keyset по `(orders28, marketplaceSku)`; лимит 50 по
   умолчанию, максимум 200, превышение — 422. `COUNT(*)` нет.
 - `definitions` — окна, `MIN_SALES`, исключённые статусы, база региона

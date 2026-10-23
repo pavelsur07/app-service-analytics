@@ -146,8 +146,8 @@ function MatrixCell({ cell }: { cell: Cell | undefined }) {
   }
   const censored = cell.stockoutDays > 0
 
-  // Ячейка без заказов, где товара не было, — «спрос неизвестен»,
-  // а не ноль: где товара нет, там нет и продаж.
+  // Ячейка без заказов, где товар раньше продавался, а сейчас его не было, —
+  // «спрос неизвестен», а не ноль: где товара нет, там нет и продаж.
   if (cell.orders28 === 0) {
     return (
       <td className={`${NUMBER} text-warning-text`} title={cellTitle(cell)}>

@@ -44,6 +44,27 @@ final class DemandSql
             SQL;
     }
 
+    /**
+     * CTE `ever_sold`: пары SKU × кластер покупателя страницы, где SKU
+     * продавался за всю историю компании (по тому же определению продажи).
+     * Параметры: :companyId, :skus (список SKU страницы).
+     */
+    public static function everSoldClustersCte(): string
+    {
+        $excluded = implode(', ', array_map(static fn (string $status): string => "'{$status}'", self::EXCLUDED_STATUSES));
+
+        return <<<SQL
+            ever_sold AS (
+                SELECT DISTINCT marketplace_sku, cluster_to AS cluster
+                FROM sales_fact
+                WHERE company_id = :companyId
+                  AND marketplace_sku IN (:skus)
+                  AND cluster_to IS NOT NULL
+                  AND status NOT IN ({$excluded})
+            )
+            SQL;
+    }
+
     private function __construct()
     {
     }
