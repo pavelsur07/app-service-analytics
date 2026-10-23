@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   formatCoverDays,
-  formatDemand,
   formatOzonRate,
   formatUnits,
   NO_DATA,
@@ -13,14 +12,6 @@ describe('форматирование остатков', () => {
     expect(formatUnits(null)).toBe(NO_DATA)
     expect(formatUnits(0)).toBe('0')
     expect(formatUnits(1250)).toBe('1 250')
-  })
-
-  it('спрос из тысячных долей штуки в день', () => {
-    expect(formatDemand(1500)).toBe('1,5 шт/дн')
-    // Одна продажа за 28 дней — 36 тысячных: не ноль.
-    expect(formatDemand(36)).toBe('<0,1 шт/дн')
-    expect(formatDemand(50)).toBe('0,1 шт/дн')
-    expect(formatDemand(0)).toBe('0 шт/дн')
   })
 
   it('покрытие в днях; без спроса — прочерк', () => {

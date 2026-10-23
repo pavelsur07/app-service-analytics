@@ -1,9 +1,9 @@
 import { Badge } from '../../../../../../packages/ui/src'
 import type { components } from '../../../api/schema'
+import { formatDemand } from '../../../shared/lib/formatDemand'
 import { formatLostTime } from '../../../shared/lib/formatLostTime'
 import {
   formatCoverDays,
-  formatDemand,
   formatOzonRate,
   formatUnits,
   NO_DATA,

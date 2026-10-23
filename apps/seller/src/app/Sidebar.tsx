@@ -1,5 +1,6 @@
 import {
   Calculator,
+  Grid3x3,
   TrendingDown,
   LogOut,
   MapPinned,
@@ -57,6 +58,7 @@ const ITEMS = [
   { to: 'localization?days=30', label: 'Локализация', icon: MapPinned },
   { to: 'delivery-speed?days=30', label: 'Доставка', icon: Truck },
   { to: 'stock-placement', label: 'Остатки', icon: Warehouse },
+  { to: 'demand-matrix', label: 'Спрос', icon: Grid3x3 },
   { to: 'unit-economics', label: 'Экономика', icon: Calculator },
   { to: 'costs', label: 'Себестоимость', icon: Tag },
   { to: 'sales-plans', label: 'План продаж', icon: Target },

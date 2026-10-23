@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Query\StockPlacement;
 
 use App\Ingestion\Infrastructure\Query\DeliverySpeed\DeliverySpeedSql;
+use App\Ingestion\Infrastructure\Query\Demand\DemandSql;
+use App\Ingestion\Infrastructure\Query\Demand\StockoutSql;
 
 /**
  * Рекомендация раскладки остатков Ozon FBO по кластерам
@@ -20,9 +22,9 @@ use App\Ingestion\Infrastructure\Query\DeliverySpeed\DeliverySpeedSql;
  *   (ADR-034), и строка получает статус unknown_stock без остатка, товара
  *   в пути и рекомендации. Подключение без свежего снимка своих SKU не
  *   подтверждает — месячный остаток за текущий не идёт.
- * - Спрос — продажи по кластеру доставки за DEMAND_WINDOW_DAYS полных
- *   дней, заканчивая вчерашним (сегодняшний ещё не закончился), без
- *   отменённых. Поправка на дефицит — дни, когда полный снимок показывает
+ * - Спрос — продажи по кластеру покупателя за DEMAND_WINDOW_DAYS полных
+ *   дней, заканчивая вчерашним (сегодняшний ещё не закончился); что
+ *   считается продажей — DemandSql, общий с матрицей спроса. Поправка на дефицит — дни, когда полный снимок показывает
  *   ноль (SKU в запросе дня, строк с остатком в кластере нет), исключаются
  *   из знаменателя; только когда полных дней снимков — все DEMAND_WINDOW_DAYS,
  *   иначе без поправки (решение 6). День без полного снимка — неизвестный.
@@ -55,20 +57,7 @@ final class StockPlacementSql
      */
     public static function placementCte(): string
     {
-        return <<<'SQL'
-            stock_runs AS MATERIALIZED (
-                SELECT marketplace_account_id, snapshot_date, requested_skus
-                FROM stock_snapshot_run
-                WHERE company_id = :companyId
-                  AND started_at IS NOT NULL
-                  AND snapshot_date BETWEEN :demandFrom AND :windowEnd
-            ),
-            complete_days AS (
-                SELECT snapshot_date
-                FROM stock_runs
-                GROUP BY snapshot_date
-                HAVING COUNT(DISTINCT marketplace_account_id) = (SELECT COUNT(DISTINCT marketplace_account_id) FROM stock_runs)
-            ),
+        return DemandSql::linesCte().', '.StockoutSql::cte().', '.<<<'SQL'
             last_run AS (
                 SELECT DISTINCT ON (marketplace_account_id) marketplace_account_id, snapshot_date
                 FROM stock_snapshot_run
@@ -88,10 +77,7 @@ final class StockPlacementSql
             ),
             sku_accounts AS (
                 SELECT DISTINCT marketplace_account_id, marketplace_sku
-                FROM sales_fact
-                WHERE company_id = :companyId
-                  AND business_date BETWEEN :demandFrom AND :windowEnd
-                  AND status <> 'cancelled'
+                FROM demand_lines
                 UNION
                 SELECT DISTINCT r.marketplace_account_id, sku.value
                 FROM stock_runs r
@@ -133,28 +119,10 @@ final class StockPlacementSql
                 GROUP BY f.marketplace_sku, f.cluster_name
             ),
             demand_sales AS (
-                SELECT marketplace_sku, cluster_to AS cluster, SUM(quantity)::bigint AS sold
-                FROM sales_fact
-                WHERE company_id = :companyId
-                  AND business_date BETWEEN :demandFrom AND :windowEnd
-                  AND status <> 'cancelled'
-                  AND cluster_to IS NOT NULL
-                GROUP BY marketplace_sku, cluster_to
-            ),
-            requested_count AS (
-                SELECT sku.value AS marketplace_sku, COUNT(DISTINCT r.snapshot_date) AS days
-                FROM stock_runs r
-                JOIN complete_days d ON d.snapshot_date = r.snapshot_date
-                CROSS JOIN LATERAL jsonb_array_elements_text(r.requested_skus) AS sku(value)
-                GROUP BY sku.value
-            ),
-            positive_count AS (
-                SELECT f.marketplace_sku, f.cluster_name AS cluster, COUNT(DISTINCT f.snapshot_date) AS days
-                FROM stock_snapshot_fact f
-                JOIN complete_days d ON d.snapshot_date = f.snapshot_date
-                WHERE f.company_id = :companyId
-                  AND f.available > 0
-                GROUP BY f.marketplace_sku, f.cluster_name
+                SELECT marketplace_sku, cluster, SUM(quantity)::bigint AS sold
+                FROM demand_lines
+                WHERE cluster IS NOT NULL
+                GROUP BY marketplace_sku, cluster
             ),
             correction AS (
                 SELECT COUNT(*) >= :windowDays::int AS applied, COUNT(*)::int AS complete_days
