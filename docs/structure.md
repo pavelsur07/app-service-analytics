@@ -508,6 +508,9 @@ apps/seller/
 Бэкенд — `Ingestion/Infrastructure/Query/StockPlacement`, источник и снимки —
 ADR-034, план — `docs/plan/ozon-stock-placement-report.md`. Форматирование
 потерянных часов ожидания общее с «Доставкой» — `shared/lib/formatLostTime.ts`.
+Что считается спросом (кластер покупателя, без отменённых) — единственное
+определение в `Ingestion/Infrastructure/Query/Demand/DemandSql`, общее
+с матрицей спроса (`docs/plan/ozon-demand-matrix-report.md`).
 
 Главная — `apps/seller/src/features/dashboard/` (`/dashboard`, стартовая
 страница компании): виджеты показателей кабинета за период с изменением
