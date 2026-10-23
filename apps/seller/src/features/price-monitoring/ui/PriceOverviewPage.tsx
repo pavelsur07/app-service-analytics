@@ -3,6 +3,7 @@ import { useParams } from 'react-router'
 
 import { Badge, Card, StatusPanel } from '../../../../../../packages/ui/src'
 import { formatMinorAmount } from '../../../shared/lib/formatMinorAmount'
+import { ozonProductUrl } from '../../../shared/lib/ozonProductUrl'
 import { coInvestmentView, observedAgo } from '../lib/coInvestment'
 import {
   usePriceOverview,
@@ -104,14 +105,30 @@ function PriceRow({ item }: { item: PriceOverviewItem }) {
   // её отсутствие означает, что цен нет вовсе, и показывать нечего.
   // Подставленный RUB однажды украсил бы прочерк чужой валютой.
   const { currency } = item
+  const productUrl = ozonProductUrl(item.marketplaceSku)
+  const name = item.name?.trim() || item.marketplaceSku
   const view = coInvestmentView(item.coInvestmentMinor, item.sellerPriceMinor)
   const waiting = null === item.observedAt || undefined === item.observedAt
 
   return (
     <tr className="border-t border-border-subtle">
       <td className="py-2 pr-3">
-        <div>{item.name ?? item.marketplaceSku}</div>
-        {null !== item.name && undefined !== item.name && (
+        <div>
+          {productUrl === null ? (
+            name
+          ) : (
+            <a
+              className="text-accent-default underline hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-default"
+              href={productUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Открыть товар на Ozon (в новой вкладке)"
+            >
+              {name}
+            </a>
+          )}
+        </div>
+        {name !== item.marketplaceSku && (
           <div className="text-xs text-text-muted">{item.marketplaceSku}</div>
         )}
       </td>
