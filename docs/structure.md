@@ -496,6 +496,11 @@ apps/seller/
 доля локальных продаж по кластерам Ozon и логистика на штуку. Бэкенд —
 `Ingestion/Infrastructure/Query/Localization`, план и определения —
 `docs/plan/ozon-localization-report.md`.
+Раздел «Локализация» — один пункт меню с вкладками «Спрос | Кластеры
+доставки | Что куда довезти» (`?view=demand|clusters|items`, по умолчанию
+спрос). Вкладки собирает `app/LocalizationSection.tsx`: фичи друг друга
+не импортируют, каждая отдаёт панель без заголовка страницы
+(`DemandMatrixReport`, `LocalizationReport`).
 
 Отчёт «Доставка» — `apps/seller/src/features/delivery-speed/` (`/delivery-speed`):
 время от заказа до прибытия по кластерам и маршрутам, потерянные дни ожидания
@@ -512,7 +517,9 @@ ADR-034, план — `docs/plan/ozon-stock-placement-report.md`. Формати
 определение в `Ingestion/Infrastructure/Query/Demand/DemandSql`, дни без
 товара в кластере — `Demand/StockoutSql`; оба общие с матрицей спроса.
 
-Отчёт «Спрос» — `apps/seller/src/features/demand-matrix/` (`/demand-matrix`):
+Отчёт «Спрос» — `apps/seller/src/features/demand-matrix/`, вкладка раздела
+«Локализация» (`/localization?view=demand`; старый `/demand-matrix`
+перенаправляет туда):
 матрица товар × кластер покупателя — заказы за 7/14/28 дней, спрос в день,
 доля кластера, тренд 7 к 28, пометка дней без товара. Бэкенд —
 `Ingestion/Infrastructure/Query/DemandMatrix`, сценарий —

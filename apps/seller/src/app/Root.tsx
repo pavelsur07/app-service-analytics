@@ -6,7 +6,6 @@ import { ConfirmEmailPage } from '../features/auth/ui/ConfirmEmailPage'
 import { BuyoutRatePage } from '../features/buyout-rate/ui/BuyoutRatePage'
 import { DashboardPage } from '../features/dashboard/ui/DashboardPage'
 import { DeliverySpeedPage } from '../features/delivery-speed/ui/DeliverySpeedPage'
-import { LocalizationPage } from '../features/localization/ui/LocalizationPage'
 import { EmailSentPage } from '../features/auth/ui/EmailSentPage'
 import { ForgotPasswordPage } from '../features/auth/ui/ForgotPasswordPage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
@@ -24,9 +23,12 @@ import { SalesFactsPage } from '../features/ingestion/ui/SalesFactsPage'
 import { SignUpPage } from '../features/auth/ui/SignUpPage'
 import { SkuForecastFactPage } from '../features/sku-forecast-fact/ui/SkuForecastFactPage'
 import { StockPlacementPage } from '../features/stock-placement/ui/StockPlacementPage'
-import { DemandMatrixPage } from '../features/demand-matrix/ui/DemandMatrixPage'
 import { UnitEconomicsPage } from '../features/unit-economics/ui/UnitEconomicsPage'
 import { CompanyLayout } from './CompanyLayout'
+import {
+  DemandMatrixRedirect,
+  LocalizationSection,
+} from './LocalizationSection'
 import { RequireAuth } from './RequireAuth'
 
 // retry: false — TanStack Query по умолчанию повторяет неудачный запрос
@@ -78,10 +80,10 @@ const router = createBrowserRouter([
       { path: 'sales', element: <SalesFactsPage /> },
       { path: 'redemption', element: <BuyoutRatePage /> },
       { path: 'sku-forecast-fact', element: <SkuForecastFactPage /> },
-      { path: 'localization', element: <LocalizationPage /> },
+      { path: 'localization', element: <LocalizationSection /> },
       { path: 'delivery-speed', element: <DeliverySpeedPage /> },
       { path: 'stock-placement', element: <StockPlacementPage /> },
-      { path: 'demand-matrix', element: <DemandMatrixPage /> },
+      { path: 'demand-matrix', element: <DemandMatrixRedirect /> },
       { path: 'extension', element: <ExtensionConnectPage /> },
       { path: 'connections', element: <ConnectionsPage /> },
       { path: 'coverage', element: <DataCoveragePage /> },
