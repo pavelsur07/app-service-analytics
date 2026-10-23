@@ -79,7 +79,9 @@ final class ShowDemandMatrixReportControllerTest extends WebTestCase
         yield 'limit zero' => ['limit=0', 'invalid_limit'];
         yield 'limit above maximum' => ['limit=201', 'invalid_limit'];
         yield 'search too long' => ['search='.str_repeat('я', 101), 'invalid_search'];
+        yield 'search as array' => ['search[]=a', 'invalid_search'];
         yield 'garbage cursor' => ['cursor=%%%', 'invalid_cursor'];
+        yield 'cursor as array' => ['cursor[]=a', 'invalid_cursor'];
         yield 'cursor of another search' => ['search=b&cursor='.$cursor($today, 'a'), 'invalid_cursor'];
         yield 'cursor of an old day' => ['cursor='.$cursor('2026-01-01', ''), 'invalid_cursor'];
     }

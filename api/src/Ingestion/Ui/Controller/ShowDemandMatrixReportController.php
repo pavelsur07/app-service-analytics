@@ -50,7 +50,10 @@ final class ShowDemandMatrixReportController
     #[OA\Response(response: 422, description: 'Некорректные параметры отчёта', content: new Model(type: ValidationErrorResponse::class))]
     public function __invoke(string $companyId, Request $request): JsonResponse
     {
-        $search = $request->query->get('search', '');
+        // all(), а не get(): get() на массиве (`search[]=x`) бросает 400
+        // до проверки типа, а неверный ввод здесь — стабильный 422.
+        $query = $request->query->all();
+        $search = $query['search'] ?? '';
         if (!\is_string($search) || mb_strlen($search) > self::MAX_SEARCH_LENGTH) {
             return self::invalid('invalid_search', 'search is longer than 100 characters.');
         }
@@ -61,8 +64,9 @@ final class ShowDemandMatrixReportController
 
         $today = (new \DateTimeImmutable('now', new \DateTimeZone(self::TIMEZONE)))->setTime(0, 0);
         $cursor = null;
-        if ($request->query->has('cursor')) {
-            $cursor = DemandMatrixCursor::decode((string) $request->query->get('cursor'));
+        if (\array_key_exists('cursor', $query)) {
+            $rawCursor = $query['cursor'];
+            $cursor = \is_string($rawCursor) ? DemandMatrixCursor::decode($rawCursor) : null;
             // Курсор того же расчёта: день (сегодня или вчера — после
             // полуночи страницу продолжают в том же дне) и поиск.
             if (

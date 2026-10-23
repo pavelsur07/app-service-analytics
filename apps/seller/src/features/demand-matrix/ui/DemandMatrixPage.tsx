@@ -35,6 +35,14 @@ export function DemandMatrixPage() {
   const cursor = rawCursor === '' ? null : rawCursor
   const viewKey = `${companyId ?? ''}:${search}`
   const [searchInput, setSearchInput] = useState(search)
+  // Поле следует за адресом: переход по меню или ссылке с другим поиском
+  // не перемонтирует страницу, и без этого поле показывало бы прежний
+  // текст при запросе по новому.
+  const [syncedSearch, setSyncedSearch] = useState(search)
+  if (syncedSearch !== search) {
+    setSyncedSearch(search)
+    setSearchInput(search)
+  }
   const [stack, setStack] = useState<CursorStack>({
     key: viewKey,
     cursors: [cursor],

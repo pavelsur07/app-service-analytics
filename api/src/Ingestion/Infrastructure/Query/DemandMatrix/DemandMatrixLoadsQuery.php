@@ -12,9 +12,11 @@ use Doctrine\DBAL\Types\Types;
 
 /**
  * Полнота загрузки продаж окна матрицы по подключениям (ADR-038):
- * успешно ли загружен вчерашний день после своего окончания и нет ли
- * в окне отказавших дней. Вчера перезагружается каждым тиком, поэтому
- * успех после полуночи значит, что день загружен целиком.
+ * у каждого дня окна последний прогон успешен, а вчерашний день загружен
+ * успешно после своего окончания. Вчера перезагружается каждым тиком,
+ * поэтому успех после полуночи значит, что день загружен целиком. День
+ * без отметки — не загруженный: его не грузили или прогон оборвался
+ * до отметки (окно 28 дней целиком после ADR-038, рескан — 30 дней).
  *
  * Company-scoped, по первичному ключу отметок; строк не больше, чем
  * подключений в списке.
@@ -40,7 +42,7 @@ final readonly class DemandMatrixLoadsQuery
             ->select(
                 'marketplace_account_id',
                 'BOOL_OR(period = :windowEnd AND failed_at IS NULL AND completed_at >= :dayEnd) AS last_day_complete',
-                'BOOL_OR(failed_at IS NOT NULL) AS has_failed_day',
+                'COUNT(DISTINCT period) FILTER (WHERE failed_at IS NULL AND completed_at IS NOT NULL) AS complete_days',
             )
             ->from('marketplace_day_load')
             ->where('company_id = :companyId')
@@ -57,8 +59,9 @@ final readonly class DemandMatrixLoadsQuery
     }
 
     /**
-     * Подключения из списка, чьи продажи окна загружены не полностью;
-     * подключение без единой отметки в окне — тоже.
+     * Подключения из списка, чьи продажи окна загружены не полностью:
+     * хотя бы один день окна без успешной отметки или вчера не загружено
+     * после полуночи. Подключение без единой отметки в окне — тоже.
      *
      * @param list<string>               $accountIds
      * @param list<array<string, mixed>> $rows
@@ -67,7 +70,7 @@ final readonly class DemandMatrixLoadsQuery
     {
         $complete = [];
         foreach ($rows as $row) {
-            if (true === $row['last_day_complete'] && true !== $row['has_failed_day']) {
+            if (true === $row['last_day_complete'] && DemandMatrixSql::int($row['complete_days']) >= DemandMatrixSql::WINDOW_DAYS) {
                 $complete[DemandMatrixSql::string($row['marketplace_account_id'])] = true;
             }
         }

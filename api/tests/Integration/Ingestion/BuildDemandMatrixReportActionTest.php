@@ -78,11 +78,19 @@ final class BuildDemandMatrixReportActionTest extends KernelTestCase
     }
 
     /**
-     * @param list<array{string, ?string, bool}> $marks период, момент UTC (null — сейчас), отказ
+     * Каждый случай — поверх успешно загруженных дней окна, кроме вчера:
+     * 29 августа … 24 сентября, отмечены после окончания дня.
+     *
+     * @param list<array{string, ?string, bool}> $marks период, момент UTC (null — после полуночи), отказ
      */
     #[DataProvider('loads')]
-    public function testIncompleteSalesAccounts(array $marks, int $expected): void
+    public function testIncompleteSalesAccounts(array $marks, int $expected, bool $fullWindow = true): void
     {
+        if ($fullWindow) {
+            for ($day = new \DateTimeImmutable('2026-08-29'); $day < new \DateTimeImmutable(self::YESTERDAY); $day = $day->modify('+1 day')) {
+                $marks = [[$day->format('Y-m-d'), null, false], ...$marks];
+            }
+        }
         foreach ($marks as [$period, $at, $failed]) {
             $mark = MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
                 ->withCompanyId($this->companyId)
@@ -101,7 +109,8 @@ final class BuildDemandMatrixReportActionTest extends KernelTestCase
     {
         yield 'yesterday loaded after it ended' => [[[self::YESTERDAY, null, false]], 0];
         yield 'yesterday loaded only before it ended' => [[[self::YESTERDAY, self::BEFORE_DAY_END_UTC, false]], 1];
-        yield 'no mark at all' => [[], 1];
+        yield 'no mark at all' => [[], 1, false];
+        yield 'a day of the window without a mark' => [[[self::YESTERDAY, null, false]], 1, false];
         yield 'yesterday failed after success' => [[[self::YESTERDAY, null, false], [self::YESTERDAY, '2026-09-25 22:00:00', true]], 1];
         yield 'a failed day inside the window' => [[[self::YESTERDAY, null, false], ['2026-09-10', null, true]], 1];
         yield 'a failed day before the window' => [[[self::YESTERDAY, null, false], ['2026-08-28', null, true]], 0];
