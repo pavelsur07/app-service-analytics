@@ -15,10 +15,8 @@ import {
   LOCALIZATION_WINDOWS,
   localizationSearchWithCursor,
   localizationSearchWithDays,
-  localizationSearchWithView,
   type LocalizationView,
   parseLocalizationDays,
-  parseLocalizationView,
 } from '../lib/localizationParams'
 import {
   type LocalizationReportResponse,
@@ -33,22 +31,24 @@ import {
 // целиком, а длинный хвост с малыми штуками уходит на следующие страницы.
 const PAGE_SIZE = 20
 
-const TABS: { view: LocalizationView; label: string }[] = [
-  { view: 'clusters', label: 'Кластеры доставки' },
-  { view: 'items', label: 'Что куда довезти' },
-]
-
 interface CursorStack {
   key: string
   cursors: (string | null)[]
 }
 
-export function LocalizationPage() {
+/**
+ * Вкладки «Кластеры доставки» и «Что куда довезти» раздела «Локализация»;
+ * заголовок и переключатель вкладок — app/LocalizationSection.
+ */
+export function LocalizationReport({
+  view,
+}: {
+  view: Exclude<LocalizationView, 'demand'>
+}) {
   const navigate = useNavigate()
   const { companyId } = useParams<{ companyId: string }>()
   const [search, setSearch] = useSearchParams()
   const days = parseLocalizationDays(search.get('days'))
-  const view = parseLocalizationView(search.get('view'))
   const rawCursor = search.get('cursor')
   const cursor = rawCursor === '' ? null : rawCursor
   const viewKey = `${companyId ?? ''}:${days}`
@@ -107,10 +107,9 @@ export function LocalizationPage() {
     cursor !== null
 
   return (
-    <section className="flex flex-col gap-4">
-      <header className="flex flex-wrap items-start justify-between gap-3">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h1 className="text-xl font-semibold">Локализация</h1>
           <p className="max-w-3xl text-sm text-text-muted">
             Локальная продажа — товар отгружен из того же кластера Ozon, куда
             его доставляют. Считаются штуки по дате заказа, кроме отменённых;
@@ -138,7 +137,7 @@ export function LocalizationPage() {
             </Button>
           ))}
         </div>
-      </header>
+      </div>
 
       {query.status === 'pending' ? (
         <Card>
@@ -209,38 +208,8 @@ export function LocalizationPage() {
 
       {query.status === 'success' && query.data.summary.quantity > 0 ? (
         <div className="overflow-hidden rounded-xl border border-border-default bg-surface-raised shadow-card">
-          <div
-            aria-label="Отчёт"
-            className="flex flex-wrap items-center gap-1 border-b border-border-default px-4 py-3"
-            role="tablist"
-          >
-            {TABS.map((tab) => (
-              <Button
-                aria-controls={`localization-panel-${tab.view}`}
-                aria-selected={tab.view === view}
-                id={`localization-tab-${tab.view}`}
-                key={tab.view}
-                onClick={() => {
-                  setSearch(localizationSearchWithView(search, tab.view), {
-                    replace: true,
-                  })
-                }}
-                role="tab"
-                size="compact"
-                type="button"
-                variant={tab.view === view ? 'primary' : 'ghost'}
-              >
-                {tab.label}
-              </Button>
-            ))}
-          </div>
-
           {view === 'clusters' ? (
-            <div
-              aria-labelledby="localization-tab-clusters"
-              id="localization-panel-clusters"
-              role="tabpanel"
-            >
+            <div>
               {query.data.clustersTruncated ? (
                 <div className="border-b border-border-default px-4 py-2">
                   <span className="text-xs text-text-muted">
@@ -251,11 +220,7 @@ export function LocalizationPage() {
               <LocalizationClusterTable items={query.data.clusters} />
             </div>
           ) : (
-            <div
-              aria-labelledby="localization-tab-items"
-              id="localization-panel-items"
-              role="tabpanel"
-            >
+            <div>
               <div className="border-b border-border-default px-4 py-2">
                 <span className="text-xs text-text-muted">
                   Товары по кластерам доставки, сверху — больше всего штук,
@@ -301,7 +266,7 @@ export function LocalizationPage() {
           )}
         </div>
       ) : null}
-    </section>
+    </div>
   )
 }
 

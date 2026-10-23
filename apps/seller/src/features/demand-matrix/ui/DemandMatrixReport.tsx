@@ -26,7 +26,11 @@ interface CursorStack {
   cursors: (string | null)[]
 }
 
-export function DemandMatrixPage() {
+/**
+ * Вкладка «Спрос» раздела «Локализация»; заголовок и переключатель
+ * вкладок — app/LocalizationSection.
+ */
+export function DemandMatrixReport() {
   const navigate = useNavigate()
   const { companyId } = useParams<{ companyId: string }>()
   const [params, setParams] = useSearchParams()
@@ -92,18 +96,15 @@ export function DemandMatrixPage() {
     cursor !== null
 
   return (
-    <section className="flex flex-col gap-4">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">Спрос по кластерам</h1>
-        <p className="max-w-3xl text-sm text-text-muted">
-          Где покупают каждый товар: заказы по кластеру покупателя, а не по
-          складу отгрузки, за последние полные дни без отменённых. Цвет ячейки —
-          доля кластера в спросе товара. Значок коробки — в кластере были дни
-          без товара: спрос там занижен. Пустая ячейка с «?» — товар здесь
-          раньше продавался, а за 28 дней заказов не было при днях без товара:
-          «спрос неизвестен», а не «спроса нет».
-        </p>
-      </header>
+    <div className="flex flex-col gap-4">
+      <p className="max-w-3xl text-sm text-text-muted">
+        Где покупают каждый товар: заказы по кластеру покупателя, а не по складу
+        отгрузки, за последние полные дни без отменённых. Цвет ячейки — доля
+        кластера в спросе товара. Значок коробки — в кластере были дни без
+        товара: спрос там занижен. Пустая ячейка с «?» — товар здесь раньше
+        продавался, а за 28 дней заказов не было при днях без товара: «спрос
+        неизвестен», а не «спроса нет».
+      </p>
 
       <Card>
         <form
@@ -262,7 +263,7 @@ export function DemandMatrixPage() {
           </div>
         </>
       ) : null}
-    </section>
+    </div>
   )
 }
 
