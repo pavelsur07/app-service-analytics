@@ -1,6 +1,6 @@
 # services/go.md — правила Go-сервисов
 
-Распространяется на `services/*/*.go`. Иерархия: `CLAUDE.md` и корневой
+Распространяется на все `.go`-файлы под `services/` (`services/**/*.go`). Иерархия: `CLAUDE.md` и корневой
 `AGENTS.md` → `services/AGENTS.md` → этот файл → `services/<name>/AGENTS.md`.
 Перенесено из ВашФинДир с адаптацией к правилам Conwix.
 
