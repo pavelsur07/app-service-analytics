@@ -30,6 +30,7 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Table(name: 'sales_plan')]
 #[ORM\Index(name: 'idx_sales_plan_company_account', columns: ['company_id', 'marketplace_account_id'])]
 #[ORM\Index(name: 'idx_sales_plan_company_created_by', columns: ['company_id', 'created_by_user_id'])]
+#[ORM\Index(name: 'idx_sales_plan_company_approved_by', columns: ['company_id', 'approved_by_user_id'])]
 // Не больше одного черновика и одного утверждённого в линии (п. 8).
 // Штатный сценарий до индексов не доходит — они страховка: нарушение
 // на flush закрывает EntityManager. `where` — в форме, которую
@@ -110,6 +111,12 @@ class SalesPlan
     #[ORM\Column(options: ['default' => 0])]
     private int $lineEdits = 0;
 
+    #[ORM\Column(type: 'uuid', nullable: true)]
+    private ?Uuid $approvedByUserId = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $approvedAt = null;
+
     #[ORM\Version]
     #[ORM\Column(type: 'integer')]
     private int $version = 1;
@@ -186,6 +193,69 @@ class SalesPlan
             $createdByUserId,
             $createdAt,
         );
+    }
+
+    /**
+     * Новая версия утверждённого плана — черновик той же линии
+     * (ADR-040 п. 8): тот же период, подключение, валюта и название,
+     * номер версии на единицу больше. Строки копирует репозиторий.
+     */
+    public static function nextVersionOf(self $approved, Uuid $createdByUserId, \DateTimeImmutable $createdAt): self
+    {
+        if (SalesPlanStatus::Approved !== $approved->status) {
+            throw new \DomainException('Новая версия заводится только от утверждённого плана.');
+        }
+
+        return new self(
+            Uuid::v7(),
+            $approved->companyId,
+            $approved->marketplaceAccountId,
+            $approved->name,
+            $approved->dateFrom,
+            $approved->dateTo,
+            $approved->currency,
+            $approved->lineageId,
+            $approved->versionNumber + 1,
+            $createdByUserId,
+            $createdAt,
+        );
+    }
+
+    public function approve(Uuid $approvedByUserId, \DateTimeImmutable $approvedAt): void
+    {
+        $this->transition(SalesPlanStatus::Draft, SalesPlanStatus::Approved, $approvedAt);
+        $this->approvedByUserId = $approvedByUserId;
+        $this->approvedAt = $approvedAt;
+    }
+
+    public function supersede(\DateTimeImmutable $at): void
+    {
+        $this->transition(SalesPlanStatus::Approved, SalesPlanStatus::Superseded, $at);
+    }
+
+    public function discard(\DateTimeImmutable $at): void
+    {
+        $this->transition(SalesPlanStatus::Draft, SalesPlanStatus::Discarded, $at);
+    }
+
+    public function cancel(\DateTimeImmutable $at): void
+    {
+        $this->transition(SalesPlanStatus::Approved, SalesPlanStatus::Cancelled, $at);
+    }
+
+    /**
+     * Отметка на шапке утверждённой версии перед созданием новой версии
+     * (ADR-040 п. 8): шапка меняется, версия растёт, и создание версии,
+     * утверждение новой версии и отмена сериализуются на этой строке.
+     */
+    public function touchLineage(\DateTimeImmutable $at): void
+    {
+        if (SalesPlanStatus::Approved !== $this->status) {
+            throw new \DomainException('Линию правят через её утверждённую версию.');
+        }
+
+        $this->updatedAt = $at;
+        ++$this->lineEdits;
     }
 
     /**
@@ -313,6 +383,16 @@ class SalesPlan
         return $this->updatedAt;
     }
 
+    public function approvedByUserId(): ?Uuid
+    {
+        return $this->approvedByUserId;
+    }
+
+    public function approvedAt(): ?\DateTimeImmutable
+    {
+        return $this->approvedAt;
+    }
+
     public function lineEdits(): int
     {
         return $this->lineEdits;
@@ -321,6 +401,16 @@ class SalesPlan
     public function version(): int
     {
         return $this->version;
+    }
+
+    private function transition(SalesPlanStatus $from, SalesPlanStatus $to, \DateTimeImmutable $at): void
+    {
+        if ($from !== $this->status) {
+            throw new \DomainException(\sprintf('Переход в %s возможен только из %s, план — %s.', $to->value, $from->value, $this->status->value));
+        }
+
+        $this->status = $to;
+        $this->updatedAt = $at;
     }
 
     private static function daysBetween(\DateTimeImmutable $from, \DateTimeImmutable $to): int
