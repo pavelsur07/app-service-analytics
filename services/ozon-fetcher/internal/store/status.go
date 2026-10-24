@@ -39,8 +39,11 @@ type ResourceStatus struct {
 	MissingCount   int            `json:"missing_count"`
 }
 
-// Status собирает отчёт; пропуски считаются по периодам >= windowFrom.
-func (t *Tasks) Status(ctx context.Context, now time.Time, windowFrom string) (StatusReport, error) {
+// StatusAllConnections собирает отчёт; пропуски считаются по периодам >=
+// windowFrom. Межарендаторное чтение операционной задачи (CLAUDE.md §1,
+// ADR-043): состояние загрузки сервиса по подключениям всех компаний для
+// /internal/fetch-status.
+func (t *Tasks) StatusAllConnections(ctx context.Context, now time.Time, windowFrom string) (StatusReport, error) {
 	type resourceKey struct {
 		ref      account.Ref
 		resource string
@@ -146,7 +149,7 @@ func (t *Tasks) Status(ctx context.Context, now time.Time, windowFrom string) (S
 		return StatusReport{}, fmt.Errorf("store: status state: %w", err)
 	}
 
-	limits, err := t.LoadLimits(ctx)
+	limits, err := t.LoadLimitsAllConnections(ctx)
 	if err != nil {
 		return StatusReport{}, err
 	}

@@ -16,8 +16,10 @@ type Limit struct {
 	Current  float64     `json:"rps_current"`
 }
 
-// LoadLimits — все сохранённые лимиты (для ratelimit.Registry.Seed при старте).
-func (t *Tasks) LoadLimits(ctx context.Context) ([]Limit, error) {
+// LoadLimitsAllConnections — все сохранённые лимиты (для ratelimit.Registry.Seed
+// при старте). Межарендаторное чтение операционной задачи (CLAUDE.md §1,
+// ADR-043): лимитер сервиса один на подключения всех компаний.
+func (t *Tasks) LoadLimitsAllConnections(ctx context.Context) ([]Limit, error) {
 	rows, err := t.pool.Query(ctx, `
 		SELECT company_id, marketplace_account_id, endpoint, COALESCE(rps_override, 0)::float8, COALESCE(rps_current, 0)::float8
 		FROM connection_limit`)
@@ -112,8 +114,10 @@ func (t *Tasks) ResumeConnection(ctx context.Context, ref account.Ref) error {
 	return nil
 }
 
-// StopResource — ресурс снят у провайдера: задачи не выдаются ни одному кабинету.
-func (t *Tasks) StopResource(ctx context.Context, resourceType, reason string) error {
+// StopResourceAllConnections — ресурс снят у провайдера: задачи не выдаются ни
+// одному кабинету. Межарендаторная запись операционной задачи (CLAUDE.md §1,
+// ADR-043): resource_stop — без компании, остановка действует на всех.
+func (t *Tasks) StopResourceAllConnections(ctx context.Context, resourceType, reason string) error {
 	if _, err := t.pool.Exec(ctx, `
 		INSERT INTO resource_stop (resource_type, reason) VALUES ($1, $2) ON CONFLICT (resource_type) DO NOTHING`,
 		resourceType, reason); err != nil {

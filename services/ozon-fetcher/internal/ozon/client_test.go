@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -91,6 +92,64 @@ func TestPostClassifiesErrors(t *testing.T) {
 			assert.NotContains(t, logs.String(), testAPIKey)
 		})
 	}
+}
+
+// Ответ, повторяющий присланный ключ, не выносит его в текст ошибки —
+// в том числе на границе обрезки сообщения.
+func TestErrorMessageNeverCarriesAPIKey(t *testing.T) {
+	for name, message := range map[string]string{
+		"echo":        "invalid Api-Key " + testAPIKey,
+		"at the edge": strings.Repeat("x", messageLimit-5) + testAPIKey,
+	} {
+		t.Run(name, func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{"code": 16, "message": message})
+			require.NoError(t, err)
+			client, _ := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write(body)
+			}, time.Second)
+
+			_, err = client.Post(context.Background(), testRef, testCreds, "/v1/x", struct{}{})
+
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), testAPIKey)
+			assert.NotContains(t, err.Error(), testAPIKey[:5])
+		})
+	}
+}
+
+// Скачивание файла отчёта (без ключа) следует редиректу, как в источнике;
+// запрос с ключом — нет.
+func TestRedirectFollowedOnlyWithoutKey(t *testing.T) {
+	client, _ := newTestClient(t, func(http.ResponseWriter, *http.Request) {}, time.Second)
+	file, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://storage.example/file.csv", nil)
+	next, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://cdn.example/file.csv", nil)
+	assert.NoError(t, client.http.CheckRedirect(next, []*http.Request{file}))
+
+	keyed, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://api-seller.ozon.ru/v1/x", nil)
+	keyed.Header.Set("Api-Key", testAPIKey)
+	assert.ErrorIs(t, client.http.CheckRedirect(next, []*http.Request{keyed}), http.ErrUseLastResponse)
+}
+
+// Редирект не выполняется: ключ кабинета не уходит на другой хост.
+func TestRedirectIsNotFollowed(t *testing.T) {
+	var leaked atomic.Bool
+	other := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Api-Key") != "" {
+			leaked.Store(true)
+		}
+	}))
+	t.Cleanup(other.Close)
+	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/v1/x", http.StatusTemporaryRedirect)
+	}, time.Second)
+
+	_, err := client.Post(context.Background(), testRef, testCreds, "/v1/x", struct{}{})
+
+	var apiErr *APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusTemporaryRedirect, apiErr.Status)
+	assert.False(t, leaked.Load(), "запрос с ключом на другой хост не ушёл")
 }
 
 func TestPostTimeoutIsTransient(t *testing.T) {

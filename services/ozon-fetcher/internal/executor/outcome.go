@@ -184,7 +184,7 @@ func (e *Executor) outcome(parent, taskCtx context.Context, task store.Task, run
 		return store.Outcome{Status: store.StatusPending, Label: string(apiErr.Class), ErrorClass: string(apiErr.Class), HTTPStatus: apiErr.Status, KeepCursor: true, NextRunAt: now}
 
 	case ozon.ClassObsoleteEndpoint:
-		if err := e.tasks.StopResource(side, task.ResourceType, apiErr.Endpoint); err != nil {
+		if err := e.tasks.StopResourceAllConnections(side, task.ResourceType, apiErr.Endpoint); err != nil {
 			// Стоп не записан — задача повторится и попробует остановить ресурс снова.
 			e.sideEffect(log, "stop resource", err)
 			out := e.retryable(task, string(apiErr.Class), now, false)

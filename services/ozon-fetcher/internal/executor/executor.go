@@ -76,7 +76,7 @@ type TaskStore interface {
 	FinishTask(ctx context.Context, key store.TaskKey, attemptID string, out store.Outcome, now time.Time) (int, error)
 	RecordAuthFailure(ctx context.Context, ref account.Ref, now time.Time, pauseFor func(failures int) time.Duration) (int, error)
 	ResumeConnection(ctx context.Context, ref account.Ref) error
-	StopResource(ctx context.Context, resourceType, reason string) error
+	StopResourceAllConnections(ctx context.Context, resourceType, reason string) error
 	ContentPages(ctx context.Context, key store.TaskKey) (store.Content, error)
 	ReloadWithoutContent(ctx context.Context, key store.TaskKey, now time.Time) (bool, error)
 	SaveCursor(ctx context.Context, key store.TaskKey, attemptID, cursor string) error
@@ -334,6 +334,11 @@ var errNoCredentials = errors.New("executor: no seller credentials")
 var errResourceNotEnabled = errors.New("executor: resource is not enabled for cabinet")
 
 func (r *taskRun) fetch(ctx context.Context, cabinet connections.Cabinet) error {
+	// Задача и ключи соединяются только здесь: ключи другого подключения
+	// задачу не выполняют (services/AGENTS.md §4).
+	if cabinet.Account != r.task.Account {
+		return fmt.Errorf("%w: cabinet of another connection", errNoCredentials)
+	}
 	if IsAdsResource(r.task.ResourceType) {
 		return r.fetchAds(ctx, cabinet)
 	}

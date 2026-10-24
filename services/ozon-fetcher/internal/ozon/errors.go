@@ -65,14 +65,21 @@ type errorEnvelope struct {
 }
 
 // Classify сопоставляет неуспешный HTTP-ответ классу. Для 2xx возвращает nil:
-// форма успешного ответа проверяется на уровне ресурса.
-func Classify(endpoint string, status int, header http.Header, body []byte, now time.Time) *APIError {
+// форма успешного ответа проверяется на уровне ресурса. secrets вычищаются из
+// текста ошибки до обрезки: он уходит в журнал и трекер, а ответ может
+// повторять присланный ключ.
+func Classify(endpoint string, status int, header http.Header, body []byte, now time.Time, secrets ...string) *APIError {
 	if status >= 200 && status < 300 {
 		return nil
 	}
 
 	var env errorEnvelope
 	_ = json.Unmarshal(body, &env)
+	for _, secret := range secrets {
+		if secret != "" {
+			env.Message = strings.ReplaceAll(env.Message, secret, redacted)
+		}
+	}
 	apiErr := &APIError{
 		Endpoint: endpoint,
 		Status:   status,

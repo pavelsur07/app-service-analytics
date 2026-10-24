@@ -47,15 +47,23 @@ func (t token) String() string { return redacted }
 // GoString закрывает %#v.
 func (t token) GoString() string { return redacted }
 
-// tokenEntry — токен одного client_id; mu сериализует его получение:
-// параллельные задачи ждут один запрос токена.
+// tokenEntry — токен одного client_id подключения; mu сериализует его
+// получение: параллельные задачи ждут один запрос токена.
 type tokenEntry struct {
 	mu  sync.Mutex
 	tok token
 }
 
+// tokenKey — подключение и client_id: токен не переходит между
+// подключениями даже при общем client_id (services/AGENTS.md §4) —
+// иначе подключение с неверным секретом читало бы чужим токеном.
+type tokenKey struct {
+	ref      account.Ref
+	clientID string
+}
+
 // Client — транспорт Performance API. Ключи передаются в вызов, токены
-// кэшируются по client_id только в памяти.
+// кэшируются по подключению и client_id только в памяти.
 type Client struct {
 	baseURL string
 	http    *http.Client
@@ -64,7 +72,7 @@ type Client struct {
 	limiter ozon.Limiter
 
 	mu     sync.Mutex
-	tokens map[string]*tokenEntry
+	tokens map[tokenKey]*tokenEntry
 }
 
 // NewClient — httpClient с таймаутом настраивает вызывающий (DefaultTimeout).
@@ -81,7 +89,7 @@ func NewClient(baseURL string, httpClient *http.Client, logger *slog.Logger, now
 		}
 		return nil
 	}
-	return &Client{baseURL: baseURL, http: &hc, logger: logger, now: now, limiter: noLimit{}, tokens: map[string]*tokenEntry{}}
+	return &Client{baseURL: baseURL, http: &hc, logger: logger, now: now, limiter: noLimit{}, tokens: map[tokenKey]*tokenEntry{}}
 }
 
 // WithLimiter задаёт ограничение скорости (вызывать до использования).
@@ -133,7 +141,7 @@ func (c *Client) do(ctx context.Context, ref account.Ref, creds Credentials, end
 			c.limiter.Observe(ref, endpoint, apiErr)
 			if apiErr.Status == http.StatusUnauthorized && attempt == 0 {
 				// Токен мог истечь раньше срока: новый и один повтор.
-				c.dropToken(creds.ClientID, tok)
+				c.dropToken(tokenKey{ref, creds.ClientID}, tok)
 				continue
 			}
 			return ozon.Response{}, err
@@ -146,13 +154,15 @@ func (c *Client) do(ctx context.Context, ref account.Ref, creds Credentials, end
 	}
 }
 
-// token — действующий токен client_id; запрос нового — один на client_id.
+// token — действующий токен client_id подключения; запрос нового — один
+// на подключение и client_id.
 func (c *Client) token(ctx context.Context, ref account.Ref, creds Credentials) (token, error) {
+	key := tokenKey{ref, creds.ClientID}
 	c.mu.Lock()
-	entry, ok := c.tokens[creds.ClientID]
+	entry, ok := c.tokens[key]
 	if !ok {
 		entry = &tokenEntry{}
-		c.tokens[creds.ClientID] = entry
+		c.tokens[key] = entry
 	}
 	c.mu.Unlock()
 
@@ -170,9 +180,9 @@ func (c *Client) token(ctx context.Context, ref account.Ref, creds Credentials) 
 }
 
 // dropToken забывает токен, если его ещё не заменил параллельный запрос.
-func (c *Client) dropToken(clientID string, used token) {
+func (c *Client) dropToken(key tokenKey, used token) {
 	c.mu.Lock()
-	entry := c.tokens[clientID]
+	entry := c.tokens[key]
 	c.mu.Unlock()
 	if entry == nil {
 		return

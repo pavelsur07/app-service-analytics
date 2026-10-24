@@ -59,8 +59,28 @@ type Client struct {
 
 // NewClient — httpClient с таймаутом настраивает вызывающий (см. DefaultTimeout).
 // Без WithLimiter запросы не ограничиваются.
+//
+// Запрос с ключом не перенаправляется: http.Client переносит нестандартные
+// заголовки Api-Key и Client-Id и на другой хост, а Seller API не
+// перенаправляет — ответ 3xx возвращается как есть и классифицируется как
+// ошибка. Скачивание файла отчёта по ссылке идёт без ключа, и его редирект
+// (CDN хранилища) выполняется, как в источнике.
 func NewClient(baseURL string, httpClient *http.Client, logger *slog.Logger, now func() time.Time) *Client {
-	return &Client{baseURL: baseURL, http: httpClient, logger: logger, now: now, limiter: noLimit{}}
+	hc := *httpClient
+	hc.CheckRedirect = checkRedirect
+	return &Client{baseURL: baseURL, http: &hc, logger: logger, now: now, limiter: noLimit{}}
+}
+
+// checkRedirect — без редиректа для запросов с ключом; для остальных —
+// стандартный предел http.Client в 10 переходов.
+func checkRedirect(_ *http.Request, via []*http.Request) error {
+	if via[0].Header.Get("Api-Key") != "" || via[0].Header.Get("Client-Id") != "" {
+		return http.ErrUseLastResponse
+	}
+	if len(via) >= 10 {
+		return errors.New("ozon: stopped after 10 redirects")
+	}
+	return nil
 }
 
 // WithLimiter возвращает копию клиента с ограничением скорости.
@@ -129,7 +149,7 @@ func (c *Client) post(ctx context.Context, ref account.Ref, creds Credentials, e
 		return Response{}, &APIError{Class: ClassInvalidResponse, Endpoint: endpoint, Status: resp.StatusCode, Err: ErrBodyTooLarge}
 	}
 
-	if apiErr := Classify(endpoint, resp.StatusCode, resp.Header, raw, c.now()); apiErr != nil {
+	if apiErr := Classify(endpoint, resp.StatusCode, resp.Header, raw, c.now(), creds.APIKey); apiErr != nil {
 		c.log(ctx, ref, endpoint, resp.StatusCode, duration, string(apiErr.Class))
 		return Response{}, apiErr
 	}

@@ -12,7 +12,7 @@ import (
 
 // TaskStore — постановка задач.
 type TaskStore interface {
-	Upsert(ctx context.Context, specs []store.TaskSpec) error
+	UpsertAcrossConnections(ctx context.Context, specs []store.TaskSpec) error
 	PlanOnce(ctx context.Context, ref account.Ref, kind, runDate string, specs []store.TaskSpec) (bool, error)
 }
 
@@ -62,7 +62,7 @@ func (s *Scheduler) Tick(ctx context.Context) bool {
 	started := s.now()
 	plan := Build(started, s.cabinets.List(), s.cfg)
 
-	if err := s.tasks.Upsert(ctx, plan.Ensure); err != nil {
+	if err := s.tasks.UpsertAcrossConnections(ctx, plan.Ensure); err != nil {
 		if ctx.Err() == nil {
 			s.logger.Warn("planner: ensure failed", slog.String("stage", "plan"), slog.String("error", err.Error()))
 		}

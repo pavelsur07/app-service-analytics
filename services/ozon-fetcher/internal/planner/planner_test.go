@@ -187,7 +187,7 @@ type fakeStore struct {
 	runs    map[string]bool
 }
 
-func (f *fakeStore) Upsert(_ context.Context, specs []store.TaskSpec) error {
+func (f *fakeStore) UpsertAcrossConnections(_ context.Context, specs []store.TaskSpec) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ensured += len(specs)

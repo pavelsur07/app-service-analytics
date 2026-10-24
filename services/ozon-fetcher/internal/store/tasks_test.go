@@ -47,7 +47,7 @@ func newAttemptID() string {
 
 func claim(t *testing.T, tasks *Tasks, refs []account.Ref, now time.Time) (Task, error) {
 	t.Helper()
-	return tasks.ClaimNext(context.Background(), refs, "worker-1", newAttemptID(), "trace-1", now, time.Minute)
+	return tasks.ClaimNextAcrossConnections(context.Background(), refs, "worker-1", newAttemptID(), "trace-1", now, time.Minute)
 }
 
 func status(t *testing.T, tasks *Tasks, key TaskKey) string {
@@ -64,8 +64,8 @@ func TestUpsertIsIdempotentAndKeepsRunning(t *testing.T) {
 	ctx := context.Background()
 	s := spec("ref-a", "ozon.finance.accrual-by-day", "2026-10-15", 1)
 
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s, s}))
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s, s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	var n int
 	require.NoError(t, tasks.pool.QueryRow(ctx, `SELECT count(*) FROM fetch_task`).Scan(&n))
 	assert.Equal(t, 1, n)
@@ -73,7 +73,7 @@ func TestUpsertIsIdempotentAndKeepsRunning(t *testing.T) {
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	s.Refresh = true
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	assert.Equal(t, StatusRunning, status(t, tasks, task.TaskKey), "upsert не сбрасывает running")
 }
 
@@ -81,17 +81,17 @@ func TestUpsertRefreshReopensDoneOnlyOnRequest(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
 	s := spec("ref-a", "ozon.finance.accrual-by-day", "2026-10-15", 0)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusDone, Label: "done", ContentHash: hash("a")}, t0)
 	require.NoError(t, err)
 
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	assert.Equal(t, StatusDone, status(t, tasks, s.TaskKey))
 
 	s.Refresh = true
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	assert.Equal(t, StatusPending, status(t, tasks, s.TaskKey))
 }
 
@@ -99,16 +99,16 @@ func TestUpsertRefreshRevivesPermanentFailure(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
 	s := spec("ref-a", "r", "2026-10-01", 0)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusFailedPermanent, Label: "invalid_response", ErrorClass: "invalid_response", NextRunAt: t0}, t0)
 	require.NoError(t, err)
 
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	assert.Equal(t, StatusFailedPermanent, status(t, tasks, s.TaskKey), "обычная постановка не перезапускает")
 	s.Refresh = true
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	assert.Equal(t, StatusPending, status(t, tasks, s.TaskKey))
 }
 
@@ -120,7 +120,7 @@ func TestConcurrentClaimsNeverRunOneConnectionTwice(t *testing.T) {
 		specs = append(specs, spec("ref-a", "ozon.finance.accrual-by-day", fmt.Sprintf("2026-10-%02d", day), 0))
 	}
 	specs = append(specs, spec("ref-b", "ozon.finance.accrual-by-day", "2026-10-01", 0))
-	require.NoError(t, tasks.Upsert(ctx, specs))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, specs))
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -129,7 +129,7 @@ func TestConcurrentClaimsNeverRunOneConnectionTwice(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			task, err := tasks.ClaimNext(ctx, accounttest.Refs("ref-a", "ref-b"), "w", newAttemptID(), "trace", t0, time.Minute)
+			task, err := tasks.ClaimNextAcrossConnections(ctx, accounttest.Refs("ref-a", "ref-b"), "w", newAttemptID(), "trace", t0, time.Minute)
 			if errors.Is(err, ErrNoTask) {
 				return
 			}
@@ -150,7 +150,7 @@ func TestConcurrentClaimsNeverRunOneConnectionTwice(t *testing.T) {
 func TestClaimOrderPriorityThenLeastRecentlyServed(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{
 		spec("ref-a", "r", "2026-10-01", 0),
 		spec("ref-b", "r", "2026-10-01", 0),
 		spec("ref-c", "r", "2026-10-01", 5),
@@ -176,14 +176,14 @@ func TestClaimSkipsInactiveSuspendedStoppedAndFuture(t *testing.T) {
 	ctx := context.Background()
 	future := spec("ref-f", "r", "2026-10-01", 0)
 	future.RunAt = t0.Add(time.Hour)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{
 		spec("ref-gone", "r", "2026-10-01", 0),
 		spec("ref-s", "r", "2026-10-01", 0),
 		spec("ref-x", "stopped", "2026-10-01", 0),
 		future,
 	}))
 	require.NoError(t, tasks.SuspendConnection(ctx, accounttest.Ref("ref-s"), "auth", t0.Add(time.Hour)))
-	require.NoError(t, tasks.StopResource(ctx, "stopped", "obsolete_endpoint"))
+	require.NoError(t, tasks.StopResourceAllConnections(ctx, "stopped", "obsolete_endpoint"))
 
 	_, err := claim(t, tasks, accounttest.Refs("ref-s", "ref-x", "ref-f"), t0)
 	assert.ErrorIs(t, err, ErrNoTask)
@@ -196,16 +196,16 @@ func TestClaimSkipsInactiveSuspendedStoppedAndFuture(t *testing.T) {
 func TestExpiredLeaseIsReleasedWithCursor(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{spec("ref-a", "r", "2026-10-01", 0)}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{spec("ref-a", "r", "2026-10-01", 0)}))
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	require.NoError(t, tasks.RecordPage(ctx, task.TaskKey, task.AttemptID, rawObj(1), "cursor-1"))
 
-	released, err := tasks.ReleaseExpired(ctx, t0.Add(30*time.Second))
+	released, err := tasks.ReleaseExpiredAcrossConnections(ctx, t0.Add(30*time.Second))
 	require.NoError(t, err)
 	assert.Zero(t, released, "lease ещё жив")
 
-	released, err = tasks.ReleaseExpired(ctx, t0.Add(2*time.Minute))
+	released, err = tasks.ReleaseExpiredAcrossConnections(ctx, t0.Add(2*time.Minute))
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, released)
 
@@ -228,7 +228,7 @@ func TestReleaseRacingWithLeaseExtensionKeepsTaskAndAttemptConsistent(t *testing
 	ctx := context.Background()
 	for i := range 40 {
 		key := spec(fmt.Sprintf("ref-%d", i), "r", "2026-10-01", 0)
-		require.NoError(t, tasks.Upsert(ctx, []TaskSpec{key}))
+		require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{key}))
 		task, err := claim(t, tasks, []account.Ref{key.Account}, t0)
 		require.NoError(t, err)
 
@@ -240,7 +240,7 @@ func TestReleaseRacingWithLeaseExtensionKeepsTaskAndAttemptConsistent(t *testing
 		}()
 		go func() {
 			defer wg.Done()
-			_, err := tasks.ReleaseExpired(ctx, t0.Add(2*time.Minute))
+			_, err := tasks.ReleaseExpiredAcrossConnections(ctx, t0.Add(2*time.Minute))
 			assert.NoError(t, err)
 		}()
 		wg.Wait()
@@ -266,7 +266,7 @@ func TestFinishTaskRevisionFollowsContentHash(t *testing.T) {
 	s := spec("ref-a", "r", "2026-10-01", 0)
 	s.Refresh = true
 	run := func(h string) int {
-		require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+		require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 		task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 		require.NoError(t, err)
 		rev, err := tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusDone, Label: "done", ContentHash: h}, t0)
@@ -282,7 +282,7 @@ func TestFinishTaskRevisionFollowsContentHash(t *testing.T) {
 func TestFinishTaskNotDoneKeepsOrResetsCursor(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{spec("ref-a", "r", "2026-10-01", 0)}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{spec("ref-a", "r", "2026-10-01", 0)}))
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	require.NoError(t, tasks.RecordPage(ctx, task.TaskKey, task.AttemptID, rawObj(1), "cursor-1"))
@@ -310,7 +310,7 @@ func TestLimitsRoundTrip(t *testing.T) {
 	require.NoError(t, tasks.SaveCurrentRate(ctx, accounttest.Ref("ref-a"), "/v1/x", 0.25))
 	require.NoError(t, tasks.SetOverride(ctx, accounttest.Ref("ref-b"), "/v1/x", 0))
 
-	limits, err := tasks.LoadLimits(ctx)
+	limits, err := tasks.LoadLimitsAllConnections(ctx)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []Limit{
 		{Account: accounttest.Ref("ref-a"), Endpoint: "/v1/x", Override: 2, Current: 0.25},
@@ -331,7 +331,7 @@ func TestPlanOnceRunsOncePerDateEvenConcurrently(t *testing.T) {
 	ctx := context.Background()
 	s := spec("ref-a", "r", "2026-10-01", 5)
 	s.Refresh = true
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{{TaskKey: s.TaskKey, RunAt: t0}}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{{TaskKey: s.TaskKey, RunAt: t0}}))
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusDone, Label: "done", ContentHash: hash("a")}, t0)
@@ -378,7 +378,7 @@ func TestAuthFailuresAreCountedPerCabinet(t *testing.T) {
 		}
 		return time.Minute
 	}
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{spec("ref-a", "r", "2026-10-01", 0), spec("ref-a", "r", "2026-10-02", 0)}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{spec("ref-a", "r", "2026-10-01", 0), spec("ref-a", "r", "2026-10-02", 0)}))
 
 	n, err := tasks.RecordAuthFailure(ctx, accounttest.Ref("ref-a"), t0, pause)
 	require.NoError(t, err)
@@ -401,7 +401,7 @@ func TestAuthFailuresAreCountedPerCabinet(t *testing.T) {
 func TestStatusReport(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{
 		spec("ref-a", "ozon.finance.accrual-by-day", "2026-10-01", 5), // захватится первым → done
 		spec("ref-a", "ozon.finance.accrual-by-day", "2026-10-02", 0),
 		spec("ref-a", "ozon.finance.accrual-types", "ref", 3),         // вторым → rate_limit
@@ -420,9 +420,9 @@ func TestStatusReport(t *testing.T) {
 	require.NoError(t, tasks.SaveCurrentRate(ctx, accounttest.Ref("ref-a"), "/v1/finance/accrual/by-day", 0.5))
 	_, err = tasks.RecordAuthFailure(ctx, accounttest.Ref("ref-b"), t0, func(int) time.Duration { return time.Hour })
 	require.NoError(t, err)
-	require.NoError(t, tasks.StopResource(ctx, "ozon.finance.mutual-settlement", "obsolete"))
+	require.NoError(t, tasks.StopResourceAllConnections(ctx, "ozon.finance.mutual-settlement", "obsolete"))
 
-	report, err := tasks.Status(ctx, t0.Add(time.Minute), "2026-08-01")
+	report, err := tasks.StatusAllConnections(ctx, t0.Add(time.Minute), "2026-08-01")
 	require.NoError(t, err)
 
 	require.Len(t, report.Cabinets, 2)
@@ -453,7 +453,7 @@ func TestStatusReport(t *testing.T) {
 func TestFindObjectByContentWithinTask(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{spec("ref-a", "r", "2026-10-01", 0), spec("ref-b", "r", "2026-10-01", 0)}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{spec("ref-a", "r", "2026-10-01", 0), spec("ref-b", "r", "2026-10-01", 0)}))
 	a, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	require.NoError(t, tasks.RecordPage(ctx, a.TaskKey, a.AttemptID, rawObj(1), ""))
@@ -485,20 +485,26 @@ func TestPlanOnceIsPerCabinet(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, done, "кабинет, появившийся позже за тот же день, получает свою перезагрузку")
 	assert.Equal(t, StatusPending, status(t, tasks, b.TaskKey))
+
+	_, err = tasks.PlanOnce(ctx, accounttest.Ref("ref-a"), "tail", "2026-10-18", []TaskSpec{a, b})
+	require.ErrorIs(t, err, ErrForeignSpec, "маркер одного подключения не ставит задачи другого")
+	var marked int
+	require.NoError(t, tasks.pool.QueryRow(ctx, `SELECT count(*) FROM planner_run WHERE run_date = '2026-10-18'`).Scan(&marked))
+	assert.Zero(t, marked)
 }
 
 func TestRefreshOfRunningTaskAppliesAfterAttempt(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
 	s := spec("ref-a", "r", "2026-08-15", 1)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	require.NoError(t, tasks.RecordPage(ctx, task.TaskKey, task.AttemptID, rawObj(1), "cursor-1"))
 
 	// Финальная перезагрузка M-2 пришла посреди загрузки дня.
 	s.Refresh = true
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	assert.Equal(t, StatusRunning, status(t, tasks, s.TaskKey), "lease не прерывается")
 
 	_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusDone, Label: "done", ContentHash: hash("partial")}, t0)
@@ -520,14 +526,14 @@ func TestRefreshPendingSurvivesLeaseExpiryAsFullReload(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
 	s := spec("ref-a", "r", "2026-08-15", 1)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	require.NoError(t, tasks.RecordPage(ctx, task.TaskKey, task.AttemptID, rawObj(1), "cursor-1"))
 	s.Refresh = true
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 
-	_, err = tasks.ReleaseExpired(ctx, t0.Add(2*time.Minute))
+	_, err = tasks.ReleaseExpiredAcrossConnections(ctx, t0.Add(2*time.Minute))
 	require.NoError(t, err)
 	again, err := claim(t, tasks, accounttest.Refs("ref-a"), t0.Add(2*time.Minute))
 	require.NoError(t, err)
@@ -539,12 +545,12 @@ func TestRefreshOfUnfinishedTaskWithAllPagesSavedReloadsAfterIt(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
 	s := spec("ref-a", "ozon.orders.fbo", "2026-10-20", 5)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	// Последняя страница дня сохранена (курсор пуст), процесс упал до FinishTask.
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	require.NoError(t, tasks.RecordPage(ctx, task.TaskKey, task.AttemptID, rawObj(1), ""))
-	_, err = tasks.ReleaseExpired(ctx, t0.Add(2*time.Minute))
+	_, err = tasks.ReleaseExpiredAcrossConnections(ctx, t0.Add(2*time.Minute))
 	require.NoError(t, err)
 
 	s.Refresh = true
@@ -573,7 +579,7 @@ func TestRefreshOfPausedTaskKeepsProgressThroughPausesThenReloads(t *testing.T) 
 	ctx := context.Background()
 	s := spec("ref-a", "ozon.orders.fbo", "2026-10-21", 5)
 	s.Refresh = true // «сегодня»: каждый проход планировщика
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 
 	pause := func(at time.Time, page int, cursor string) {
 		t.Helper()
@@ -584,7 +590,7 @@ func TestRefreshOfPausedTaskKeepsProgressThroughPausesThenReloads(t *testing.T) 
 		_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusPending, Label: "rate_limit", ErrorClass: "rate_limit", KeepCursor: true, NextRunAt: at}, at)
 		require.NoError(t, err)
 		// Часовой проход планировщика между паузами.
-		require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+		require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	}
 	pause(t0, 1, "c1")
 	pause(t0.Add(time.Hour), 2, "c2")
@@ -611,7 +617,7 @@ func TestRefreshOfPausedTaskWithCursorIsNotSwallowed(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
 	s := spec("ref-a", "ozon.orders.fbo", "2026-10-20", 5)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	require.NoError(t, tasks.RecordPage(ctx, task.TaskKey, task.AttemptID, rawObj(1), "cursor-1"))
@@ -635,14 +641,14 @@ func TestPlainUpsertKeepsCursorOfPausedTask(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
 	s := spec("ref-a", "ozon.orders.fbo", "2026-10-20", 5)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	require.NoError(t, tasks.RecordPage(ctx, task.TaskKey, task.AttemptID, rawObj(1), "cursor-1"))
-	_, err = tasks.ReleaseExpired(ctx, t0.Add(2*time.Minute))
+	_, err = tasks.ReleaseExpiredAcrossConnections(ctx, t0.Add(2*time.Minute))
 	require.NoError(t, err)
 
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	again, err := claim(t, tasks, accounttest.Refs("ref-a"), t0.Add(2*time.Minute))
 	require.NoError(t, err)
 	assert.Equal(t, "cursor-1", again.Cursor, "обычная постановка не сбрасывает продолжение")
@@ -653,7 +659,7 @@ func TestContentPagesFollowLoadedRevisionAcrossAttempts(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
 	s := spec("ref-a", "ozon.orders.fbo", "2026-10-20", 5)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 
 	_, err := tasks.ContentPages(ctx, s.TaskKey)
 	require.ErrorIs(t, err, ErrNoContent, "до первой загрузки ревизии нет")
@@ -692,7 +698,7 @@ func TestContentPagesFollowLoadedRevisionAcrossAttempts(t *testing.T) {
 
 	// Перезагрузка в работе: пока не done, видна прежняя ревизия.
 	s.Refresh = true
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	third, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	p3 := RawObject{PageNo: 1, StorageURI: "s3://b/p3", SHA256: hash("p3"), SizeBytes: 1, StoredBytes: 1, ContentType: "application/json"}
@@ -713,7 +719,7 @@ func TestContentStartIsFirstPageOfRevisionNotOfContinuation(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
 	s := spec("ref-a", "ozon.orders.fbo", "2026-10-20", 5)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	first, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	require.NoError(t, tasks.RecordPage(ctx, first.TaskKey, first.AttemptID, rawObj(1), "c1"))
@@ -738,7 +744,7 @@ func TestContentWithoutPagesListIsReloadedAndMissingObjectIsAnError(t *testing.T
 	tasks := testTasks(t)
 	ctx := context.Background()
 	s := spec("ref-a", "ozon.orders.fbo", "2026-10-19", 5)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{s}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{s}))
 	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
 	require.NoError(t, err)
 	require.NoError(t, tasks.RecordPage(ctx, task.TaskKey, task.AttemptID, rawObj(1), ""))
@@ -780,7 +786,7 @@ func TestContentWithoutPagesListIsReloadedAndMissingObjectIsAnError(t *testing.T
 func TestCoverageCountsActiveCabinetsWithinWindow(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{
 		spec("ref-a", "by-day", "2026-10-15", 9),
 		spec("ref-b", "by-day", "2026-10-15", 0),
 		spec("ref-gone", "by-day", "2026-10-15", 0), // неактивный кабинет
@@ -795,7 +801,7 @@ func TestCoverageCountsActiveCabinetsWithinWindow(t *testing.T) {
 	_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusDone, Label: "done", ContentHash: hash("a")}, t0)
 	require.NoError(t, err)
 
-	rows, err := tasks.Coverage(ctx, accounttest.Refs("ref-a", "ref-b"), "2026-08-01", "2026-10-31")
+	rows, err := tasks.CoverageAcrossConnections(ctx, accounttest.Refs("ref-a", "ref-b"), "2026-08-01", "2026-10-31")
 	require.NoError(t, err)
 
 	require.Len(t, rows, 3)
@@ -808,7 +814,7 @@ func TestCoverageCountsActiveCabinetsWithinWindow(t *testing.T) {
 	assert.Equal(t, CoverageRow{ResourceType: "realization", PeriodKey: "2026-09", ByStatus: map[string]int{"done": 0, "running": 0, "pending": 1, "not_ready": 0, "failed_retryable": 0, "failed_permanent": 0}}, rows[1])
 	assert.Equal(t, "ref", rows[2].PeriodKey)
 
-	empty, err := tasks.Coverage(ctx, nil, "2026-08-01", "2026-10-31")
+	empty, err := tasks.CoverageAcrossConnections(ctx, nil, "2026-08-01", "2026-10-31")
 	require.NoError(t, err)
 	assert.Empty(t, empty)
 }
@@ -819,7 +825,7 @@ func TestRateLimitedTaskYieldsToReadyTaskOfSamePriority(t *testing.T) {
 	accrual := spec("a", "ozon.finance.accrual-postings", "2026-10-20", 1)
 	accrual.RunAt = t0.Add(time.Second) // повтор после 429 с Retry-After
 	backfill := spec("a", "ozon.finance.accrual-by-day", "2026-10-01", 1)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{accrual, backfill}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{accrual, backfill}))
 
 	got, err := claim(t, tasks, accounttest.Refs("a"), t0.Add(2*time.Second))
 	require.NoError(t, err)
@@ -829,7 +835,7 @@ func TestRateLimitedTaskYieldsToReadyTaskOfSamePriority(t *testing.T) {
 func TestAdsAndSellerTasksOfCabinetRunInParallel(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{
 		spec("a", "ozon.finance.accrual-by-day", "2026-10-20", 5),
 		spec("a", "ozon.orders.fbo", "2026-10-20", 5),
 		spec("a", "ozon.ads.expense", "2026-10-20", 5),
@@ -859,7 +865,7 @@ func TestAdsAndSellerTasksOfCabinetRunInParallel(t *testing.T) {
 func TestSellerSuspensionDoesNotStopAds(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{
 		spec("a", "ozon.finance.accrual-by-day", "2026-10-20", 5),
 		spec("a", "ozon.ads.expense", "2026-10-20", 5),
 	}))
@@ -878,7 +884,7 @@ func TestSaveCursorAndAdsReportInFlight(t *testing.T) {
 	daily := spec("a", "ozon.ads.statistics", "2026-10-21", 5)
 	tail := spec("a", "ozon.ads.statistics.tail", "2026-10-22", 5)
 	other := spec("b", "ozon.ads.statistics", "2026-10-21", 5)
-	require.NoError(t, tasks.Upsert(ctx, []TaskSpec{daily, tail, other}))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{daily, tail, other}))
 
 	busy, err := tasks.AdsReportInFlight(ctx, tail.TaskKey)
 	require.NoError(t, err)

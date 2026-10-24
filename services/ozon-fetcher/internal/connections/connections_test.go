@@ -61,7 +61,7 @@ func pagedServer(t *testing.T, pages ...string) *httptest.Server {
 	return srv
 }
 
-func fetch(t *testing.T, pages ...string) ([]Cabinet, []string, error) {
+func fetch(t *testing.T, pages ...string) ([]Cabinet, error) {
 	t.Helper()
 	srv := pagedServer(t, pages...)
 	return NewClient(srv.URL, token, srv.Client()).Fetch(context.Background())
@@ -82,10 +82,9 @@ func conn(ref account.Ref, extra string) string {
 }
 
 func TestFetchParsesContractExample(t *testing.T) {
-	cabinets, rejected, err := fetch(t, example(t))
+	cabinets, err := fetch(t, example(t))
 
 	require.NoError(t, err)
-	assert.Empty(t, rejected)
 	require.Len(t, cabinets, 2)
 	a := cabinets[0]
 	assert.Equal(t, refA, a.Account, "подключения упорядочены по marketplace_account_id")
@@ -125,7 +124,7 @@ func TestFetchWalksPagesWithTokenProviderLimitAndCursor(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cabinets, _, err := NewClient(srv.URL, token, srv.Client()).Fetch(context.Background())
+	cabinets, err := NewClient(srv.URL, token, srv.Client()).Fetch(context.Background())
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"", "p1"}, cursors)
@@ -142,7 +141,7 @@ func TestFetchFailsWholeWalkOnBrokenPage(t *testing.T) {
 		"empty cursor":   `{"schema_version":"1","generated_at":"2026-10-24T12:00:00+03:00","connections":[],"next_cursor":""}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			cabinets, _, err := fetch(t, pageOf(conn(refB, ""), "p1"), second)
+			cabinets, err := fetch(t, pageOf(conn(refB, ""), "p1"), second)
 			require.ErrorIs(t, err, ErrInvalidSnapshot)
 			assert.Nil(t, cabinets, "неполный список не возвращается")
 		})
@@ -156,7 +155,7 @@ func TestFetchFailsWholeWalkOnBrokenPage(t *testing.T) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
-	cabinets, _, err := NewClient(srv.URL, token, srv.Client()).Fetch(context.Background())
+	cabinets, err := NewClient(srv.URL, token, srv.Client()).Fetch(context.Background())
 	require.Error(t, err)
 	assert.Nil(t, cabinets, "сбой второй страницы — отказ всего обхода")
 }
@@ -167,7 +166,7 @@ func TestFetchRejectsPageOverLimit(t *testing.T) {
 		items = append(items, conn(accounttest.Ref(strconv.Itoa(i)), ""))
 	}
 
-	_, _, err := fetch(t, pageOf(strings.Join(items, ","), ""))
+	_, err := fetch(t, pageOf(strings.Join(items, ","), ""))
 
 	assert.ErrorIs(t, err, ErrInvalidSnapshot)
 }
@@ -182,36 +181,92 @@ func TestFetchRejectsInvalidPages(t *testing.T) {
 		"bad generated_at": `{"schema_version":"1","generated_at":"today","connections":[],"next_cursor":null}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, _, err := fetch(t, body)
+			_, err := fetch(t, body)
 			assert.ErrorIs(t, err, ErrInvalidSnapshot)
 		})
 	}
 }
 
-func TestFetchSkipsBrokenConnections(t *testing.T) {
+// Битое подключение — нарушение контракта всего обхода, не пропуск: пропуск
+// сервис не отличил бы от отзыва подключения (services/AGENTS.md §3).
+func TestFetchRejectsWholeWalkOnBrokenConnection(t *testing.T) {
 	ok := accounttest.Ref("ok")
-	body := pageOf(strings.Join([]string{
-		conn(ok, ""),
-		`{"marketplace_account_id":"not-a-uuid","company_id":"` + ok.CompanyID + `","provider":"ozon","updated_at":"2026-10-11T09:00:00+03:00","credentials":{"seller":null,"performance":null},"resource_types":[]}`,
-		`{"marketplace_account_id":"` + accounttest.Ref("no-company").AccountID + `","company_id":"","provider":"ozon","updated_at":"2026-10-11T09:00:00+03:00","credentials":{"seller":null,"performance":null},"resource_types":[]}`,
-		`{"marketplace_account_id":"` + accounttest.Ref("wb").AccountID + `","company_id":"` + ok.CompanyID + `","provider":"wildberries","updated_at":"2026-10-11T09:00:00+03:00","credentials":{"seller":null,"performance":null},"resource_types":[]}`,
-		`{"marketplace_account_id":"` + accounttest.Ref("bad-date").AccountID + `","company_id":"` + ok.CompanyID + `","provider":"ozon","updated_at":"yesterday","credentials":{"seller":null,"performance":null},"resource_types":[]}`,
-		`{"marketplace_account_id":"` + accounttest.Ref("empty-key").AccountID + `","company_id":"` + ok.CompanyID + `","provider":"ozon","updated_at":"2026-10-11T09:00:00+03:00","credentials":{"seller":{"client_id":"1","api_key":""},"performance":null},"resource_types":[]}`,
-		`{"marketplace_account_id":"` + accounttest.Ref("no-credentials").AccountID + `","company_id":"` + ok.CompanyID + `","provider":"ozon","updated_at":"2026-10-11T09:00:00+03:00","resource_types":[]}`,
-		// Тот же marketplace_account_id под другой компанией — дубль, не второе подключение.
-		conn(account.Ref{CompanyID: accounttest.Ref("other").CompanyID, AccountID: ok.AccountID}, ""),
-	}, ","), "")
+	head := `"marketplace_account_id":"` + ok.AccountID + `","company_id":"` + ok.CompanyID + `"`
+	tail := `"provider":"ozon","updated_at":"2026-10-11T09:00:00+03:00"`
+	creds := `"credentials":{"seller":null,"performance":null}`
+	for name, broken := range map[string]string{
+		"account not uuid":     `{"marketplace_account_id":"not-a-uuid","company_id":"` + ok.CompanyID + `",` + tail + `,` + creds + `,"resource_types":[]}`,
+		"no company":           `{"marketplace_account_id":"` + ok.AccountID + `","company_id":"",` + tail + `,` + creds + `,"resource_types":[]}`,
+		"other provider":       `{` + head + `,"provider":"wildberries","updated_at":"2026-10-11T09:00:00+03:00",` + creds + `,"resource_types":[]}`,
+		"bad updated_at":       `{` + head + `,"provider":"ozon","updated_at":"yesterday",` + creds + `,"resource_types":[]}`,
+		"comma updated_at":     `{` + head + `,"provider":"ozon","updated_at":"2026-10-11T09:00:00,5+03:00",` + creds + `,"resource_types":[]}`,
+		"offset hour 24":       `{` + head + `,"provider":"ozon","updated_at":"2026-10-11T09:00:00+24:00",` + creds + `,"resource_types":[]}`,
+		"single digit hour":    `{` + head + `,"provider":"ozon","updated_at":"2026-10-11T9:00:00Z",` + creds + `,"resource_types":[]}`,
+		"empty api_key":        `{` + head + `,` + tail + `,"credentials":{"seller":{"client_id":"1","api_key":""},"performance":null},"resource_types":[]}`,
+		"no credentials":       `{` + head + `,` + tail + `,"resource_types":[]}`,
+		"no seller field":      `{` + head + `,` + tail + `,"credentials":{"performance":null},"resource_types":[]}`,
+		"no performance field": `{` + head + `,` + tail + `,"credentials":{"seller":null},"resource_types":[]}`,
+		"no resource_types":    `{` + head + `,` + tail + `,` + creds + `}`,
+		"empty resource_type":  `{` + head + `,` + tail + `,` + creds + `,"resource_types":[""]}`,
+		"unknown field":        `{` + head + `,` + tail + `,` + creds + `,"resource_types":[],"extra":1}`,
+		"unknown seller field": `{` + head + `,` + tail + `,"credentials":{"seller":{"client_id":"1","api_key":"k","x":1},"performance":null},"resource_types":[]}`,
+		"seller without key":   `{` + head + `,` + tail + `,"credentials":{"seller":{"client_id":"1"},"performance":null},"resource_types":[]}`,
+		"credentials null":     `{` + head + `,` + tail + `,"credentials":null,"resource_types":[]}`,
+		"company key case":     `{` + head + `,"Company_ID":"` + accounttest.Ref("other").CompanyID + `",` + tail + `,` + creds + `,"resource_types":[]}`,
+		"seller key case":      `{` + head + `,` + tail + `,"credentials":{"Seller":{"client_id":"1","api_key":"k"},"performance":null},"resource_types":[]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			cabinets, err := fetch(t, pageOf(conn(accounttest.Ref("fine"), "")+","+broken, ""))
+			require.ErrorIs(t, err, ErrInvalidSnapshot)
+			assert.Nil(t, cabinets)
+			assert.NotContains(t, err.Error(), `"k"`, "значения ключей в ошибку не попадают")
+		})
+	}
+}
 
-	cabinets, rejected, err := fetch(t, body)
+// Один marketplace_account_id под двумя компаниями: какая запись верна,
+// неизвестно — отвергается весь обход, а не только второй экземпляр.
+func TestFetchRejectsAccountUnderTwoCompanies(t *testing.T) {
+	ok := accounttest.Ref("ok")
+	twin := account.Ref{CompanyID: accounttest.Ref("other").CompanyID, AccountID: ok.AccountID}
+	for name, pages := range map[string][]string{
+		"same page":  {pageOf(conn(ok, "")+","+conn(twin, ""), "")},
+		"next pages": {pageOf(conn(ok, ""), "p1"), pageOf(conn(twin, ""), "")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cabinets, err := fetch(t, pages...)
+			require.ErrorIs(t, err, ErrInvalidSnapshot)
+			assert.Nil(t, cabinets)
+		})
+	}
+}
 
-	require.NoError(t, err)
-	require.Len(t, cabinets, 1)
-	assert.Equal(t, ok, cabinets[0].Account)
-	assert.Equal(t, []string{
-		"not-a-uuid", accounttest.Ref("no-company").AccountID, accounttest.Ref("wb").AccountID,
-		accounttest.Ref("bad-date").AccountID, accounttest.Ref("empty-key").AccountID,
-		accounttest.Ref("no-credentials").AccountID, ok.AccountID,
-	}, rejected, "дубль marketplace_account_id тоже отвергается")
+// Формы date-time, допустимые RFC 3339, но не time.Parse(time.RFC3339).
+func TestParseDateTimeFollowsRFC3339(t *testing.T) {
+	for _, ok := range []string{"2026-10-24T12:00:00Z", "2026-10-24t12:00:00z", "2026-10-24T12:00:00.5+03:00", "2016-12-31T23:59:60Z"} {
+		_, err := parseDateTime(ok)
+		assert.NoError(t, err, ok)
+	}
+	for _, bad := range []string{"2026-10-24T12:00:00,5Z", "2026-10-24T1:00:00Z", "2026-10-24T12:00:00+24:00", "2026-10-24T12:00:00+03:60", "2026-10-24 12:00:00Z", "2026-13-01T00:00:00Z"} {
+		_, err := parseDateTime(bad)
+		assert.Error(t, err, bad)
+	}
+}
+
+func TestFetchRejectsPageOutsideSchemaKeys(t *testing.T) {
+	page := `{"schema_version":"1","generated_at":"2026-10-24T12:00:00+03:00","connections":[],"next_cursor":null`
+	for name, body := range map[string]string{
+		"unknown field":  page + `,"extra":true}`,
+		"key case":       `{"SCHEMA_VERSION":"1","generated_at":"2026-10-24T12:00:00+03:00","connections":[],"next_cursor":null}`,
+		"trailing brace": page + `}}`,
+		"trailing value": page + `} {}`,
+		"comma fraction": `{"schema_version":"1","generated_at":"2026-10-24T12:00:00,5+03:00","connections":[],"next_cursor":null}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := fetch(t, body)
+			assert.ErrorIs(t, err, ErrInvalidSnapshot)
+		})
+	}
 }
 
 func TestClientFetchFailsOnNon200(t *testing.T) {
@@ -219,7 +274,7 @@ func TestClientFetchFailsOnNon200(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(status)
 		}))
-		_, _, err := NewClient(srv.URL, token, srv.Client()).Fetch(context.Background())
+		_, err := NewClient(srv.URL, token, srv.Client()).Fetch(context.Background())
 		srv.Close()
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), token)
@@ -237,12 +292,12 @@ type fetchResult struct {
 	err      error
 }
 
-func (f *scriptedFetcher) Fetch(context.Context) ([]Cabinet, []string, error) {
+func (f *scriptedFetcher) Fetch(context.Context) ([]Cabinet, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r := f.results[min(f.calls, len(f.results)-1)]
 	f.calls++
-	return r.cabinets, nil, r.err
+	return r.cabinets, r.err
 }
 
 type clock struct {
@@ -270,7 +325,7 @@ func newCache(f Fetcher) (*Cache, *clock, *bytes.Buffer) {
 
 func exampleCabinets(t *testing.T) []Cabinet {
 	t.Helper()
-	cabinets, _, err := fetch(t, example(t))
+	cabinets, err := fetch(t, example(t))
 	require.NoError(t, err)
 	return cabinets
 }
@@ -368,9 +423,9 @@ func TestInvalidSnapshotPreservesCache(t *testing.T) {
 
 func TestRunRefreshesUntilCanceled(t *testing.T) {
 	var calls atomic.Int32
-	f := fetcherFunc(func(context.Context) ([]Cabinet, []string, error) {
+	f := fetcherFunc(func(context.Context) ([]Cabinet, error) {
 		calls.Add(1)
-		return []Cabinet{{Account: accounttest.Ref("ref-a")}}, nil, nil
+		return []Cabinet{{Account: accounttest.Ref("ref-a")}}, nil
 	})
 	cache := NewCache(f, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -399,9 +454,9 @@ func TestCabinetCredentialsAreNotLogged(t *testing.T) {
 	assert.False(t, strings.Contains(logs.String(), "example-seller-key-a"), logs.String())
 }
 
-type fetcherFunc func(context.Context) ([]Cabinet, []string, error)
+type fetcherFunc func(context.Context) ([]Cabinet, error)
 
-func (f fetcherFunc) Fetch(ctx context.Context) ([]Cabinet, []string, error) { return f(ctx) }
+func (f fetcherFunc) Fetch(ctx context.Context) ([]Cabinet, error) { return f(ctx) }
 
 func TestAllowlistKeepsOnlyListedCabinets(t *testing.T) {
 	cabinets := exampleCabinets(t)

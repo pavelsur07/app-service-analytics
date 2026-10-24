@@ -4,6 +4,7 @@
 package connections
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -68,53 +71,70 @@ func NewClient(baseURL, token string, httpClient *http.Client) *Client {
 	return &Client{baseURL: baseURL, token: token, http: httpClient}
 }
 
-// ErrInvalidSnapshot — ответ не соответствует контракту v1; снимок отвергнут целиком.
-var ErrInvalidSnapshot = errors.New("connections: invalid snapshot")
+// ErrInvalidSnapshot — ответ не соответствует контракту v1 (contract_violation,
+// services/AGENTS.md §3): обход отвергнут целиком, кэш не меняется. Отдельное
+// битое подключение — тоже нарушение контракта, а не пропуск: пропуск
+// выглядел бы для сервиса как отзыв подключения.
+var ErrInvalidSnapshot = errors.New("connections: contract_violation")
 
+// Рабочий разбор строгий и повторяет schema.json: ключи каждого объекта
+// сверяются с допустимыми побайтно (encoding/json сопоставляет имена без
+// учёта регистра, DisallowUnknownFields этого не ловит), обязательные
+// nullable-поля (next_cursor, seller, performance) различаются как «нет
+// поля» и «null», после документа ничего нет.
 type wireSnapshot struct {
-	SchemaVersion string          `json:"schema_version"`
-	GeneratedAt   string          `json:"generated_at"`
-	Connections   []wireCabinet   `json:"connections"`
-	RawCursor     json.RawMessage `json:"next_cursor"` // обязателен: null — страница последняя
-	NextCursor    *string         `json:"-"`
+	SchemaVersion string            `json:"schema_version"`
+	GeneratedAt   string            `json:"generated_at"`
+	Connections   []json.RawMessage `json:"connections"` // каждое — strictDecode в wireCabinet
+	RawCursor     json.RawMessage   `json:"next_cursor"` // обязателен: null — страница последняя
+	NextCursor    *string           `json:"-"`
 }
 
 type wireCabinet struct {
-	AccountID   string `json:"marketplace_account_id"`
-	CompanyID   string `json:"company_id"`
-	Provider    string `json:"provider"`
-	UpdatedAt   string `json:"updated_at"`
-	Credentials *struct {
-		Seller *struct {
-			ClientID string `json:"client_id"`
-			APIKey   string `json:"api_key"`
-		} `json:"seller"`
-		Performance *struct {
-			ClientID     string `json:"client_id"`
-			ClientSecret string `json:"client_secret"`
-		} `json:"performance"`
-	} `json:"credentials"`
-	ResourceTypes []string `json:"resource_types"`
+	AccountID     string          `json:"marketplace_account_id"`
+	CompanyID     string          `json:"company_id"`
+	Provider      string          `json:"provider"`
+	UpdatedAt     string          `json:"updated_at"`
+	Credentials   json.RawMessage `json:"credentials"`
+	ResourceTypes *[]string       `json:"resource_types"`
 }
 
-// Fetch обходит выдачу по курсору и возвращает принятые подключения и
-// идентификаторы отвергнутых. Сбой любой страницы — ошибка всего обхода:
-// неполный список кэш не заменяет (ADR-043 п. 4).
-func (c *Client) Fetch(ctx context.Context) ([]Cabinet, []string, error) {
+type wireCredentials struct {
+	Seller      json.RawMessage `json:"seller"`
+	Performance json.RawMessage `json:"performance"`
+}
+
+type wireSeller struct {
+	ClientID string `json:"client_id"`
+	APIKey   string `json:"api_key"`
+}
+
+type wirePerformance struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+}
+
+// Fetch обходит выдачу по курсору. Сбой или нарушение контракта на любой
+// странице — ошибка всего обхода: неполный список кэш не заменяет
+// (ADR-043 п. 4).
+func (c *Client) Fetch(ctx context.Context) ([]Cabinet, error) {
 	var cabinets []Cabinet
-	var rejected []string
 	seen := map[string]bool{}
 	cursor := ""
 	for range maxPages {
 		snap, err := c.fetchPage(ctx, cursor)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		for _, w := range snap.Connections {
-			cab, ok := toCabinet(w)
-			if !ok || seen[cab.Account.AccountID] {
-				rejected = append(rejected, w.AccountID)
-				continue
+		for i, raw := range snap.Connections {
+			cab, err := toCabinet(raw)
+			if err != nil {
+				return nil, fmt.Errorf("%w: connection %d: %w", ErrInvalidSnapshot, i, err)
+			}
+			// Подключение принадлежит одной компании: повтор — даже под
+			// другой company_id — значит, что достоверной записи нет.
+			if seen[cab.Account.AccountID] {
+				return nil, fmt.Errorf("%w: duplicate marketplace_account_id %s", ErrInvalidSnapshot, cab.Account.AccountID)
 			}
 			seen[cab.Account.AccountID] = true
 			cabinets = append(cabinets, cab)
@@ -124,14 +144,14 @@ func (c *Client) Fetch(ctx context.Context) ([]Cabinet, []string, error) {
 			if cabinets == nil {
 				cabinets = []Cabinet{}
 			}
-			return cabinets, rejected, nil
+			return cabinets, nil
 		}
 		if *snap.NextCursor == "" || *snap.NextCursor == cursor {
-			return nil, nil, fmt.Errorf("%w: next_cursor does not advance", ErrInvalidSnapshot)
+			return nil, fmt.Errorf("%w: next_cursor does not advance", ErrInvalidSnapshot)
 		}
 		cursor = *snap.NextCursor
 	}
-	return nil, nil, fmt.Errorf("%w: more than %d pages", ErrInvalidSnapshot, maxPages)
+	return nil, fmt.Errorf("%w: more than %d pages", ErrInvalidSnapshot, maxPages)
 }
 
 func (c *Client) fetchPage(ctx context.Context, cursor string) (wireSnapshot, error) {
@@ -165,16 +185,47 @@ func (c *Client) fetchPage(ctx context.Context, cursor string) (wireSnapshot, er
 	return parsePage(raw)
 }
 
+// Допустимые ключи объектов schema.json.
+var (
+	snapshotKeys    = []string{"schema_version", "generated_at", "connections", "next_cursor"}
+	cabinetKeys     = []string{"marketplace_account_id", "company_id", "provider", "updated_at", "credentials", "resource_types"}
+	credentialsKeys = []string{"seller", "performance"}
+	sellerKeys      = []string{"client_id", "api_key"}
+	performanceKeys = []string{"client_id", "client_secret"}
+)
+
+// strictDecode — один JSON-объект с ключами только из keys (побайтно) и без
+// данных после него; затем разбор в v.
+func strictDecode(raw []byte, v any, keys []string) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	var fields map[string]json.RawMessage
+	if err := dec.Decode(&fields); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("trailing data")
+	}
+	if fields == nil {
+		return errors.New("not an object")
+	}
+	for k := range fields {
+		if !slices.Contains(keys, k) {
+			return fmt.Errorf("unknown field %q", k)
+		}
+	}
+	return json.Unmarshal(raw, v)
+}
+
 // parsePage — страница выдачи; нарушение формы страницы — отказ всего обхода.
 func parsePage(raw []byte) (wireSnapshot, error) {
 	var snap wireSnapshot
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		return wireSnapshot{}, fmt.Errorf("%w: not JSON", ErrInvalidSnapshot)
+	if err := strictDecode(raw, &snap, snapshotKeys); err != nil {
+		return wireSnapshot{}, fmt.Errorf("%w: %w", ErrInvalidSnapshot, err)
 	}
 	if snap.SchemaVersion != schemaVersion {
 		return wireSnapshot{}, fmt.Errorf("%w: schema_version %q", ErrInvalidSnapshot, snap.SchemaVersion)
 	}
-	if _, err := time.Parse(time.RFC3339, snap.GeneratedAt); err != nil {
+	if _, err := parseDateTime(snap.GeneratedAt); err != nil {
 		return wireSnapshot{}, fmt.Errorf("%w: generated_at", ErrInvalidSnapshot)
 	}
 	if snap.Connections == nil {
@@ -192,38 +243,98 @@ func parsePage(raw []byte) (wireSnapshot, error) {
 	return snap, nil
 }
 
-func toCabinet(w wireCabinet) (Cabinet, bool) {
-	if w.Provider != "ozon" || w.Credentials == nil {
-		return Cabinet{}, false
+// dateTimeForm — форма date-time RFC 3339. time.Parse с ней не совпадает
+// в обе стороны: мягче (запятая в дробной части, однозначный час, смещение
+// +24:00) и строже (строчные t и z, високосная секунда 60).
+var dateTimeForm = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:)(\d{2})(\.\d+)?([Zz]|[+-]([01]\d|2[0-3]):[0-5]\d)$`)
+
+// parseDateTime — date-time по схеме: сначала форма, затем значения полей.
+// Строчные разделители приводятся к T и Z, секунда 60 — к 59: момент
+// изменения подключения точнее секунды не нужен.
+func parseDateTime(s string) (time.Time, error) {
+	m := dateTimeForm.FindStringSubmatch(s)
+	if m == nil {
+		return time.Time{}, errors.New("date-time is not RFC 3339")
+	}
+	if m[2] == "60" {
+		m[2] = "59"
+	}
+	return time.Parse(time.RFC3339, strings.ToUpper(m[1]+m[2]+m[3]+m[4]))
+}
+
+// nullable — обязательное поле, которое может быть null: нет поля — ошибка,
+// null — false, объект — разобран строго в v.
+func nullable(raw json.RawMessage, v any, keys []string) (bool, error) {
+	if len(raw) == 0 {
+		return false, errors.New("missing")
+	}
+	if bytes.Equal(raw, []byte("null")) {
+		return false, nil
+	}
+	return true, strictDecode(raw, v, keys)
+}
+
+func toCabinet(raw json.RawMessage) (Cabinet, error) {
+	var w wireCabinet
+	if err := strictDecode(raw, &w, cabinetKeys); err != nil {
+		return Cabinet{}, err
+	}
+	if w.Provider != "ozon" {
+		return Cabinet{}, fmt.Errorf("provider %q", w.Provider)
 	}
 	ref, err := account.Parse(w.CompanyID, w.AccountID)
 	if err != nil {
-		return Cabinet{}, false
+		return Cabinet{}, err
 	}
-	updatedAt, err := time.Parse(time.RFC3339, w.UpdatedAt)
+	updatedAt, err := parseDateTime(w.UpdatedAt)
 	if err != nil {
-		return Cabinet{}, false
+		return Cabinet{}, errors.New("updated_at")
 	}
-	cab := Cabinet{Account: ref, UpdatedAt: updatedAt, ResourceTypes: w.ResourceTypes}
-	if s := w.Credentials.Seller; s != nil {
-		if s.ClientID == "" || s.APIKey == "" {
-			return Cabinet{}, false
-		}
-		cab.Seller = &ozon.Credentials{ClientID: s.ClientID, APIKey: s.APIKey}
+	if len(w.Credentials) == 0 {
+		return Cabinet{}, errors.New("no credentials")
 	}
-	if p := w.Credentials.Performance; p != nil {
-		if p.ClientID == "" || p.ClientSecret == "" {
-			return Cabinet{}, false
+	var creds wireCredentials
+	if err := strictDecode(w.Credentials, &creds, credentialsKeys); err != nil {
+		return Cabinet{}, fmt.Errorf("credentials: %w", err)
+	}
+	if w.ResourceTypes == nil {
+		return Cabinet{}, errors.New("no resource_types")
+	}
+	for _, r := range *w.ResourceTypes {
+		if r == "" {
+			return Cabinet{}, errors.New("empty resource_type")
 		}
-		cab.Performance = &ozonperf.Credentials{ClientID: p.ClientID, ClientSecret: p.ClientSecret}
+	}
+	cab := Cabinet{Account: ref, UpdatedAt: updatedAt, ResourceTypes: *w.ResourceTypes}
+	var seller wireSeller
+	has, err := nullable(creds.Seller, &seller, sellerKeys)
+	if err != nil {
+		return Cabinet{}, fmt.Errorf("credentials.seller: %w", err)
+	}
+	if has {
+		if seller.ClientID == "" || seller.APIKey == "" {
+			return Cabinet{}, errors.New("credentials.seller: empty key")
+		}
+		cab.Seller = &ozon.Credentials{ClientID: seller.ClientID, APIKey: seller.APIKey}
+	}
+	var perf wirePerformance
+	has, err = nullable(creds.Performance, &perf, performanceKeys)
+	if err != nil {
+		return Cabinet{}, fmt.Errorf("credentials.performance: %w", err)
+	}
+	if has {
+		if perf.ClientID == "" || perf.ClientSecret == "" {
+			return Cabinet{}, errors.New("credentials.performance: empty key")
+		}
+		cab.Performance = &ozonperf.Credentials{ClientID: perf.ClientID, ClientSecret: perf.ClientSecret}
 		cab.HasPerformance = true
 	}
-	return cab, true
+	return cab, nil
 }
 
 // Fetcher — источник снимка (Client или фейк в тестах).
 type Fetcher interface {
-	Fetch(ctx context.Context) ([]Cabinet, []string, error)
+	Fetch(ctx context.Context) ([]Cabinet, error)
 }
 
 // Cache — последний успешный снимок. Безопасен для параллельного чтения.
@@ -314,7 +425,7 @@ func (c *Cache) refreshLocked(ctx context.Context) error {
 	c.lastAttempt = started
 	c.mu.Unlock()
 
-	cabinets, rejected, err := c.source.Fetch(ctx)
+	cabinets, err := c.source.Fetch(ctx)
 	duration := c.now().Sub(started).Milliseconds()
 	if err != nil {
 		if ctx.Err() != nil {
@@ -341,10 +452,6 @@ func (c *Cache) refreshLocked(ctx context.Context) error {
 	c.byRef, c.list, c.ready = byRef, cabinets, true
 	c.mu.Unlock()
 
-	if len(rejected) > 0 {
-		c.logger.Warn("connections snapshot: cabinets rejected",
-			slog.String("stage", "connections"), slog.Int("rejected_count", len(rejected)), slog.Any("marketplace_account_ids", rejected))
-	}
 	c.logger.Info("connections refreshed",
 		slog.String("stage", "connections"), slog.String("outcome", "ok"),
 		slog.Int("cabinets", len(cabinets)), slog.Int64("duration_ms", duration))

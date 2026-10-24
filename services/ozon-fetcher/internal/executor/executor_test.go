@@ -53,7 +53,7 @@ type fakeTasks struct {
 	savedCursors []string // SaveCursor
 	adsBusy      bool     // AdsReportInFlight
 	reloaded     []string
-	controlHang  bool // SuspendConnection/StopResource ждут отмены контекста
+	controlHang  bool // SuspendConnection/StopResourceAllConnections ждут отмены контекста
 	extendHang   bool // ExtendLease ждёт отмены контекста
 }
 
@@ -152,7 +152,7 @@ func (f *fakeTasks) ReloadWithoutContent(_ context.Context, key store.TaskKey, _
 	return true, nil
 }
 
-func (f *fakeTasks) StopResource(_ context.Context, resource, _ string) error {
+func (f *fakeTasks) StopResourceAllConnections(_ context.Context, resource, _ string) error {
 	if f.stopErr != nil {
 		return f.stopErr
 	}
@@ -499,6 +499,20 @@ func TestNoSellerCredentialsPostpones(t *testing.T) {
 
 	assert.Equal(t, "no_credentials", h.tasks.finished.Label)
 	assert.Equal(t, t0.Add(time.Hour), h.tasks.finished.NextRunAt)
+}
+
+// Обязательный тест services/AGENTS.md §4: задача одного подключения не
+// выполняется ключами другого. Реклама — TestAdsTaskIsNotRunWithAnotherConnectionsKey.
+func TestTaskIsNotRunWithAnotherConnectionsKeys(t *testing.T) {
+	h := newHarness(&fakeOzon{pages: map[string]ozon.Page{"": {Body: []byte(`{}`)}}})
+	other := cabinet
+	other.Account = accounttest.Ref("ref-b")
+
+	res := h.exec.Run(context.Background(), task(ResourceAccrualByDay, "2026-10-15"), other, "trace")
+
+	assert.Equal(t, "no_credentials", res.Outcome)
+	assert.Empty(t, h.ozon.creds, "запросов с ключами другого подключения нет")
+	assert.Empty(t, h.raw.puts, "ничего не записано")
 }
 
 func TestUnknownResourceIsPermanent(t *testing.T) {

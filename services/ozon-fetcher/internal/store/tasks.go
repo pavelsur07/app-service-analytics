@@ -66,11 +66,15 @@ type Tasks struct {
 
 func NewTasks(pool *Pool) *Tasks { return &Tasks{pool: pool} }
 
-// Upsert ставит задачу идемпотентно: running не трогает, приоритет —
+// UpsertAcrossConnections ставит задачу идемпотентно: running не трогает, приоритет —
 // максимум, done и failed_permanent переводит в pending только при Refresh
 // (плановая перезагрузка повторяет и задачи, упавшие на ответе Ozon). Refresh
 // задачи с незавершённой загрузкой откладывается до её итога (refresh_pending).
-func (t *Tasks) Upsert(ctx context.Context, specs []TaskSpec) error {
+//
+// Межарендаторная запись операционной задачи (CLAUDE.md §1, ADR-043):
+// планировщик ставит задачи подключений всех компаний одним вызовом; каждая
+// задача несёт своё подключение в TaskKey.
+func (t *Tasks) UpsertAcrossConnections(ctx context.Context, specs []TaskSpec) error {
 	if len(specs) == 0 {
 		return nil
 	}
@@ -113,10 +117,19 @@ func sendUpserts(ctx context.Context, conn batchSender, specs []TaskSpec) error 
 	return nil
 }
 
+// ErrForeignSpec — в PlanOnce передана задача другого подключения.
+var ErrForeignSpec = errors.New("store: spec of another connection")
+
 // PlanOnce ставит specs, только если проход kind за runDate для подключения
 // ещё не выполнялся: маркер planner_run и постановка — одна транзакция.
-// false — уже выполнен.
+// false — уже выполнен. Задача другого подключения — ErrForeignSpec: маркер
+// одного подключения не ставит задачи другого.
 func (t *Tasks) PlanOnce(ctx context.Context, ref account.Ref, kind, runDate string, specs []TaskSpec) (bool, error) {
+	for _, spec := range specs {
+		if spec.Account != ref {
+			return false, ErrForeignSpec
+		}
+	}
 	tx, err := t.pool.Begin(ctx)
 	if err != nil {
 		return false, fmt.Errorf("store: plan once begin: %w", err)
@@ -142,12 +155,12 @@ func (t *Tasks) PlanOnce(ctx context.Context, ref account.Ref, kind, runDate str
 	return true, nil
 }
 
-// ClaimNext захватывает готовую задачу одного из refs (активный снимок):
+// ClaimNextAcrossConnections захватывает готовую задачу одного из refs (активный снимок):
 // подключение без running-задачи и без паузы, ресурс не остановлен.
 // Порядок — приоритет, давно не обслуживавшееся подключение, время.
 // Межарендаторное чтение операционной задачи (CLAUDE.md §1, ADR-043):
 // диспетчер обслуживает подключения всех компаний.
-func (t *Tasks) ClaimNext(ctx context.Context, refs []account.Ref, owner, attemptID, traceID string, now time.Time, lease time.Duration) (Task, error) {
+func (t *Tasks) ClaimNextAcrossConnections(ctx context.Context, refs []account.Ref, owner, attemptID, traceID string, now time.Time, lease time.Duration) (Task, error) {
 	if len(refs) == 0 {
 		return Task{}, ErrNoTask
 	}
@@ -264,8 +277,9 @@ func (t *Tasks) FindObject(ctx context.Context, key TaskKey, sha256 string) (Raw
 	var obj RawObject
 	err := t.pool.QueryRow(ctx, `
 		SELECT r.page_no, r.storage_uri, r.sha256, r.size_bytes, r.stored_bytes, r.content_type
-		FROM raw_object r JOIN fetch_attempt a ON a.attempt_id = r.attempt_id
-		WHERE a.company_id = $1 AND a.marketplace_account_id = $2 AND a.resource_type = $3 AND a.period_key = $4 AND r.sha256 = $5
+		FROM raw_object r JOIN fetch_attempt a
+			ON a.company_id = r.company_id AND a.marketplace_account_id = r.marketplace_account_id AND a.attempt_id = r.attempt_id
+		WHERE r.company_id = $1 AND r.marketplace_account_id = $2 AND a.resource_type = $3 AND a.period_key = $4 AND r.sha256 = $5
 		ORDER BY r.created_at DESC LIMIT 1`,
 		key.Account.CompanyID, key.Account.AccountID, key.ResourceType, key.PeriodKey, sha256,
 	).Scan(&obj.PageNo, &obj.StorageURI, &obj.SHA256, &obj.SizeBytes, &obj.StoredBytes, &obj.ContentType)
@@ -310,8 +324,9 @@ func (t *Tasks) ContentPages(ctx context.Context, key TaskKey) (Content, error) 
 	hashes := strings.Split(pages, ",")
 	rows, err := t.pool.Query(ctx, `
 		SELECT DISTINCT ON (r.sha256) r.sha256, r.storage_uri, r.size_bytes, r.stored_bytes, r.content_type
-		FROM raw_object r JOIN fetch_attempt a ON a.attempt_id = r.attempt_id
-		WHERE a.company_id = $1 AND a.marketplace_account_id = $2 AND a.resource_type = $3 AND a.period_key = $4 AND r.sha256 = ANY($5)
+		FROM raw_object r JOIN fetch_attempt a
+			ON a.company_id = r.company_id AND a.marketplace_account_id = r.marketplace_account_id AND a.attempt_id = r.attempt_id
+		WHERE r.company_id = $1 AND r.marketplace_account_id = $2 AND a.resource_type = $3 AND a.period_key = $4 AND r.sha256 = ANY($5)
 		ORDER BY r.sha256, r.created_at DESC`,
 		key.Account.CompanyID, key.Account.AccountID, key.ResourceType, key.PeriodKey, hashes)
 	if err != nil {
@@ -370,7 +385,7 @@ func (t *Tasks) RecordPage(ctx context.Context, key TaskKey, attemptID string, o
 			page_hashes = CASE WHEN page_hashes = '' THEN $8 ELSE page_hashes || ',' || $8 END,
 			-- Начало загрузки — начало попытки с первой страницей (до первого
 			-- запроса), не время записи: ответ мог прийти уже после полуночи.
-			load_started_at = CASE WHEN page_hashes = '' THEN (SELECT a.started_at FROM fetch_attempt a WHERE a.attempt_id = $5) ELSE load_started_at END,
+			load_started_at = CASE WHEN page_hashes = '' THEN (SELECT a.started_at FROM fetch_attempt a WHERE a.company_id = $1 AND a.marketplace_account_id = $2 AND a.attempt_id = $5) ELSE load_started_at END,
 			updated_at = now()
 		WHERE company_id = $1 AND marketplace_account_id = $2 AND resource_type = $3 AND period_key = $4 AND status = 'running' AND attempt_id = $5`,
 		key.Account.CompanyID, key.Account.AccountID, key.ResourceType, key.PeriodKey, attemptID, nextCursor, obj.PageNo+1, obj.SHA256)
@@ -381,14 +396,15 @@ func (t *Tasks) RecordPage(ctx context.Context, key TaskKey, attemptID string, o
 		return ErrLeaseLost
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO raw_object (attempt_id, page_no, storage_uri, sha256, size_bytes, stored_bytes, content_type)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		attemptID, obj.PageNo, obj.StorageURI, obj.SHA256, obj.SizeBytes, obj.StoredBytes, obj.ContentType); err != nil {
+		INSERT INTO raw_object (company_id, marketplace_account_id, attempt_id, page_no, storage_uri, sha256, size_bytes, stored_bytes, content_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		key.Account.CompanyID, key.Account.AccountID, attemptID, obj.PageNo, obj.StorageURI, obj.SHA256, obj.SizeBytes, obj.StoredBytes, obj.ContentType); err != nil {
 		return fmt.Errorf("store: record page object: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
-		UPDATE fetch_attempt SET pages = pages + 1, bytes = bytes + $2 WHERE attempt_id = $1`,
-		attemptID, obj.SizeBytes); err != nil {
+		UPDATE fetch_attempt SET pages = pages + 1, bytes = bytes + $4
+		WHERE company_id = $1 AND marketplace_account_id = $2 AND attempt_id = $3`,
+		key.Account.CompanyID, key.Account.AccountID, attemptID, obj.SizeBytes); err != nil {
 		return fmt.Errorf("store: record page attempt: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -451,8 +467,9 @@ func (t *Tasks) FinishTask(ctx context.Context, key TaskKey, attemptID string, o
 		return 0, fmt.Errorf("store: finish task: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
-		UPDATE fetch_attempt SET finished_at = $2, outcome = $3, http_status = NULLIF($4, 0) WHERE attempt_id = $1`,
-		attemptID, now, out.Label, out.HTTPStatus); err != nil {
+		UPDATE fetch_attempt SET finished_at = $4, outcome = $5, http_status = NULLIF($6, 0)
+		WHERE company_id = $1 AND marketplace_account_id = $2 AND attempt_id = $3`,
+		key.Account.CompanyID, key.Account.AccountID, attemptID, now, out.Label, out.HTTPStatus); err != nil {
 		return 0, fmt.Errorf("store: finish attempt: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -461,14 +478,17 @@ func (t *Tasks) FinishTask(ctx context.Context, key TaskKey, attemptID string, o
 	return revision, nil
 }
 
-// ReleaseExpired возвращает в pending задачи с истёкшим lease; курсор
+// ReleaseExpiredAcrossConnections возвращает в pending задачи с истёкшим lease; курсор
 // сохраняется — следующий воркер продолжит с той же страницы.
 //
 // Один запрос: строки задач блокируются первыми (тот же порядок, что у
 // RecordPage/FinishTask: задача → попытка), занятые воркером пропускаются
 // (SKIP LOCKED), и попытки закрываются ровно для освобождённого набора —
 // продление lease между выборками не может рассинхронизировать задачу и попытку.
-func (t *Tasks) ReleaseExpired(ctx context.Context, now time.Time) (int64, error) {
+//
+// Межарендаторная запись операционной задачи (CLAUDE.md §1, ADR-043):
+// сборщик просроченных lease обслуживает подключения всех компаний.
+func (t *Tasks) ReleaseExpiredAcrossConnections(ctx context.Context, now time.Time) (int64, error) {
 	var released int64
 	err := t.pool.QueryRow(ctx, `
 		WITH expired AS (
@@ -487,11 +507,11 @@ func (t *Tasks) ReleaseExpired(ctx context.Context, now time.Time) (int64, error
 			FROM expired e
 			WHERE t.company_id = e.company_id AND t.marketplace_account_id = e.marketplace_account_id
 			  AND t.resource_type = e.resource_type AND t.period_key = e.period_key
-			RETURNING e.attempt_id
+			RETURNING e.company_id, e.marketplace_account_id, e.attempt_id
 		), closed AS (
 			UPDATE fetch_attempt a SET finished_at = $1, outcome = 'lease_expired'
 			FROM released r
-			WHERE a.attempt_id = r.attempt_id
+			WHERE a.company_id = r.company_id AND a.marketplace_account_id = r.marketplace_account_id AND a.attempt_id = r.attempt_id
 			RETURNING 1
 		)
 		SELECT count(*) FROM released`, now).Scan(&released)

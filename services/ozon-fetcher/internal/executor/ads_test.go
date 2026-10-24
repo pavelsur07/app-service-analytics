@@ -78,6 +78,19 @@ func TestAdsResourcesLoadOnePageWithPerformanceKey(t *testing.T) {
 	assert.Equal(t, ResourceAdsExpense, h.raw.puts[1].ResourceType)
 }
 
+func TestAdsTaskIsNotRunWithAnotherConnectionsKey(t *testing.T) {
+	p := &fakePerf{}
+	h := adsHarness(p)
+	other := adsCabinet
+	other.Account = accounttest.Ref("ref-b")
+
+	res := h.exec.Run(context.Background(), task(ResourceAdsCampaigns, today), other, "trace")
+
+	assert.Equal(t, "no_credentials", res.Outcome)
+	assert.Empty(t, p.creds, "запросов с ключом Performance другого подключения нет")
+	assert.Empty(t, h.raw.puts)
+}
+
 func TestAdsWithoutKeyOrResourceDoNotCallOzon(t *testing.T) {
 	p := &fakePerf{}
 	h := adsHarness(p)

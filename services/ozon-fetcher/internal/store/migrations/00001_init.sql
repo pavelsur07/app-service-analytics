@@ -60,11 +60,12 @@ CREATE UNIQUE INDEX fetch_task_one_running_per_connection_family
 -- Просроченные lease.
 CREATE INDEX fetch_task_lease ON fetch_task (lease_until) WHERE status = 'running';
 
--- Журнал попыток, append-only.
+-- Журнал попыток, append-only. Ключ начинается с подключения: попытка
+-- не ищется по одному идентификатору (CLAUDE.md §1).
 CREATE TABLE fetch_attempt (
-    attempt_id             UUID        PRIMARY KEY,
     company_id             UUID        NOT NULL,
     marketplace_account_id UUID        NOT NULL,
+    attempt_id             UUID        NOT NULL,
     resource_type          TEXT        NOT NULL,
     period_key             TEXT        NOT NULL,
     trace_id               TEXT        NOT NULL,
@@ -74,22 +75,27 @@ CREATE TABLE fetch_attempt (
     outcome                TEXT,                 -- done | unchanged | <класс ошибки> | released
     http_status            INTEGER,
     pages                  INTEGER     NOT NULL DEFAULT 0,
-    bytes                  BIGINT      NOT NULL DEFAULT 0
+    bytes                  BIGINT      NOT NULL DEFAULT 0,
+    PRIMARY KEY (company_id, marketplace_account_id, attempt_id)
 );
 CREATE INDEX fetch_attempt_task
     ON fetch_attempt (company_id, marketplace_account_id, resource_type, period_key, started_at DESC);
 
--- Объект хранилища на страницу попытки.
+-- Объект хранилища на страницу попытки; подключение — то же, что у попытки.
 CREATE TABLE raw_object (
-    attempt_id   UUID        NOT NULL REFERENCES fetch_attempt (attempt_id),
-    page_no      INTEGER     NOT NULL,
-    storage_uri  TEXT        NOT NULL,
-    sha256       CHAR(64)    NOT NULL,     -- от несжатых байтов
-    size_bytes   BIGINT      NOT NULL,
-    stored_bytes BIGINT      NOT NULL,     -- после gzip
-    content_type TEXT        NOT NULL,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (attempt_id, page_no)
+    company_id             UUID        NOT NULL,
+    marketplace_account_id UUID        NOT NULL,
+    attempt_id             UUID        NOT NULL,
+    page_no                INTEGER     NOT NULL,
+    storage_uri            TEXT        NOT NULL,
+    sha256                 CHAR(64)    NOT NULL,     -- от несжатых байтов
+    size_bytes             BIGINT      NOT NULL,
+    stored_bytes           BIGINT      NOT NULL,     -- после gzip
+    content_type           TEXT        NOT NULL,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (company_id, marketplace_account_id, attempt_id, page_no),
+    FOREIGN KEY (company_id, marketplace_account_id, attempt_id)
+        REFERENCES fetch_attempt (company_id, marketplace_account_id, attempt_id)
 );
 
 -- Состояние подключения: честная очередь, пауза и отказы ключа подряд.

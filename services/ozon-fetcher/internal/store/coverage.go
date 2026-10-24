@@ -20,11 +20,12 @@ type CoverageRow struct {
 	LastSuccessAt *time.Time
 }
 
-// Coverage — сводка задач активных подключений (refs) за окно
-// [from; to] (YYYY-MM-DD): дни окна, месяцы, на которые оно попадает, и
+// CoverageAcrossConnections — сводка задач активных подключений (refs) за
+// окно [from; to] (YYYY-MM-DD): дни окна, месяцы, на которые оно попадает, и
 // справочники (period_key = 'ref'). Один запрос, без идентификаторов кабинетов
-// в результате.
-func (t *Tasks) Coverage(ctx context.Context, refs []account.Ref, from, to string) ([]CoverageRow, error) {
+// в результате. Межарендаторное чтение операционной задачи (CLAUDE.md §1,
+// ADR-043): покрытие сервиса по подключениям всех компаний для /internal/coverage.
+func (t *Tasks) CoverageAcrossConnections(ctx context.Context, refs []account.Ref, from, to string) ([]CoverageRow, error) {
 	if len(refs) == 0 {
 		return []CoverageRow{}, nil
 	}

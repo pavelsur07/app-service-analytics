@@ -75,7 +75,7 @@ func TestTwoDispatchersOnOneDatabase(t *testing.T) {
 			specs = append(specs, store.TaskSpec{TaskKey: store.TaskKey{Account: accounttest.Ref(ref), ResourceType: "r", PeriodKey: fmt.Sprintf("2026-10-%02d", day)}, RunAt: time.Now().Add(-time.Minute)})
 		}
 	}
-	require.NoError(t, tasks.Upsert(ctx, specs))
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, specs))
 
 	runner := &storeRunner{tasks: tasks, active: map[string]int{}, delay: map[string]time.Duration{"cab-a": 5 * time.Millisecond, "cab-b": 5 * time.Millisecond, "cab-slow": 60 * time.Millisecond}}
 	cabs := cabinets(refs...)

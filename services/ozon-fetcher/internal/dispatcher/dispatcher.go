@@ -1,5 +1,5 @@
 // Package dispatcher — параллельная загрузка кабинетов: до N задач
-// одновременно, по одной на кабинет (гарантия БД, store.ClaimNext).
+// одновременно, по одной на кабинет (гарантия БД, store.ClaimNextAcrossConnections).
 package dispatcher
 
 import (
@@ -18,8 +18,8 @@ import (
 
 // Claimer — часть store.Tasks для диспетчера.
 type Claimer interface {
-	ClaimNext(ctx context.Context, refs []account.Ref, owner, attemptID, traceID string, now time.Time, lease time.Duration) (store.Task, error)
-	ReleaseExpired(ctx context.Context, now time.Time) (int64, error)
+	ClaimNextAcrossConnections(ctx context.Context, refs []account.Ref, owner, attemptID, traceID string, now time.Time, lease time.Duration) (store.Task, error)
+	ReleaseExpiredAcrossConnections(ctx context.Context, now time.Time) (int64, error)
 }
 
 // Cabinets — снимок кабинетов (connections.Cache).
@@ -122,7 +122,7 @@ func (d *Dispatcher) claim(ctx context.Context) (store.Task, connections.Cabinet
 	}
 
 	traceID := d.newID()
-	task, err := d.claimer.ClaimNext(ctx, refs, d.cfg.Owner, d.newID(), traceID, d.now(), d.cfg.Lease)
+	task, err := d.claimer.ClaimNextAcrossConnections(ctx, refs, d.cfg.Owner, d.newID(), traceID, d.now(), d.cfg.Lease)
 	switch {
 	case errors.Is(err, store.ErrNoTask):
 		return store.Task{}, connections.Cabinet{}, "", false
@@ -144,7 +144,7 @@ func (d *Dispatcher) releaseLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			n, err := d.claimer.ReleaseExpired(ctx, d.now())
+			n, err := d.claimer.ReleaseExpiredAcrossConnections(ctx, d.now())
 			switch {
 			case err != nil && ctx.Err() == nil:
 				d.logger.Warn("dispatcher: release expired failed", slog.String("stage", "dispatch"), slog.String("error", err.Error()))

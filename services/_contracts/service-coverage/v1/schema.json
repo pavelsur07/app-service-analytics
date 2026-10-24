@@ -12,7 +12,7 @@
         "generated_at": {"type": "string", "format": "date-time"},
         "from": {"type": "string", "format": "date", "description": "Первый день окна (включительно), часовой пояс бизнес-периодов сервиса"},
         "to": {"type": "string", "format": "date", "description": "Последний день окна (включительно)"},
-        "cabinets_total": {"type": "integer", "minimum": 0, "description": "Активные кабинеты в снимке сервиса"},
+        "cabinets_total": {"type": "integer", "minimum": 0, "description": "Активные кабинеты снимка с ключом Seller API — запасное «ожидается» для ресурсов без строк; у рекламы ожидаемое число — cabinets_expected её строк"},
         "rows": {
             "type": "array",
             "items": {

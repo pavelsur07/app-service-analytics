@@ -109,6 +109,24 @@ func TestTokenIsSharedAndRefreshedBeforeExpiry(t *testing.T) {
 	assert.NotContains(t, logs.String(), "tok-")
 }
 
+// Общий client_id у двух подключений: у каждого свой токен — подключение
+// с неверным секретом не получает чужой токен из кэша.
+func TestTokenIsNotSharedBetweenConnections(t *testing.T) {
+	f := &fakePerf{ttl: 1800, handle: campaignsOK}
+	c, _, _ := newTestClient(t, f)
+	other := accounttest.Ref("conn-2")
+
+	_, err := c.FetchCampaigns(context.Background(), testRef, testCreds)
+	require.NoError(t, err)
+	_, err = c.FetchCampaigns(context.Background(), other, testCreds)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), f.tokens.Load(), "второе подключение запрашивает свой токен")
+
+	_, err = c.FetchCampaigns(context.Background(), accounttest.Ref("conn-3"), Credentials{ClientID: testCreds.ClientID, ClientSecret: "wrong"})
+	require.Error(t, err, "неверный секрет не проходит токеном другого подключения")
+	assert.Equal(t, int32(2), f.tokens.Load())
+}
+
 func TestUnauthorizedRefreshesTokenOnce(t *testing.T) {
 	var calls atomic.Int32
 	f := &fakePerf{ttl: 1800, handle: func(w http.ResponseWriter, r *http.Request, auth string) {

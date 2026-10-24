@@ -68,7 +68,7 @@ func Start(ctx context.Context, cfg config.Config, pool *store.Pool, logger *slo
 			slog.Int("rate_limits_at_floor", s.Hits), slog.Int("window_minutes", int(s.Window.Minutes())),
 			slog.Float64("rps", s.Floor))
 	}))
-	saved, err := tasks.LoadLimits(ctx)
+	saved, err := tasks.LoadLimitsAllConnections(ctx)
 	if err != nil {
 		return nil, err
 	}

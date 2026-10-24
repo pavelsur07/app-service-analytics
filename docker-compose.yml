@@ -219,7 +219,7 @@ services:
   # go test -race требует cgo. Монтируется весь services/: тесты контракта
   # читают services/_contracts. Не публикуется и не выкладывается.
   ozon-fetcher-dev:
-    image: golang:1.27
+    image: golang:1.27.3
     profiles: ["services"]
     working_dir: /src/ozon-fetcher
     environment:

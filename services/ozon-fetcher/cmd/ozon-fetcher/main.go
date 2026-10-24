@@ -94,9 +94,9 @@ func run(setFlush func(func())) error {
 	if ingestion != nil {
 		deps.CabinetsReady = ingestion.Cabinets.Ready
 		deps.S3Ping = ingestion.Raw.Ping
-		deps.Status = ingestion.Tasks.Status
+		deps.Status = ingestion.Tasks.StatusAllConnections
 		deps.Cabinets = ingestion.Cabinets.List
-		deps.Coverage = ingestion.Tasks.Coverage
+		deps.Coverage = ingestion.Tasks.CoverageAcrossConnections
 		deps.Location = ingestion.Location
 	}
 

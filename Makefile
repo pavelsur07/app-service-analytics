@@ -324,6 +324,9 @@ GOVULNCHECK_VERSION := v1.1.4
 
 ozon-fetcher-db: db-wait ## роль и БД сервиса ozon-fetcher в postgres песочницы (идемпотентно)
 	$(COMPOSE) exec -T postgres psql -q -v ON_ERROR_STOP=1 -U $(DB_USER) -d $(DB_NAME) < services/docker/postgres/init/01-ozon-fetcher.sql
+	$(COMPOSE) exec -T postgres sh -e < services/docker/postgres/init/02-ozon-fetcher-hba.sh
+	@if $(COMPOSE) exec -T -e PGPASSWORD=ozon_fetcher_dev postgres psql -h 127.0.0.1 -U svc_ozon_fetcher -d $(DB_NAME) -c 'SELECT 1' >/dev/null 2>&1; then \
+		echo "svc_ozon_fetcher подключается к БД $(DB_NAME) — граница ADR-043 п. 3 нарушена"; exit 1; fi
 
 ozon-fetcher-build: ## образ сервиса ozon-fetcher
 	$(SERVICES) build ozon-fetcher

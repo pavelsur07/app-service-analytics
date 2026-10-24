@@ -63,7 +63,7 @@ func newQueue(tasks ...store.Task) *queueClaimer {
 	return &queueClaimer{queue: tasks, running: map[string]bool{}}
 }
 
-func (q *queueClaimer) ClaimNext(_ context.Context, refs []account.Ref, _, attemptID, _ string, _ time.Time, _ time.Duration) (store.Task, error) {
+func (q *queueClaimer) ClaimNextAcrossConnections(_ context.Context, refs []account.Ref, _, attemptID, _ string, _ time.Time, _ time.Duration) (store.Task, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.claims++
@@ -91,7 +91,7 @@ func (q *queueClaimer) done(ref string) {
 	delete(q.running, ref)
 }
 
-func (q *queueClaimer) ReleaseExpired(context.Context, time.Time) (int64, error) {
+func (q *queueClaimer) ReleaseExpiredAcrossConnections(context.Context, time.Time) (int64, error) {
 	q.released.Add(1)
 	return 0, nil
 }
