@@ -38,8 +38,11 @@
   и изоляции).
 
 **1. Перенос сервиса как есть**
-- `services/` и `services/ozon-fetcher` побайтово с коммита-источника;
-  коммит-источник — в README сервиса.
+- `services/ozon-fetcher` и `services/_contracts/` побайтово
+  с коммита-источника; коммит-источник — в README сервиса. Правила
+  `services/AGENTS.md`, `services/go.md` уже есть с этапа 0.
+- `services/` — триггер высокого риска в `bin/review.py`;
+  `structure.md` — `_contracts/` и `ozon-fetcher/`.
 - Compose-профиль `services`, цели `make ozon-fetcher-*`
   (build, up, test, vet, lint, migrate), CI-задача и флаг `services`
   в `bin/ci-classify-paths`.

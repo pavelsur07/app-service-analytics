@@ -70,6 +70,10 @@
   Конкретные гарантии внешних побочных эффектов проверять по соответствующему ADR.
 - Миграции: одна итоговая миграция на задачу, проверка с пустой базы,
   рабочий `down()` либо явно описанное восстановление; для фактов — совместимые изменения.
+- Сервисы вне монолита — `services/` (Go, ADR-043): своя БД и бакет, к БД Conwix
+  не обращаются, с PHP — только по контрактам `services/_contracts/` через сервисный
+  контур (`CLAUDE.md` §1). Правила — `services/AGENTS.md` и `services/go.md`;
+  обязательные правила `CLAUDE.md` действуют и там.
 
 ## Frontend и контракт
 
@@ -95,7 +99,8 @@
   без подмены глобального fetch. Playwright — сценарии seller и admin.
 - Во время разработки запускать затронутые тесты и проверки области изменения:
   backend — `make lint stan deptrac structure-check` и нужные `make test-*`;
-  frontend — `make front-typecheck front-lint front-knip front-test front-build APP=...`.
+  frontend — `make front-typecheck front-lint front-knip front-test front-build APP=...`;
+  сервисы — `make <name>-lint <name>-vet <name>-test` (`services/go.md` «Гейты»).
   Для общего UI проверять всех потребителей, включая popup расширения.
   Для схемы БД обязателен `make db-rebuild-check`, для API — `make api-types-check`.
 - Перед merge проверить зелёный обязательный CI для всего diff ветки.
