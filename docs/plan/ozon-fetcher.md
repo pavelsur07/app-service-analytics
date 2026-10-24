@@ -38,9 +38,18 @@
   и изоляции).
 
 **1. Перенос сервиса как есть**
-- `services/ozon-fetcher` и `services/_contracts/` побайтово
-  с коммита-источника; коммит-источник — в README сервиса. Правила
-  `services/AGENTS.md`, `services/go.md` уже есть с этапа 0.
+- `services/ozon-fetcher` побайтово с коммита-источника;
+  коммит-источник — в README сервиса. Правила `services/AGENTS.md`,
+  `services/go.md` уже есть с этапа 0.
+- Прямые зависимости `go.mod` сверяются с таблицей принятого стека
+  `services/go.md`: модуль вне таблицы удаляется или выносится
+  на согласование до merge.
+- Контракты — **сразу в форме Conwix**, не побайтово: опубликованная
+  версия неизменна, и правка v1 после merge была бы новой версией.
+  `marketplace-connections/v1` — `marketplace_account_id` вместо
+  `connection_ref`, keyset-пагинация (ADR-043 п. 4), `CHANGELOG.md`
+  с отличиями от ВашФинДир; `service-coverage/v1` — сверить
+  идентификаторы и перенести с теми же правками, если они нужны.
 - `services/` — триггер высокого риска в `bin/review.py`;
   `structure.md` — `_contracts/` и `ozon-fetcher/`.
 - Compose-профиль `services`, цели `make ozon-fetcher-*`
@@ -87,9 +96,9 @@
 
 **5. Выдача подключений в PHP**
 - `GET /api/internal/marketplace-connections`, контракт
-  `services/_contracts/marketplace-connections/v1` (с
-  `marketplace_account_id`, keyset-пагинация: лимит 50, максимум 200,
-  превышение — 422; расхождение с ВашФинДир — в `CHANGELOG.md`).
+  `services/_contracts/marketplace-connections/v1` в форме, принятой
+  на этапе 1 (`marketplace_account_id`, keyset-пагинация: лимит 50,
+  максимум 200, превышение — 422).
 - Отдельный firewall, токен «сервис → PHP», сравнение за постоянное
   время; запрос `ActiveOzonConnectionsForServiceQuery`; узкие слои
   Deptrac на контроллер и запрос; аудит обращения без ключей.
@@ -142,9 +151,10 @@
 - Подключение для allowlist — с согласия владельца кабинета
   (ADR-043 п. 5: риск ограничения доступа по Client ID).
 - Неделя на одном подключении, критерии — **по этому подключению**:
-  отказы лимита у PHP (`OzonSellerRateLimited`) и 429 у сервиса за сутки
-  не выросли к неделе до включения, отметки загрузки дня ставятся
-  как раньше, ошибок `auth`/`invalid_*` в GlitchTip нет.
+  сумма отказов лимита PHP (`OzonSellerRateLimited`) и 429 сервиса
+  за сутки не больше, чем отказов PHP в худшие сутки недели до включения;
+  отметки загрузки дня ставятся как раньше; ошибок `auth`/`invalid_*`
+  в GlitchTip нет.
 - Любой 403 или ответ Ozon о блокировке по Client ID у PHP или сервиса —
   немедленно `OZON_FETCHER_ENABLED=false`.
 - Параллельная работа — не дольше, чем нужно для критериев: каждое
