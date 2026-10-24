@@ -320,7 +320,8 @@ SERVICES := $(COMPOSE) --profile services
 # Порог покрытия — services/go.md «Тесты»: стартово 70 %, только растёт.
 # Считается по internal/: cmd/ — wiring, test/stand — мок песочницы.
 OZON_FETCHER_COVERAGE_MIN := 70
-GOVULNCHECK_VERSION := v1.1.4
+# v1.1.4 (x/tools v0.29) падает в SSA на коде Go 1.27; версия — не моложе двух недель.
+GOVULNCHECK_VERSION := v1.8.0
 
 ozon-fetcher-db: db-wait ## роль и БД сервиса ozon-fetcher в postgres песочницы (идемпотентно)
 	$(COMPOSE) exec -T postgres psql -q -v ON_ERROR_STOP=1 -U $(DB_USER) -d $(DB_NAME) < services/docker/postgres/init/01-ozon-fetcher.sql
