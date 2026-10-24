@@ -62,7 +62,13 @@ app-service-analytics/
 ├── services/             сервисы вне монолита (ADR-043): свой процесс,
 │   │                     своя БД и бакет; контракты с PHP — _contracts/
 │   ├── AGENTS.md         правила всех сервисов
-│   └── go.md             правила Go
+│   ├── go.md             правила Go
+│   ├── _contracts/       JSON Schema контрактов сервис ↔ PHP по версиям
+│   │                     (marketplace-connections/v1, service-coverage/v1)
+│   ├── docker/postgres/  init-скрипт песочницы: роль и БД сервисов
+│   │                     на общем контейнере postgres
+│   └── ozon-fetcher/     загрузка raw Ozon (Go): cmd/ — wiring,
+│                         internal/ — логика, миграции internal/store
 ├── packages/
 │   ├── api-schema/       OpenAPI + сгенерированные TS-типы
 │   └── ui/               токены и примитивы, общие для seller и admin;
@@ -72,8 +78,9 @@ app-service-analytics/
         └── ci.yml        конвейер: фильтры по путям, кэш, публикация образа
 ```
 
-**Конвейер — один файл, шесть задач.** `changes` считает диф и отдаёт
-два флага; `backend` и `frontend` идут под этими флагами; `contract`
+**Конвейер — один файл, восемь задач.** `changes` считает диф и отдаёт
+три флага; `backend`, `frontend` и `services` (гейты `services/go.md`,
+сборка образа сервиса без публикации) идут под этими флагами; `contract`
 и `e2e` — без условий, всегда. Завершает `image`: собирает стадию `prod`
 из `docker/php/Dockerfile` и публикует в ghcr с тегом сборки, только
 с `master`; там же проверяется, что в опубликованном образе нет

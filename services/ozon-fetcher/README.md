@@ -1,0 +1,130 @@
+# ozon-fetcher
+
+Go-сервис загрузки raw Ozon (ADR-043): по активным подключениям Ozon
+набирает ответы Seller API и Performance API в своём бакете и ведёт журнал
+загрузок в своей БД. Работает параллельно загрузке PHP и её не меняет;
+передача raw в PHP — вторая волна, отдельный ADR. Другие маркетплейсы —
+не здесь.
+
+**Источник кода** — ВашФинДир (`app-service-finance`, `services/ozon-fetcher`,
+коммит `a9eb74206`), перенесён с адаптацией (этап 1 `docs/plan/ozon-fetcher.md`):
+схема и код `store` в форме Conwix, подключение — пара `company_id` +
+`marketplace_account_id`, UUIDv7, клиент выдачи подключений под контракт
+`services/_contracts/marketplace-connections/v1`. Остальной код — как
+в источнике; ссылки `docs/tasks/…` в комментариях кода и в
+[`docs/ozon-api.md`](docs/ozon-api.md) ведут в репозиторий источника.
+
+**Статус:** перенесён, загрузка выключена конфигурацией — без
+`SYMFONY_INTERNAL_BASE_URL` планировщик и диспетчер не стартуют, сервис
+отвечает только `/health` и `/ready`. Выдача подключений в PHP — этап 4,
+включение — этапы 5–7 плана. До включения доводятся записанные правила
+`services/AGENTS.md`, которых в перенесённом коде ещё нет: проверка
+сегментов ключа и порт хранилища с подключением (этап 2); срок жизни кэша
+`CONNECTIONS_MAX_STALE`, отзыв и закрытый по умолчанию allowlist (этап 5);
+фикстуры разбора — побайтовые ответы кабинета из
+`api/tests/Fixtures/Marketplace/ozon` вместо синтетических `testdata/`
+(этап 3);
+обязательные поля журнала через общий обработчик, лимиты списков и отказ
+от `COUNT(*)` по журналу попыток в `/internal/fetch-status`
+и `/internal/coverage` (этап 6).
+
+Границы: сервис не пишет в БД PHP, не нормализует данные в факты и не
+решает об идемпотентности по состоянию БД PHP (`services/AGENTS.md`).
+
+## Запуск (dev)
+
+```bash
+make ozon-fetcher-up        # сборка образа, миграции, запуск (профиль services)
+docker compose --profile services exec ozon-fetcher wget -qO- http://127.0.0.1:8080/ready
+```
+
+БД: логическая `ozon_fetcher` (и `ozon_fetcher_test` для тестов) с ролью
+`svc_ozon_fetcher` на общем контейнере postgres песочницы. Их создаёт
+`services/docker/postgres/init/01-ozon-fetcher.sql` — на пустом томе сам
+postgres, на существующем `make ozon-fetcher-db`. Пароль — только для
+песочницы. Без `DB_DSN` сервис работает без БД (`/ready` — `db: disabled`).
+
+## Схема БД
+
+Только техническое состояние, без сумм, ПДн, ключей и тел ответов
+(`services/AGENTS.md` §5). Одна стартовая миграция
+`internal/store/migrations/00001_init.sql` с рабочим `down`; прогон —
+`make ozon-fetcher-migrate`, проверка с пустой базы — в `make db-rebuild-check`.
+
+| Таблица | Назначение |
+|---|---|
+| `fetch_task` | Что должно быть загружено: `(company_id, marketplace_account_id, resource_type, period_key)`, статус (`pending → running → done \| not_ready \| failed_retryable \| failed_permanent`), приоритет, попытки, `next_run_at`, lease, курсор и номер следующей страницы, `content_hash` + `revision`, страницы ревизии для зависимых ресурсов |
+| `fetch_attempt` | Журнал попыток (append-only): время, исход, HTTP-статус, страницы, байты |
+| `raw_object` | Объект хранилища на страницу попытки: `storage_uri`, sha256 несжатых байтов, размеры |
+| `connection_state` | Подключение: `last_served_at` (честная очередь), пауза после `auth`, отказы ключа подряд |
+| `connection_limit` | Пара (подключение, endpoint): ручное `rps_override`, адаптированная `rps_current` |
+| `resource_stop` | Ресурс, снятый у Ozon (`obsolete_endpoint`), — не выдаётся никому |
+| `planner_run` | Проход планировщика с перезагрузкой — один раз за дату на подключение |
+
+Инварианты: у подключения не больше одной `running`-задачи на семейство API
+(Seller и реклама — частичный уникальный индекс); страница и курсор пишутся
+одной транзакцией; просроченный lease возвращает задачу в `pending`
+с сохранённым курсором. Межарендаторно работают только операционные
+функции с `AcrossConnections`/`AllConnections` в имени (CLAUDE.md §1):
+индекс `fetch_task_ready` для выдачи задач ведёт временем, чтения одного
+подключения — `company_id` первым.
+
+Интеграционные тесты `internal/store` идут на `TEST_DB_DSN` (в песочнице —
+`ozon_fetcher_test`), каждый пакет — в своей схеме; без переменной
+пропускаются.
+
+**Raw в хранилище** (`internal/rawstore`): ключ
+`ozon/{company_id}/{marketplace_account_id}/{resource_type}/{period_key}/{fetched_at}_{attempt}_p{NNN}_{sha8}.{ext}.gz`,
+gzip исходных байтов, `If-None-Match: *`, sha256 несжатых — в метаданных
+и `raw_object`. Строгая проверка сегментов ключа — этап 2 плана.
+Интеграционный тест — `TEST_S3_ENDPOINT`, `TEST_S3_BUCKET`.
+
+## Переменные окружения
+
+Секреты — только env, значения не коммитятся (шаблон — `.env.example`).
+Ключи Ozon в env не задаются: они приходят по подключению из PHP
+(`marketplace-connections` v1) и живут только в памяти.
+
+| Переменная | Назначение |
+|---|---|
+| `LISTEN_ADDR` | Адрес HTTP, по умолчанию `:8080` |
+| `DB_DSN` | PostgreSQL сервисной БД; пусто — без БД |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Бакет сервиса и пользователь хранилища только на него (этап 7) |
+| `SYMFONY_INTERNAL_BASE_URL` | Базовый URL PHP для `GET /api/internal/marketplace-connections`; пусто — загрузка выключена |
+| `INTERNAL_AUTH_TOKEN` | Токен направления «сервис → PHP» |
+| `SERVICE_API_TOKEN` | Токен направления «PHP → сервис» для `/internal/*` сервиса, ≥ 32 символов; пусто — `/internal/*` закрыт (401) |
+| `CONNECTIONS_POLL_INTERVAL` | Интервал опроса выдачи подключений, по умолчанию `5m` |
+| `MAX_PARALLEL_CONNECTIONS` | Сколько подключений загружается одновременно (по умолчанию 4) |
+| `CONNECTION_ALLOWLIST` | `marketplace_account_id` или `company_id` через запятую; пусто сейчас — все, закрытым по умолчанию станет на этапе 5 |
+| `SENTRY_DSN`, `SENTRY_RELEASE`, `SENTRY_ENVIRONMENT` | GlitchTip: записи ERROR уходят событием; пустой DSN — только журнал |
+| `OZON_BASE_URL`, `OZON_PERFORMANCE_BASE_URL` | Seller и Performance API (в песочнице — мок) |
+| `TAIL_DAYS`, `RECONCILE_WEEKDAY`, `FINAL_DAY`, `PLAN_EVERY` | Окна планировщика: 3, 1 (пн), 10, 1h |
+| `ACCRUAL_POSTINGS_DAYS`, `ACCRUAL_POSTINGS_DAILY_DAYS` | Начисления по отправлениям: глубина перечитывания (45) и ежедневная часть (14) |
+| `ORDERS_FROM`, `ORDERS_TAIL_DAYS` | Отправления: первый день загрузки (МСК) и глубина ежедневного перечитывания (30) |
+
+## Внутренний API сервиса
+
+| Метод | Назначение |
+|---|---|
+| `GET /health`, `GET /ready` | Живость и готовность БД, без токена |
+| `GET /internal/fetch-status` | Состояние загрузки по подключениям и ресурсам: пропуски, последняя успешная загрузка, лимит, 429, пауза |
+| `GET /internal/coverage?from=YYYY-MM-DD&to=YYYY-MM-DD` | Покрытие «ресурс × период → подключений по статусам», контракт `services/_contracts/service-coverage/v1` |
+
+`/internal/*` — под токеном `SERVICE_API_TOKEN`.
+
+## Тесты и гейты
+
+```bash
+make ozon-fetcher-test       # go test -race, интеграционные store, порог покрытия internal/
+make ozon-fetcher-vet        # go vet
+make ozon-fetcher-lint       # golangci-lint fmt --diff + run (.golangci.yml)
+make ozon-fetcher-vulncheck  # govulncheck
+```
+
+Тулчейн — контейнеры `ozon-fetcher-dev` (golang:1.27.3, cgo для `-race`)
+и `ozon-fetcher-lint` профиля `services`. Состав гейтов — `services/go.md`
+«Гейты»; в конвейере — задача `services`.
+
+## План
+
+`docs/plan/ozon-fetcher.md`, ADR-043.
