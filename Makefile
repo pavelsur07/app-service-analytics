@@ -42,6 +42,8 @@ TEST_WORKERS ?= $(shell n=$$(nproc); [ $$n -gt 15 ] && n=15; echo $$n)
 	api-doc-export api-types api-types-check \
 	front-install front-install-apps e2e-install front-dev front-build \
 	review-prepare review-claude review-codex review-defects review \
+	ozon-fetcher-db ozon-fetcher-build ozon-fetcher-up ozon-fetcher-migrate \
+	ozon-fetcher-test ozon-fetcher-vet ozon-fetcher-lint ozon-fetcher-vulncheck \
 	ci-local
 
 help: ## список целей с описаниями
@@ -154,7 +156,8 @@ s3-bucket-create: s3-wait ## бакеты сырья для dev и test (иде�
 #
 # Порядок задан списком зависимостей; он соблюдается благодаря
 # .NOTPARALLEL в начале файла.
-db-rebuild-check: down-clear up db-wait api-migrate api-migrate-test db-schema-validate test ## down-clear → up → migrate → schema-validate → test
+db-rebuild-check: down-clear up db-wait api-migrate api-migrate-test db-schema-validate test \
+	ozon-fetcher-migrate ozon-fetcher-test ## down-clear → up → migrate → schema-validate → test, то же для БД сервисов
 	@echo "db-rebuild-check: OK"
 
 # --- Тесты -------------------------------------------------------------
@@ -308,6 +311,49 @@ front-dev: ## запуск dev-серверов (node-seller, node-admin) и wat
 front-build: ## production-сборка (APP=seller|admin, по умолчанию — оба)
 	@for app in $(APPS); do $(COMPOSE) exec node-$$app npm run build || exit 1; done
 
+# --- Сервисы вне монолита (services/, ADR-043) ------------------------------
+# Профиль services в docker-compose.yml. Go на хосте не нужен: тулчейн —
+# контейнер ozon-fetcher-dev (debian, cgo для -race), линтер —
+# ozon-fetcher-lint. Правила гейтов — services/go.md «Гейты».
+
+SERVICES := $(COMPOSE) --profile services
+# Порог покрытия — services/go.md «Тесты»: стартово 70 %, только растёт.
+# Считается по internal/: cmd/ — wiring, test/stand — мок песочницы.
+OZON_FETCHER_COVERAGE_MIN := 70
+GOVULNCHECK_VERSION := v1.1.4
+
+ozon-fetcher-db: db-wait ## роль и БД сервиса ozon-fetcher в postgres песочницы (идемпотентно)
+	$(COMPOSE) exec -T postgres psql -q -v ON_ERROR_STOP=1 -U $(DB_USER) -d $(DB_NAME) < services/docker/postgres/init/01-ozon-fetcher.sql
+
+ozon-fetcher-build: ## образ сервиса ozon-fetcher
+	$(SERVICES) build ozon-fetcher
+
+ozon-fetcher-up: ozon-fetcher-build ozon-fetcher-migrate ## запуск сервиса; загрузка выключена конфигурацией
+	$(SERVICES) up -d ozon-fetcher
+
+ozon-fetcher-migrate: ozon-fetcher-db ## миграции БД сервиса (dev); тесты мигрируют свою БД сами
+	$(SERVICES) run --rm -T ozon-fetcher-dev go run ./cmd/ozon-fetcher -migrate
+
+# -count=1: кэш go test не знает о состоянии БД и хранилища — после
+# пересоздания базы интеграционные тесты иначе «проходят» из кэша.
+ozon-fetcher-test: ozon-fetcher-db ## go test -race, интеграционные тесты store на БД сервиса, порог покрытия
+	$(SERVICES) run --rm -T ozon-fetcher-dev sh -ec '\
+		for i in $$(seq 1 30); do curl -fsS http://s3:8333/healthz >/dev/null 2>&1 && break; sleep 1; done ; \
+		go test -race -count=1 -coverprofile=/tmp/cover.out ./... ; \
+		grep -v -e "/cmd/" -e "/test/" /tmp/cover.out > /tmp/cover.internal.out ; \
+		total=$$(go tool cover -func=/tmp/cover.internal.out | awk "/^total:/ {sub(\"%\", \"\", \$$3); print \$$3}") ; \
+		echo "coverage internal/: $$total% (порог $(OZON_FETCHER_COVERAGE_MIN)%)" ; \
+		awk -v t="$$total" -v m=$(OZON_FETCHER_COVERAGE_MIN) "BEGIN { exit !(t >= m) }"'
+
+ozon-fetcher-vet: ## go vet
+	$(SERVICES) run --rm -T ozon-fetcher-dev go vet ./...
+
+ozon-fetcher-lint: ## форматирование и golangci-lint
+	$(SERVICES) run --rm -T ozon-fetcher-lint sh -ec 'golangci-lint fmt --diff && golangci-lint run ./...'
+
+ozon-fetcher-vulncheck: ## govulncheck по зависимостям и коду сервиса
+	$(SERVICES) run --rm -T ozon-fetcher-dev go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
 # --- Ревью ---------------------------------------------------------------
 
 # Параметры передаются через окружение, а не интерполируются в shell-код.
@@ -343,6 +389,7 @@ review: ## подготовка + Claude; REVIEW_RISK=high (по умолчан�
 # набором проверок.
 
 ci-local: structure-check stan deptrac lint front-typecheck front-lint front-knip front-test audit \
+	ozon-fetcher-lint ozon-fetcher-vet ozon-fetcher-test ozon-fetcher-vulncheck \
 	api-types-check \
 	db-wait db-test-create api-migrate-test s3-bucket-create test-unit test-int test-func \
 	front-build test-e2e ## всё, что прогоняет конвейер Stage 4, одной командой

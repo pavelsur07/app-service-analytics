@@ -1,0 +1,6 @@
+# В образ — только go.mod/go.sum, cmd/ и internal/ (docker/Dockerfile).
+test/
+docs/
+*.md
+.env*
+.golangci.yml

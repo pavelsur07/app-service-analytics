@@ -30,6 +30,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      services: ${{ steps.filter.outputs.services }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -83,13 +84,13 @@ jobs:
           fi
 
           classification=$(printf '%s\n' "$changed" | bin/ci-classify-paths)
-          backend=${classification%%$'\n'*}
-          backend=${backend#backend=}
-          frontend=${classification##*$'\n'}
-          frontend=${frontend#frontend=}
+          backend=$(printf '%s\n' "$classification" | sed -n 's/^backend=//p')
+          frontend=$(printf '%s\n' "$classification" | sed -n 's/^frontend=//p')
+          services=$(printf '%s\n' "$classification" | sed -n 's/^services=//p')
 
           echo "backend=$backend" >> "$GITHUB_OUTPUT"
           echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+          echo "services=$services" >> "$GITHUB_OUTPUT"
 
           {
             echo "## Фильтры по путям"
@@ -100,6 +101,7 @@ jobs:
             echo "|---|---|"
             echo "| backend (PHP-CS-Fixer, PHPStan, Deptrac, structure-check, PHPUnit) | \`$backend\` |"
             echo "| frontend (typecheck, ESLint, Prettier, Vitest, knip, сборка) | \`$frontend\` |"
+            echo "| services (gofmt, golangci-lint, go vet, go test -race, покрытие, govulncheck, сборка) | \`$services\` |"
             echo "| contract (api-types-check, audit) | \`true\` — всегда |"
             echo "| e2e (Playwright, оба сценария) | \`true\` — всегда |"
             echo ""
@@ -516,9 +518,26 @@ jobs:
           path: var/playwright/
           retention-days: 7
 
+  # Сервисы вне монолита (ADR-043): гейты services/go.md. Образ сервиса
+  # пока не публикуется — только собирается, выкладка — этап 7.
+  services:
+    name: services
+    needs: changes
+    if: needs.changes.outputs.services == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # postgres поднимает init-скрипт services/docker/postgres/init:
+      # роль и БД сервиса появляются на пустом томе. s3 — интеграционные
+      # тесты rawstore и executor.
+      - run: docker compose up -d postgres s3
+
+      - run: make ozon-fetcher-lint ozon-fetcher-vet ozon-fetcher-test ozon-fetcher-vulncheck ozon-fetcher-build
+
   image:
     name: сборка и публикация образа
-    needs: [backend, frontend, contract, e2e]
+    needs: [backend, frontend, services, contract, e2e]
     # always() — пропущенные backend/frontend не должны утаскивать за собой
     # публикацию; !failure() && !cancelled() — упавшие обязаны.
     if: >-

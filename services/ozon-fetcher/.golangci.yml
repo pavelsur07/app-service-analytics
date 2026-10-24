@@ -1,0 +1,19 @@
+# golangci-lint v2 — гейты сервиса (см. services/go.md «Гейты»).
+# Стандартный набор (errcheck, govet, ineffassign, staticcheck, unused)
+# плюс HTTP- и мелкие проверки. Форматирование: golangci-lint fmt.
+version: "2"
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - gosec
+    - misspell
+    - noctx
+  settings:
+    gosec:
+      excludes:
+        - G104 # unchecked errors: перекрывается errcheck
+formatters:
+  enable:
+    - gofmt
+    - goimports

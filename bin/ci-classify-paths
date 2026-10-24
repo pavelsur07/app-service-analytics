@@ -15,13 +15,21 @@ everything='^(\.github/|Makefile|docker-compose\.yml|docker-compose\.prod\.yml|d
 if [[ -z "$changed" ]] || matches "$everything"; then
     backend=true
     frontend=true
+    services=true
 else
     backend=false
     frontend=false
+    services=false
     matches '^api/' && backend=true
     # Скрипты bin/ и их поведенческие тесты исполняются в backend-job.
     matches '^bin/' && backend=true
     matches '^apps/' && frontend=true
+    # Сервисы вне монолита (ADR-043) — своя задача конвейера. Контракты
+    # services/_contracts общие с PHP: их правка проверяет обе стороны.
+    if matches '^services/'; then
+        services=true
+        matches '^services/_contracts/' && backend=true
+    fi
     # Контракт общий: правка схемы касается обеих половин.
     if matches '^packages/api-schema/'; then
         backend=true
@@ -29,4 +37,4 @@ else
     fi
 fi
 
-printf 'backend=%s\nfrontend=%s\n' "$backend" "$frontend"
+printf 'backend=%s\nfrontend=%s\nservices=%s\n' "$backend" "$frontend" "$services"

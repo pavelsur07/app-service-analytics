@@ -1,0 +1,29 @@
+{
+  "schema_version": "1",
+  "generated_at": "2026-10-24T12:00:00+03:00",
+  "connections": [
+    {
+      "marketplace_account_id": "0193a5e0-0000-7000-8000-0000000000a1",
+      "company_id": "0193a5e0-0000-7000-8000-00000000c0a1",
+      "provider": "ozon",
+      "updated_at": "2026-10-11T09:00:00+03:00",
+      "credentials": {
+        "seller": {"client_id": "seller-a", "api_key": "example-seller-key-a"},
+        "performance": null
+      },
+      "resource_types": ["ozon.finance.accrual-by-day", "ozon.orders.fbo"]
+    },
+    {
+      "marketplace_account_id": "0193a5e0-0000-7000-8000-0000000000b1",
+      "company_id": "0193a5e0-0000-7000-8000-00000000c0b1",
+      "provider": "ozon",
+      "updated_at": "2026-10-10T09:00:00+03:00",
+      "credentials": {
+        "seller": null,
+        "performance": {"client_id": "perf-b", "client_secret": "example-perf-secret-b"}
+      },
+      "resource_types": ["ozon.ads.campaigns"]
+    }
+  ],
+  "next_cursor": null
+}

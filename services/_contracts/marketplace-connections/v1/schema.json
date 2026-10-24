@@ -1,0 +1,107 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://conwix.com/contracts/marketplace-connections/v1/schema.json",
+    "title": "Marketplace Connections",
+    "description": "Страница ответа GET /api/internal/marketplace-connections (сервисный контур, ADR-043 п. 4): активные подключения Ozon с ключами для автономной работы сервисов services/. Только внутренняя сеть и токен направления «сервис → PHP».",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["schema_version", "generated_at", "connections", "next_cursor"],
+    "properties": {
+        "schema_version": {
+            "const": "1"
+        },
+        "generated_at": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "connections": {
+            "type": "array",
+            "maxItems": 200,
+            "description": "Подключения страницы в порядке marketplace_account_id",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "marketplace_account_id",
+                    "company_id",
+                    "provider",
+                    "updated_at",
+                    "credentials",
+                    "resource_types"
+                ],
+                "properties": {
+                    "marketplace_account_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "description": "Идентификатор подключения Conwix (не секрет)"
+                    },
+                    "company_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "description": "Компания подключения; первый сегмент ключа объекта хранилища сервиса"
+                    },
+                    "provider": {
+                        "const": "ozon"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Последнее изменение подключения или ключей: по нему сервис видит новые ключи после 401"
+                    },
+                    "credentials": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["seller", "performance"],
+                        "properties": {
+                            "seller": {
+                                "type": ["object", "null"],
+                                "additionalProperties": false,
+                                "required": ["client_id", "api_key"],
+                                "properties": {
+                                    "client_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "api_key": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    }
+                                },
+                                "description": "null — ключа Seller API нет"
+                            },
+                            "performance": {
+                                "type": ["object", "null"],
+                                "additionalProperties": false,
+                                "required": ["client_id", "client_secret"],
+                                "properties": {
+                                    "client_id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "client_secret": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    }
+                                },
+                                "description": "null — ключа Performance API нет"
+                            }
+                        }
+                    },
+                    "resource_types": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "description": "Ресурсы, доступные с имеющимися ключами; выводимое поле, не источник истины"
+                    }
+                }
+            }
+        },
+        "next_cursor": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "description": "Непрозрачный курсор следующей страницы; null — страница последняя"
+        }
+    }
+}

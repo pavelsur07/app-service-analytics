@@ -86,6 +86,9 @@ services:
       POSTGRES_DB: app
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Роль и БД сервисов services/ (ADR-043) — на пустом томе; на живом
+      # тот же скрипт выполняет make ozon-fetcher-db.
+      - ./services/docker/postgres/init:/docker-entrypoint-initdb.d:ro
 
   redis:
     image: redis:7.4-alpine
@@ -187,6 +190,69 @@ services:
       - .:/var/www
     command: ["tail", "-f", "/dev/null"]
 
+  # --- Сервисы вне монолита (services/, ADR-043): профиль services ---
+  # Без профиля не поднимаются: make up и конвейер PHP их не трогают.
+
+  # Сам сервис. Загрузка выключена: без SYMFONY_INTERNAL_BASE_URL
+  # планировщик и диспетчер не стартуют, наружу сервис не ходит,
+  # /health и /ready (БД) отвечают. Включение — этап 5 плана.
+  ozon-fetcher:
+    build:
+      context: services/ozon-fetcher
+      dockerfile: docker/Dockerfile
+    profiles: ["services"]
+    environment:
+      LISTEN_ADDR: ":8080"
+      # Только песочница: пароль из services/docker/postgres/init.
+      DB_DSN: "postgres://svc_ozon_fetcher:ozon_fetcher_dev@postgres:5432/ozon_fetcher?sslmode=disable"
+      SENTRY_ENVIRONMENT: dev
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # Тулчейн гейтов (make ozon-fetcher-test/-vet/-migrate): debian-образ —
+  # go test -race требует cgo. Монтируется весь services/: тесты контракта
+  # читают services/_contracts. Не публикуется и не выкладывается.
+  ozon-fetcher-dev:
+    image: golang:1.27
+    profiles: ["services"]
+    working_dir: /src/ozon-fetcher
+    environment:
+      CGO_ENABLED: "1"
+      DB_DSN: "postgres://svc_ozon_fetcher:ozon_fetcher_dev@postgres:5432/ozon_fetcher?sslmode=disable"
+      TEST_DB_DSN: "postgres://svc_ozon_fetcher:ozon_fetcher_dev@postgres:5432/ozon_fetcher_test?sslmode=disable"
+      # Интеграционные тесты rawstore и executor: свой бакет на SeaweedFS
+      # песочницы, тесты создают его сами; ключи SeaweedFS не проверяет.
+      TEST_S3_ENDPOINT: "http://s3:8333"
+      TEST_S3_BUCKET: "ozon-fetcher-test"
+    volumes:
+      - ./services:/src
+      - go_mod:/go/pkg/mod
+      - go_build:/root/.cache/go-build
+    depends_on:
+      - postgres
+      - s3
+
+  ozon-fetcher-lint:
+    image: golangci/golangci-lint:v2.14.0-alpine
+    profiles: ["services"]
+    working_dir: /src/ozon-fetcher
+    volumes:
+      - ./services:/src
+      - go_mod:/go/pkg/mod
+      - go_build:/root/.cache/go-build
+
 volumes:
   postgres_data:
   s3_data:
+  # Кэши Go — с явными именами: одни и те же у compose-проекта песочницы
+  # и у конвейера, где проект называется conwix.
+  go_mod:
+    name: conwix-go-mod
+  go_build:
+    name: conwix-go-build
