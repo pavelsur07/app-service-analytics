@@ -59,6 +59,10 @@ app-service-analytics/
 │   ├── admin/            admin.conwix.com
 │   └── extension/        расширение браузера (MV3), выкладка через
 │                         Chrome Web Store, не через наш конвейер
+├── services/             сервисы вне монолита (ADR-043): свой процесс,
+│   │                     своя БД и бакет; контракты с PHP — _contracts/
+│   ├── AGENTS.md         правила всех сервисов
+│   └── go.md             правила Go
 ├── packages/
 │   ├── api-schema/       OpenAPI + сгенерированные TS-типы
 │   └── ui/               токены и примитивы, общие для seller и admin;
