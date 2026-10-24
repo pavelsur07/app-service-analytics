@@ -102,6 +102,14 @@ PHP в этой волне меняется в двух местах: выдач
 на `marketplace_account_id`. Отдаёт активные подключения Ozon
 с расшифрованными ключами Seller и Performance.
 
+Состав записи подключения в нашем v1: `marketplace_account_id`
+(вместо `connection_ref` источника), `company_id`, `provider`,
+`updated_at` (момент последнего изменения подключения или ключей —
+по нему сервис видит новые ключи после 401), `credentials.seller`
+и `credentials.performance` (каждый может быть `null`), `resource_types`.
+Верхний уровень — `schema_version`, `generated_at`, `connections`
+и курсор следующей страницы.
+
 Список отдаётся по правилам §5 CLAUDE.md: keyset-пагинация по
 `marketplace_account_id`, лимит по умолчанию 50, максимум 200, превышение —
 422; ответ несёт курсор следующей страницы. Сервис собирает полный список
