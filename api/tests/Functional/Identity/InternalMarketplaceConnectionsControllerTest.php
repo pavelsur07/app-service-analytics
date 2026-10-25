@@ -163,14 +163,78 @@ final class InternalMarketplaceConnectionsControllerTest extends WebTestCase
             $handler->getRecords(),
             static fn ($record): bool => 'service_audit' === $record->channel,
         ));
-        self::assertCount(1, $audit);
-        self::assertGreaterThanOrEqual(1, $audit[0]->context['connections']);
+        self::assertCount(2, $audit, 'строка подписчика на каждое обращение и строка выдачи');
+        $issued = array_values(array_filter($audit, static fn ($record): bool => 'marketplace connections issued to service' === $record->message));
+        self::assertCount(1, $issued);
+        self::assertGreaterThanOrEqual(1, $issued[0]->context['connections']);
         foreach ($handler->getRecords() as $record) {
             $line = $record->message.json_encode($record->context).json_encode($record->extra);
             foreach (['audit-seller-key', 'audit-perf-secret', self::TOKEN] as $secret) {
                 self::assertStringNotContainsString($secret, $line);
             }
         }
+    }
+
+    /**
+     * Отказ — тоже обращение: попытка с чужим токеном, без токена или
+     * с неверными параметрами оставляет строку аудита, а отказ токена —
+     * уровня warning, чтобы пройти порог журнала в prod.
+     */
+    public function testRefusedRequestsAreAuditedToo(): void
+    {
+        $client = static::createClient();
+
+        $audit = [];
+        foreach ([
+            [self::URL, []],
+            [self::URL, ['HTTP_AUTHORIZATION' => 'Bearer '.substr(self::TOKEN, 0, -1)]],
+            [self::URL.'&limit=0', ['HTTP_AUTHORIZATION' => 'Bearer '.self::TOKEN]],
+        ] as [$url, $server]) {
+            $client->request('GET', $url, server: $server);
+            // Журнал читается после каждого запроса: между запросами
+            // клиент пересобирает ядро, и записи прошлого пропадают.
+            $handler = static::getContainer()->get('monolog.handler.in_memory');
+            self::assertInstanceOf(TestHandler::class, $handler);
+            foreach ($handler->getRecords() as $record) {
+                if ('service_audit' === $record->channel) {
+                    $audit[] = $record;
+                }
+            }
+        }
+
+        self::assertSame(
+            [['WARNING', 401], ['WARNING', 401], ['INFO', 422]],
+            array_map(static fn ($record): array => [$record->level->getName(), $record->context['status']], $audit),
+        );
+        foreach ($audit as $record) {
+            self::assertSame('/api/internal/marketplace-connections', $record->context['path']);
+            self::assertStringNotContainsString(substr(self::TOKEN, 0, -1), (string) json_encode($record->context));
+        }
+    }
+
+    /**
+     * Строка с повреждённым шифротекстом не роняет выдачу остальных
+     * компаний: она пропускается и пишется ошибкой без ключей.
+     */
+    public function testUndecryptableConnectionIsSkippedNotFailingThePage(): void
+    {
+        $client = static::createClient();
+        $broken = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withExternalShopId('corrupt-shop')
+            ->withCredentials(base64_encode('not a ciphertext of ours at all, long enough'), 1)
+            ->persistWith($this->companies(), $this->marketplaceAccounts());
+        $healthy = $this->sellerOnlyAccount('healthy-shop', 'healthy-key');
+
+        $client->request('GET', self::URL.'&limit=200', server: ['HTTP_AUTHORIZATION' => 'Bearer '.self::TOKEN]);
+
+        self::assertResponseIsSuccessful();
+        $this->assertMatchesContract((string) $client->getResponse()->getContent());
+        $issued = $this->connectionsById($this->decode($client));
+        self::assertArrayHasKey($healthy->id()->toRfc4122(), $issued);
+        self::assertArrayNotHasKey($broken->id()->toRfc4122(), $issued);
+        $handler = static::getContainer()->get('monolog.handler.in_memory');
+        self::assertInstanceOf(TestHandler::class, $handler);
+        self::assertTrue($handler->hasErrorThatContains('cannot be decrypted'));
     }
 
     public function testKeysetPagesCoverEveryConnectionOnce(): void

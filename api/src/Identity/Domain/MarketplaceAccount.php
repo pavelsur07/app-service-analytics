@@ -98,8 +98,13 @@ class MarketplaceAccount
      * сервис отличает новые ключи от тех, на которые Ozon уже ответил
      * отказом. Ставит каждый переход ниже и оба условных UPDATE
      * репозитория — иначе сервис не увидел бы смену ключей.
+     *
+     * Значение строго растёт (touch()): колонка хранит целые секунды,
+     * и две замены ключа в одну секунду без этого дали бы сервису
+     * одинаковую версию. Умолчание в схеме — для старого образа, который
+     * в окне выкладки вставляет строки без этой колонки.
      */
-    #[ORM\Column]
+    #[ORM\Column(options: ['default' => 'CURRENT_TIMESTAMP'])]
     private \DateTimeImmutable $updatedAt;
 
     private function __construct(
@@ -230,7 +235,7 @@ class MarketplaceAccount
 
         $this->credentialsCiphertext = $credentialsCiphertext;
         $this->credentialsKeyVersion = $credentialsKeyVersion;
-        $this->updatedAt = new \DateTimeImmutable();
+        $this->touch();
 
         if (MarketplaceAccountState::Broken === $this->state) {
             $this->state = MarketplaceAccountState::Active;
@@ -256,7 +261,7 @@ class MarketplaceAccount
         $this->credentialsCiphertext = $credentialsCiphertext;
         $this->credentialsKeyVersion = $credentialsKeyVersion;
         $this->advertisingState = AdvertisingState::Active;
-        $this->updatedAt = new \DateTimeImmutable();
+        $this->touch();
     }
 
     /**
@@ -276,7 +281,7 @@ class MarketplaceAccount
     public function markBroken(): void
     {
         $this->state = MarketplaceAccountState::Broken;
-        $this->updatedAt = new \DateTimeImmutable();
+        $this->touch();
     }
 
     /**
@@ -285,6 +290,19 @@ class MarketplaceAccount
     public function revoke(): void
     {
         $this->state = MarketplaceAccountState::Revoked;
-        $this->updatedAt = new \DateTimeImmutable();
+        $this->touch();
+    }
+
+    /**
+     * Следующая версия подключения: текущая секунда, но не раньше
+     * прошлой отметки плюс секунда — тот же расчёт, что в условных
+     * UPDATE репозитория.
+     */
+    private function touch(): void
+    {
+        $now = new \DateTimeImmutable();
+        $now = $now->setTime((int) $now->format('H'), (int) $now->format('i'), (int) $now->format('s'));
+        $next = $this->updatedAt->modify('+1 second');
+        $this->updatedAt = $now > $next ? $now : $next;
     }
 }

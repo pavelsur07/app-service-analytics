@@ -18,6 +18,11 @@ use Doctrine\Migrations\AbstractMigration;
  * которое сменится при следующей замене ключа, — и только потом
  * запретить NULL. Таблица — подключения, а не факты: десятки строк,
  * блокировка на время UPDATE не заметна.
+ *
+ * Умолчание `CURRENT_TIMESTAMP` — для старого образа: выкладка стоит на
+ * гейте миграций, пока миграция не применена, и всё это время прежний код
+ * вставляет подключения без `updated_at`. Без умолчания такая вставка
+ * упала бы на NOT NULL. База работает в UTC, как и PHP.
  */
 final class Version20261025065030 extends AbstractMigration
 {
@@ -28,7 +33,7 @@ final class Version20261025065030 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
-        $this->addSql('ALTER TABLE marketplace_account ADD updated_at TIMESTAMP(0) WITHOUT TIME ZONE');
+        $this->addSql('ALTER TABLE marketplace_account ADD updated_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP');
         $this->addSql('UPDATE marketplace_account SET updated_at = created_at');
         $this->addSql('ALTER TABLE marketplace_account ALTER COLUMN updated_at SET NOT NULL');
     }

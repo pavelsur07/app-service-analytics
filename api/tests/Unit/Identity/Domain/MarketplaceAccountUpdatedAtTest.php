@@ -51,4 +51,24 @@ final class MarketplaceAccountUpdatedAtTest extends TestCase
 
         self::assertGreaterThan(new \DateTimeImmutable(self::LONG_AGO), $account->updatedAt());
     }
+
+    /**
+     * Колонка хранит целые секунды: две замены ключа подряд обязаны дать
+     * разные значения и в этом виде, иначе вторую сервис примет за первую.
+     */
+    public function testConsecutiveChangesWithinOneSecondStayDistinct(): void
+    {
+        $account = MarketplaceAccountBuilder::aMarketplaceAccount()->withConnectedAt(new \DateTimeImmutable(self::LONG_AGO))->build();
+
+        $versions = [];
+        for ($i = 0; $i < 3; ++$i) {
+            $account->replaceCredentials('ciphertext-'.$i, 1);
+            $versions[] = $account->updatedAt()->format('Y-m-d H:i:s');
+        }
+
+        self::assertSame(array_unique($versions), $versions);
+        $sorted = $versions;
+        sort($sorted);
+        self::assertSame($sorted, $versions);
+    }
 }

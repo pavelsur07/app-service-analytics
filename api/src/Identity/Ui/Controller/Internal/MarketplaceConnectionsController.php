@@ -32,12 +32,17 @@ use Symfony\Component\Uid\Uuid;
  *   (InternalServiceTokenHandler); снаружи путь закрыт nginx;
  * - межарендаторный запрос виден только этому классу — узкие слои
  *   Deptrac IdentityServiceConnectionsUi → IdentityServiceConnectionsQuery;
- * - каждое обращение — строка аудита в канале `service_audit`: сколько
- *   подключений отдано и есть ли следующая страница. Ни ключей, ни тела
- *   ответа в журнале и трекере нет.
+ * - каждое обращение — строка аудита в канале `service_audit`
+ *   (InternalServiceAuditSubscriber, с любым исходом), выдача — ещё
+ *   и строкой контроллера: сколько подключений отдано и есть ли следующая
+ *   страница. Ни ключей, ни тела ответа в журнале и трекере нет.
  *
  * Подключение без пригодных ключей не отдаётся (контракт v1): сервису
  * нечем по нему работать, а пустая запись выглядела бы рабочей.
+ * То же — подключение, чей шифротекст не расшифровывается: сервис
+ * принимает выдачу только целиком, и отказ всей страницы из-за строки
+ * одного арендатора остановил бы загрузку всех компаний. Такая строка
+ * пишется в журнал ошибкой с идентификаторами, без ключей.
  */
 #[Route('/api/internal/marketplace-connections', name: 'identity_internal_marketplace_connections', methods: ['GET'])]
 #[IsGranted('ROLE_INTERNAL_SERVICE')]
@@ -134,7 +139,19 @@ final class MarketplaceConnectionsController
      */
     private function connection(ActiveOzonConnectionRow $row): ?array
     {
-        $values = $this->credentials->decrypt($row->credentialsCiphertext, $row->credentialsKeyVersion)->toArray();
+        try {
+            $values = $this->credentials->decrypt($row->credentialsCiphertext, $row->credentialsKeyVersion)->toArray();
+        } catch (\RuntimeException $e) {
+            // Текст исключения шифра ключей не содержит — только причину.
+            $this->logger->error('marketplace connection credentials cannot be decrypted, connection skipped', [
+                'company_id' => $row->companyId,
+                'marketplace_account_id' => $row->marketplaceAccountId,
+                'credentials_key_version' => $row->credentialsKeyVersion,
+                'reason' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
 
         $seller = self::pair($values, 'client_id', 'api_key', 'client_id', 'api_key');
         // Рекламный ключ — только при active у рекламы (ADR-026 п. 1):

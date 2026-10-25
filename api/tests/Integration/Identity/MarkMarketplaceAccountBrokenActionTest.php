@@ -232,6 +232,28 @@ final class MarkMarketplaceAccountBrokenActionTest extends KernelTestCase
         self::assertNotSame($longAgo, $this->updatedAt($container, $ads));
     }
 
+    /**
+     * Отметка в будущем — как после второго изменения в ту же секунду:
+     * условный UPDATE обязан дать значение строго больше прежнего,
+     * а не текущую секунду, которая с прежним совпала бы.
+     */
+    public function testConditionalTransitionNeverRepeatsThePreviousChangeMoment(): void
+    {
+        $container = $this->bootedContainer();
+        /** @var MarketplaceAccountRepository $accounts */
+        $accounts = $container->get(MarketplaceAccountRepository::class);
+        $account = $this->activeAccount($container);
+        $ahead = new \DateTimeImmutable('now', new \DateTimeZone('UTC'))->modify('+1 hour')->format('Y-m-d H:i:s');
+        $this->dbal($container)->executeStatement('UPDATE marketplace_account SET updated_at = ? WHERE id = ?', [$ahead, $account->id()->toRfc4122()]);
+
+        self::assertTrue($accounts->markBrokenIfActive($account->companyId()->toRfc4122(), $account->id()));
+
+        self::assertSame(
+            new \DateTimeImmutable($ahead)->modify('+1 second')->format('Y-m-d H:i:s'),
+            $this->updatedAt($container, $account),
+        );
+    }
+
     private function updatedAt(ContainerInterface $container, MarketplaceAccount $account): string
     {
         $updatedAt = $this->dbal($container)->fetchOne(
