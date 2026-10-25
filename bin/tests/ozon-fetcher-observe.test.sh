@@ -118,6 +118,14 @@ test_403_is_reported() {
     svc_request 'ozon performance request' 403 "$ACC"
     run
     [[ $rc == 1 ]] || fail '403 сервиса не дал кода 1'
+
+    # 403 в сутки перевода журналов (частичные) — тоже признак.
+    setup
+    jq -cn --arg ts "$TS" '{__REALTIME_TIMESTAMP: $ts}' > "$work/first"
+    php_answer seller 403 25218
+    run
+    [[ $rc == 1 ]] || fail "403 в частичные сутки: код $rc вместо 1"
+    grep -q "$DAY .*ЧАСТИЧНО" <<< "$output" || fail "сутки перевода не помечены: $output"
 }
 
 test_missing_service_day_is_a_violation() {
@@ -138,11 +146,21 @@ test_missing_service_day_is_a_violation() {
 }
 
 test_incomplete_days_are_not_success() {
+    # Первая запись сервиса — 25.10: эти сутки частичные, 24.10 не собраны.
+    setup
+    SINCE=2026-10-24 run
+    [[ $rc == 2 ]] || fail "сутки до journald: код $rc вместо 2"
+    grep -q '2026-10-24 .*НЕ СОБРАНО(журнал до journald)' <<< "$output" || fail "сутки до journald не помечены: $output"
+    grep -q '2026-10-25 .*ЧАСТИЧНО(журнал с выкладки)' <<< "$output" || fail "сутки перевода не помечены: $output"
+    grep -q "журнал собран с 2026-10-25" <<< "$output" || fail "JOURNALD_START не выведен из первой записи: $output"
+
     setup
     SINCE=2026-10-25 run
-    [[ $rc == 2 ]] || fail "сутки до journald: код $rc вместо 2"
-    grep -q '2026-10-25 .*НЕ СОБРАНО(журнал до journald)' <<< "$output" || fail "сутки до journald не помечены: $output"
-    grep -q "журнал собран с $DAY" <<< "$output" || fail "JOURNALD_SINCE не выведен из первой записи: $output"
+    [[ $rc == 0 ]] || fail "сутки перевода журналов дали код $rc — так кончался бы каждый запуск недели"
+
+    setup
+    SINCE=2026-10-27 run
+    [[ $rc == 2 ]] || fail "SINCE позже UNTIL: код $rc вместо 2"
 
     setup
     : > "$work/first" # у сервиса нет ни одной записи в journald

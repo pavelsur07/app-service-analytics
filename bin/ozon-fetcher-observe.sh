@@ -5,8 +5,8 @@
 #
 #   ssh conwix-prod 'cd /opt/conwix && sh -s' < bin/ozon-fetcher-observe.sh
 #
-# SINCE — первый день (по умолчанию 7 суток назад, но не раньше первых
-# суток с журналом в journald — JOURNALD_SINCE ниже), UNTIL — последний
+# SINCE — первый день (по умолчанию 7 суток назад, но не раньше суток
+# перевода журналов в journald — JOURNALD_START ниже), UNTIL — последний
 # (по умолчанию сегодня). Сутки — UTC, границы журнала тоже.
 #
 # Что печатает, по дням и отдельно по Seller и Performance:
@@ -34,7 +34,8 @@
 # Код выхода: 0 — критерии 429 выполнены, 403 нет, покрытие полное;
 # 1 — нарушение или 403 (разобрать); 2 — данные не собраны или неполны
 # (сутки до перевода журналов в journald, журнал без записей при попытках
-# сервиса, сбой чтения) — это не «всё хорошо».
+# сервиса, пустое окно, сбой чтения) — это не «всё хорошо». Сутки перевода
+# журналов (JOURNALD_START) помечаются «частично» и кода 2 не дают.
 
 set -eu
 
@@ -71,28 +72,32 @@ die() {
 
 command -v jq > /dev/null || die "нужен jq"
 command -v python3 > /dev/null || die "нужен python3"
-# JOURNALD_SINCE — первые полные сутки UTC, когда журналы уже в journald:
-# следующие сутки после первой записи сервиса в journald (сервис пишет
-# каждый запрос; PHP-контейнеры пересоздаёт та же выкладка, что перевела
-# журналы, — docker-compose.prod.yml, x-journald-logging). Раньше записей
-# нет: json-file стёрт пересозданием. Выводится из факта, а не из даты
-# выкладки; переменная окружения — только переопределение.
-if [ -z "${JOURNALD_SINCE:-}" ]; then
+# JOURNALD_START — сутки UTC первой записи сервиса в journald: с неё журналы
+# собираются (сервис пишет каждый запрос; PHP-контейнеры пересоздаёт та же
+# выкладка, что перевела журналы, — docker-compose.prod.yml,
+# x-journald-logging). Эти сутки собраны частично: до выкладки записи были
+# в json-file и стёрты пересозданием; раньше них записей нет вовсе.
+# Выводится из факта, а не из даты выкладки; переменная окружения — только
+# переопределение.
+if [ -z "${JOURNALD_START:-}" ]; then
     first=$($J -o json --output-fields=__REALTIME_TIMESTAMP "CONTAINER_NAME=$SERVICE_CONTAINER" | head -n 1) ||
         die "journald сервиса не прочитан"
     [ -n "$first" ] || die "у $SERVICE_CONTAINER нет записей в journald — журнал не собран"
-    JOURNALD_SINCE=$(printf '%s' "$first" | jq -r '.__REALTIME_TIMESTAMP|tonumber/1000000 + 86400|strftime("%Y-%m-%d")') ||
+    JOURNALD_START=$(printf '%s' "$first" | jq -r '.__REALTIME_TIMESTAMP|tonumber/1000000|strftime("%Y-%m-%d")') ||
         die "первая запись journald не разобрана"
 fi
-# По умолчанию — последние 7 суток, но не раньше JOURNALD_SINCE: иначе
-# каждый запуск недели давал бы 2 за заведомо несобранные сутки.
+# По умолчанию — последние 7 суток, но не раньше JOURNALD_START: сутки
+# раньше заведомо не собраны, и каждый запуск недели давал бы за них 2.
+# Сами сутки JOURNALD_START читаются: 403 за собранную их часть — признак.
 if [ -z "${SINCE:-}" ]; then
     SINCE=$(date -u -d '-7 days' +%F)
-    [ "$(echo "$SINCE" | tr -d -)" -ge "$(echo "$JOURNALD_SINCE" | tr -d -)" ] || SINCE=$JOURNALD_SINCE
+    [ "$(echo "$SINCE" | tr -d -)" -ge "$(echo "$JOURNALD_START" | tr -d -)" ] || SINCE=$JOURNALD_START
 fi
-for d in "$SINCE" "$UNTIL" "$JOURNALD_SINCE"; do
+for d in "$SINCE" "$UNTIL" "$JOURNALD_START"; do
     printf '%s' "$d" | grep -Eqx '[0-9]{4}-[0-9]{2}-[0-9]{2}' || die "даты — YYYY-MM-DD"
 done
+# Пустое окно проверило бы ноль суток и сообщило «всё хорошо».
+[ "$(echo "$SINCE" | tr -d -)" -le "$(echo "$UNTIL" | tr -d -)" ] || die "SINCE ($SINCE) позже UNTIL ($UNTIL) — проверять нечего"
 allowlist=$(sed -n 's/^OZON_FETCHER_CONNECTION_ALLOWLIST=//p' "$DOTENV" | tail -n 1 | tr -d '"'"'"' ')
 [ -n "$allowlist" ] || die "OZON_FETCHER_CONNECTION_ALLOWLIST пуст — наблюдать нечего"
 
@@ -136,7 +141,7 @@ unset journal
 
 verdict=0
 incomplete=0
-echo "Наблюдение ozon-fetcher: $SINCE..$UNTIL (сутки UTC; журнал собран с $JOURNALD_SINCE), критерий 429: сумма PHP+сервис по API за сутки <= $((BASELINE + 3))"
+echo "Наблюдение ozon-fetcher: $SINCE..$UNTIL (сутки UTC; журнал собран с $JOURNALD_START, эти сутки — частично), критерий 429: сумма PHP+сервис по API за сутки <= $((BASELINE + 3))"
 
 for account in $(printf '%s' "$allowlist" | tr ',' ' '); do
     printf '%s' "$account" | grep -Eqx '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' ||
@@ -173,9 +178,14 @@ SQL
         sa=$(printf '%s\n' "$attempts" | sed -n "s/^$day|//p")
         sa=${sa:-0}
         mark=
-        if [ "$(echo "$day" | tr -d -)" -lt "$(echo "$JOURNALD_SINCE" | tr -d -)" ]; then
+        if [ "$(echo "$day" | tr -d -)" -lt "$(echo "$JOURNALD_START" | tr -d -)" ]; then
             mark=" НЕ СОБРАНО(журнал до journald)"
             incomplete=1
+        elif [ "$day" = "$JOURNALD_START" ]; then
+            # Счёт — нижняя граница: превышение порога и 403 — настоящие,
+            # отсутствие их — не доказательство. Код 2 не ставится: иначе
+            # им кончался бы каждый запуск недели.
+            mark=" ЧАСТИЧНО(журнал с выкладки)"
         elif [ "$sa" -gt 0 ] && [ "$sr" -eq 0 ]; then
             mark=" НЕ СОБРАНО(попытки есть, журнала нет)"
             incomplete=1
