@@ -13,6 +13,12 @@ interface ExtensionTokenRepository
     public function save(ExtensionToken $token): void;
 
     /**
+     * Выпуск из сессии: сериализуется со сбросом пароля (ADR-037).
+     * false — пароль изменён после аутентификации запроса.
+     */
+    public function addForAuthenticatedUser(string $companyId, ExtensionToken $token, string $passwordHash): bool;
+
+    /**
      * Отзыв одним условным UPDATE, а не «прочитать, проверить, записать»:
      * последнее два параллельных запроса проходят оба, и второй затирает
      * первого отзывающего (CLAUDE.md §4 — та же причина, по которой

@@ -104,6 +104,14 @@ final readonly class DoctrinePasswordResetTokenRepository implements PasswordRes
             // После смены пароля ни одна ссылка пользователя не действует.
             $connection->executeStatement(self::REVOKE_ACTIVE_SQL, ['now' => $formattedNow, 'user_id' => $userId]);
 
+            // Восстановление аккаунта завершает все его Bearer-доступы,
+            // независимо от компании. Это часть pre-auth lifecycle ADR-037,
+            // а не company-scoped операция пользовательского репозитория.
+            $connection->executeStatement(
+                'UPDATE extension_token SET revoked_at = :now, revoked_by_user_id = :user_id WHERE user_id = :user_id AND revoked_at IS NULL',
+                ['now' => $formattedNow, 'user_id' => $userId],
+            );
+
             $userUuid = Uuid::fromString($userId);
             $this->entityManager->persist(AuditRecord::recordForUser(
                 actorUserId: $userUuid,

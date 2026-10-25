@@ -7,6 +7,7 @@ namespace App\Identity\Ui\Controller\Extension;
 use App\Identity\Application\IssueExtensionTokenAction;
 use App\Identity\Domain\User;
 use App\Identity\Ui\Response\Extension\IssueExtensionTokenResponse;
+use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
 use Symfony\Bundle\SecurityBundle\Security;
@@ -49,7 +50,17 @@ final class IssueExtensionTokenController
         $user = $this->security->getUser();
         \assert($user instanceof User);
 
-        $issued = ($this->issue)(Uuid::fromString($companyId), $user->id());
+        $issued = ($this->issue)(Uuid::fromString($companyId), $user->id(), $user->getPassword());
+        if (null === $issued) {
+            return new JsonResponse(
+                new ValidationErrorResponse(
+                    status: Response::HTTP_UNAUTHORIZED,
+                    code: 'unauthenticated',
+                    message: 'Full authentication is required to access this resource.',
+                ),
+                Response::HTTP_UNAUTHORIZED,
+            );
+        }
 
         return new JsonResponse(
             new IssueExtensionTokenResponse(

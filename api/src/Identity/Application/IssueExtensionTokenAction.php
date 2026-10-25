@@ -24,11 +24,13 @@ final readonly class IssueExtensionTokenAction
     ) {
     }
 
-    public function __invoke(Uuid $companyId, Uuid $userId): IssuedExtensionToken
+    public function __invoke(Uuid $companyId, Uuid $userId, string $passwordHash): ?IssuedExtensionToken
     {
         $secret = ExtensionTokenSecret::generate();
         $token = ExtensionToken::issue($companyId, $userId, $secret, new \DateTimeImmutable());
-        $this->tokens->add($token);
+        if (!$this->tokens->addForAuthenticatedUser($companyId->toRfc4122(), $token, $passwordHash)) {
+            return null;
+        }
 
         return new IssuedExtensionToken($token, $secret->plaintext());
     }

@@ -124,6 +124,45 @@ final class PasswordResetControllerTest extends WebTestCase
         self::assertResponseIsSuccessful();
     }
 
+    public function testResetRejectsPreviouslyIssuedExtensionTokenAndAllowsReconnectAfterNewLogin(): void
+    {
+        $this->confirmedUser('owner@example.test');
+        $this->login('owner@example.test', self::OLD_PASSWORD);
+        self::assertResponseIsSuccessful();
+        $this->client->request('GET', '/api/auth/me');
+        $me = json_decode((string) $this->client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($me);
+        self::assertIsArray($me['companies']);
+        $company = $me['companies'][0];
+        self::assertIsArray($company);
+        self::assertIsString($company['id']);
+        $path = '/api/companies/'.$company['id'].'/extension-tokens';
+        $this->client->request('POST', $path);
+        self::assertResponseStatusCodeSame(201);
+        $issued = json_decode((string) $this->client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($issued);
+        self::assertIsString($issued['token']);
+        $oldToken = $issued['token'];
+        $this->client->request('GET', '/api/extension/me', server: ['HTTP_AUTHORIZATION' => 'Bearer '.$oldToken]);
+        self::assertResponseIsSuccessful();
+
+        $this->requestReset('owner@example.test');
+        $this->confirmReset($this->tokenFromLastEmail(), self::NEW_PASSWORD);
+        self::assertResponseIsSuccessful();
+        $this->client->request('GET', '/api/extension/me', server: ['HTTP_AUTHORIZATION' => 'Bearer '.$oldToken]);
+        self::assertResponseStatusCodeSame(401);
+
+        $this->login('owner@example.test', self::NEW_PASSWORD);
+        self::assertResponseIsSuccessful();
+        $this->client->request('POST', $path);
+        self::assertResponseStatusCodeSame(201);
+        $new = json_decode((string) $this->client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($new);
+        self::assertIsString($new['token']);
+        $this->client->request('GET', '/api/extension/me', server: ['HTTP_AUTHORIZATION' => 'Bearer '.$new['token']]);
+        self::assertResponseIsSuccessful();
+    }
+
     public function testMalformedAndUnknownTokensAnswerTheSame(): void
     {
         $this->confirmReset('not-a-token', self::NEW_PASSWORD);
