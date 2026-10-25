@@ -6,6 +6,7 @@ namespace App\Identity\Infrastructure\Repository;
 
 use App\Identity\Domain\ExtensionToken;
 use App\Identity\Domain\ExtensionTokenRepository;
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -20,6 +21,35 @@ final readonly class DoctrineExtensionTokenRepository implements ExtensionTokenR
     {
         $this->entityManager->persist($token);
         $this->entityManager->flush();
+    }
+
+    public function addForAuthenticatedUser(string $companyId, ExtensionToken $token, string $passwordHash): bool
+    {
+        if ($companyId !== $token->companyId()->toRfc4122()) {
+            throw new \InvalidArgumentException('Extension token company must match the authenticated company.');
+        }
+
+        return $this->entityManager->getConnection()->transactional(function (Connection $connection) use ($token, $passwordHash): bool {
+            $userId = $token->userId()->toRfc4122();
+            $connection->executeStatement(
+                "SELECT pg_advisory_xact_lock(hashtextextended('conwix.identity.password-reset:' || :user_id, 0))",
+                ['user_id' => $userId],
+            );
+            // Проверка под той же блокировкой, что сброс, закрывает запрос,
+            // аутентифицированный прежним паролем до ожидания блокировки.
+            $current = $connection->fetchOne(
+                'SELECT 1 FROM "user" WHERE id = :user_id AND password_hash = :password_hash',
+                ['user_id' => $userId, 'password_hash' => $passwordHash],
+            );
+            if (false === $current) {
+                return false;
+            }
+
+            $this->entityManager->persist($token);
+            $this->entityManager->flush();
+
+            return true;
+        });
     }
 
     public function save(ExtensionToken $token): void
