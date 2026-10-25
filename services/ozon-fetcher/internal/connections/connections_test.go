@@ -386,6 +386,26 @@ func TestForceRefreshIsThrottled(t *testing.T) {
 	assert.Equal(t, 2, f.calls)
 }
 
+// Неудачное обновление не выдаёт старый снимок за свежий: RefreshedAt —
+// только у успешного.
+func TestRefreshedAtMovesOnlyOnSuccess(t *testing.T) {
+	f := &scriptedFetcher{results: []fetchResult{{cabinets: []Cabinet{{Account: accounttest.Ref("ref-a")}}}, {err: errors.New("php down")}}}
+	cache, clk, _ := newCache(f)
+	assert.True(t, cache.RefreshedAt().IsZero())
+	require.NoError(t, cache.Refresh(context.Background()))
+	first := clk.Now()
+	assert.Equal(t, first, cache.RefreshedAt())
+
+	clk.Advance(ForceRefreshMinInterval)
+	_, err := cache.ForceRefresh(context.Background())
+	require.Error(t, err)
+	assert.Equal(t, first, cache.RefreshedAt())
+	done, err := cache.ForceRefresh(context.Background())
+	require.NoError(t, err)
+	assert.False(t, done, "подавлено после неудачной попытки")
+	assert.Equal(t, first, cache.RefreshedAt(), "подавленный запрос не делает снимок свежим")
+}
+
 func TestListAndGetReturnDeepCopies(t *testing.T) {
 	cache, _, _ := newCache(&scriptedFetcher{results: []fetchResult{{cabinets: exampleCabinets(t)}}})
 	require.NoError(t, cache.Refresh(context.Background()))

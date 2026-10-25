@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/account"
@@ -77,6 +78,11 @@ type TaskStore interface {
 	RecordAuthFailure(ctx context.Context, ref account.Ref, now time.Time, pauseFor func(failures int) time.Duration) (int, error)
 	ResumeConnection(ctx context.Context, ref account.Ref) error
 	StopResourceAllConnections(ctx context.Context, resourceType, reason string) error
+	MarkAttemptKey(ctx context.Context, ref account.Ref, attemptID string, keyVersion time.Time) error
+	ServedWithKey(ctx context.Context, ref account.Ref, resourceType string, keyVersion time.Time) (bool, error)
+	ServiceHalted(ctx context.Context) (bool, error)
+	HaltAllConnections(ctx context.Context, ref account.Ref, resourceType, reason string) (bool, error)
+	PauseResource(ctx context.Context, ref account.Ref, resourceType string, until time.Time, reason string) error
 	ContentPages(ctx context.Context, key store.TaskKey) (store.Content, error)
 	ReloadWithoutContent(ctx context.Context, key store.TaskKey, now time.Time) (bool, error)
 	SaveCursor(ctx context.Context, key store.TaskKey, attemptID, cursor string) error
@@ -106,20 +112,28 @@ type Ozon interface {
 	FetchStocks(ctx context.Context, ref account.Ref, creds ozon.Credentials, fromCursor string, firstPageNo int, onPage ozon.PageHandler) error
 }
 
-// Refresher — обновление снимка кабинетов после 401.
+// Refresher — обновление снимка кабинетов после 401 и 403; Get — подключение
+// из снимка, RefreshedAt — начало последнего успешного обновления (версия
+// ключей перед решением об остановке).
 type Refresher interface {
 	ForceRefresh(ctx context.Context) (bool, error)
+	Get(ref account.Ref) (connections.Cabinet, bool)
+	RefreshedAt() time.Time
 }
 
 // Config — тайминги исполнителя.
 type Config struct {
-	Lease           time.Duration // срок lease; продление — раз в треть
-	FinishTimeout   time.Duration // запись итога после отмены
-	BackoffBase     time.Duration // transient: base·2^(n−1)
-	BackoffMax      time.Duration
-	RateLimitPause  time.Duration // 429 без Retry-After
-	AuthRetryPause  time.Duration // пауза кабинета после первого auth: снимок с новым ключом успевает обновиться
-	AuthSuspend     time.Duration // пауза кабинета на втором auth подряд
+	Lease          time.Duration // срок lease; продление — раз в треть
+	FinishTimeout  time.Duration // запись итога после отмены
+	BackoffBase    time.Duration // transient: base·2^(n−1)
+	BackoffMax     time.Duration
+	RateLimitPause time.Duration // 429 без Retry-After
+	AuthRetryPause time.Duration // пауза кабинета после первого auth: снимок с новым ключом успевает обновиться
+	AuthSuspend    time.Duration // пауза кабинета на втором auth подряд
+	// ForbiddenPause — пауза ресурса подключения на 403 по методу, который
+	// у ключа ещё не отвечал 200 (ADR-043 п. 5): у ключа нет роли, и частый
+	// повтор — те самые ошибочные запросы, за которые Ozon ограничивает доступ.
+	ForbiddenPause  time.Duration
 	NoCredentialsIn time.Duration // повтор задачи без ключа seller
 	NotReadyDelay   map[string]time.Duration
 	ReportPoll      ozon.ReportPoll
@@ -150,6 +164,7 @@ func DefaultConfig() Config {
 		RateLimitPause:       30 * time.Second,
 		AuthRetryPause:       time.Minute,
 		AuthSuspend:          time.Hour,
+		ForbiddenPause:       24 * time.Hour,
 		NoCredentialsIn:      time.Hour,
 		AdsReportWindowFrom:  30 * time.Minute,
 		AdsReportWindowTo:    4 * time.Hour,
@@ -188,11 +203,48 @@ type Executor struct {
 	now       func() time.Time
 	jitter    func(time.Duration) time.Duration // [0; d)
 	sleep     func(context.Context, time.Duration) error
+	running   *runningTasks // общий у копий WithRawReader
 }
+
+// runningTasks — отмена задач этого процесса, уже взятых в работу: остановка
+// по признаку ограничения доступа (ADR-043 п. 5) прерывает и их, а не только
+// выдачу новых. Сервис — один процесс; после перезапуска строка service_halt
+// не даёт взять задачи заново.
+type runningTasks struct {
+	mu     sync.Mutex
+	cancel map[*taskRun]context.CancelCauseFunc
+}
+
+func (r *runningTasks) add(run *taskRun, cancel context.CancelCauseFunc) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cancel[run] = cancel
+}
+
+func (r *runningTasks) remove(run *taskRun) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.cancel, run)
+}
+
+// haltOthers отменяет все задачи, кроме except, с причиной errHalted.
+func (r *runningTasks) haltOthers(except *taskRun) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for run, cancel := range r.cancel {
+		if run != except {
+			cancel(errHalted)
+		}
+	}
+}
+
+// errHalted — задачу прервала остановка всех подключений.
+var errHalted = errors.New("executor: loading halted for all connections")
 
 func New(cfg Config, tasks TaskStore, raw RawStore, client Ozon, refresher Refresher, logger *slog.Logger,
 	now func() time.Time, jitter func(time.Duration) time.Duration, sleep func(context.Context, time.Duration) error) *Executor {
-	return &Executor{cfg: cfg, tasks: tasks, raw: raw, ozon: client, refresher: refresher, logger: logger, now: now, jitter: jitter, sleep: sleep}
+	return &Executor{cfg: cfg, tasks: tasks, raw: raw, ozon: client, refresher: refresher, logger: logger, now: now, jitter: jitter, sleep: sleep,
+		running: &runningTasks{cancel: map[*taskRun]context.CancelCauseFunc{}}}
 }
 
 // WithRawReader — копия с чтением сохранённых страниц (начисления по
@@ -227,8 +279,13 @@ func (e *Executor) Run(ctx context.Context, task store.Task, cabinet connections
 	defer cancel(nil)
 	stopLease := e.keepLease(taskCtx, cancel, task, log)
 
-	run := &taskRun{exec: e, task: task, log: log, hashes: append([]string(nil), task.PageHashes...), cursor: task.Cursor, nextPage: task.NextPageNo}
-	fetchErr := run.fetch(taskCtx, cabinet)
+	run := &taskRun{exec: e, task: task, cabinet: cabinet, log: log, hashes: append([]string(nil), task.PageHashes...), cursor: task.Cursor, nextPage: task.NextPageNo}
+	e.running.add(run, cancel)
+	defer e.running.remove(run)
+	fetchErr := e.begin(taskCtx, cancel, run)
+	if fetchErr == nil {
+		fetchErr = run.fetch(taskCtx, cabinet)
+	}
 
 	// Lease продлевается и во время побочных действий исхода (пауза кабинета,
 	// стоп ресурса); у них свой ограниченный контекст.
@@ -280,6 +337,26 @@ func (e *Executor) Run(ctx context.Context, task store.Task, cabinet connections
 	return result
 }
 
+// begin — до первого запроса к Ozon. Версия ключей записывается в попытку
+// обязательно: без неё успешные ответы выпали бы из признака ограничения
+// доступа. Остановка читается после регистрации задачи: задача, взятая до
+// вставки service_halt, видит её здесь, а вставленную позже отменит
+// haltOthers — регистрация уже есть.
+func (e *Executor) begin(ctx context.Context, cancel context.CancelCauseFunc, run *taskRun) error {
+	if err := e.tasks.MarkAttemptKey(ctx, run.task.Account, run.task.AttemptID, run.cabinet.UpdatedAt); err != nil {
+		return &storeError{err}
+	}
+	halted, err := e.tasks.ServiceHalted(ctx)
+	if err != nil {
+		return &storeError{err}
+	}
+	if halted {
+		cancel(errHalted)
+		return errHalted
+	}
+	return nil
+}
+
 // keepLease продлевает lease раз в треть срока; потеря — отмена задачи.
 // У продления свой контекст: остановка прерывает и зависший вызов к БД,
 // каждый вызов ограничен третью срока lease.
@@ -319,6 +396,7 @@ func (e *Executor) keepLease(ctx context.Context, cancel context.CancelCauseFunc
 type taskRun struct {
 	exec     *Executor
 	task     store.Task
+	cabinet  connections.Cabinet
 	log      *slog.Logger
 	hashes   []string
 	cursor   string

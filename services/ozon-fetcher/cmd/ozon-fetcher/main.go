@@ -34,6 +34,7 @@ func main() {
 func run(setFlush func(func())) error {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)).With(slog.String("service", observability.Service)))
 	migrate := flag.Bool("migrate", false, "apply database migrations and exit")
+	resumeHalt := flag.Bool("resume-halt", false, "lift the halt set on a possible Ozon access restriction (ADR-043 p. 5) and exit")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -55,6 +56,9 @@ func run(setFlush func(func())) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		return store.Migrate(ctx, cfg.DBDSN)
+	}
+	if *resumeHalt {
+		return resumeAllConnections(cfg.DBDSN)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -126,4 +130,26 @@ func run(setFlush func(func())) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+// resumeAllConnections снимает остановку загрузки по признаку ограничения
+// доступа Ozon (ADR-043 п. 5). Только ручной запуск — человек или агент
+// после разбора причины; сервис сам остановку не снимает.
+func resumeAllConnections(dsn string) error {
+	if dsn == "" {
+		return errors.New("resume-halt: DB_DSN is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pool, err := store.Open(ctx, dsn, store.PoolSize(1))
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	resumed, err := store.NewTasks(pool).ResumeAllConnections(ctx)
+	if err != nil {
+		return err
+	}
+	slog.Info("resume-halt", slog.Bool("resumed", resumed))
+	return nil
 }

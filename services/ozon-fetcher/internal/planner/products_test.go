@@ -13,7 +13,7 @@ import (
 func TestProductsSnapshotOnlyForTodayWithoutRefresh(t *testing.T) {
 	cabs := []connections.Cabinet{seller("a", executor.ResourceProductsList, executor.ResourceProductsInfo)}
 	// 00:05 МСК 22.10 — первый проход нового дня.
-	p := Build(at("2026-10-22 00:05"), cabs, DefaultConfig(msk))
+	p := Build(at("2026-10-22 00:05"), cabs, sourceConfig(msk))
 
 	for _, r := range []string{executor.ResourceProductsList, executor.ResourceProductsInfo} {
 		assert.Equal(t, []string{"2026-10-22"}, periods(p.Ensure, r), r)
@@ -31,19 +31,19 @@ func TestProductsSnapshotOnlyForTodayWithoutRefresh(t *testing.T) {
 }
 
 func TestProductsNotPlannedWithoutResource(t *testing.T) {
-	p := Build(at("2026-10-22 12:00"), []connections.Cabinet{seller("a", allFinance...)}, DefaultConfig(msk))
+	p := Build(at("2026-10-22 12:00"), []connections.Cabinet{seller("a", allFinance...)}, sourceConfig(msk))
 	assert.Empty(t, periods(p.Ensure, executor.ResourceProductsList))
 	assert.Empty(t, periods(p.Ensure, executor.ResourceProductsInfo))
 
-	onlyInfo := Build(at("2026-10-22 12:00"), []connections.Cabinet{seller("a", executor.ResourceProductsInfo)}, DefaultConfig(msk))
+	onlyInfo := Build(at("2026-10-22 12:00"), []connections.Cabinet{seller("a", executor.ResourceProductsInfo)}, sourceConfig(msk))
 	assert.Empty(t, periods(onlyInfo.Ensure, executor.ResourceProductsInfo), "подробности — только со списком")
 }
 
 func TestProductsDoNotChangeOtherPlans(t *testing.T) {
 	base := []string{executor.ResourceOrdersFBO, executor.ResourceAccrualPostings}
 	base = append(base, allFinance...)
-	without := Build(at("2026-10-22 03:00"), []connections.Cabinet{seller("a", base...)}, DefaultConfig(msk))
-	with := Build(at("2026-10-22 03:00"), []connections.Cabinet{seller("a", append(base, executor.ResourceProductsList, executor.ResourceProductsInfo)...)}, DefaultConfig(msk))
+	without := Build(at("2026-10-22 03:00"), []connections.Cabinet{seller("a", base...)}, sourceConfig(msk))
+	with := Build(at("2026-10-22 03:00"), []connections.Cabinet{seller("a", append(base, executor.ResourceProductsList, executor.ResourceProductsInfo)...)}, sourceConfig(msk))
 
 	assert.Len(t, with.Ensure, len(without.Ensure)+2)
 	assert.Equal(t, without.Refreshes, with.Refreshes)
@@ -53,7 +53,7 @@ func TestStocksSnapshotTodayFrom0500(t *testing.T) {
 	cabs := []connections.Cabinet{seller("a", executor.ResourceStocks)}
 
 	for _, now := range []string{"2026-10-22 00:05", "2026-10-25 12:00", "2026-10-26 00:05"} {
-		p := Build(at(now), cabs, DefaultConfig(msk))
+		p := Build(at(now), cabs, sourceConfig(msk))
 		day := now[:10]
 		assert.Equal(t, []string{day}, periods(p.Ensure, executor.ResourceStocks), now)
 		s := specFor(p.Ensure, executor.ResourceStocks, day)
@@ -66,12 +66,12 @@ func TestStocksSnapshotTodayFrom0500(t *testing.T) {
 
 func TestStocksRemovedWeekCloseFromStaleSnapshotIsIgnored(t *testing.T) {
 	// Снимок кабинетов, закэшированный до снятия ресурса, ещё объявляет его.
-	p := Build(at("2026-10-25 12:00"), []connections.Cabinet{seller("a", executor.ResourceStocks, "ozon.stocks.week-close")}, DefaultConfig(msk))
+	p := Build(at("2026-10-25 12:00"), []connections.Cabinet{seller("a", executor.ResourceStocks, "ozon.stocks.week-close")}, sourceConfig(msk))
 	assert.Equal(t, []string{"2026-10-25"}, periods(p.Ensure, executor.ResourceStocks))
 	assert.Empty(t, periods(p.Ensure, "ozon.stocks.week-close"))
 }
 
 func TestStocksNotPlannedWithoutResource(t *testing.T) {
-	p := Build(at("2026-10-25 12:00"), []connections.Cabinet{seller("a", allFinance...)}, DefaultConfig(msk))
+	p := Build(at("2026-10-25 12:00"), []connections.Cabinet{seller("a", allFinance...)}, sourceConfig(msk))
 	assert.Empty(t, periods(p.Ensure, executor.ResourceStocks))
 }

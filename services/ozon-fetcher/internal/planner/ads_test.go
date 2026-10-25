@@ -18,7 +18,7 @@ func perfOnly(ref string, resources ...string) connections.Cabinet {
 }
 
 func TestAdsPlanCampaignsTodayDaysFromAdsFromAndTail(t *testing.T) {
-	p := Build(at("2026-10-22 00:05"), []connections.Cabinet{perfOnly("a", adsResources...)}, DefaultConfig(msk))
+	p := Build(at("2026-10-22 00:05"), []connections.Cabinet{perfOnly("a", adsResources...)}, sourceConfig(msk))
 
 	assert.Equal(t, []string{"2026-10-22"}, periods(p.Ensure, executor.ResourceAdsCampaigns))
 	c := specFor(p.Ensure, executor.ResourceAdsCampaigns, "2026-10-22")
@@ -49,7 +49,7 @@ func TestAdsPlanCampaignsTodayDaysFromAdsFromAndTail(t *testing.T) {
 }
 
 func TestAdsNotPlannedWithoutResourceOrKey(t *testing.T) {
-	p := Build(at("2026-10-22 12:00"), []connections.Cabinet{perfOnly("a"), seller("b", adsResources...)}, DefaultConfig(msk))
+	p := Build(at("2026-10-22 12:00"), []connections.Cabinet{perfOnly("a"), seller("b", adsResources...)}, sourceConfig(msk))
 	for _, r := range adsResources {
 		assert.Empty(t, periods(p.Ensure, r), r)
 	}
@@ -58,10 +58,10 @@ func TestAdsNotPlannedWithoutResourceOrKey(t *testing.T) {
 
 func TestAdsDoNotChangeSellerPlan(t *testing.T) {
 	base := append([]string{executor.ResourceOrdersFBO}, allFinance...)
-	without := Build(at("2026-10-22 03:00"), []connections.Cabinet{seller("a", base...)}, DefaultConfig(msk))
+	without := Build(at("2026-10-22 03:00"), []connections.Cabinet{seller("a", base...)}, sourceConfig(msk))
 	cab := seller("a", append(base, adsResources...)...)
 	cab.HasPerformance = true
-	with := Build(at("2026-10-22 03:00"), []connections.Cabinet{cab}, DefaultConfig(msk))
+	with := Build(at("2026-10-22 03:00"), []connections.Cabinet{cab}, sourceConfig(msk))
 
 	var sellerEnsure int
 	for _, s := range with.Ensure {
@@ -75,7 +75,7 @@ func TestAdsDoNotChangeSellerPlan(t *testing.T) {
 
 func TestAdsReportsPlannedYesterdayAndTailFrom0130WithCampaigns(t *testing.T) {
 	all := append(append([]string{}, adsResources...), executor.ResourceAdsStatistics, executor.ResourceAdsStatisticsTail)
-	p := Build(at("2026-10-22 00:05"), []connections.Cabinet{perfOnly("a", all...)}, DefaultConfig(msk))
+	p := Build(at("2026-10-22 00:05"), []connections.Cabinet{perfOnly("a", all...)}, sourceConfig(msk))
 
 	assert.Equal(t, []string{"2026-10-21"}, periods(p.Ensure, executor.ResourceAdsStatistics), "только вчера, без догона")
 	assert.Equal(t, []string{"2026-10-22"}, periods(p.Ensure, executor.ResourceAdsStatisticsTail), "хвост — день прохода")
@@ -90,6 +90,6 @@ func TestAdsReportsPlannedYesterdayAndTailFrom0130WithCampaigns(t *testing.T) {
 
 	// Без кампаний (ресурс этапа 6 не выдан) — отчёты не ставятся: сейчас
 	// ozon.ads.statistics выдаётся всем кабинетам с performance.
-	legacy := Build(at("2026-10-22 00:05"), []connections.Cabinet{perfOnly("b", executor.ResourceAdsStatistics)}, DefaultConfig(msk))
+	legacy := Build(at("2026-10-22 00:05"), []connections.Cabinet{perfOnly("b", executor.ResourceAdsStatistics)}, sourceConfig(msk))
 	assert.Empty(t, periods(legacy.Ensure, executor.ResourceAdsStatistics))
 }

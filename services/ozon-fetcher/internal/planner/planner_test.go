@@ -30,6 +30,64 @@ var msk = func() *time.Location {
 
 var allFinance = []string{executor.ResourceAccrualByDay, executor.ResourceAccrualTypes, executor.ResourceRealization, executor.ResourceMutualSettlement}
 
+// allResources — все ресурсы источника, включая выключенные в Conwix: их
+// окна проверяются, пока код ресурсов остаётся.
+var allResources = []string{
+	executor.ResourceAccrualByDay, executor.ResourceAccrualTypes, executor.ResourceRealization, executor.ResourceMutualSettlement,
+	executor.ResourceOrdersFBO, executor.ResourceOrdersFBS, executor.ResourceAccrualPostings,
+	executor.ResourceProductsList, executor.ResourceProductsInfo, executor.ResourceStocks,
+	executor.ResourceAdsCampaigns, executor.ResourceAdsExpense, executor.ResourceAdsDaily,
+	executor.ResourceAdsStatistics, executor.ResourceAdsStatisticsTail,
+}
+
+// sourceConfig — окна источника: все ресурсы и даты начала отправлений и
+// рекламы ВашФинДир. Поведение Conwix по умолчанию — DefaultConfig.
+func sourceConfig(loc *time.Location) Config {
+	cfg := DefaultConfig(loc)
+	cfg.Resources = allResources
+	cfg.OrdersFrom = time.Date(2026, 10, 18, 0, 0, 0, 0, loc)
+	cfg.AdsFrom = time.Date(2026, 10, 1, 0, 0, 0, 0, loc)
+	return cfg
+}
+
+// В Conwix ставится только первая волна: ресурс вне неё не планируется,
+// даже если кабинет его поддерживает (ADR-043).
+func TestDefaultConfigPlansOnlyFirstWave(t *testing.T) {
+	cab := seller("a", allResources...)
+	cab.HasPerformance = true
+
+	p := Build(at("2026-10-17 12:00"), []connections.Cabinet{cab}, DefaultConfig(msk))
+
+	planned := map[string]bool{}
+	for _, s := range p.Ensure {
+		planned[s.ResourceType] = true
+	}
+	for _, r := range p.Refreshes {
+		for _, s := range r.Specs {
+			planned[s.ResourceType] = true
+		}
+	}
+	want := map[string]bool{}
+	for _, r := range FirstWave {
+		want[r] = true
+	}
+	assert.Equal(t, want, planned)
+}
+
+// Без даты начала отправления и реклама грузятся с M-2, как начисления.
+func TestDefaultConfigStartsOrdersAndAdsAtM2(t *testing.T) {
+	cab := seller("a", allResources...)
+	cab.HasPerformance = true
+
+	p := Build(at("2026-10-17 12:00"), []connections.Cabinet{cab}, DefaultConfig(msk))
+
+	for _, resource := range []string{executor.ResourceAccrualByDay, executor.ResourceOrdersFBO, executor.ResourceAdsExpense, executor.ResourceAdsDaily} {
+		days := periods(p.Ensure, resource)
+		require.NotEmpty(t, days, resource)
+		assert.Equal(t, "2026-08-01", days[0], resource)
+	}
+}
+
 func seller(ref string, resources ...string) connections.Cabinet {
 	return connections.Cabinet{Account: accounttest.Ref(ref), Seller: &ozon.Credentials{ClientID: "c", APIKey: "k"}, ResourceTypes: resources}
 }
@@ -62,7 +120,7 @@ func refresh(p Plan, kind string) *Refresh {
 }
 
 func TestEnsureCoversCurrentAndTwoPreviousMonthsUpToYesterday(t *testing.T) {
-	p := Build(at("2026-10-17 12:00"), []connections.Cabinet{seller("a", allFinance...)}, DefaultConfig(msk))
+	p := Build(at("2026-10-17 12:00"), []connections.Cabinet{seller("a", allFinance...)}, sourceConfig(msk))
 
 	days := periods(p.Ensure, executor.ResourceAccrualByDay)
 	assert.Equal(t, "2026-08-01", days[0])
@@ -85,14 +143,14 @@ func TestEnsureCoversCurrentAndTwoPreviousMonthsUpToYesterday(t *testing.T) {
 
 func TestMoscowMidnightDecidesTheDay(t *testing.T) {
 	// 2026-10-16 22:30 UTC = 2026-10-17 01:30 МСК: «вчера» — уже 16-е.
-	p := Build(time.Date(2026, 10, 16, 22, 30, 0, 0, time.UTC), []connections.Cabinet{seller("a", allFinance...)}, DefaultConfig(msk))
+	p := Build(time.Date(2026, 10, 16, 22, 30, 0, 0, time.UTC), []connections.Cabinet{seller("a", allFinance...)}, sourceConfig(msk))
 	days := periods(p.Ensure, executor.ResourceAccrualByDay)
 	assert.Equal(t, "2026-10-16", days[len(days)-1])
 	assert.Equal(t, "2026-10-17", refresh(p, KindTail).RunDate)
 }
 
 func TestTailRefreshesYesterdayAndKDaysAcrossMonthBoundary(t *testing.T) {
-	p := Build(at("2026-11-02 08:00"), []connections.Cabinet{seller("a", allFinance...)}, DefaultConfig(msk))
+	p := Build(at("2026-11-02 08:00"), []connections.Cabinet{seller("a", allFinance...)}, sourceConfig(msk))
 
 	tail := refresh(p, KindTail)
 	require.NotNil(t, tail)
@@ -105,7 +163,7 @@ func TestTailRefreshesYesterdayAndKDaysAcrossMonthBoundary(t *testing.T) {
 }
 
 func TestFirstDayOfMonthAndOfYear(t *testing.T) {
-	p := Build(at("2027-01-01 00:10"), []connections.Cabinet{seller("a", allFinance...)}, DefaultConfig(msk))
+	p := Build(at("2027-01-01 00:10"), []connections.Cabinet{seller("a", allFinance...)}, sourceConfig(msk))
 
 	days := periods(p.Ensure, executor.ResourceAccrualByDay)
 	assert.Equal(t, "2026-11-01", days[0])
@@ -115,8 +173,8 @@ func TestFirstDayOfMonthAndOfYear(t *testing.T) {
 
 func TestWeeklyReconcileOnlyOnConfiguredWeekday(t *testing.T) {
 	cabs := []connections.Cabinet{seller("a", allFinance...)}
-	monday := Build(at("2026-10-19 09:00"), cabs, DefaultConfig(msk))
-	tuesday := Build(at("2026-10-20 09:00"), cabs, DefaultConfig(msk))
+	monday := Build(at("2026-10-19 09:00"), cabs, sourceConfig(msk))
+	tuesday := Build(at("2026-10-20 09:00"), cabs, sourceConfig(msk))
 
 	rec := refresh(monday, KindReconcile)
 	require.NotNil(t, rec)
@@ -129,8 +187,8 @@ func TestWeeklyReconcileOnlyOnConfiguredWeekday(t *testing.T) {
 
 func TestFinalM2OnlyOnFinalDay(t *testing.T) {
 	cabs := []connections.Cabinet{seller("a", allFinance...)}
-	tenth := Build(at("2026-10-10 09:00"), cabs, DefaultConfig(msk))
-	eleventh := Build(at("2026-10-11 09:00"), cabs, DefaultConfig(msk))
+	tenth := Build(at("2026-10-10 09:00"), cabs, sourceConfig(msk))
+	eleventh := Build(at("2026-10-11 09:00"), cabs, sourceConfig(msk))
 
 	final := refresh(tenth, KindFinal)
 	require.NotNil(t, final)
@@ -141,7 +199,7 @@ func TestFinalM2OnlyOnFinalDay(t *testing.T) {
 }
 
 func TestNothingOlderThanM2(t *testing.T) {
-	p := Build(at("2026-10-10 09:00"), []connections.Cabinet{seller("a", allFinance...)}, DefaultConfig(msk))
+	p := Build(at("2026-10-10 09:00"), []connections.Cabinet{seller("a", allFinance...)}, sourceConfig(msk))
 	all := append([]store.TaskSpec(nil), p.Ensure...)
 	for _, r := range p.Refreshes {
 		all = append(all, r.Specs...)
@@ -155,7 +213,7 @@ func TestNothingOlderThanM2(t *testing.T) {
 }
 
 func TestAccrualTypesDaily(t *testing.T) {
-	types := refresh(Build(at("2026-10-17 09:00"), []connections.Cabinet{seller("a", allFinance...)}, DefaultConfig(msk)), KindTypes)
+	types := refresh(Build(at("2026-10-17 09:00"), []connections.Cabinet{seller("a", allFinance...)}, sourceConfig(msk)), KindTypes)
 	require.NotNil(t, types)
 	require.Len(t, types.Specs, 1)
 	assert.Equal(t, executor.PeriodRef, types.Specs[0].PeriodKey)
@@ -167,7 +225,7 @@ func TestCabinetsWithoutSellerOrResourcesGetNothing(t *testing.T) {
 		{Account: accounttest.Ref("perf-only"), HasPerformance: true, ResourceTypes: []string{"ozon.ads.statistics"}},
 		seller("types-only", executor.ResourceAccrualTypes),
 	}
-	p := Build(at("2026-10-19 09:00"), cabs, DefaultConfig(msk))
+	p := Build(at("2026-10-19 09:00"), cabs, sourceConfig(msk))
 
 	for _, s := range p.Ensure {
 		assert.Equal(t, accounttest.Ref("types-only"), s.Account)
@@ -227,10 +285,10 @@ func TestSchedulerTicks(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	now := func() time.Time { return at("2026-10-19 09:00") }
 
-	NewScheduler(DefaultConfig(msk), time.Hour, st, fakeCabs{ready: false}, logger, now).Tick(context.Background())
+	NewScheduler(sourceConfig(msk), time.Hour, st, fakeCabs{ready: false}, logger, now).Tick(context.Background())
 	assert.Zero(t, st.ensured, "без снимка ничего не ставится")
 
-	s := NewScheduler(DefaultConfig(msk), time.Hour, st, fakeCabs{ready: true, list: []connections.Cabinet{seller("a", allFinance...)}}, logger, now)
+	s := NewScheduler(sourceConfig(msk), time.Hour, st, fakeCabs{ready: true, list: []connections.Cabinet{seller("a", allFinance...)}}, logger, now)
 	s.Tick(context.Background())
 	s.Tick(context.Background())
 	assert.True(t, st.runs[KindTail+"/2026-10-19/a"])
@@ -240,7 +298,7 @@ func TestSchedulerTicks(t *testing.T) {
 
 func TestSchedulerRunStopsOnCancel(t *testing.T) {
 	st := &fakeStore{}
-	s := NewScheduler(DefaultConfig(msk), 5*time.Millisecond, st, fakeCabs{ready: true, list: []connections.Cabinet{seller("a", allFinance...)}},
+	s := NewScheduler(sourceConfig(msk), 5*time.Millisecond, st, fakeCabs{ready: true, list: []connections.Cabinet{seller("a", allFinance...)}},
 		slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -264,7 +322,7 @@ func TestSchedulerRunStopsOnCancel(t *testing.T) {
 func TestSchedulerRetriesSoonUntilSnapshotArrives(t *testing.T) {
 	st := &fakeStore{}
 	late := &atomic.Bool{}
-	s := NewScheduler(DefaultConfig(msk), time.Hour, st, fakeCabs{late: late, list: []connections.Cabinet{seller("a", allFinance...)}},
+	s := NewScheduler(sourceConfig(msk), time.Hour, st, fakeCabs{late: late, list: []connections.Cabinet{seller("a", allFinance...)}},
 		slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -286,7 +344,7 @@ func TestSchedulerRetriesSoonUntilSnapshotArrives(t *testing.T) {
 }
 
 func TestRefreshesAreBuiltPerCabinetAndTypesAreEnsured(t *testing.T) {
-	p := Build(at("2026-10-17 09:00"), []connections.Cabinet{seller("a", allFinance...), seller("b", allFinance...)}, DefaultConfig(msk))
+	p := Build(at("2026-10-17 09:00"), []connections.Cabinet{seller("a", allFinance...), seller("b", allFinance...)}, sourceConfig(msk))
 
 	byRef := map[string][]string{}
 	for _, r := range p.Refreshes {

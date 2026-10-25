@@ -45,7 +45,7 @@ type Config struct {
 	ReconcileWeekday time.Weekday
 	FinalDay         int
 	PlanEvery        time.Duration
-	// Отправления: первый день (YYYY-MM-DD, МСК) и хвост перезагрузки.
+	// Отправления: первый день (YYYY-MM-DD, МСК; пусто — с M-2) и хвост перезагрузки.
 	OrdersFrom     string
 	OrdersTailDays int
 	// Начисления по отправлениям: дней перед сегодня, перечитываемых; из них
@@ -81,7 +81,6 @@ func Load() (Config, error) {
 		ReconcileWeekday:         time.Monday,
 		FinalDay:                 10,
 		PlanEvery:                time.Hour,
-		OrdersFrom:               "2026-10-18",
 		OrdersTailDays:           30,
 		AccrualPostingsDays:      45,
 		AccrualPostingsDailyDays: 14,

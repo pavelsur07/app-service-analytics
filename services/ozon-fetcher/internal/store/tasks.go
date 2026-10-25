@@ -192,6 +192,12 @@ func (t *Tasks) ClaimNextAcrossConnections(ctx context.Context, refs []account.R
 		                  AND r.status = 'running'
 		                  AND (r.resource_type LIKE 'ozon.ads.%') = (t.resource_type LIKE 'ozon.ads.%'))
 		  AND NOT EXISTS (SELECT 1 FROM resource_stop s WHERE s.resource_type = t.resource_type)
+		  -- Признак ограничения доступа Ozon (ADR-043 п. 5): остановка всех
+		  -- подключений и пауза ресурса подключения.
+		  AND NOT EXISTS (SELECT 1 FROM service_halt)
+		  AND NOT EXISTS (SELECT 1 FROM resource_pause p
+		                  WHERE p.company_id = t.company_id AND p.marketplace_account_id = t.marketplace_account_id
+		                  AND p.resource_type = t.resource_type AND p.paused_until > $3)
 		ORDER BY t.priority DESC, cs.last_served_at ASC NULLS FIRST, t.next_run_at ASC
 		LIMIT 1
 		FOR UPDATE OF t SKIP LOCKED`,
