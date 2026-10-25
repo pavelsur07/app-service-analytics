@@ -32,7 +32,9 @@ func main() {
 }
 
 func run(setFlush func(func())) error {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)).With(slog.String("service", observability.Service)))
+	// До конфигурации — тот же общий обработчик, без GlitchTip: ошибка
+	// config.Load тоже запись журнала с обязательными полями (§8).
+	slog.SetDefault(slog.New(observability.NewHandler(slog.NewJSONHandler(os.Stdout, nil), nil)).With(slog.String("service", observability.Service)))
 	migrate := flag.Bool("migrate", false, "apply database migrations and exit")
 	resumeHalt := flag.Bool("resume-halt", false, "lift the halt set on a possible Ozon access restriction (ADR-043 p. 5) and exit")
 	flag.Parse()

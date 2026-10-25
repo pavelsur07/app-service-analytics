@@ -604,11 +604,13 @@ func TestStatusOutcomesAreCountedPerHourForADay(t *testing.T) {
 	require.Len(t, report.Cabinets, 1)
 	assert.Equal(t, map[string]int{"transient": 1, "rate_limit": 2, "lease_expired": 1}, report.Cabinets[0].Outcomes24h)
 
-	// Через двое суток первая запись нового часа удаляет старые часы.
-	finish("2026-10-06", t0.Add(OutcomeRetention+2*time.Hour), "done")
+	// Через двое суток сборщик lease удаляет старые часы всех подключений —
+	// и того, что больше не закрывает попыток (ref-a здесь молчит).
+	_, err = tasks.ReleaseExpiredAcrossConnections(ctx, t0.Add(OutcomeRetention+2*time.Hour))
+	require.NoError(t, err)
 	var hours int
 	require.NoError(t, tasks.pool.QueryRow(ctx, `SELECT count(*) FROM attempt_outcome_hour`).Scan(&hours))
-	assert.Equal(t, 1, hours, "остался только новый час")
+	assert.Zero(t, hours, "старые часы удалены без новых попыток подключения")
 }
 
 func TestStatusMissingPeriodsAreCappedButCounted(t *testing.T) {

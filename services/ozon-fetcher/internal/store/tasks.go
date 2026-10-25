@@ -519,6 +519,8 @@ func (t *Tasks) FinishTask(ctx context.Context, key TaskKey, attemptID string, o
 // (SKIP LOCKED), и попытки закрываются ровно для освобождённого набора —
 // продление lease между выборками не может рассинхронизировать задачу и попытку.
 //
+// Там же удаляются счётчики исходов старше OutcomeRetention.
+//
 // Межарендаторная запись операционной задачи (CLAUDE.md §1, ADR-043):
 // сборщик просроченных lease обслуживает подключения всех компаний.
 func (t *Tasks) ReleaseExpiredAcrossConnections(ctx context.Context, now time.Time) (int64, error) {
@@ -554,8 +556,14 @@ func (t *Tasks) ReleaseExpiredAcrossConnections(ctx context.Context, now time.Ti
 			ON CONFLICT (company_id, marketplace_account_id, hour, outcome)
 			DO UPDATE SET attempts = attempt_outcome_hour.attempts + EXCLUDED.attempts
 			RETURNING 1
+		), pruned AS (
+			-- Часы старше OutcomeRetention — по всем подключениям: сборщик
+			-- работает на каждом тике независимо от того, закрывает ли
+			-- подключение попытки (индекс attempt_outcome_hour_hour).
+			DELETE FROM attempt_outcome_hour WHERE hour < $2
+			RETURNING 1
 		)
-		SELECT count(*) FROM released`, now).Scan(&released)
+		SELECT count(*) FROM released`, now, now.Add(-OutcomeRetention)).Scan(&released)
 	if err != nil {
 		return 0, fmt.Errorf("store: release expired: %w", err)
 	}
@@ -566,25 +574,16 @@ func (t *Tasks) ReleaseExpiredAcrossConnections(ctx context.Context, now time.Ti
 const OutcomeRetention = 48 * time.Hour
 
 // countOutcome — +1 к счётчику исхода подключения за текущий час в
-// транзакции закрытия попытки. Первая запись нового часа подключения
-// удаляет его часы старше OutcomeRetention: таблица не растёт.
+// транзакции закрытия попытки. Старые часы удаляет сборщик просроченных
+// lease (ReleaseExpiredAcrossConnections) — по всем подключениям, в том
+// числе переставшим закрывать попытки.
 func countOutcome(ctx context.Context, tx pgx.Tx, ref account.Ref, outcome string, now time.Time) error {
-	var opened bool
-	if err := tx.QueryRow(ctx, `
+	if _, err := tx.Exec(ctx, `
 		INSERT INTO attempt_outcome_hour (company_id, marketplace_account_id, hour, outcome, attempts)
 		VALUES ($1, $2, date_trunc('hour', $3::timestamptz), $4, 1)
 		ON CONFLICT (company_id, marketplace_account_id, hour, outcome)
-		DO UPDATE SET attempts = attempt_outcome_hour.attempts + 1
-		RETURNING xmax = 0`, ref.CompanyID, ref.AccountID, now, outcome).Scan(&opened); err != nil {
+		DO UPDATE SET attempts = attempt_outcome_hour.attempts + 1`, ref.CompanyID, ref.AccountID, now, outcome); err != nil {
 		return fmt.Errorf("store: count outcome: %w", err)
-	}
-	if !opened {
-		return nil
-	}
-	if _, err := tx.Exec(ctx, `
-		DELETE FROM attempt_outcome_hour WHERE company_id = $1 AND marketplace_account_id = $2 AND hour < $3`,
-		ref.CompanyID, ref.AccountID, now.Add(-OutcomeRetention)); err != nil {
-		return fmt.Errorf("store: prune outcomes: %w", err)
 	}
 	return nil
 }
