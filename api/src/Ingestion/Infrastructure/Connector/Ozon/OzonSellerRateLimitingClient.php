@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Connector\Ozon;
 
 use Psr\Cache\CacheItemPoolInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AsDecorator;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
@@ -32,6 +33,12 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  *
  * Пауза лежит в Redis (`cache.ozon_seller_limit`): её видят оба воркера
  * загрузки и сценарий подключения кабинета.
+ *
+ * Каждый полученный ответ 429 и 403 — `warning` в журнал (ADR-043 п. 5):
+ * база отказов лимита PHP до включения сервиса `ozon-fetcher` и сигнал
+ * ограничения доступа, пока PHP и сервис ходят с одним Client-Id.
+ * Локальный отказ `OzonSellerRateLimited` (запрос в Ozon не ушёл) сюда
+ * не пишется: его число зависит от очереди, а не от нагрузки на Client-Id.
  */
 #[AsDecorator(decorates: 'ozon.client')]
 final class OzonSellerRateLimitingClient implements HttpClientInterface
@@ -59,6 +66,7 @@ final class OzonSellerRateLimitingClient implements HttpClientInterface
         #[Autowire(service: 'cache.ozon_seller_limit')]
         private readonly CacheItemPoolInterface $pauses,
         private readonly LockFactory $locks,
+        private readonly LoggerInterface $logger,
         /* @var \Closure(int): void|null подмена ожидания в тестах */
         ?\Closure $sleep = null,
     ) {
@@ -90,7 +98,19 @@ final class OzonSellerRateLimitingClient implements HttpClientInterface
         // Ответ ленивый: код ждём здесь — вызывающий всё равно сразу читает
         // тело, а решать о паузе нужно до следующего запроса.
         $headers = $response->getHeaders(false);
-        if (429 === $response->getStatusCode()) {
+        $status = $response->getStatusCode();
+        if (429 === $status || 403 === $status) {
+            // Client-Id — не секрет и единственное, что здесь называет
+            // кабинет; Api-Key и тело ответа в запись не попадают.
+            $this->logger->warning('Ozon Seller API answered {status}', [
+                'api' => 'seller',
+                'status' => $status,
+                'method' => strtoupper($method),
+                'path' => $path,
+                'client_id' => self::clientId($options),
+            ]);
+        }
+        if (429 === $status) {
             $this->pause($key, self::retryAfter($headers['retry-after'][0] ?? null));
         } elseif ('0' === ($headers['ratelimit-remaining'][0] ?? null)) {
             $this->pause($key, 1);

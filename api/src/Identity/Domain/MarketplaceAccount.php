@@ -92,6 +92,16 @@ class MarketplaceAccount
     #[ORM\Column]
     private readonly \DateTimeImmutable $createdAt;
 
+    /**
+     * Последнее изменение ключей или состояния подключения. Отдаётся
+     * сервисам вне монолита в выдаче подключений (ADR-043 п. 4): по нему
+     * сервис отличает новые ключи от тех, на которые Ozon уже ответил
+     * отказом. Ставит каждый переход ниже и оба условных UPDATE
+     * репозитория — иначе сервис не увидел бы смену ключей.
+     */
+    #[ORM\Column]
+    private \DateTimeImmutable $updatedAt;
+
     private function __construct(
         Uuid $id,
         Uuid $companyId,
@@ -111,6 +121,7 @@ class MarketplaceAccount
         $this->credentialsKeyVersion = $credentialsKeyVersion;
         $this->state = MarketplaceAccountState::Active;
         $this->createdAt = $createdAt;
+        $this->updatedAt = $createdAt;
     }
 
     public static function connect(
@@ -192,6 +203,11 @@ class MarketplaceAccount
         return $this->createdAt;
     }
 
+    public function updatedAt(): \DateTimeImmutable
+    {
+        return $this->updatedAt;
+    }
+
     /**
      * Клиент выпустил новый ключ в кабинете площадки и заменил его у нас
      * (ADR-007).
@@ -214,6 +230,7 @@ class MarketplaceAccount
 
         $this->credentialsCiphertext = $credentialsCiphertext;
         $this->credentialsKeyVersion = $credentialsKeyVersion;
+        $this->updatedAt = new \DateTimeImmutable();
 
         if (MarketplaceAccountState::Broken === $this->state) {
             $this->state = MarketplaceAccountState::Active;
@@ -239,6 +256,7 @@ class MarketplaceAccount
         $this->credentialsCiphertext = $credentialsCiphertext;
         $this->credentialsKeyVersion = $credentialsKeyVersion;
         $this->advertisingState = AdvertisingState::Active;
+        $this->updatedAt = new \DateTimeImmutable();
     }
 
     /**
@@ -258,6 +276,7 @@ class MarketplaceAccount
     public function markBroken(): void
     {
         $this->state = MarketplaceAccountState::Broken;
+        $this->updatedAt = new \DateTimeImmutable();
     }
 
     /**
@@ -266,5 +285,6 @@ class MarketplaceAccount
     public function revoke(): void
     {
         $this->state = MarketplaceAccountState::Revoked;
+        $this->updatedAt = new \DateTimeImmutable();
     }
 }

@@ -75,6 +75,7 @@ final class RegisterCompanyWithOzonAccountActionTest extends KernelTestCase
             'credentials_key_version' => 1,
             'state' => 'active',
             'created_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+            'updated_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
         ]);
     }
 

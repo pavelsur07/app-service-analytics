@@ -56,7 +56,7 @@ final readonly class DoctrineMarketplaceAccountRepository implements Marketplace
         $affected = $this->entityManager->getConnection()->executeStatement(
             <<<'SQL'
                 UPDATE marketplace_account
-                SET state = :broken
+                SET state = :broken, updated_at = (now() AT TIME ZONE 'UTC')
                 WHERE id = :id AND company_id = :companyId AND state = :active
                 SQL,
             [
@@ -77,7 +77,7 @@ final readonly class DoctrineMarketplaceAccountRepository implements Marketplace
         $affected = $this->entityManager->getConnection()->executeStatement(
             <<<'SQL'
                 UPDATE marketplace_account
-                SET advertising_state = :broken
+                SET advertising_state = :broken, updated_at = (now() AT TIME ZONE 'UTC')
                 WHERE id = :id AND company_id = :companyId
                   AND advertising_state = :active AND state = :accountActive AND version = :version
                 SQL,

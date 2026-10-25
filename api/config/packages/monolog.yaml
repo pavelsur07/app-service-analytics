@@ -16,6 +16,10 @@ monolog:
         # Symfony читались списком: CLAUDE.md держит их на нуле ради
         # перехода на следующую LTS.
         - deprecation
+        # Строки аудита сервисного контура (ADR-043 п. 4): каждое обращение
+        # сервиса за ключами подключений. Уровень info, поэтому в prod —
+        # свой обработчик: общий порог warning их бы отбросил.
+        - service_audit
 
 when@dev:
     monolog:
@@ -102,3 +106,9 @@ when@prod:
                 level: info
                 formatter: monolog.formatter.json
                 channels: [deprecation]
+            service_audit:
+                type: stream
+                path: php://stderr
+                level: info
+                formatter: monolog.formatter.json
+                channels: [service_audit]

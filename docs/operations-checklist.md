@@ -499,6 +499,20 @@ ADR-007 «с первого дня», и ограничение по адрес�
 - [ ] Ротация ключей хранилища — вместе с остальными секретами
       в `/opt/conwix/.env`
 
+## Перед запуском ozon-fetcher на проде (ADR-043, этап 7)
+
+- [ ] `INTERNAL_AUTH_TOKEN` — токен направления «сервис → PHP» — задан
+      в `/opt/conwix/.env` (не короче 32 символов, `openssl rand -hex 32`)
+      и тем же значением у сервиса. Пустой или короткий токен PHP не
+      принимает ни от кого: выдача подключений закрыта, это состояние
+      по умолчанию.
+- [ ] Снаружи `/api/internal/` отвечает 404:
+      `curl -s -o /dev/null -w '%{http_code}' https://app.conwix.com/api/internal/marketplace-connections`
+      и то же для admin. Внутри — только vhost `api-internal`
+      (алиас nginx во внутренней сети, роутера Traefik у него нет).
+- [ ] Каждое обращение видно в журнале строкой канала `service_audit`
+      (`marketplace connections issued to service`); ключей в ней нет.
+
 ## После выкладки восстановления пароля (ADR-037)
 
 - [x] Миграция `password_reset_token` применена 2026-10-15; `doctrine:migrations:up-to-date` зелёный.

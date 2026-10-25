@@ -198,6 +198,51 @@ final class MarkMarketplaceAccountBrokenActionTest extends KernelTestCase
         self::assertTrue($handler->hasWarningThatContains('исчезло до отправки уведомления'));
     }
 
+    /**
+     * ADR-043 п. 4: по `updated_at` сервис вне монолита отличает новые
+     * ключи от уже отказанных Ozon. Условные UPDATE идут мимо сущности,
+     * поэтому отметку сдвигают сами — иначе выдача после перехода в broken
+     * показывала бы прежнюю версию подключения.
+     */
+    public function testConditionalTransitionsMoveTheChangeMoment(): void
+    {
+        $container = $this->bootedContainer();
+        /** @var MarketplaceAccountRepository $accounts */
+        $accounts = $container->get(MarketplaceAccountRepository::class);
+        $dbal = $this->dbal($container);
+        $longAgo = '2020-01-01 00:00:00';
+
+        $seller = $this->activeAccount($container);
+        $dbal->executeStatement('UPDATE marketplace_account SET updated_at = ? WHERE id = ?', [$longAgo, $seller->id()->toRfc4122()]);
+        self::assertTrue($accounts->markBrokenIfActive($seller->companyId()->toRfc4122(), $seller->id()));
+        self::assertNotSame($longAgo, $this->updatedAt($container, $seller));
+
+        $ads = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany(CompanyBuilder::aCompany()->persistWith($this->companies($container)))
+            ->withExternalShopId('ads-shop')
+            ->withState(MarketplaceAccountState::Active)
+            ->persistWith($this->companies($container), $accounts);
+        $dbal->executeStatement(
+            "UPDATE marketplace_account SET advertising_state = 'active', updated_at = ? WHERE id = ?",
+            [$longAgo, $ads->id()->toRfc4122()],
+        );
+        $version = $dbal->fetchOne('SELECT version FROM marketplace_account WHERE id = ?', [$ads->id()->toRfc4122()]);
+        self::assertIsInt($version);
+        self::assertTrue($accounts->markAdvertisingBrokenIfActive($ads->companyId()->toRfc4122(), $ads->id(), $version));
+        self::assertNotSame($longAgo, $this->updatedAt($container, $ads));
+    }
+
+    private function updatedAt(ContainerInterface $container, MarketplaceAccount $account): string
+    {
+        $updatedAt = $this->dbal($container)->fetchOne(
+            'SELECT updated_at FROM marketplace_account WHERE id = ?',
+            [$account->id()->toRfc4122()],
+        );
+        self::assertIsString($updatedAt);
+
+        return $updatedAt;
+    }
+
     private function activeAccountWithMember(ContainerInterface $container, string $email): MarketplaceAccount
     {
         /** @var CompanyRepository $companies */

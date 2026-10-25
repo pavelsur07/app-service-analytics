@@ -6,9 +6,10 @@
 [schema.json](schema.json), эталонная страница: [example.json](example.json),
 история: [CHANGELOG.md](CHANGELOG.md).
 
-Статус: **проект** до реализации endpoint'а в PHP (этап 4 плана
-`docs/plan/ozon-fetcher.md`). Изменения v1 допустимы до первого потребителя
-на проде; после — только через v2.
+Статус: **реализован в PHP** (этап 4 плана `docs/plan/ozon-fetcher.md`,
+`Identity\Ui\Controller\Internal\MarketplaceConnectionsController`;
+ответ проверяется этой схемой в функциональном тесте). Изменения v1
+допустимы до первого потребителя на проде; после — только через v2.
 
 ## Запрос
 

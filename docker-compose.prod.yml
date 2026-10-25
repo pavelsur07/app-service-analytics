@@ -168,7 +168,12 @@ services:
       # чтобы наполнить том. Конфиги Traefik и nginx рядом монтируются
       # так же.
       - ./static:/srv/static:ro
-    networks: [edge, internal]
+    networks:
+      edge: {}
+      # api-internal — имя сервисного контура (ADR-043 п. 4) только в сети
+      # internal: Traefik на edge его не знает, и снаружи vhost недостижим.
+      internal:
+        aliases: [api-internal]
     depends_on:
       api:
         condition: service_healthy
@@ -190,6 +195,10 @@ services:
     environment:
       <<: *api-env
       SMARTCAPTCHA_SERVER_KEY: ${SMARTCAPTCHA_SERVER_KEY:?}
+      # Выдача подключений сервисам (ADR-043 п. 4) — только веб-процессу.
+      # Не обязателен: пустой закрывает /api/internal/ для всех, значение
+      # заводится вместе с выкладкой сервиса (этап 7 docs/plan/ozon-fetcher.md).
+      INTERNAL_AUTH_TOKEN: ${INTERNAL_AUTH_TOKEN:-}
     networks: [internal, egress]
     dns: *egress-dns
     mem_limit: 384m

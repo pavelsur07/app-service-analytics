@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Connector\OzonPerformance;
 
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -24,8 +25,13 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * Seller API: raw-слой хранит и хэширует точные байты (ADR-006).
  * Исключения symfony/http-client на 4xx/5xx пробрасываются — что с ними
  * делать, решает вызывающий сценарий (ADR-007).
+ *
+ * Каждый полученный ответ 429 и 403 — `warning` в журнал (ADR-043 п. 5),
+ * как у Seller API: обёрткой лимита Seller (ADR-028) этот клиент не покрыт.
+ * Кабинет в записи — client_id рекламного ключа: у запросов после токена
+ * его нет, поэтому клиент помнит, какому client_id выдан токен.
  */
-final readonly class OzonPerformanceHttp
+final class OzonPerformanceHttp
 {
     /**
      * Разрешённые пары: метод и шаблон пути целиком. Добавить путь сюда —
@@ -47,9 +53,24 @@ final readonly class OzonPerformanceHttp
 
     private const string TOKEN_PATH = '/api/client/token';
 
+    /**
+     * Сколько последних токенов помнить: воркер живёт долго и обходит
+     * кабинеты по очереди — без потолка карта росла бы без конца.
+     */
+    private const int REMEMBERED_TOKENS = 64;
+
+    /**
+     * sha256 токена → client_id, которому он выдан. Только для записи
+     * в журнал; сам токен ключом не хранится.
+     *
+     * @var array<string, string>
+     */
+    private array $tokenOwners = [];
+
     public function __construct(
         #[Autowire(service: 'ozon_performance.client')]
-        private HttpClientInterface $httpClient,
+        private readonly HttpClientInterface $httpClient,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -74,6 +95,11 @@ final readonly class OzonPerformanceHttp
             // Это наш вопрос к форме ответа, а не повод объявить ключ
             // сломанным.
             throw new \UnexpectedValueException('Ozon Performance token response has no access_token.');
+        }
+
+        $this->tokenOwners[hash('sha256', $token)] = $clientId;
+        if (\count($this->tokenOwners) > self::REMEMBERED_TOKENS) {
+            array_shift($this->tokenOwners);
         }
 
         return $token;
@@ -113,7 +139,37 @@ final readonly class OzonPerformanceHttp
             throw new \LogicException(\sprintf('Ozon Performance: %s %s is not in the read-only allow-list (ADR-026).', $method, $path));
         }
 
-        return $this->httpClient->request($method, $path, $options)->getContent();
+        $response = $this->httpClient->request($method, $path, $options);
+        $status = $response->getStatusCode();
+        if (429 === $status || 403 === $status) {
+            $this->logger->warning('Ozon Performance API answered {status}', [
+                'api' => 'performance',
+                'status' => $status,
+                'method' => $method,
+                'path' => $path,
+                'client_id' => self::clientId($options, $this->tokenOwners),
+            ]);
+        }
+
+        return $response->getContent();
+    }
+
+    /**
+     * client_id кабинета: у запроса токена — из тела, у остальных — по
+     * выданному токену. Неизвестен — пустая строка, не выдуманное значение.
+     *
+     * @param array<string, mixed>  $options
+     * @param array<string, string> $tokenOwners
+     */
+    private static function clientId(array $options, array $tokenOwners): string
+    {
+        $json = $options['json'] ?? null;
+        if (\is_array($json) && \is_string($json['client_id'] ?? null)) {
+            return $json['client_id'];
+        }
+        $token = $options['auth_bearer'] ?? null;
+
+        return \is_string($token) ? ($tokenOwners[hash('sha256', $token)] ?? '') : '';
     }
 
     public static function isAllowed(string $method, string $path): bool
