@@ -202,9 +202,9 @@ func (t *Tasks) ClaimNextAcrossConnections(ctx context.Context, conns []Connecti
 		  -- версии — до новых ключей в выдаче, без срока.
 		  AND CASE WHEN t.resource_type LIKE 'ozon.ads.%'
 		      THEN (cs.ads_suspended_until IS NULL OR cs.ads_suspended_until <= $3)
-		           AND NOT (COALESCE(cs.ads_auth_failures, 0) >= 2 AND cs.ads_auth_key_version IS NOT DISTINCT FROM v.key_version)
+		           AND NOT (COALESCE(cs.ads_auth_failures, 0) >= $5 AND cs.ads_auth_key_version IS NOT DISTINCT FROM v.key_version)
 		      ELSE (cs.suspended_until IS NULL OR cs.suspended_until <= $3)
-		           AND NOT (COALESCE(cs.auth_failures, 0) >= 2 AND cs.auth_key_version IS NOT DISTINCT FROM v.key_version)
+		           AND NOT (COALESCE(cs.auth_failures, 0) >= $5 AND cs.auth_key_version IS NOT DISTINCT FROM v.key_version)
 		      END
 		  -- Одна running-задача на (подключение, семейство API): индекс
 		  -- fetch_task_one_running_per_connection_family.
@@ -222,7 +222,7 @@ func (t *Tasks) ClaimNextAcrossConnections(ctx context.Context, conns []Connecti
 		ORDER BY t.priority DESC, cs.last_served_at ASC NULLS FIRST, t.next_run_at ASC
 		LIMIT 1
 		FOR UPDATE OF t SKIP LOCKED`,
-		companies, accounts, now, versions,
+		companies, accounts, now, versions, AuthPauseFailures,
 	).Scan(&task.Account.CompanyID, &task.Account.AccountID, &task.ResourceType, &task.PeriodKey, &task.Attempts,
 		&task.Cursor, &task.NextPageNo, &pageHashes, &task.ContentHash, &task.Revision, &task.LastErrorClass)
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -59,7 +59,7 @@ ozon-fetcher -resume-halt   # в контейнере сервиса, после
 ```
 
 403 на ресурсе без прежнего 200 — пауза этого ресурса подключения на сутки
-(`resource_pause`). 401 — прежний путь: пауза кабинета по счётчику отказов.
+(`resource_pause`). 401 — свой путь, по версии ключей (см. «Подключения из PHP»).
 
 Границы: сервис не пишет в БД PHP, не нормализует данные в факты и не
 решает об идемпотентности по состоянию БД PHP (`services/AGENTS.md`).
@@ -82,7 +82,7 @@ postgres, на существующем `make ozon-fetcher-db`. Пароль —
 Только техническое состояние, без сумм, ПДн, ключей и тел ответов
 (`services/AGENTS.md` §5). Миграции `internal/store/migrations/` с рабочим
 `down`: стартовая `00001_init.sql`, признак ограничения доступа
-`00002_access_guard.sql`; прогон —
+`00002_access_guard.sql`, пауза ключей по версии `00003_auth_key_version.sql`; прогон —
 `make ozon-fetcher-migrate`, проверка с пустой базы — в `make db-rebuild-check`.
 
 | Таблица | Назначение |
@@ -90,7 +90,7 @@ postgres, на существующем `make ozon-fetcher-db`. Пароль —
 | `fetch_task` | Что должно быть загружено: `(company_id, marketplace_account_id, resource_type, period_key)`, статус (`pending → running → done \| not_ready \| failed_retryable \| failed_permanent`), приоритет, попытки, `next_run_at`, lease, курсор и номер следующей страницы, `content_hash` + `revision`, страницы ревизии для зависимых ресурсов |
 | `fetch_attempt` | Журнал попыток (append-only): время, исход, HTTP-статус, страницы, байты |
 | `raw_object` | Объект хранилища на страницу попытки: `storage_uri`, sha256 несжатых байтов, размеры |
-| `connection_state` | Подключение: `last_served_at` (честная очередь), пауза после `auth`, отказы ключа подряд |
+| `connection_state` | Подключение: `last_served_at` (честная очередь); по каждому ключу — продавца и рекламы (`ads_*`) — отказы 401 версии ключей, сама версия (`auth_key_version`) и короткая пауза после первого отказа. Со второго отказа той же версии ключ стоит без срока до новой версии в выдаче |
 | `connection_limit` | Пара (подключение, endpoint): ручное `rps_override`, адаптированная `rps_current` |
 | `resource_stop` | Ресурс, снятый у Ozon (`obsolete_endpoint`), — не выдаётся никому |
 | `planner_run` | Проход планировщика с перезагрузкой — один раз за дату на подключение |
@@ -146,7 +146,7 @@ gzip исходных байтов, `If-None-Match: *`, sha256 несжатых 
 | Метод | Назначение |
 |---|---|
 | `GET /health`, `GET /ready` | Живость и готовность БД, без токена |
-| `GET /internal/fetch-status` | Состояние загрузки по подключениям и ресурсам: пропуски, последняя успешная загрузка, лимит, 429, пауза |
+| `GET /internal/fetch-status` | Состояние загрузки по подключениям и ресурсам: пропуски, последняя успешная загрузка, лимит, 429, пауза; ключ, стоящий до новых ключей, — `auth_paused_key_version` / `ads_auth_paused_key_version` |
 | `GET /internal/coverage?from=YYYY-MM-DD&to=YYYY-MM-DD` | Покрытие «ресурс × период → подключений по статусам», контракт `services/_contracts/service-coverage/v1` |
 
 `/internal/*` — под токеном `SERVICE_API_TOKEN`.

@@ -490,12 +490,18 @@ func TestStatusReport(t *testing.T) {
 	require.NoError(t, tasks.SaveCurrentRate(ctx, accounttest.Ref("ref-a"), "/v1/finance/accrual/by-day", 0.5))
 	_, err = tasks.RecordAuthFailure(ctx, accounttest.Ref("ref-b"), KeySeller, testKeyVersion, t0, func(int) time.Duration { return time.Hour })
 	require.NoError(t, err)
+	// ref-c: ключ рекламы отказан дважды одной версией — стоит без срока,
+	// и отчёт обязан это показать, хотя ads_suspended_until пуст.
+	for range AuthPauseFailures {
+		_, err = tasks.RecordAuthFailure(ctx, accounttest.Ref("ref-c"), KeyAds, testKeyVersion, t0, func(int) time.Duration { return 0 })
+		require.NoError(t, err)
+	}
 	require.NoError(t, tasks.StopResourceAllConnections(ctx, "ozon.finance.mutual-settlement", "obsolete"))
 
 	report, err := tasks.StatusAllConnections(ctx, t0.Add(time.Minute), "2026-08-01")
 	require.NoError(t, err)
 
-	require.Len(t, report.Cabinets, 2)
+	require.Len(t, report.Cabinets, 3)
 	byAccount := map[string]CabinetStatus{}
 	for _, c := range report.Cabinets {
 		byAccount[c.AccountID] = c
@@ -517,6 +523,15 @@ func TestStatusReport(t *testing.T) {
 	require.NotNil(t, b.SuspendedUntil)
 	assert.Equal(t, "auth", b.SuspendReason)
 	assert.Equal(t, 1, b.AuthFailures)
+	assert.Nil(t, b.AuthPausedKeyVersion, "первый отказ — короткая пауза, не до новых ключей")
+
+	c := byAccount[accounttest.Ref("ref-c").AccountID]
+	assert.Nil(t, c.SuspendedUntil)
+	assert.Nil(t, c.AuthPausedKeyVersion, "ключ продавца не отказан")
+	assert.Nil(t, c.AdsSuspendedUntil)
+	assert.Equal(t, AuthPauseFailures, c.AdsAuthFailures)
+	require.NotNil(t, c.AdsAuthPausedKeyVersion)
+	assert.True(t, testKeyVersion.Equal(*c.AdsAuthPausedKeyVersion))
 	assert.Equal(t, []string{"ozon.finance.mutual-settlement"}, report.StoppedResources)
 }
 

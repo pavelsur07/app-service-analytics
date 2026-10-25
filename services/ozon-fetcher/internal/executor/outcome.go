@@ -308,7 +308,7 @@ func keyFamily(resourceType string) store.KeyFamily {
 func (e *Executor) unauthorized(side context.Context, task store.Task, run *taskRun, apiErr *ozon.APIError, now time.Time, log *slog.Logger) store.Outcome {
 	family := keyFamily(task.ResourceType)
 	failures, err := e.tasks.RecordAuthFailure(side, task.Account, family, run.cabinet.UpdatedAt, now, func(n int) time.Duration {
-		if n >= 2 {
+		if n >= store.AuthPauseFailures {
 			return 0 // дальше выдачу закрывает версия ключей, без срока
 		}
 		return e.cfg.AuthRetryPause

@@ -84,6 +84,11 @@ const (
 	KeyAds    KeyFamily = "ads"
 )
 
+// AuthPauseFailures — со скольких 401 одной версии ключей семейство
+// кабинета стоит до новых ключей в выдаче (ADR-043 п. 4: одно обновление
+// выдачи и один повтор).
+const AuthPauseFailures = 2
+
 // authColumns — столбцы connection_state семейства ключа. Имена из этой
 // таблицы, не из ввода.
 func authColumns(family KeyFamily) (failures, version, suspended string) {
