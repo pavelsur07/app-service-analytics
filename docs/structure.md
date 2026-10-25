@@ -34,6 +34,8 @@ app-service-analytics/
 │   │                         postgres; выполняет выкладка на сервере
 │   ├── ozon-fetcher-compose.sh  compose боевой топологии с профилем
 │   │                         ozon-fetcher, если OZON_FETCHER_ENABLED=true
+│   ├── ozon-fetcher-observe.sh  сверка недели наблюдения (ADR-043 п. 5):
+│   │                         429/403 по API, покрытие; только чтение
 │   ├── tests/             автономные shell-контрактные тесты утилит
 │   └── e2e-seed.sh       сеет компанию/подключение и разбирает фикстуру
 │                         Ozon в sales_fact перед Playwright (make test-e2e);

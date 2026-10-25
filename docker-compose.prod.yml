@@ -52,6 +52,18 @@ x-egress-dns: &egress-dns
   - 77.88.8.8
   - 1.1.1.1
 
+# Журнал контейнеров, которые ходят в Ozon, — в journald хоста, а не
+# в json-file: файл json-file удаляется вместе с контейнером, то есть
+# каждой выкладкой. Ответы 429/403 Ozon (ADR-043 п. 5) считаются за сутки
+# и за неделю — у PHP по `warning`, у ozon-fetcher по записи каждого
+# запроса, — и выкладка посреди суток обнуляла бы счёт. journald хранит
+# записи независимо от контейнера, `docker logs` работает как раньше;
+# выборка — `journalctl CONTAINER_NAME=conwix-worker-ingestion-1`.
+x-journald-logging: &journald-logging
+  driver: journald
+  options:
+    tag: "{{.Name}}"
+
 x-api-env: &api-env
   APP_ENV: prod
   APP_SECRET: ${APP_SECRET:?}
@@ -192,6 +204,7 @@ services:
   api:
     image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
     restart: unless-stopped
+    logging: *journald-logging
     environment:
       <<: *api-env
       SMARTCAPTCHA_SERVER_KEY: ${SMARTCAPTCHA_SERVER_KEY:?}
@@ -238,6 +251,7 @@ services:
   worker-ingestion:
     image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
     restart: unless-stopped
+    logging: *journald-logging
     environment: *api-env
     networks: [internal, egress]
     dns: *egress-dns
@@ -294,6 +308,7 @@ services:
   worker-backfill:
     image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
     restart: unless-stopped
+    logging: *journald-logging
     environment: *api-env
     networks: [internal, egress]
     dns: *egress-dns
@@ -322,6 +337,7 @@ services:
   worker-calc:
     image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
     restart: unless-stopped
+    logging: *journald-logging
     environment: *api-env
     networks: [internal]
     depends_on:
@@ -357,6 +373,7 @@ services:
   worker-scheduler:
     image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
     restart: unless-stopped
+    logging: *journald-logging
     environment: *api-env
     networks: [internal]
     depends_on:
@@ -386,6 +403,7 @@ services:
   worker-freshness:
     image: ${IMAGE:?нужен тег образа, например ghcr.io/…/api:28-abcdef0}
     restart: unless-stopped
+    logging: *journald-logging
     environment: *api-env
     networks: [internal, egress]
     dns: *egress-dns
@@ -432,6 +450,7 @@ services:
     image: ${OZON_FETCHER_IMAGE:-ozon-fetcher-image-is-not-set}
     profiles: ["ozon-fetcher"]
     restart: unless-stopped
+    logging: *journald-logging
     environment:
       LISTEN_ADDR: ":8080"
       # Своя БД и роль на том же инстансе (ADR-043 п. 3); пароль — hex,
