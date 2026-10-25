@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Ingestion\Infrastructure\Connector\OzonPerformance;
 
 use App\Ingestion\Infrastructure\Connector\OzonPerformance\OzonPerformanceHttp;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -78,7 +80,7 @@ final class OzonPerformanceHttpTest extends TestCase
 
             return new MockResponse('{}');
         });
-        $http = new OzonPerformanceHttp($client);
+        $http = new OzonPerformanceHttp($client, new Logger('test'));
 
         try {
             $http->get('token', '/api/client/campaign/all_sku_promo/activate');
@@ -93,8 +95,61 @@ final class OzonPerformanceHttpTest extends TestCase
     {
         $http = new OzonPerformanceHttp(new MockHttpClient(
             new MockResponse('{"access_token":"jwt-token","expires_in":1800,"token_type":"Bearer"}'),
-        ));
+        ), new Logger('test'));
 
         self::assertSame('jwt-token', $http->token('client@advertising.performance.ozon.ru', 'secret'));
+    }
+
+    /**
+     * ADR-043 п. 5: каждый полученный 429 и 403 — warning с API, методом
+     * и кабинетом (client_id, которому выдан токен); ни токена, ни секрета
+     * в записи. Ошибка ответа по-прежнему уходит вызывающему.
+     */
+    public function testEveryReceived429And403IsLoggedWithCabinetAndWithoutSecrets(): void
+    {
+        $logs = new TestHandler();
+        $http = new OzonPerformanceHttp(new MockHttpClient([
+            new MockResponse('{"access_token":"jwt-token-a","expires_in":1800,"token_type":"Bearer"}'),
+            new MockResponse('{"error":"too many"}', ['http_code' => 429]),
+            new MockResponse('{"error":"forbidden"}', ['http_code' => 403]),
+            new MockResponse('[]'),
+        ]), new Logger('test', [$logs]));
+
+        $token = $http->token('perf-a@advertising.performance.ozon.ru', 'perf-secret-a');
+        foreach (['/api/client/campaign', '/api/client/statistics/daily/json'] as $path) {
+            try {
+                $http->get($token, $path);
+                self::fail('Ответ 4xx должен дойти до вызывающего.');
+            } catch (\Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface) {
+            }
+        }
+        $http->get($token, '/api/client/campaign');
+
+        $records = $logs->getRecords();
+        self::assertCount(2, $records);
+        self::assertSame(['api' => 'performance', 'status' => 429, 'method' => 'GET', 'path' => '/api/client/campaign', 'client_id' => 'perf-a@advertising.performance.ozon.ru'], $records[0]->context);
+        self::assertSame(403, $records[1]->context['status']);
+        foreach ($records as $record) {
+            self::assertSame('WARNING', $record->level->getName());
+            $line = $record->message.json_encode($record->context);
+            self::assertStringNotContainsString('jwt-token-a', $line);
+            self::assertStringNotContainsString('perf-secret-a', $line);
+        }
+    }
+
+    public function testRejectedTokenRequestNamesTheCabinetFromItsBody(): void
+    {
+        $logs = new TestHandler();
+        $http = new OzonPerformanceHttp(new MockHttpClient(
+            new MockResponse('{"error":"forbidden"}', ['http_code' => 403]),
+        ), new Logger('test', [$logs]));
+
+        try {
+            $http->token('perf-b@advertising.performance.ozon.ru', 'perf-secret-b');
+        } catch (\Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface) {
+        }
+
+        self::assertSame('perf-b@advertising.performance.ozon.ru', $logs->getRecords()[0]->context['client_id']);
+        self::assertStringNotContainsString('perf-secret-b', (string) json_encode($logs->getRecords()[0]->context));
     }
 }

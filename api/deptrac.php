@@ -85,6 +85,7 @@ return static function (DeptracConfig $config): void {
                     mustNot: [
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonAccountsQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\AllCompaniesForAdminQuery$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonConnectionsForServiceQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ExtensionTokenByHashQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Security\\ExtensionTokenHandler$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Repository\\DoctrineUnconfirmedAccountCleaner$'),
@@ -130,6 +131,18 @@ return static function (DeptracConfig $config): void {
             ),
             $identityAdminAccountsUi = Layer::withName('IdentityAdminAccountsUi')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Admin\\ListClientAccountsController$'),
+            ),
+            // Четвёртый случай исключения CLAUDE.md §1 — сервисный контур
+            // (ADR-043 п. 4): межарендаторное чтение с ключами всех компаний
+            // для сервисов вне монолита. Тот же приём, что у системного
+            // контура выше: узкий слой у запроса и узкий слой у единственного
+            // контроллера, которому он разрешён. Ui продавца и admin его
+            // не видят.
+            $identityServiceConnectionsQuery = Layer::withName('IdentityServiceConnectionsQuery')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonConnectionsForServiceQuery$'),
+            ),
+            $identityServiceConnectionsUi = Layer::withName('IdentityServiceConnectionsUi')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Internal\\MarketplaceConnectionsController$'),
             ),
             $identityPurgeCleaner = Layer::withName('IdentityPurgeCleaner')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\(Domain\\UnconfirmedAccountCleaner|Infrastructure\\Repository\\DoctrineUnconfirmedAccountCleaner)$'),
@@ -179,6 +192,7 @@ return static function (DeptracConfig $config): void {
                     must: [DirectoryConfig::create('src/Identity/Ui/.*')],
                     mustNot: [
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Admin\\ListClientAccountsController$'),
+                        ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Internal\\MarketplaceConnectionsController$'),
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Command\\PurgeUnconfirmedAccountsCommand$'),
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Registration\\(ConfirmEmail|ResendEmailVerification)Controller$'),
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\PasswordReset\\(RequestPasswordReset|ResetPassword)Controller$'),
@@ -431,6 +445,11 @@ return static function (DeptracConfig $config): void {
             // не открывает межарендаторный запрос никому ещё: он вынесен
             // из широкого слоя через mustNot выше.
             Ruleset::forLayer($identityAdminAccountsUi)->accesses($identityAdminAccountsQuery, $identityInfrastructure, $identityUi, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($identityServiceConnectionsQuery)->accesses($identityInfrastructure),
+            // Узкий запрос — только здесь; IdentityInfrastructure — ради
+            // Row-DTO запроса, IdentityDomain — ради интерфейса шифра,
+            // IdentityApplication — ради имён рекламных ключей в шифротексте.
+            Ruleset::forLayer($identityServiceConnectionsUi)->accesses($identityServiceConnectionsQuery, $identityInfrastructure, $identityDomain, $identityApplication, $sharedUi, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($identityPurgeCommand)->accesses($identityPurgeAction, $symfonyComponent),
             Ruleset::forLayer($identityPurgeAction)->accesses($identityDomain, $identityPurgeCleaner),
             Ruleset::forLayer($identityPurgeCleaner)->accesses($identityDomain),

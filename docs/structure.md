@@ -294,6 +294,11 @@ HTTP-входы сессии находятся в `Ui/Controller/Session` (`Log
 Остальные системные HTTP-входы находятся в `Ui/Controller/Admin` (`AdminLogin`,
 `AdminMe`, `CreateAdministrator`, `ListClientAccounts`,
 `SetClientAccountStatus`).
+Сервисный контур (ADR-043) — в `Ui/Controller/Internal`
+(`MarketplaceConnections`: выдача подключений сервисам `services/`
+по контракту `services/_contracts/marketplace-connections/v1`); отказ
+токена — `Ui/Security/InternalServiceAuthenticationFailureHandler`.
+Внутри сети endpoint отвечает только на vhost `api-internal`.
 Ответы этих входов лежат в соответствующих `Ui/Response/Session`,
 `Extension`, `Registration` и `Admin`. Общие для двух контуров
 `MeCompanyResponse` и `AdminCompanyResponse` остаются в корне `Ui/Response`.

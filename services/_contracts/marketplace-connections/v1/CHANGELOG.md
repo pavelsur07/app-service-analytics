@@ -1,5 +1,12 @@
 # marketplace-connections — CHANGELOG
 
+## v1 (2026-10-25) — реализован в PHP
+
+Endpoint выдаёт ответ по этой схеме без изменения формы (этап 4 плана
+`docs/plan/ozon-fetcher.md`). `updated_at` — новая колонка
+`marketplace_account.updated_at`: её сдвигает каждый переход подключения
+и каждая замена ключей, включая условные переходы в `broken`.
+
 ## v1 (2026-10-24) — проект, форма Conwix
 
 Перенесён из ВашФинДир (`app-service-finance`, коммит `a9eb74206`) с

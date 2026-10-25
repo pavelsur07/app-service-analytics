@@ -37,6 +37,8 @@ services:
           - app.conwix.internal
           - admin.conwix.internal
           - lin.conwix.internal
+          # Сервисный контур (ADR-043 п. 4): выдача подключений сервисам.
+          - api-internal
 
   # Оба сервиса собирают одну и ту же стадию dev одного Dockerfile. Разными
   # остаются роли, а не образы: php-fpm обслуживает FastCGI, php-cli —
@@ -76,6 +78,9 @@ services:
       - APP_ENCRYPTION_MASTER_KEY
     volumes:
       - ./api:/var/www/html
+      # Контракты сервисов (services/AGENTS.md §3): PHP-тест проверяет свой
+      # ответ по их schema.json. Только чтение — источник один, в services/.
+      - ./services/_contracts:/var/www/services/_contracts:ro
     command: ["tail", "-f", "/dev/null"]
 
   postgres:

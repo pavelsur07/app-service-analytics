@@ -15,6 +15,12 @@ security:
         # или ветвление по типу внутри него — ADR-007 отверг и то, и то.
         identity_admin_provider:
             id: App\Identity\Infrastructure\Security\AdminProvider
+        # Сервисный контур (ADR-043 п. 4): пользователь один и не из базы —
+        # сервис вне монолита, предъявивший токен «сервис → PHP».
+        internal_service_provider:
+            memory:
+                users:
+                    internal-service: { roles: ['ROLE_INTERNAL_SERVICE'] }
 
     firewalls:
         dev:
@@ -50,6 +56,18 @@ security:
             # login_throttling здесь нет намеренно: секрет — 256 бит
             # (ExtensionTokenSecret), перебор не имеет смысла, в отличие
             # от входа по паролю ниже.
+        # Сервисный контур (CLAUDE.md §1, ADR-043 п. 4): выдача ключей
+        # подключений сервисам вне монолита. Перед `api` по той же причине,
+        # что `extension`. Без сессии, токен на каждом запросе; снаружи путь
+        # закрыт nginx (404 на публичных vhost).
+        internal_service:
+            pattern: ^/api/internal/
+            stateless: true
+            provider: internal_service_provider
+            entry_point: App\Identity\Ui\Security\ApiAuthenticationEntryPoint
+            access_token:
+                token_handler: App\Identity\Infrastructure\Security\InternalServiceTokenHandler
+                failure_handler: App\Identity\Ui\Security\InternalServiceAuthenticationFailureHandler
         # Перед `api` по той же причине, что и `extension`: первое
         # совпадение побеждает, а ^/api/admin/ уже, чем ^/api/. Стой он
         # ниже — админские маршруты попали бы на firewall продавца,
@@ -140,6 +158,8 @@ security:
         # User (ADR-010), отдельной роли нет, потому что firewall'ы
         # не пересекаются и разделять нечего.
         - { path: ^/api/extension/, roles: ROLE_USER }
+        # Сервисный контур: только токен «сервис → PHP».
+        - { path: ^/api/internal/, roles: ROLE_INTERNAL_SERVICE }
         - { path: ^/api/companies/, roles: ROLE_USER }
         # Пинг остаётся публичным: на нём висит smoke-проверка выкладки
         # и стартовый экран админки. Правило нужно явно — в отличие

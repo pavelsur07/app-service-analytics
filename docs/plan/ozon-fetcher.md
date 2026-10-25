@@ -143,6 +143,15 @@
   JSON Schema; ключи не в логах.
 - *Проверка:* functional-тесты, Deptrac, PHPStan. Ревью Claude
   + оба Codex (секреты, изоляция).
+- Сделано 25.10.2026: `MarketplaceConnectionsController` за firewall
+  `internal_service` (`INTERNAL_AUTH_TOKEN`, ≥ 32 символов, иначе отказ
+  всем); `updated_at` — новая колонка `marketplace_account.updated_at`
+  (заполнена из `created_at`, сдвигается каждым переходом и условными
+  UPDATE в `broken`); аудит — канал `service_audit`, в prod с `info`;
+  внутренний vhost `api-internal` — алиас nginx только во внутренней сети,
+  без роутера Traefik; маршрут исключён из Nelmio; ответ сверяется со
+  схемой контракта (`opis/json-schema`, dev). Токен на проде не задан
+  до этапа 7 — до тех пор выдача закрыта для всех.
 
 **5. Сервис получает подключения**
 - Клиент выдачи в Go (разбор и обход страниц — с этапа 1): кэш только в памяти

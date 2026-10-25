@@ -99,6 +99,7 @@
         "dama/doctrine-test-bundle": "^8.6",
         "deptrac/deptrac": "^4.7",
         "friendsofphp/php-cs-fixer": "^3.95",
+        "opis/json-schema": "2.6.0",
         "phpstan/phpstan": "^2.2",
         "phpstan/phpstan-doctrine": "^2.0",
         "phpstan/phpstan-strict-rules": "^2.0",

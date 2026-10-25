@@ -7,6 +7,8 @@ namespace App\Tests\Unit\Ingestion\Infrastructure\Connector\Ozon;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonSellerRateLimited;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonSellerRateLimitingClient;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -23,6 +25,49 @@ use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
  */
 final class OzonSellerRateLimitingClientTest extends TestCase
 {
+    private TestHandler $logs;
+
+    private Logger $logger;
+
+    protected function setUp(): void
+    {
+        $this->logs = new TestHandler();
+        $this->logger = new Logger('test', [$this->logs]);
+    }
+
+    /**
+     * ADR-043 п. 5: каждый полученный 429 и 403 — warning с API, методом
+     * и кабинетом; ключа в записи нет. Успешный ответ и локальный отказ
+     * паузы (запрос в Ozon не ушёл) записи не дают.
+     */
+    public function testEveryReceived429And403IsLoggedWithoutKey(): void
+    {
+        $calls = 0;
+        $client = $this->client($calls, [
+            new MockResponse('{}', ['http_code' => 429, 'response_headers' => ['Retry-After' => '30']]),
+            new MockResponse('{"message":"forbidden"}', ['http_code' => 403]),
+            new MockResponse('{}'),
+        ]);
+
+        $client->request('POST', '/v3/posting/fbo/list', $this->as('shop-1'));
+        try {
+            $client->request('POST', '/v3/posting/fbo/list', $this->as('shop-1'));
+        } catch (OzonSellerRateLimited) {
+        }
+        $client->request('POST', '/v1/finance/accrual/by-day', $this->as('shop-1'));
+        $client->request('POST', '/v3/product/list', $this->as('shop-2'));
+
+        $records = $this->logs->getRecords();
+        self::assertCount(2, $records);
+        self::assertSame(['api' => 'seller', 'status' => 429, 'method' => 'POST', 'path' => '/v3/posting/fbo/list', 'client_id' => 'shop-1'], $records[0]->context);
+        self::assertSame(403, $records[1]->context['status']);
+        self::assertSame('/v1/finance/accrual/by-day', $records[1]->context['path']);
+        foreach ($records as $record) {
+            self::assertSame('WARNING', $record->level->getName());
+            self::assertStringNotContainsString('secret-api-key', $record->message.json_encode($record->context));
+        }
+    }
+
     public function testRejectedRequestPausesTheSameClientAndMethod(): void
     {
         $calls = 0;
@@ -177,6 +222,7 @@ final class OzonSellerRateLimitingClientTest extends TestCase
             $mock,
             $pauses ?? new ArrayAdapter(),
             new LockFactory(new InMemoryStore()),
+            $this->logger,
             $sleep ?? static function (int $seconds): void {
                 self::fail("Короткая пауза неожиданно пережидается: {$seconds} с.");
             },
@@ -188,6 +234,6 @@ final class OzonSellerRateLimitingClientTest extends TestCase
      */
     private function as(string $clientId): array
     {
-        return ['headers' => ['Client-Id' => $clientId, 'Api-Key' => 'key']];
+        return ['headers' => ['Client-Id' => $clientId, 'Api-Key' => 'secret-api-key']];
     }
 }

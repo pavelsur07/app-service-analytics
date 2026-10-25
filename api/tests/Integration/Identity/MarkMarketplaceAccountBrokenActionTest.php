@@ -19,6 +19,7 @@ use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
+use Doctrine\ORM\OptimisticLockException;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 use Psr\Log\LoggerInterface;
@@ -196,6 +197,101 @@ final class MarkMarketplaceAccountBrokenActionTest extends KernelTestCase
         self::assertSame('broken', $this->state($container, $account));
         self::assertSame([], $notifier->notified);
         self::assertTrue($handler->hasWarningThatContains('исчезло до отправки уведомления'));
+    }
+
+    /**
+     * ADR-043 п. 4: по `updated_at` сервис вне монолита отличает новые
+     * ключи от уже отказанных Ozon. Условные UPDATE идут мимо сущности,
+     * поэтому отметку сдвигают сами — иначе выдача после перехода в broken
+     * показывала бы прежнюю версию подключения.
+     */
+    public function testConditionalTransitionsMoveTheChangeMoment(): void
+    {
+        $container = $this->bootedContainer();
+        /** @var MarketplaceAccountRepository $accounts */
+        $accounts = $container->get(MarketplaceAccountRepository::class);
+        $dbal = $this->dbal($container);
+        $longAgo = '2020-01-01 00:00:00';
+
+        $seller = $this->activeAccount($container);
+        $dbal->executeStatement('UPDATE marketplace_account SET updated_at = ? WHERE id = ?', [$longAgo, $seller->id()->toRfc4122()]);
+        self::assertTrue($accounts->markBrokenIfActive($seller->companyId()->toRfc4122(), $seller->id()));
+        self::assertNotSame($longAgo, $this->updatedAt($container, $seller));
+
+        $ads = MarketplaceAccountBuilder::aMarketplaceAccount()
+            ->withCompany(CompanyBuilder::aCompany()->persistWith($this->companies($container)))
+            ->withExternalShopId('ads-shop')
+            ->withState(MarketplaceAccountState::Active)
+            ->persistWith($this->companies($container), $accounts);
+        $dbal->executeStatement(
+            "UPDATE marketplace_account SET advertising_state = 'active', updated_at = ? WHERE id = ?",
+            [$longAgo, $ads->id()->toRfc4122()],
+        );
+        $version = $dbal->fetchOne('SELECT version FROM marketplace_account WHERE id = ?', [$ads->id()->toRfc4122()]);
+        self::assertIsInt($version);
+        self::assertTrue($accounts->markAdvertisingBrokenIfActive($ads->companyId()->toRfc4122(), $ads->id(), $version));
+        self::assertNotSame($longAgo, $this->updatedAt($container, $ads));
+    }
+
+    /**
+     * Отметка в будущем — как после второго изменения в ту же секунду:
+     * условный UPDATE обязан дать значение строго больше прежнего,
+     * а не текущую секунду, которая с прежним совпала бы.
+     */
+    public function testConditionalTransitionNeverRepeatsThePreviousChangeMoment(): void
+    {
+        $container = $this->bootedContainer();
+        /** @var MarketplaceAccountRepository $accounts */
+        $accounts = $container->get(MarketplaceAccountRepository::class);
+        $account = $this->activeAccount($container);
+        $ahead = new \DateTimeImmutable('now', new \DateTimeZone('UTC'))->modify('+1 hour')->format('Y-m-d H:i:s');
+        $this->dbal($container)->executeStatement('UPDATE marketplace_account SET updated_at = ? WHERE id = ?', [$ahead, $account->id()->toRfc4122()]);
+
+        self::assertTrue($accounts->markBrokenIfActive($account->companyId()->toRfc4122(), $account->id()));
+
+        self::assertSame(
+            new \DateTimeImmutable($ahead)->modify('+1 second')->format('Y-m-d H:i:s'),
+            $this->updatedAt($container, $account),
+        );
+    }
+
+    /**
+     * Условный UPDATE идёт мимо сущности, но версию двигает (ADR-008):
+     * сущность, загруженная до него, не записывает отметку изменения,
+     * посчитанную от устаревшего значения, — запись отклоняется
+     * конфликтом версий, а не проходит молча.
+     */
+    public function testEntityLoadedBeforeConditionalTransitionCannotOverwriteIt(): void
+    {
+        $container = $this->bootedContainer();
+        /** @var MarketplaceAccountRepository $accounts */
+        $accounts = $container->get(MarketplaceAccountRepository::class);
+        $account = $this->activeAccount($container);
+        $before = $this->updatedAt($container, $account);
+
+        self::assertTrue($accounts->markBrokenIfActive($account->companyId()->toRfc4122(), $account->id()));
+        $published = $this->updatedAt($container, $account);
+        $account->replaceCredentials('stale-ciphertext', 1);
+
+        try {
+            $accounts->add($account);
+            self::fail('запись устаревшей сущности должна упасть на версии');
+        } catch (OptimisticLockException) {
+        }
+
+        self::assertNotSame($before, $published);
+        self::assertSame($published, $this->updatedAt($container, $account));
+    }
+
+    private function updatedAt(ContainerInterface $container, MarketplaceAccount $account): string
+    {
+        $updatedAt = $this->dbal($container)->fetchOne(
+            'SELECT updated_at FROM marketplace_account WHERE id = ?',
+            [$account->id()->toRfc4122()],
+        );
+        self::assertIsString($updatedAt);
+
+        return $updatedAt;
     }
 
     private function activeAccountWithMember(ContainerInterface $container, string $email): MarketplaceAccount
