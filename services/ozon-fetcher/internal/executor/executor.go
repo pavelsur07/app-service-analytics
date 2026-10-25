@@ -80,6 +80,7 @@ type TaskStore interface {
 	StopResourceAllConnections(ctx context.Context, resourceType, reason string) error
 	MarkAttemptKey(ctx context.Context, ref account.Ref, attemptID string, keyVersion time.Time) error
 	ServedWithKey(ctx context.Context, ref account.Ref, resourceType string, keyVersion time.Time) (bool, error)
+	ServiceHalted(ctx context.Context) (bool, error)
 	HaltAllConnections(ctx context.Context, ref account.Ref, resourceType, reason string) (bool, error)
 	PauseResource(ctx context.Context, ref account.Ref, resourceType string, until time.Time, reason string) error
 	ContentPages(ctx context.Context, key store.TaskKey) (store.Content, error)
@@ -111,9 +112,11 @@ type Ozon interface {
 	FetchStocks(ctx context.Context, ref account.Ref, creds ozon.Credentials, fromCursor string, firstPageNo int, onPage ozon.PageHandler) error
 }
 
-// Refresher — обновление снимка кабинетов после 401.
+// Refresher — обновление снимка кабинетов после 401 и 403; Get — подключение
+// из снимка (версия ключей перед решением об остановке).
 type Refresher interface {
 	ForceRefresh(ctx context.Context) (bool, error)
+	Get(ref account.Ref) (connections.Cabinet, bool)
 }
 
 // Config — тайминги исполнителя.
@@ -277,10 +280,10 @@ func (e *Executor) Run(ctx context.Context, task store.Task, cabinet connections
 	run := &taskRun{exec: e, task: task, cabinet: cabinet, log: log, hashes: append([]string(nil), task.PageHashes...), cursor: task.Cursor, nextPage: task.NextPageNo}
 	e.running.add(run, cancel)
 	defer e.running.remove(run)
-	// Версия ключей попытки — для признака ограничения доступа. Сбой записи
-	// не останавливает загрузку: попытка просто не войдёт в признак.
-	e.sideEffect(log, "mark attempt key", e.tasks.MarkAttemptKey(taskCtx, task.Account, task.AttemptID, cabinet.UpdatedAt))
-	fetchErr := run.fetch(taskCtx, cabinet)
+	fetchErr := e.begin(taskCtx, cancel, run)
+	if fetchErr == nil {
+		fetchErr = run.fetch(taskCtx, cabinet)
+	}
 
 	// Lease продлевается и во время побочных действий исхода (пауза кабинета,
 	// стоп ресурса); у них свой ограниченный контекст.
@@ -330,6 +333,26 @@ func (e *Executor) Run(ctx context.Context, task store.Task, cabinet connections
 	}
 	log.Log(context.WithoutCancel(ctx), level, "fetch task finished", attrs...)
 	return result
+}
+
+// begin — до первого запроса к Ozon. Версия ключей записывается в попытку
+// обязательно: без неё успешные ответы выпали бы из признака ограничения
+// доступа. Остановка читается после регистрации задачи: задача, взятая до
+// вставки service_halt, видит её здесь, а вставленную позже отменит
+// haltOthers — регистрация уже есть.
+func (e *Executor) begin(ctx context.Context, cancel context.CancelCauseFunc, run *taskRun) error {
+	if err := e.tasks.MarkAttemptKey(ctx, run.task.Account, run.task.AttemptID, run.cabinet.UpdatedAt); err != nil {
+		return &storeError{err}
+	}
+	halted, err := e.tasks.ServiceHalted(ctx)
+	if err != nil {
+		return &storeError{err}
+	}
+	if halted {
+		cancel(errHalted)
+		return errHalted
+	}
+	return nil
 }
 
 // keepLease продлевает lease раз в треть срока; потеря — отмена задачи.

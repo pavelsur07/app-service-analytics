@@ -61,6 +61,8 @@ type fakeTasks struct {
 	loadedErr  error       // ошибка ServedWithKey
 	since      []time.Time // версия ключа в ServedWithKey
 	keyMarks   []time.Time // MarkAttemptKey
+	markErr    error       // ошибка MarkAttemptKey
+	halted     bool        // ServiceHalted
 	halts      []string    // HaltAllConnections: ресурс
 	paused     []string    // PauseResource: ресурс
 	pausedTill []time.Time
@@ -70,7 +72,13 @@ func (f *fakeTasks) MarkAttemptKey(_ context.Context, _ account.Ref, _ string, k
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.keyMarks = append(f.keyMarks, keyVersion)
-	return nil
+	return f.markErr
+}
+
+func (f *fakeTasks) ServiceHalted(context.Context) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.halted, nil
 }
 
 func (f *fakeTasks) ServedWithKey(_ context.Context, _ account.Ref, _ string, since time.Time) (bool, error) {
@@ -330,11 +338,27 @@ type postingCall struct {
 	firstPage int
 }
 
-type fakeRefresher struct{ calls int }
+// fakeRefresher: подключения снимка — keys (версия ключей по подключению),
+// отсутствующее — с версией updatedAt.
+type fakeRefresher struct {
+	calls     int
+	err       error
+	updatedAt time.Time
+	keys      map[account.Ref]time.Time
+	missing   bool
+}
 
 func (f *fakeRefresher) ForceRefresh(context.Context) (bool, error) {
 	f.calls++
-	return true, nil
+	return true, f.err
+}
+
+func (f *fakeRefresher) Get(ref account.Ref) (connections.Cabinet, bool) {
+	updated, ok := f.keys[ref]
+	if !ok {
+		updated = f.updatedAt
+	}
+	return connections.Cabinet{Account: ref, UpdatedAt: updated}, !f.missing
 }
 
 func page(body, cursor string) ozon.Page {
@@ -555,10 +579,12 @@ func TestForbiddenOnLoadedMethodHaltsAllConnections(t *testing.T) {
 	h.tasks.loaded = true
 	cab := cabinet
 	cab.UpdatedAt = t0.Add(-48 * time.Hour)
+	h.refresher.updatedAt = cab.UpdatedAt
 
 	res := h.exec.Run(context.Background(), task(ResourceAccrualTypes, PeriodRef), cab, "trace")
 
 	assert.Equal(t, "access_restricted", res.Outcome)
+	assert.Equal(t, 1, h.refresher.calls, "версия ключей сверена с выдачей")
 	assert.Equal(t, store.StatusFailedRetryable, h.tasks.finished.Status)
 	assert.True(t, h.tasks.finished.KeepCursor)
 	assert.Equal(t, []string{ResourceAccrualTypes}, h.tasks.halts)
@@ -633,6 +659,71 @@ func TestHaltCancelsTasksAlreadyRunning(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("взятая задача не прервана остановкой")
 	}
+}
+
+// 403 старого ключа, пока кэш выдачи ещё не видел замену: после обновления
+// выдачи версия другая — смена ключа, повтор с новым, без остановки и паузы.
+func TestForbiddenAfterKeyChangeInPHPRetriesWithoutHalt(t *testing.T) {
+	for name, refresher := range map[string]*fakeRefresher{
+		"key replaced":         {updatedAt: t0},
+		"connection withdrawn": {missing: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(&fakeOzon{singleErr: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: "/v1/x", Status: http.StatusForbidden}})
+			h.exec.refresher = refresher
+			h.tasks.loaded = true
+			cab := cabinet
+			cab.UpdatedAt = t0.Add(-48 * time.Hour)
+
+			res := h.exec.Run(context.Background(), task(ResourceAccrualTypes, PeriodRef), cab, "trace")
+
+			assert.Equal(t, "key_changed", res.Outcome)
+			assert.Equal(t, t0.Add(time.Minute), h.tasks.finished.NextRunAt)
+			assert.Empty(t, h.tasks.halts)
+			assert.Empty(t, h.tasks.paused)
+		})
+	}
+}
+
+// Выдача не обновилась — версию ключа не проверить: повтор, без остановки.
+func TestForbiddenWithUnrefreshedConnectionsRetries(t *testing.T) {
+	h := newHarness(&fakeOzon{singleErr: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: "/v1/x", Status: http.StatusForbidden}})
+	h.refresher.err = errors.New("php down")
+	h.tasks.loaded = true
+
+	res := h.exec.Run(context.Background(), task(ResourceAccrualTypes, PeriodRef), cabinet, "trace")
+
+	assert.Equal(t, "auth", res.Outcome)
+	assert.Empty(t, h.tasks.halts)
+	assert.Empty(t, h.tasks.paused)
+}
+
+// Версия ключей не записана — запросов к Ozon нет, повтор: иначе успешные
+// ответы выпали бы из признака.
+func TestUnmarkedAttemptKeyMakesNoRequests(t *testing.T) {
+	o := &fakeOzon{pages: twoPageDay()}
+	h := newHarness(o)
+	h.tasks.markErr = errors.New("db down")
+
+	res := h.exec.Run(context.Background(), task(ResourceAccrualByDay, "2026-10-15"), cabinet, "trace")
+
+	assert.Equal(t, "store", res.Outcome)
+	assert.Empty(t, o.creds, "к Ozon не ходили")
+	assert.Empty(t, h.tasks.pages)
+}
+
+// Задача, взятая до остановки и начатая после неё, к Ozon не ходит.
+func TestTaskStartedAfterHaltMakesNoRequests(t *testing.T) {
+	o := &fakeOzon{pages: twoPageDay()}
+	h := newHarness(o)
+	h.tasks.halted = true
+
+	res := h.exec.Run(context.Background(), task(ResourceAccrualByDay, "2026-10-15"), cabinet, "trace")
+
+	assert.Equal(t, "halted", res.Outcome)
+	assert.Equal(t, store.StatusPending, h.tasks.finished.Status)
+	assert.True(t, h.tasks.finished.KeepCursor)
+	assert.Empty(t, o.creds)
 }
 
 // Признак не прочитан — ни остановки, ни паузы: повтор с backoff.

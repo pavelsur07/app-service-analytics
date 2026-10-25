@@ -43,6 +43,17 @@ func (t *Tasks) ServedWithKey(ctx context.Context, ref account.Ref, resourceType
 	return ok, nil
 }
 
+// ServiceHalted — стоит ли остановка всех подключений. Строка не несёт
+// данных компании; читается исполнителем после регистрации задачи, чтобы
+// задача, взятая до остановки, не прошла мимо неё.
+func (t *Tasks) ServiceHalted(ctx context.Context) (bool, error) {
+	var ok bool
+	if err := t.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM service_halt)`).Scan(&ok); err != nil {
+		return false, fmt.Errorf("store: service halted: %w", err)
+	}
+	return ok, nil
+}
+
 // HaltAllConnections останавливает выдачу задач всех подключений до
 // ResumeAllConnections. Межарендаторная запись операционной задачи
 // (CLAUDE.md §1, ADR-043 п. 5): ограничение доступа ложится на Client ID,

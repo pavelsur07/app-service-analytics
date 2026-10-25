@@ -235,6 +235,7 @@ func (e *Executor) outcome(parent, taskCtx context.Context, task store.Task, run
 const (
 	labelAccessRestricted = "access_restricted"
 	labelForbidden        = "forbidden"
+	labelKeyChanged       = "key_changed"
 )
 
 // forbidden — 403 Seller или Performance. Метод, который этим же ключом уже
@@ -250,6 +251,18 @@ func (e *Executor) forbidden(side context.Context, task store.Task, run *taskRun
 		out := e.retryable(task, string(apiErr.Class), now, true)
 		out.HTTPStatus = apiErr.Status
 		return out
+	}
+	// Решение — по выдаче, а не по снимку попытки: кэш отстаёт от PHP на
+	// интервал опроса, и 403 старого ключа после его замены — смена ключа,
+	// а не ограничение доступа (ADR-043 п. 5: «updated_at тот же»).
+	if _, err := e.refresher.ForceRefresh(side); err != nil {
+		e.sideEffect(log, "refresh connections", err)
+		return retry()
+	}
+	if current, ok := e.refresher.Get(task.Account); !ok || !current.UpdatedAt.Equal(run.cabinet.UpdatedAt) {
+		log.Warn("ozon answered 403 after the connection keys changed: retrying with the current keys",
+			slog.String("stage", "fetch"), slog.String("endpoint", apiErr.Endpoint), slog.Int("http_status", apiErr.Status))
+		return store.Outcome{Status: store.StatusFailedRetryable, Label: labelKeyChanged, ErrorClass: labelKeyChanged, HTTPStatus: apiErr.Status, KeepCursor: true, NextRunAt: now.Add(e.cfg.AuthRetryPause)}
 	}
 	loaded, err := run.pages > 0, error(nil)
 	if !loaded {
