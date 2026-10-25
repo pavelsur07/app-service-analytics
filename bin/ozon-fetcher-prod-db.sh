@@ -1,7 +1,7 @@
 #!/bin/sh
 # Роль и БД ozon-fetcher на боевом postgres (ADR-043 п. 3, этап 7
 # docs/plan/ozon-fetcher.md). Выполняет выкладка на сервере, в /opt/conwix,
-# только при включённом профиле (COMPOSE_PROFILES=ozon-fetcher в .env);
+# только у включённого сервиса (OZON_FETCHER_ENABLED=true в .env);
 # повторный запуск ничего не меняет, кроме пароля роли — он сверяется
 # с .env (замена пароля = новая строка в .env и выкладка).
 #

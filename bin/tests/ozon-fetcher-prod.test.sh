@@ -10,6 +10,7 @@ set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 SET_ENV="$ROOT/bin/set-ozon-fetcher-env.sh"
 PROD_DB="$ROOT/bin/ozon-fetcher-prod-db.sh"
+COMPOSE_WRAPPER="$ROOT/bin/ozon-fetcher-compose.sh"
 HBA="$ROOT/services/docker/postgres/init/02-ozon-fetcher-hba.sh"
 NAMES='INTERNAL_AUTH_TOKEN OZON_FETCHER_SERVICE_API_TOKEN OZON_FETCHER_DB_PASSWORD'
 
@@ -104,7 +105,48 @@ test_db_script_refuses_incomplete_secrets() {
     done
 }
 
+# compose, который на `config --environment` отдаёт окружение из файла
+# (как его разобрал бы сам compose), а остальные вызовы записывает.
+fake_compose_env() {
+    local work=$1
+    cat > "$work/compose.sh" <<EOF
+#!/bin/sh
+if [ "\$*" = "config --environment" ]; then
+    cat '$work/resolved'
+    exit 0
+fi
+printf 'ARGS %s\n' "\$*" >> '$work/calls'
+EOF
+    chmod +x "$work/compose.sh"
+}
+
+test_compose_wrapper_adds_profile_only_when_enabled() {
+    local work output resolved
+    work=$(mktemp -d)
+    fake_compose_env "$work"
+
+    for resolved in 'OZON_FETCHER_ENABLED=false' 'OZON_FETCHER_ENABLED=' 'APP_SECRET=x' 'OZON_FETCHER_ENABLED=TRUE'; do
+        printf '%s\n' 'APP_SECRET=do-not-print-me' "$resolved" > "$work/resolved"
+        : > "$work/calls"
+        if COMPOSE="$work/compose.sh" sh "$COMPOSE_WRAPPER" --enabled; then
+            fail "$resolved: считается включённым"
+        fi
+        output=$(COMPOSE="$work/compose.sh" sh "$COMPOSE_WRAPPER" up -d)
+        grep -qx 'ARGS up -d' "$work/calls" || fail "$resolved: up -d вызван не без профиля"
+        [[ "$output" != *do-not-print-me* ]] || fail 'окружение compose напечатано'
+    done
+
+    printf '%s\n' 'APP_SECRET=do-not-print-me' 'OZON_FETCHER_ENABLED=true' > "$work/resolved"
+    : > "$work/calls"
+    COMPOSE="$work/compose.sh" sh "$COMPOSE_WRAPPER" --enabled || fail 'включённый не распознан'
+    output=$(COMPOSE="$work/compose.sh" sh "$COMPOSE_WRAPPER" run --rm --no-deps -T ozon-fetcher -migrations-check)
+    grep -qx 'ARGS --profile ozon-fetcher run --rm --no-deps -T ozon-fetcher -migrations-check' "$work/calls" ||
+        fail 'профиль не добавлен включённому сервису'
+    [[ "$output" != *do-not-print-me* ]] || fail 'окружение compose напечатано'
+}
+
 test_secrets_are_generated_once_and_never_printed
+test_compose_wrapper_adds_profile_only_when_enabled
 test_db_script_passes_password_by_stdin_and_reuses_sandbox_hba
 test_db_script_refuses_incomplete_secrets
 echo 'ozon-fetcher-prod: OK'

@@ -19,8 +19,8 @@ Go-сервис загрузки raw Ozon (ADR-043): по активным по�
 `SYMFONY_INTERNAL_BASE_URL` планировщик и диспетчер не стартуют, сервис
 отвечает только `/health` и `/ready`. Выдача подключений в PHP — этап 4,
 приём выдачи по правилам отзыва — этап 5, наблюдаемость — этап 6,
-вывод на прод — этап 7 плана: образ публикуется с `master`, контейнер —
-профиль compose `ozon-fetcher`, включается в `/opt/conwix/.env`
+вывод на прод — этап 7 плана: образ публикуется с `master`, контейнер
+включается `OZON_FETCHER_ENABLED=true` в `/opt/conwix/.env`
 (`docs/operations-checklist.md`, «ozon-fetcher на проде»).
 
 **Журнал** (`services/AGENTS.md` §8): JSON в stdout. Обязательные поля —

@@ -243,10 +243,9 @@
   открытая издержка в `operations-checklist.md`); DSN GlitchTip — позже;
   текст ошибки из конверта — не тело (`services/AGENTS.md` §8); токены
   и пароль роли генерируются на сервере (`bin/set-ozon-fetcher-env.sh`).
-  Включение — переменной `COMPOSE_PROFILES=ozon-fetcher` (профиль compose),
-  а не `OZON_FETCHER_ENABLED`: её же читают ручные команды compose
-  на сервере. Подключение для allowlist — вопрос владельцу на шаге
-  включения.
+  Переключатель — `OZON_FETCHER_ENABLED` (ADR-043), профиль compose —
+  механизм за обёрткой `bin/ozon-fetcher-compose.sh`. Подключение для
+  allowlist — вопрос владельцу на шаге включения.
 
 **8. Наблюдение и расширение**
 - Каждое подключение в allowlist — с согласия владельца кабинета

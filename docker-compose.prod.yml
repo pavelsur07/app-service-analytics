@@ -416,10 +416,13 @@ services:
       disable: true
 
   # Загрузка Ozon отдельным Go-сервисом (ADR-043, этап 7
-  # docs/plan/ozon-fetcher.md). Профиль, а не всегда: контейнер есть только
-  # при COMPOSE_PROFILES=ozon-fetcher в /opt/conwix/.env — без него выкладка
-  # сервис не трогает, роль и БД не создаёт. Включение и выключение —
-  # docs/operations-checklist.md, «ozon-fetcher на проде».
+  # docs/plan/ozon-fetcher.md). Переключатель — OZON_FETCHER_ENABLED=true
+  # в /opt/conwix/.env (ADR-043, services/AGENTS.md §10); профиль — механизм:
+  # выкладка добавляет его через bin/ozon-fetcher-compose.sh только у
+  # включённого сервиса, ручной `up -d` сервис не запускает никогда.
+  # Выключен — выкладка сервис не трогает, роль и БД не создаёт.
+  # Включение и выключение — docs/operations-checklist.md, «ozon-fetcher
+  # на проде».
   #
   # Значения ниже — с пустыми умолчаниями, не :?: compose подставляет
   # переменные во весь файл, и обязательное значение неактивного сервиса
@@ -444,11 +447,11 @@ services:
       # conwix/svc/ozon-fetcher/ (ADR-044) отложен решением владельца
       # 25.10.2026; граница с conwix/raw/ держится портом хранилища —
       # открытая издержка в docs/operations-checklist.md.
-      S3_ENDPOINT: ${RAW_STORAGE_ENDPOINT:?}
-      S3_REGION: ${RAW_STORAGE_REGION:?}
-      S3_BUCKET: ${RAW_STORAGE_BUCKET:?}
-      S3_ACCESS_KEY_ID: ${RAW_STORAGE_ACCESS_KEY:?}
-      S3_SECRET_ACCESS_KEY: ${RAW_STORAGE_SECRET_KEY:?}
+      S3_ENDPOINT: ${RAW_STORAGE_ENDPOINT:-}
+      S3_REGION: ${RAW_STORAGE_REGION:-}
+      S3_BUCKET: ${RAW_STORAGE_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${RAW_STORAGE_ACCESS_KEY:-}
+      S3_SECRET_ACCESS_KEY: ${RAW_STORAGE_SECRET_KEY:-}
       # Пусто — ошибки только в журнал (DSN GlitchTip — позже).
       SENTRY_DSN: ${OZON_FETCHER_SENTRY_DSN:-}
       SENTRY_RELEASE: ${OZON_FETCHER_IMAGE:-}

@@ -32,6 +32,8 @@ app-service-analytics/
 │   │                         роли) генерирует на сервере, ssh 'sh -s'
 │   ├── ozon-fetcher-prod-db.sh  роль, БД и pg_hba ozon-fetcher на боевом
 │   │                         postgres; выполняет выкладка на сервере
+│   ├── ozon-fetcher-compose.sh  compose боевой топологии с профилем
+│   │                         ozon-fetcher, если OZON_FETCHER_ENABLED=true
 │   ├── tests/             автономные shell-контрактные тесты утилит
 │   └── e2e-seed.sh       сеет компанию/подключение и разбирает фикстуру
 │                         Ozon в sales_fact перед Playwright (make test-e2e);

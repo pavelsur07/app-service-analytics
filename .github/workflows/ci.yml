@@ -734,10 +734,11 @@ jobs:
           # на проде при зелёной выкладке.
           rsync -az --inplace -e "$SSH" traefik/dynamic.prod.yml "$HOST:/opt/conwix/traefik/"
           rsync -az --inplace -e "$SSH" docker/nginx/prod.conf "$HOST:/opt/conwix/docker/nginx/"
-          # Роль, БД и pg_hba ozon-fetcher: скрипт и правила pg_hba — те же
-          # файлы, что у песочницы (services/docker/postgres/init).
+          # ozon-fetcher: обёртка compose с профилем по OZON_FETCHER_ENABLED,
+          # роль, БД и pg_hba (правила — тот же файл, что у песочницы,
+          # services/docker/postgres/init).
           $SSH "$HOST" 'mkdir -p /opt/conwix/ozon-fetcher'
-          rsync -az -e "$SSH" bin/ozon-fetcher-prod-db.sh \
+          rsync -az -e "$SSH" bin/ozon-fetcher-prod-db.sh bin/ozon-fetcher-compose.sh \
             services/docker/postgres/init/02-ozon-fetcher-hba.sh "$HOST:/opt/conwix/ozon-fetcher/"
 
       # Проверка, а не доверие: --inplace выше решает проблему, но её
@@ -810,31 +811,36 @@ jobs:
                php bin/console doctrine:migrations:up-to-date" \
             || { echo "Есть непринятые миграции. Примените их вручную и повторите выкладку." >&2; exit 1; }
 
-      # ozon-fetcher (ADR-043, services/AGENTS.md §5) — только при
-      # включённом профиле: COMPOSE_PROFILES=ozon-fetcher в .env. Новый
-      # образ, роль и БД, затем гейт миграций сервиса против НОВОГО образа —
-      # тот же порядок, что у api выше. Неприменённые миграции
-      # останавливают выкладку до запуска контейнера: агент применяет
-      # `ozon-fetcher -migrate` отдельным шагом и повторяет выкладку.
+      # ozon-fetcher (ADR-043, services/AGENTS.md §5, §10) — только при
+      # OZON_FETCHER_ENABLED=true в .env; включённость определяет сам compose
+      # (ozon-fetcher-compose.sh --enabled). Новый образ, роль и БД, затем
+      # гейт миграций сервиса против НОВОГО образа — тот же порядок, что
+      # у api выше. Неприменённые миграции останавливают выкладку до
+      # запуска контейнера: агент применяет `ozon-fetcher -migrate`
+      # отдельным шагом и повторяет выкладку.
       - name: ozon-fetcher — образ, БД и проверка миграций
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
+          SSH="ssh -i $HOME/.ssh/deploy -o BatchMode=yes root@${{ secrets.DEPLOY_HOST }}"
           IMAGE='ghcr.io/${{ github.repository }}/ozon-fetcher:${{ needs.image.outputs.tag }}'
-          ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes 'root@${{ secrets.DEPLOY_HOST }}' \
-            "set -eu
+          if ! $SSH 'cd /opt/conwix && sh ozon-fetcher/ozon-fetcher-compose.sh --enabled'; then
+            echo 'ozon-fetcher выключен (OZON_FETCHER_ENABLED) — шаг пропущен'
+            exit 0
+          fi
+          # Токен — через stdin ssh, не в тексте удалённой команды.
+          printf '%s' "$GHCR_TOKEN" \
+            | $SSH "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+          $SSH "set -eu
              cd /opt/conwix
-             if ! grep -Eq '^COMPOSE_PROFILES=([^#]*,)?ozon-fetcher(,|\$)' .env; then
-               echo 'ozon-fetcher выключен (COMPOSE_PROFILES) — шаг пропущен'
-               exit 0
-             fi
-             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+             trap 'docker logout ghcr.io >/dev/null' EXIT
              docker pull '$IMAGE'
-             docker logout ghcr.io
              sed -i '/^OZON_FETCHER_IMAGE=/d' .env
              echo 'OZON_FETCHER_IMAGE=$IMAGE' >> .env
              sh ozon-fetcher/ozon-fetcher-prod-db.sh
-             docker compose -f docker-compose.prod.yml run --rm --no-deps -T ozon-fetcher -migrations-check \
-               || { echo 'Есть неприменённые миграции ozon-fetcher. Примените: docker compose -f docker-compose.prod.yml run --rm --no-deps -T ozon-fetcher -migrate — и повторите выкладку.' >&2; exit 1; }"
+             sh ozon-fetcher/ozon-fetcher-compose.sh run --rm --no-deps -T ozon-fetcher -migrations-check \
+               || { echo 'Есть неприменённые миграции ozon-fetcher. Примените: sh ozon-fetcher/ozon-fetcher-compose.sh run --rm --no-deps -T ozon-fetcher -migrate — и повторите выкладку.' >&2; exit 1; }"
 
       - name: выкладка
         run: |
@@ -842,7 +848,15 @@ jobs:
           # Образ уже подтянут и прописан в .env шагом выше — здесь только
           # замена работающих контейнеров на него.
           ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes 'root@${{ secrets.DEPLOY_HOST }}' \
-            'cd /opt/conwix && docker compose -f docker-compose.prod.yml up -d'
+            'set -eu
+             cd /opt/conwix
+             sh ozon-fetcher/ozon-fetcher-compose.sh up -d
+             # Выключенный ozon-fetcher (OZON_FETCHER_ENABLED=false) —
+             # откат выкладкой (ADR-043): up -d без профиля работающий
+             # контейнер не трогает, поэтому он останавливается явно.
+             if ! sh ozon-fetcher/ozon-fetcher-compose.sh --enabled; then
+               docker compose -f docker-compose.prod.yml --profile ozon-fetcher rm -sf ozon-fetcher
+             fi'
 
       # С повторами, а не один запрос после sleep: контейнер поднимается
       # не мгновенно, и одиночная проверка ловила пустой ответ, объявляя
@@ -909,5 +923,5 @@ jobs:
           set -eu
           ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes 'root@${{ secrets.DEPLOY_HOST }}' \
             "cd /opt/conwix
-             docker compose -f docker-compose.prod.yml ps --format '{{.Service}} {{.Status}}'
-             ! docker compose -f docker-compose.prod.yml ps --format '{{.Status}}' | grep -qE 'unhealthy|Restarting'"
+             sh ozon-fetcher/ozon-fetcher-compose.sh ps --format '{{.Service}} {{.Status}}'
+             ! sh ozon-fetcher/ozon-fetcher-compose.sh ps --format '{{.Status}}' | grep -qE 'unhealthy|Restarting'"
