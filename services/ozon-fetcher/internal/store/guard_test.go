@@ -64,34 +64,57 @@ func TestResourcePauseIsScopedToConnectionAndResource(t *testing.T) {
 	require.NoError(t, err, "пауза истекла")
 }
 
-// «Метод уже отвечал 200 этим ключом» — успешная попытка ресурса этого
-// подключения после последнего изменения ключей.
-func TestSucceededSinceReadsSuccessfulAttemptsAfterKeyChange(t *testing.T) {
+// «Метод уже отвечал 200 этим ключом» — попытка ресурса этого подключения
+// с той же версией ключей: завершённая успехом или записавшая страницу.
+// Попытка, начатая после смены ключа, но со старой версией, не считается.
+func TestServedWithKeyReadsAttemptsOfThisKeyVersion(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
-	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{spec("ref-a", "r", "2026-10-01", 0), spec("ref-a", "failed", "2026-10-01", 0)}))
-	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
-	require.NoError(t, err)
-	_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusDone, Label: "done", ContentHash: hash("a")}, t0)
-	require.NoError(t, err)
-	failed, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
-	require.NoError(t, err)
-	_, err = tasks.FinishTask(ctx, failed.TaskKey, failed.AttemptID, Outcome{Status: StatusFailedRetryable, Label: "transient", ErrorClass: "transient", NextRunAt: t0}, t0)
-	require.NoError(t, err)
+	key := t0.Add(-time.Hour).Add(123456789 * time.Nanosecond) // точность выдачи выше, чем у PostgreSQL
+	oldKey := key.Add(-24 * time.Hour)
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{
+		spec("ref-a", "done", "2026-10-01", 0), spec("ref-a", "failed", "2026-10-01", 0),
+		spec("ref-a", "paged", "2026-10-01", 0), spec("ref-a", "stale", "2026-10-01", 0),
+	}))
+	transient := Outcome{Status: StatusFailedRetryable, Label: "transient", ErrorClass: "transient", KeepCursor: true, NextRunAt: t0.Add(time.Hour)}
+	done := Outcome{Status: StatusDone, Label: "done", ContentHash: hash("a")}
+	attempts := map[string]struct {
+		keyVersion time.Time
+		out        Outcome
+		pages      int
+	}{
+		"done":   {key, done, 0},
+		"failed": {key, transient, 0},
+		"paged":  {key, transient, 2},
+		"stale":  {oldKey, done, 0},
+	}
+	for range attempts {
+		task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
+		require.NoError(t, err)
+		a := attempts[task.ResourceType]
+		require.NoError(t, tasks.MarkAttemptKey(ctx, task.Account, task.AttemptID, a.keyVersion))
+		for i := range a.pages {
+			require.NoError(t, tasks.RecordPage(ctx, task.TaskKey, task.AttemptID, RawObject{
+				PageNo: i + 1, StorageURI: "s3://b/k", SHA256: hash(task.ResourceType), SizeBytes: 1, StoredBytes: 1, ContentType: "application/json",
+			}, "next"))
+		}
+		_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, a.out, t0)
+		require.NoError(t, err)
+	}
 
 	for name, tc := range map[string]struct {
 		ref      string
 		resource string
-		since    time.Time
 		want     bool
 	}{
-		"success after key change":     {"ref-a", task.ResourceType, t0.Add(-time.Hour), true},
-		"success before key change":    {"ref-a", task.ResourceType, t0.Add(time.Hour), false},
-		"only failed attempts":         {"ref-a", failed.ResourceType, t0.Add(-time.Hour), false},
-		"same resource, other account": {"ref-b", task.ResourceType, t0.Add(-time.Hour), false},
+		"success with this key":           {"ref-a", "done", true},
+		"interrupted after stored pages":  {"ref-a", "paged", true},
+		"only failed attempts":            {"ref-a", "failed", false},
+		"success with previous key":       {"ref-a", "stale", false},
+		"same resource, other connection": {"ref-b", "done", false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ok, err := tasks.SucceededSince(ctx, accounttest.Ref(tc.ref), tc.resource, tc.since)
+			ok, err := tasks.ServedWithKey(ctx, accounttest.Ref(tc.ref), tc.resource, key)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, ok)
 		})

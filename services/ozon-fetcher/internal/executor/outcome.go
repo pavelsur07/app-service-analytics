@@ -50,6 +50,11 @@ func (e *Executor) outcome(parent, taskCtx context.Context, task store.Task, run
 	if errors.Is(context.Cause(taskCtx), errLeaseLost) || errors.Is(err, store.ErrLeaseLost) {
 		return store.Outcome{Status: store.StatusPending, Label: "lease_lost", KeepCursor: true, NextRunAt: now}
 	}
+	if errors.Is(context.Cause(taskCtx), errHalted) {
+		// Остановка всех подключений: задача возвращается с курсором, выдача
+		// закрыта строкой service_halt до -resume-halt.
+		return store.Outcome{Status: store.StatusPending, Label: "halted", KeepCursor: true, NextRunAt: now}
+	}
 	if parent.Err() != nil && errors.Is(err, parent.Err()) {
 		// Graceful shutdown: задача возвращается в очередь с курсором.
 		return store.Outcome{Status: store.StatusPending, Label: "released", KeepCursor: true, NextRunAt: now}
@@ -233,8 +238,8 @@ const (
 )
 
 // forbidden — 403 Seller или Performance. Метод, который этим же ключом уже
-// отвечал 200 (успешная попытка ресурса после последнего изменения ключей в
-// выдаче), — признак ограничения доступа Ozon: загрузка всех подключений
+// отвечал 200 (попытка ресурса с той же версией ключей выдачи, завершённая
+// успехом или записавшая страницу, — в том числе эта), — признак ограничения доступа Ozon: загрузка всех подключений
 // останавливается до ручного снятия, потому что ограничение ложится на
 // Client ID и задевает загрузку PHP. Отзыв или урезание ключа после успешной
 // загрузки от блокировки неотличимы и намеренно считаются признаком. 403 на
@@ -246,7 +251,10 @@ func (e *Executor) forbidden(side context.Context, task store.Task, run *taskRun
 		out.HTTPStatus = apiErr.Status
 		return out
 	}
-	loaded, err := e.tasks.SucceededSince(side, task.Account, task.ResourceType, run.cabinet.UpdatedAt)
+	loaded, err := run.pages > 0, error(nil)
+	if !loaded {
+		loaded, err = e.tasks.ServedWithKey(side, task.Account, task.ResourceType, run.cabinet.UpdatedAt)
+	}
 	if err != nil {
 		// Признак не прочитан — повтор с backoff, решение — на следующем 403.
 		e.sideEffect(log, "read prior success", err)
@@ -258,6 +266,9 @@ func (e *Executor) forbidden(side context.Context, task store.Task, run *taskRun
 			e.sideEffect(log, "halt service", err)
 			return retry()
 		}
+		// Задачи, уже взятые в работу, прерываются и при чужой остановке:
+		// строка могла появиться раньше, чем эта задача её увидела.
+		e.running.haltOthers(run)
 		if halted {
 			log.Error("ozon answered 403 on a method this key already loaded: possible access restriction, loading halted for all connections until ozon-fetcher -resume-halt",
 				slog.String("stage", "fetch"), slog.String("endpoint", apiErr.Endpoint), slog.Int("http_status", apiErr.Status))

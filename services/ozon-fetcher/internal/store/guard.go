@@ -12,19 +12,33 @@ import (
 // этим же ключом уже отвечал 200, — остановка всей загрузки до ручного
 // снятия; 403 без прежнего 200 — пауза только этого ресурса подключения.
 
-// SucceededSince — у ресурса подключения есть успешная попытка (done или
-// unchanged), начатая не раньше since — момента последнего изменения ключей
-// подключения в выдаче. Метод Ozon у ресурса один, поэтому «метод уже
+// MarkAttemptKey записывает версию ключей подключения (updated_at выдачи),
+// с которой идёт попытка. Время — с точностью PostgreSQL, чтобы сравнение
+// в ServedWithKey было точным.
+func (t *Tasks) MarkAttemptKey(ctx context.Context, ref account.Ref, attemptID string, keyVersion time.Time) error {
+	if _, err := t.pool.Exec(ctx, `
+		UPDATE fetch_attempt SET key_version = $4
+		WHERE company_id = $1 AND marketplace_account_id = $2 AND attempt_id = $3`,
+		ref.CompanyID, ref.AccountID, attemptID, keyVersion.Truncate(time.Microsecond)); err != nil {
+		return fmt.Errorf("store: mark attempt key: %w", err)
+	}
+	return nil
+}
+
+// ServedWithKey — ресурс подключения уже отвечал 200 ключом этой версии:
+// есть попытка с той же версией ключа, которая завершилась успехом или
+// записала хотя бы одну страницу (прерванная или текущая многостраничная
+// загрузка — тоже 200). Метод Ozon у ресурса один, поэтому «метод уже
 // отвечал 200 этим ключом» читается по журналу попыток ресурса.
-func (t *Tasks) SucceededSince(ctx context.Context, ref account.Ref, resourceType string, since time.Time) (bool, error) {
+func (t *Tasks) ServedWithKey(ctx context.Context, ref account.Ref, resourceType string, keyVersion time.Time) (bool, error) {
 	var ok bool
 	if err := t.pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM fetch_attempt
 			WHERE company_id = $1 AND marketplace_account_id = $2 AND resource_type = $3
-			  AND outcome IN ('done', 'unchanged') AND started_at >= $4)`,
-		ref.CompanyID, ref.AccountID, resourceType, since).Scan(&ok); err != nil {
-		return false, fmt.Errorf("store: succeeded since: %w", err)
+			  AND key_version = $4 AND (outcome IN ('done', 'unchanged') OR pages > 0))`,
+		ref.CompanyID, ref.AccountID, resourceType, keyVersion.Truncate(time.Microsecond)).Scan(&ok); err != nil {
+		return false, fmt.Errorf("store: served with key: %w", err)
 	}
 	return ok, nil
 }

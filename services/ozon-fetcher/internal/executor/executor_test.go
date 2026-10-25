@@ -57,15 +57,23 @@ type fakeTasks struct {
 	controlHang  bool // SuspendConnection/StopResourceAllConnections ждут отмены контекста
 	extendHang   bool // ExtendLease ждёт отмены контекста
 	// Признак ограничения доступа (ADR-043 п. 5).
-	loaded     bool        // SucceededSince: метод уже отвечал 200 этим ключом
-	loadedErr  error       // ошибка SucceededSince
-	since      []time.Time // аргумент since SucceededSince
+	loaded     bool        // ServedWithKey: метод уже отвечал 200 этим ключом
+	loadedErr  error       // ошибка ServedWithKey
+	since      []time.Time // версия ключа в ServedWithKey
+	keyMarks   []time.Time // MarkAttemptKey
 	halts      []string    // HaltAllConnections: ресурс
 	paused     []string    // PauseResource: ресурс
 	pausedTill []time.Time
 }
 
-func (f *fakeTasks) SucceededSince(_ context.Context, _ account.Ref, _ string, since time.Time) (bool, error) {
+func (f *fakeTasks) MarkAttemptKey(_ context.Context, _ account.Ref, _ string, keyVersion time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.keyMarks = append(f.keyMarks, keyVersion)
+	return nil
+}
+
+func (f *fakeTasks) ServedWithKey(_ context.Context, _ account.Ref, _ string, since time.Time) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.since = append(f.since, since)
@@ -539,8 +547,8 @@ func TestInvalidStorageKeyIsPermanent(t *testing.T) {
 	assert.Equal(t, "invalid_task", h.tasks.finished.Label)
 }
 
-// 403 на методе, который этим же ключом уже отвечал 200 (после последнего
-// изменения ключей), — признак ограничения доступа: остановка всех
+// 403 на методе, который этим же ключом уже отвечал 200 (попытка с той же
+// версией ключей), — признак ограничения доступа: остановка всех
 // подключений, ERROR; кабинет не ставится на паузу по счётчику auth.
 func TestForbiddenOnLoadedMethodHaltsAllConnections(t *testing.T) {
 	h := newHarness(&fakeOzon{singleErr: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: "/v1/x", Status: http.StatusForbidden}})
@@ -554,7 +562,8 @@ func TestForbiddenOnLoadedMethodHaltsAllConnections(t *testing.T) {
 	assert.Equal(t, store.StatusFailedRetryable, h.tasks.finished.Status)
 	assert.True(t, h.tasks.finished.KeepCursor)
 	assert.Equal(t, []string{ResourceAccrualTypes}, h.tasks.halts)
-	assert.Equal(t, []time.Time{cab.UpdatedAt}, h.tasks.since, "«уже отвечал 200» — после последнего изменения ключей")
+	assert.Equal(t, []time.Time{cab.UpdatedAt}, h.tasks.since, "«уже отвечал 200» — ключом этой версии")
+	assert.Equal(t, []time.Time{cab.UpdatedAt}, h.tasks.keyMarks, "попытка помечена версией ключей")
 	assert.Empty(t, h.tasks.paused)
 	assert.Empty(t, h.tasks.pauses, "счётчик auth кабинета не трогается")
 	assert.Contains(t, h.logs.String(), `"level":"ERROR"`)
@@ -576,6 +585,54 @@ func TestForbiddenOnNeverLoadedMethodPausesResource(t *testing.T) {
 	assert.Empty(t, h.tasks.halts)
 	assert.Empty(t, h.tasks.pauses)
 	assert.NotContains(t, h.logs.String(), `"level":"ERROR"`)
+}
+
+// 403 посреди первой многостраничной загрузки: страницы этой попытки уже
+// получили 200 этим ключом — остановка, а не пауза «нет роли».
+func TestForbiddenAfterPagesOfThisAttemptHaltsAllConnections(t *testing.T) {
+	h := newHarness(&fakeOzon{
+		pages:    map[string]ozon.Page{"": page(`{"p":1}`, "c1")},
+		byDayErr: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: "/v1/finance/accrual/by-day", Status: http.StatusForbidden},
+	})
+
+	res := h.exec.Run(context.Background(), task(ResourceAccrualByDay, "2026-10-15"), cabinet, "trace")
+
+	assert.Equal(t, "access_restricted", res.Outcome)
+	assert.Equal(t, []string{ResourceAccrualByDay}, h.tasks.halts)
+	assert.Empty(t, h.tasks.paused)
+}
+
+// Остановка прерывает и задачи других подключений, уже взятые в работу
+// этим процессом: они возвращаются в очередь с курсором, а не дозагружают
+// страницы с тем же Client ID.
+func TestHaltCancelsTasksAlreadyRunning(t *testing.T) {
+	h := newHarness(&fakeOzon{block: make(chan struct{})})
+	other := *h.exec // те же задачи процесса, свой ответ Ozon
+	h.tasks.loaded = true
+
+	running := make(chan Result, 1)
+	go func() {
+		running <- h.exec.Run(context.Background(), task(ResourceAccrualTypes, PeriodRef), cabinet, "trace-a")
+	}()
+	require.Eventually(t, func() bool {
+		h.exec.running.mu.Lock()
+		defer h.exec.running.mu.Unlock()
+		return len(h.exec.running.cancel) == 1
+	}, time.Second, time.Millisecond)
+
+	second := task(ResourceAccrualByDay, "2026-10-15")
+	second.Account = accounttest.Ref("ref-b")
+	cabB := cabinet
+	cabB.Account = second.Account
+	other.ozon = &fakeOzon{pages: map[string]ozon.Page{}, byDayErr: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: "/v1/x", Status: http.StatusForbidden}}
+	assert.Equal(t, "access_restricted", other.Run(context.Background(), second, cabB, "trace-b").Outcome)
+
+	select {
+	case res := <-running:
+		assert.Equal(t, "halted", res.Outcome)
+	case <-time.After(time.Second):
+		t.Fatal("взятая задача не прервана остановкой")
+	}
 }
 
 // Признак не прочитан — ни остановки, ни паузы: повтор с backoff.

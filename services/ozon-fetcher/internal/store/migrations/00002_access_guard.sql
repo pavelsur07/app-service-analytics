@@ -26,6 +26,13 @@ CREATE TABLE resource_pause (
     PRIMARY KEY (company_id, marketplace_account_id, resource_type)
 );
 
+-- Версия ключей подключения (updated_at выдачи), с которой шла попытка:
+-- «метод уже отвечал 200 этим ключом» читается по ней, а не по времени
+-- начала — кэш выдачи отстаёт, и попытка, начатая после смены ключа, могла
+-- идти со старым. NULL — версия не записана, попытка в признак не входит.
+ALTER TABLE fetch_attempt ADD COLUMN key_version TIMESTAMPTZ;
+
 -- +goose Down
+ALTER TABLE fetch_attempt DROP COLUMN key_version;
 DROP TABLE resource_pause;
 DROP TABLE service_halt;

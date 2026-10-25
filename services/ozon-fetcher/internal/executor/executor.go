@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/account"
@@ -77,7 +78,8 @@ type TaskStore interface {
 	RecordAuthFailure(ctx context.Context, ref account.Ref, now time.Time, pauseFor func(failures int) time.Duration) (int, error)
 	ResumeConnection(ctx context.Context, ref account.Ref) error
 	StopResourceAllConnections(ctx context.Context, resourceType, reason string) error
-	SucceededSince(ctx context.Context, ref account.Ref, resourceType string, since time.Time) (bool, error)
+	MarkAttemptKey(ctx context.Context, ref account.Ref, attemptID string, keyVersion time.Time) error
+	ServedWithKey(ctx context.Context, ref account.Ref, resourceType string, keyVersion time.Time) (bool, error)
 	HaltAllConnections(ctx context.Context, ref account.Ref, resourceType, reason string) (bool, error)
 	PauseResource(ctx context.Context, ref account.Ref, resourceType string, until time.Time, reason string) error
 	ContentPages(ctx context.Context, key store.TaskKey) (store.Content, error)
@@ -196,11 +198,48 @@ type Executor struct {
 	now       func() time.Time
 	jitter    func(time.Duration) time.Duration // [0; d)
 	sleep     func(context.Context, time.Duration) error
+	running   *runningTasks // общий у копий WithRawReader
 }
+
+// runningTasks — отмена задач этого процесса, уже взятых в работу: остановка
+// по признаку ограничения доступа (ADR-043 п. 5) прерывает и их, а не только
+// выдачу новых. Сервис — один процесс; после перезапуска строка service_halt
+// не даёт взять задачи заново.
+type runningTasks struct {
+	mu     sync.Mutex
+	cancel map[*taskRun]context.CancelCauseFunc
+}
+
+func (r *runningTasks) add(run *taskRun, cancel context.CancelCauseFunc) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cancel[run] = cancel
+}
+
+func (r *runningTasks) remove(run *taskRun) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.cancel, run)
+}
+
+// haltOthers отменяет все задачи, кроме except, с причиной errHalted.
+func (r *runningTasks) haltOthers(except *taskRun) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for run, cancel := range r.cancel {
+		if run != except {
+			cancel(errHalted)
+		}
+	}
+}
+
+// errHalted — задачу прервала остановка всех подключений.
+var errHalted = errors.New("executor: loading halted for all connections")
 
 func New(cfg Config, tasks TaskStore, raw RawStore, client Ozon, refresher Refresher, logger *slog.Logger,
 	now func() time.Time, jitter func(time.Duration) time.Duration, sleep func(context.Context, time.Duration) error) *Executor {
-	return &Executor{cfg: cfg, tasks: tasks, raw: raw, ozon: client, refresher: refresher, logger: logger, now: now, jitter: jitter, sleep: sleep}
+	return &Executor{cfg: cfg, tasks: tasks, raw: raw, ozon: client, refresher: refresher, logger: logger, now: now, jitter: jitter, sleep: sleep,
+		running: &runningTasks{cancel: map[*taskRun]context.CancelCauseFunc{}}}
 }
 
 // WithRawReader — копия с чтением сохранённых страниц (начисления по
@@ -236,6 +275,11 @@ func (e *Executor) Run(ctx context.Context, task store.Task, cabinet connections
 	stopLease := e.keepLease(taskCtx, cancel, task, log)
 
 	run := &taskRun{exec: e, task: task, cabinet: cabinet, log: log, hashes: append([]string(nil), task.PageHashes...), cursor: task.Cursor, nextPage: task.NextPageNo}
+	e.running.add(run, cancel)
+	defer e.running.remove(run)
+	// Версия ключей попытки — для признака ограничения доступа. Сбой записи
+	// не останавливает загрузку: попытка просто не войдёт в признак.
+	e.sideEffect(log, "mark attempt key", e.tasks.MarkAttemptKey(taskCtx, task.Account, task.AttemptID, cabinet.UpdatedAt))
 	fetchErr := run.fetch(taskCtx, cabinet)
 
 	// Lease продлевается и во время побочных действий исхода (пауза кабинета,
