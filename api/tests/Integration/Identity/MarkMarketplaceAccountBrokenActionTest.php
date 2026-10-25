@@ -19,6 +19,7 @@ use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
+use Doctrine\ORM\OptimisticLockException;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 use Psr\Log\LoggerInterface;
@@ -252,6 +253,34 @@ final class MarkMarketplaceAccountBrokenActionTest extends KernelTestCase
             new \DateTimeImmutable($ahead)->modify('+1 second')->format('Y-m-d H:i:s'),
             $this->updatedAt($container, $account),
         );
+    }
+
+    /**
+     * Условный UPDATE идёт мимо сущности, но версию двигает (ADR-008):
+     * сущность, загруженная до него, не записывает отметку изменения,
+     * посчитанную от устаревшего значения, — запись отклоняется
+     * конфликтом версий, а не проходит молча.
+     */
+    public function testEntityLoadedBeforeConditionalTransitionCannotOverwriteIt(): void
+    {
+        $container = $this->bootedContainer();
+        /** @var MarketplaceAccountRepository $accounts */
+        $accounts = $container->get(MarketplaceAccountRepository::class);
+        $account = $this->activeAccount($container);
+        $before = $this->updatedAt($container, $account);
+
+        self::assertTrue($accounts->markBrokenIfActive($account->companyId()->toRfc4122(), $account->id()));
+        $published = $this->updatedAt($container, $account);
+        $account->replaceCredentials('stale-ciphertext', 1);
+
+        try {
+            $accounts->add($account);
+            self::fail('запись устаревшей сущности должна упасть на версии');
+        } catch (OptimisticLockException) {
+        }
+
+        self::assertNotSame($before, $published);
+        self::assertSame($published, $this->updatedAt($container, $account));
     }
 
     private function updatedAt(ContainerInterface $container, MarketplaceAccount $account): string

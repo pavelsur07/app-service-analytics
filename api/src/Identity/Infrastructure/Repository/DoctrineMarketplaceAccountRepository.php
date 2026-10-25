@@ -54,10 +54,14 @@ final readonly class DoctrineMarketplaceAccountRepository implements Marketplace
         // (тот же приём, что в DoctrineExtensionTokenRepository::revokeIfActive).
         // companyId в условии — изоляция арендаторов на уровне SQL.
         // updated_at строго растёт — расчёт MarketplaceAccount::touch().
+        // version растёт тоже (ADR-008: при каждом изменении): иначе
+        // сущность, загруженная до этого UPDATE, прошла бы оптимистическую
+        // блокировку и записала updated_at, посчитанный от устаревшего
+        // значения, — повторив уже выданную сервису версию подключения.
         $affected = $this->entityManager->getConnection()->executeStatement(
             <<<'SQL'
                 UPDATE marketplace_account
-                SET state = :broken, updated_at = GREATEST(date_trunc('second', now() AT TIME ZONE 'UTC'), updated_at + interval '1 second')
+                SET state = :broken, updated_at = GREATEST(date_trunc('second', now() AT TIME ZONE 'UTC'), updated_at + interval '1 second'), version = version + 1
                 WHERE id = :id AND company_id = :companyId AND state = :active
                 SQL,
             [
@@ -78,7 +82,7 @@ final readonly class DoctrineMarketplaceAccountRepository implements Marketplace
         $affected = $this->entityManager->getConnection()->executeStatement(
             <<<'SQL'
                 UPDATE marketplace_account
-                SET advertising_state = :broken, updated_at = GREATEST(date_trunc('second', now() AT TIME ZONE 'UTC'), updated_at + interval '1 second')
+                SET advertising_state = :broken, updated_at = GREATEST(date_trunc('second', now() AT TIME ZONE 'UTC'), updated_at + interval '1 second'), version = version + 1
                 WHERE id = :id AND company_id = :companyId
                   AND advertising_state = :active AND state = :accountActive AND version = :version
                 SQL,
