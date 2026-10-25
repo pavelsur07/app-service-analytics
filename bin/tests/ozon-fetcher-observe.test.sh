@@ -61,6 +61,11 @@ case "\$sql" in
 esac
 EOF
     chmod +x "$work/docker" "$work/journalctl" "$work/compose"
+    # Сервис жив оба дня: запись без запроса к Ozon (опрос подключений).
+    for ts in "$((TS - 86400000000))" "$TS"; do
+        jq -cn --arg ts "$ts" --arg msg '{"msg":"connections refreshed"}' \
+            '{__REALTIME_TIMESTAMP: $ts, CONTAINER_NAME: "conwix-ozon-fetcher-1", MESSAGE: $msg}' >> "$work/svc.json"
+    done
 }
 
 # Запись journald драйвера docker: контейнер и JSON-сообщение.
@@ -166,6 +171,12 @@ test_incomplete_days_are_not_success() {
     : > "$work/first" # у сервиса нет ни одной записи в journald
     run
     [[ $rc == 2 ]] || fail "пустой journald сервиса: код $rc вместо 2"
+
+    setup
+    : > "$work/svc.json" # в основной выборке у сервиса нет ни одной записи
+    SINCE=2026-10-25 run
+    [[ $rc == 2 ]] || fail "сутки без записей сервиса: код $rc вместо 2"
+    grep -q "2026-10-25 .*НЕ СОБРАНО(у сервиса нет записей за сутки)" <<< "$output" || fail "частичные сутки без записей не помечены: $output"
 
     setup
     printf '%s\n' "$DAY|12" > "$work/attempts" # попытки есть, записей запросов в журнале нет

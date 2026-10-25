@@ -80,7 +80,9 @@ command -v python3 > /dev/null || die "нужен python3"
 # Выводится из факта, а не из даты выкладки; переменная окружения — только
 # переопределение.
 if [ -z "${JOURNALD_START:-}" ]; then
-    first=$($J -o json --output-fields=__REALTIME_TIMESTAMP "CONTAINER_NAME=$SERVICE_CONTAINER" | head -n 1) ||
+    # Тот же селектор, что у счёта ниже (_SYSTEMD_UNIT), — иначе граница
+    # нашлась бы там, откуда счёт не читает.
+    first=$($J -o json --output-fields=__REALTIME_TIMESTAMP _SYSTEMD_UNIT=docker.service "CONTAINER_NAME=$SERVICE_CONTAINER" | head -n 1) ||
         die "journald сервиса не прочитан"
     [ -n "$first" ] || die "у $SERVICE_CONTAINER нет записей в journald — журнал не собран"
     JOURNALD_START=$(printf '%s' "$first" | jq -r '.__REALTIME_TIMESTAMP|tonumber/1000000|strftime("%Y-%m-%d")') ||
@@ -137,6 +139,10 @@ done
 
 php_log=$(printf '%s\n' "$journal" | jq -c --arg re "$PHP_NAME_RE" 'select((.c|test($re)) and (.m.message|type=="string") and (.m.message|test("^Ozon (Seller|Performance) API answered"))) | {day, api: .m.context.api, status: .m.context.status, method: .m.context.method, path: .m.context.path, client: (.m.context.client_id|tostring)}')
 svc_log=$(printf '%s\n' "$journal" | jq -c --arg re "$SERVICE_NAME_RE" 'select((.c|test($re)) and (.m.msg=="ozon request" or .m.msg=="ozon performance request")) | {day, api: (if .m.msg=="ozon request" then "seller" else "performance" end), status: .m.status, account: .m.marketplace_account_id, endpoint: .m.endpoint}')
+# Сутки, в которые у сервиса есть хоть одна запись: сервис пишет и без
+# запросов к Ozon (опрос подключений, планировщик), так что сутки без
+# единой записи — сломанный сбор, а не тишина.
+svc_alive=$(printf '%s\n' "$journal" | jq -r --arg re "$SERVICE_NAME_RE" 'select(.c|test($re)) | .day' | sort -u)
 unset journal
 
 verdict=0
@@ -180,6 +186,9 @@ SQL
         mark=
         if [ "$(echo "$day" | tr -d -)" -lt "$(echo "$JOURNALD_START" | tr -d -)" ]; then
             mark=" НЕ СОБРАНО(журнал до journald)"
+            incomplete=1
+        elif ! printf '%s\n' "$svc_alive" | grep -qx "$day"; then
+            mark=" НЕ СОБРАНО(у сервиса нет записей за сутки)"
             incomplete=1
         elif [ "$day" = "$JOURNALD_START" ]; then
             # Счёт — нижняя граница: превышение порога и 403 — настоящие,
