@@ -232,10 +232,11 @@ services:
       CGO_ENABLED: "1"
       DB_DSN: "postgres://svc_ozon_fetcher:ozon_fetcher_dev@postgres:5432/ozon_fetcher?sslmode=disable"
       TEST_DB_DSN: "postgres://svc_ozon_fetcher:ozon_fetcher_dev@postgres:5432/ozon_fetcher_test?sslmode=disable"
-      # Интеграционные тесты rawstore и executor: свой бакет на SeaweedFS
-      # песочницы, тесты создают его сами; ключи SeaweedFS не проверяет.
+      # Интеграционные тесты rawstore и executor: тестовый бакет сырья
+      # (тот же, что у PHP, ADR-044), объекты — под префиксом сервиса;
+      # тесты создают бакет, если его нет; ключи SeaweedFS не проверяет.
       TEST_S3_ENDPOINT: "http://s3:8333"
-      TEST_S3_BUCKET: "ozon-fetcher-test"
+      TEST_S3_BUCKET: "conwix-test"
     volumes:
       - ./services:/src
       - go_mod:/go/pkg/mod

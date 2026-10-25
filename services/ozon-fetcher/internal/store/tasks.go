@@ -300,6 +300,9 @@ var ErrMissingObject = errors.New("store: content page has no raw object")
 
 // Content — текущая загруженная ревизия задачи.
 type Content struct {
+	// Key — задача ревизии: из неё и полей страницы пересобирается ключ
+	// объекта при чтении (CLAUDE.md §1, ADR-044).
+	Key   TaskKey
 	Pages []RawObject // по порядку, PageNo с 1
 	// StartedAt — запись первой страницы ревизии: вся ревизия загружена не
 	// раньше этого момента (страницы прежних загрузок в неё не входят).
@@ -344,7 +347,7 @@ func (t *Tasks) ContentPages(ctx context.Context, key TaskKey) (Content, error) 
 	if err := rows.Err(); err != nil {
 		return Content{}, fmt.Errorf("store: content objects: %w", err)
 	}
-	out := Content{Pages: make([]RawObject, 0, len(hashes)), StartedAt: *started}
+	out := Content{Key: key, Pages: make([]RawObject, 0, len(hashes)), StartedAt: *started}
 	for i, h := range hashes {
 		obj, ok := bySHA[h]
 		if !ok {

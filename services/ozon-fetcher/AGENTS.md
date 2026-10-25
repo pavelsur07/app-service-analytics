@@ -1,7 +1,8 @@
 # ozon-fetcher — правила сервиса
 
 Загрузка raw Ozon Seller API и Performance API по активным подключениям
-Conwix: raw — в бакет сервиса, журнал загрузок — в свою БД (ADR-043).
+Conwix: raw — в бакет сырья Conwix под префиксом `conwix/svc/ozon-fetcher/v1/`
+(ADR-044), журнал загрузок — в свою БД (ADR-043).
 План работ — `docs/plan/ozon-fetcher.md`. Общие правила — `services/AGENTS.md`
 и `services/go.md`; этот файл их уточняет для каталога и не отменяет.
 

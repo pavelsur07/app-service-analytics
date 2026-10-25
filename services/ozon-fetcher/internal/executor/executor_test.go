@@ -131,7 +131,7 @@ func (f *fakeTasks) ContentPages(_ context.Context, key store.TaskKey) (store.Co
 	if at.IsZero() {
 		at = t0
 	}
-	return store.Content{Pages: pages, StartedAt: at}, nil
+	return store.Content{Key: key, Pages: pages, StartedAt: at}, nil
 }
 
 func (f *fakeTasks) SaveCursor(_ context.Context, _ store.TaskKey, _, cursor string) error {
@@ -161,18 +161,22 @@ func (f *fakeTasks) StopResourceAllConnections(_ context.Context, resource, _ st
 }
 
 type fakeRaw struct {
-	mu   sync.Mutex
-	puts []rawstore.Object
-	fail map[int]error // по номеру страницы
+	mu    sync.Mutex
+	puts  []rawstore.Object
+	refs  []account.Ref
+	calls int
+	fail  map[int]error // по номеру вызова Put, с 1
 }
 
-func (f *fakeRaw) Put(_ context.Context, obj rawstore.Object) (rawstore.Stored, error) {
+func (f *fakeRaw) Put(_ context.Context, ref account.Ref, obj rawstore.Object) (rawstore.Stored, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.fail[obj.PageNo]; err != nil {
+	f.calls++
+	if err := f.fail[f.calls]; err != nil {
 		return rawstore.Stored{}, err
 	}
 	f.puts = append(f.puts, obj)
+	f.refs = append(f.refs, ref)
 	sum := sha256.Sum256(obj.Body)
 	return rawstore.Stored{URI: "s3://b/" + obj.PeriodKey, SHA256: hex.EncodeToString(sum[:]), SizeBytes: int64(len(obj.Body))}, nil
 }
@@ -685,7 +689,7 @@ func TestUnchangedPagesAreNotUploadedAgain(t *testing.T) {
 
 	assert.Equal(t, "done", res.Outcome)
 	require.Len(t, h.raw.puts, 1, "в S3 — только изменившаяся страница")
-	assert.Equal(t, 2, h.raw.puts[0].PageNo)
+	assert.JSONEq(t, `{"p":2}`, string(h.raw.puts[0].Body))
 	require.Len(t, h.tasks.pages, 2, "журнал попытки — обе страницы")
 	assert.Equal(t, "s3://b/old-p1", h.tasks.pages[0].StorageURI)
 	assert.Contains(t, h.logs.String(), `"pages_reused":1`)

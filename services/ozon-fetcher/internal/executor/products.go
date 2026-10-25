@@ -208,8 +208,13 @@ func (r *taskRun) readContent(ctx context.Context, content store.Content, resour
 	if e.rawReader == nil {
 		return errors.New("executor: raw reader is not configured")
 	}
+	if content.Key.Account != r.task.Account {
+		return fmt.Errorf("%w: %s content of another connection", invalid, resource)
+	}
 	for _, p := range content.Pages {
-		body, err := e.rawReader.Get(ctx, p.StorageURI, p.SHA256)
+		body, err := e.rawReader.Get(ctx, content.Key.Account, rawstore.Locator{
+			ResourceType: content.Key.ResourceType, PeriodKey: content.Key.PeriodKey, SHA256: p.SHA256, ContentType: p.ContentType,
+		})
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()

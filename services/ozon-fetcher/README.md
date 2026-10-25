@@ -1,7 +1,8 @@
 # ozon-fetcher
 
 Go-сервис загрузки raw Ozon (ADR-043): по активным подключениям Ozon
-набирает ответы Seller API и Performance API в своём бакете и ведёт журнал
+набирает ответы Seller API и Performance API в бакет сырья Conwix под своим
+префиксом (ADR-044) и ведёт журнал
 загрузок в своей БД. Работает параллельно загрузке PHP и её не меняет;
 передача raw в PHP — вторая волна, отдельный ADR. Другие маркетплейсы —
 не здесь.
@@ -73,11 +74,13 @@ postgres, на существующем `make ozon-fetcher-db`. Пароль —
 `ozon_fetcher_test`), каждый пакет — в своей схеме; без переменной
 пропускаются.
 
-**Raw в хранилище** (`internal/rawstore`): ключ
-`ozon/{company_id}/{marketplace_account_id}/{resource_type}/{period_key}/{fetched_at}_{attempt}_p{NNN}_{sha8}.{ext}.gz`,
+**Raw в хранилище** (`internal/rawstore`, ADR-044): бакет сырья Conwix, ключ
+`conwix/svc/ozon-fetcher/v1/companies/{company_id}/accounts/{marketplace_account_id}/{resource_type}/{period_key}/{sha256}.{ext}.gz`,
 gzip исходных байтов, `If-None-Match: *`, sha256 несжатых — в метаданных
-и `raw_object`. Строгая проверка сегментов ключа — этап 2 плана.
-Интеграционный тест — `TEST_S3_ENDPOINT`, `TEST_S3_BUCKET`.
+и `raw_object`. Порт принимает подключение первым параметром; ключ
+собирается из полей (при чтении — из строки `raw_object` и задачи),
+сегменты вне формы отклоняются. Интеграционный тест — `TEST_S3_ENDPOINT`,
+`TEST_S3_BUCKET` (в песочнице — `conwix-test`).
 
 ## Переменные окружения
 
@@ -89,7 +92,7 @@ gzip исходных байтов, `If-None-Match: *`, sha256 несжатых 
 |---|---|
 | `LISTEN_ADDR` | Адрес HTTP, по умолчанию `:8080` |
 | `DB_DSN` | PostgreSQL сервисной БД; пусто — без БД |
-| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Бакет сервиса и пользователь хранилища только на него (этап 7) |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Бакет сырья Conwix (ADR-024) и пользователь хранилища с правами на префикс `conwix/svc/ozon-fetcher/` (этап 7, ADR-044) |
 | `SYMFONY_INTERNAL_BASE_URL` | Базовый URL PHP для `GET /api/internal/marketplace-connections`; пусто — загрузка выключена |
 | `INTERNAL_AUTH_TOKEN` | Токен направления «сервис → PHP» |
 | `SERVICE_API_TOKEN` | Токен направления «PHP → сервис» для `/internal/*` сервиса, ≥ 32 символов; пусто — `/internal/*` закрыт (401) |

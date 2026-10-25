@@ -11,27 +11,30 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/account"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/connections"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/ozon"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/rawstore"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/store"
 )
 
-// fakeReader — сохранённые страницы по URI.
+// fakeReader — сохранённые страницы по sha256 содержимого.
 type fakeReader struct {
 	bodies map[string]string
 	err    error
-	reads  []string
+	reads  []rawstore.Locator
+	refs   []account.Ref
 }
 
-func (f *fakeReader) Get(_ context.Context, uri, _ string) ([]byte, error) {
-	f.reads = append(f.reads, uri)
+func (f *fakeReader) Get(_ context.Context, ref account.Ref, loc rawstore.Locator) ([]byte, error) {
+	f.reads = append(f.reads, loc)
+	f.refs = append(f.refs, ref)
 	if f.err != nil {
 		return nil, f.err
 	}
-	b, ok := f.bodies[uri]
+	b, ok := f.bodies[loc.SHA256]
 	if !ok {
-		return nil, fmt.Errorf("no object %s", uri)
+		return nil, fmt.Errorf("no object %s", loc.SHA256)
 	}
 	return []byte(b), nil
 }
@@ -63,7 +66,7 @@ func accrualHarness(t *testing.T, o *fakeOzon, fbo, fbs []string) (*harness, *fa
 		objs := []store.RawObject{}
 		for i, body := range pages {
 			uri := fmt.Sprintf("s3://raw/%s/p%d", resource, i+1)
-			reader.bodies[uri] = body
+			reader.bodies[sha(body)] = body
 			objs = append(objs, store.RawObject{PageNo: i + 1, StorageURI: uri, SHA256: sha(body)})
 		}
 		h.tasks.content[resource+"/2026-10-19"] = objs

@@ -82,7 +82,7 @@ func productsHarness(t *testing.T, o *fakeOzon, pages []string) (*harness, *fake
 		objs := []store.RawObject{}
 		for i, body := range pages {
 			uri := fmt.Sprintf("s3://raw/list/p%d", i+1)
-			reader.bodies[uri] = body
+			reader.bodies[sha(body)] = body
 			objs = append(objs, store.RawObject{PageNo: i + 1, StorageURI: uri, SHA256: sha(body)})
 		}
 		h.tasks.content[ResourceProductsList+"/"+today] = objs
@@ -216,6 +216,23 @@ func TestProductInfoUsesListIDsSortedDedupedInChunks(t *testing.T) {
 	h2, _ := productsHarness(t, &fakeOzon{}, []string{listPage(2, 1, 2), `{"result":{"items":[],"total":0,"last_id":""}}`})
 	assert.Equal(t, "done", h2.exec.Run(context.Background(), task(ResourceProductsInfo, today), productsCabinet, "trace").Outcome)
 	assert.NotContains(t, h2.logs.String(), "item count differs", "total концевой пустой страницы не сверяется")
+}
+
+// Страницы зависимости читаются под подключением задачи по полям ревизии
+// (ресурс, период, sha256), а не по сохранённому URI (CLAUDE.md §1).
+func TestProductInfoReadsListUnderTaskConnection(t *testing.T) {
+	pages := []string{listPage(1, 7), `{"result":{"items":[],"total":1,"last_id":""}}`}
+	h, reader := productsHarness(t, &fakeOzon{}, pages)
+	tk := task(ResourceProductsInfo, today)
+
+	res := h.exec.Run(context.Background(), tk, productsCabinet, "trace")
+
+	assert.Equal(t, "done", res.Outcome)
+	require.Len(t, reader.reads, 2)
+	for i, loc := range reader.reads {
+		assert.Equal(t, tk.Account, reader.refs[i])
+		assert.Equal(t, rawstore.Locator{ResourceType: ResourceProductsList, PeriodKey: today, SHA256: sha(pages[i])}, loc)
+	}
 }
 
 func TestProductInfoResumeAndRevisedList(t *testing.T) {

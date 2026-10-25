@@ -16,6 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+
+	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/account"
 )
 
 // Getter — чтение объекта S3 (фейк в тестах).
@@ -32,8 +34,8 @@ const DefaultGetTimeout = 2 * time.Minute
 // Ошибки, которые повтором не исправить: объект повреждён, чужой или
 // отсутствует. Временные сбои S3 (сеть, таймаут) возвращаются как есть.
 var (
-	// ErrObjectInvalid — объект не того бакета, не gzip, больше предела или
-	// не совпал sha256.
+	// ErrObjectInvalid — ключ не собирается из полей строки, объект не gzip,
+	// больше предела или не совпал sha256.
 	ErrObjectInvalid = errors.New("rawstore: stored object is invalid")
 	// ErrChecksumMismatch — содержимое объекта не совпало с ожидаемым sha256.
 	ErrChecksumMismatch = fmt.Errorf("%w: checksum mismatch", ErrObjectInvalid)
@@ -41,7 +43,7 @@ var (
 	ErrObjectNotFound = errors.New("rawstore: stored object not found")
 )
 
-// Reader читает raw-объекты своего бакета: зависимый ресурс (начисления по
+// Reader читает raw-объекты сервиса: зависимый ресурс (начисления по
 // отправлениям) берёт номера из уже загруженных страниц заказов.
 type Reader struct {
 	client     Getter
@@ -53,13 +55,16 @@ func NewReader(client Getter, bucket string) *Reader {
 	return &Reader{client: client, bucket: bucket, getTimeout: DefaultGetTimeout}
 }
 
-// Get возвращает исходные (несжатые) байты объекта uri (s3://bucket/key) и
-// сверяет их sha256 с ожидаемым: расхождение — ErrChecksumMismatch.
-func (r *Reader) Get(ctx context.Context, uri, wantSHA256 string) ([]byte, error) {
-	key, ok := strings.CutPrefix(uri, "s3://"+r.bucket+"/")
-	if !ok || key == "" {
-		return nil, fmt.Errorf("%w: %q is not in bucket %s", ErrObjectInvalid, uri, r.bucket)
+// Get возвращает исходные (несжатые) байты объекта подключения ref. Ключ
+// пересобирается из loc — полей строки raw_object, найденной запросом по
+// этому подключению; sha256 содержимого сверяется с loc.SHA256:
+// расхождение — ErrChecksumMismatch.
+func (r *Reader) Get(ctx context.Context, ref account.Ref, loc Locator) ([]byte, error) {
+	key, err := Key(ref, loc)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrObjectInvalid, err)
 	}
+	wantSHA256 := loc.SHA256
 	getCtx, cancel := context.WithTimeout(ctx, r.getTimeout)
 	defer cancel()
 	out, err := r.client.GetObject(getCtx, &s3.GetObjectInput{Bucket: aws.String(r.bucket), Key: aws.String(key)})

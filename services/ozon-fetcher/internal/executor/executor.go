@@ -85,12 +85,12 @@ type TaskStore interface {
 
 // RawReader — чтение сохранённой страницы (зависимые ресурсы).
 type RawReader interface {
-	Get(ctx context.Context, uri, sha256 string) ([]byte, error)
+	Get(ctx context.Context, ref account.Ref, loc rawstore.Locator) ([]byte, error)
 }
 
 // RawStore — запись страницы в S3.
 type RawStore interface {
-	Put(ctx context.Context, obj rawstore.Object) (rawstore.Stored, error)
+	Put(ctx context.Context, ref account.Ref, obj rawstore.Object) (rawstore.Stored, error)
 }
 
 // Ozon — загрузки ресурсов первой волны.
@@ -452,10 +452,8 @@ func (r *taskRun) store(ctx context.Context, p ozon.Page) error {
 		obj.StorageURI, obj.StoredBytes = existing.StorageURI, existing.StoredBytes
 		r.reused++
 	} else {
-		stored, err := e.raw.Put(ctx, rawstore.Object{
-			Provider: "ozon", Account: r.task.Account, ResourceType: r.task.ResourceType,
-			PeriodKey: r.task.PeriodKey, AttemptID: r.task.AttemptID, PageNo: p.No, FetchedAt: e.now(),
-			ContentType: p.ContentType, Body: p.Body,
+		stored, err := e.raw.Put(ctx, r.task.Account, rawstore.Object{
+			ResourceType: r.task.ResourceType, PeriodKey: r.task.PeriodKey, ContentType: p.ContentType, Body: p.Body,
 		})
 		if err != nil {
 			return &storeError{err}
