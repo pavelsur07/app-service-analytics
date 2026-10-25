@@ -21,11 +21,11 @@ use App\Tests\Support\Builder\ExtensionTokenBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\TrackedSkuBuilder;
 use App\Tests\Support\Builder\UserBuilder;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Handler\TestHandler;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
 
 /**

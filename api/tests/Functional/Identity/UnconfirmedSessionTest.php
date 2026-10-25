@@ -6,8 +6,8 @@ namespace App\Tests\Functional\Identity;
 
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Tests\Support\Builder\UserBuilder;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 final class UnconfirmedSessionTest extends WebTestCase
 {

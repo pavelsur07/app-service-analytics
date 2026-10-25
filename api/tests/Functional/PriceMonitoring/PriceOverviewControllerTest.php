@@ -25,10 +25,10 @@ use App\Tests\Support\Builder\MarketplaceListingPriceBuilder;
 use App\Tests\Support\Builder\PriceObservationBuilder;
 use App\Tests\Support\Builder\TrackedSkuBuilder;
 use App\Tests\Support\Builder\UserBuilder;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
 
 /**

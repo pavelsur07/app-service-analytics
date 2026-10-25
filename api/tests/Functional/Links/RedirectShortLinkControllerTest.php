@@ -15,11 +15,11 @@ use App\Links\Infrastructure\Query\ActiveShortLinkQuery;
 use App\Links\Ui\Controller\RedirectShortLinkController;
 use App\Tests\Support\Builder\AdministratorBuilder;
 use App\Tests\Support\Builder\ShortLinkBuilder;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\AbstractLogger;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Request;
 
 final class RedirectShortLinkControllerTest extends WebTestCase

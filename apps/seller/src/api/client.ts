@@ -21,7 +21,7 @@ export async function apiPost<T = unknown>(
 ): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Conwix-Request': '1' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
   if (!response.ok) {
@@ -38,7 +38,7 @@ export async function apiPut<T = unknown>(
 ): Promise<T> {
   const response = await fetch(path, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Conwix-Request': '1' },
     body: JSON.stringify(body),
   })
   if (!response.ok) {
@@ -51,7 +51,10 @@ export async function apiPut<T = unknown>(
 // сервера — 204 без тела (DiscardConnectionController), поэтому
 // response.json() здесь не читается вовсе, в отличие от GET/POST/PUT.
 export async function apiDelete(path: string): Promise<void> {
-  const response = await fetch(path, { method: 'DELETE' })
+  const response = await fetch(path, {
+    method: 'DELETE',
+    headers: { 'X-Conwix-Request': '1' },
+  })
   if (!response.ok) {
     throw await parseApiError(response)
   }

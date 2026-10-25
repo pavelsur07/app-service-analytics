@@ -15,9 +15,9 @@ use App\Tests\Support\Builder\AdministratorBuilder;
 use App\Tests\Support\Builder\MarketplaceDayLoadBuilder;
 use App\Tests\Support\Builder\ServiceCoverageCaptureBuilder;
 use App\Tests\Support\Builder\UserBuilder;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
 use Symfony\Component\Uid\Uuid;
 

@@ -8,6 +8,20 @@
         "/api/admin/auth/login": {
             "post": {
                 "operationId": "post_identity_admin_auth_login",
+                "parameters": [
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -49,6 +63,26 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -83,6 +117,20 @@
         "/api/admin/administrators": {
             "post": {
                 "operationId": "post_identity_admin_administrator_create",
+                "parameters": [
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -146,6 +194,16 @@
                                 }
                             }
                         }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -201,6 +259,20 @@
             },
             "post": {
                 "operationId": "post_identity_admin_company_register",
+                "parameters": [
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -259,6 +331,26 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -274,6 +366,18 @@
                         "schema": {
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
                         }
                     }
                 ],
@@ -311,6 +415,26 @@
                     },
                     "422": {
                         "description": "\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 \u0441\u0442\u0430\u0442\u0443\u0441",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -366,6 +490,18 @@
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
                         }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
                     }
                 ],
                 "responses": {
@@ -375,6 +511,26 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/IssueExtensionTokenResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
                                 }
                             }
                         }
@@ -403,6 +559,18 @@
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
                         }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
                     }
                 ],
                 "responses": {
@@ -418,6 +586,26 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -425,6 +613,20 @@
         "/api/auth/password-reset/request": {
             "post": {
                 "operationId": "post_identity_password_reset_request",
+                "parameters": [
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -509,6 +711,26 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -516,6 +738,20 @@
         "/api/auth/password-reset/confirm": {
             "post": {
                 "operationId": "post_identity_password_reset_confirm",
+                "parameters": [
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -579,6 +815,26 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -586,6 +842,20 @@
         "/api/auth/email-verification/confirm": {
             "post": {
                 "operationId": "post_identity_email_verification_confirm",
+                "parameters": [
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -643,6 +913,26 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -650,6 +940,20 @@
         "/api/auth/email-verification/resend": {
             "post": {
                 "operationId": "post_identity_email_verification_resend",
+                "parameters": [
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -688,6 +992,26 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -695,6 +1019,20 @@
         "/api/auth/sign-up": {
             "post": {
                 "operationId": "post_identity_self_registration",
+                "parameters": [
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -793,6 +1131,26 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -800,6 +1158,20 @@
         "/api/auth/login": {
             "post": {
                 "operationId": "post_identity_auth_login",
+                "parameters": [
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -834,6 +1206,26 @@
                     },
                     "401": {
                         "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 email \u0438\u043b\u0438 \u043f\u0430\u0440\u043e\u043b\u044c \u2014 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435 \u043e\u0434\u0438\u043d\u0430\u043a\u043e\u0432\u043e \u0434\u043b\u044f \u043e\u0431\u043e\u0438\u0445 \u0441\u043b\u0443\u0447\u0430\u0435\u0432 (ADR-007)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -953,6 +1345,18 @@
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
                         }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
                     }
                 ],
                 "requestBody": {
@@ -1031,6 +1435,16 @@
                                 }
                             }
                         }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1055,6 +1469,18 @@
                         "schema": {
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
                         }
                     }
                 ],
@@ -1129,6 +1555,16 @@
                                 }
                             }
                         }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1153,6 +1589,18 @@
                         "schema": {
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
                         }
                     }
                 ],
@@ -1182,6 +1630,16 @@
                     },
                     "403": {
                         "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -1540,6 +1998,18 @@
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
                         }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
                     }
                 ],
                 "requestBody": {
@@ -1606,6 +2076,16 @@
                     },
                     "403": {
                         "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -1694,6 +2174,18 @@
                         "schema": {
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
                         }
                     }
                 ],
@@ -1784,6 +2276,16 @@
                                 }
                             }
                         }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1808,6 +2310,18 @@
                         "schema": {
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
                         }
                     }
                 ],
@@ -1890,6 +2404,16 @@
                     },
                     "403": {
                         "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -2799,6 +3323,18 @@
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
                         }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
                     }
                 ],
                 "requestBody": {
@@ -2867,6 +3403,26 @@
                                 }
                             }
                         }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2920,6 +3476,20 @@
             },
             "post": {
                 "operationId": "post_links_admin_create",
+                "parameters": [
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -2967,6 +3537,26 @@
                     },
                     "503": {
                         "description": "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0432\u044b\u0434\u0435\u043b\u0438\u0442\u044c \u0443\u043d\u0438\u043a\u0430\u043b\u044c\u043d\u044b\u0439 \u043a\u043e\u0434",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3047,6 +3637,18 @@
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
                         }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
                     }
                 ],
                 "requestBody": {
@@ -3111,6 +3713,26 @@
                     },
                     "422": {
                         "description": "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435, URL \u0438\u043b\u0438 \u0432\u0435\u0440\u0441\u0438\u044f \u043d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Invalid request protection header or origin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3567,6 +4189,18 @@
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
                         }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
                     }
                 ],
                 "requestBody": {
@@ -3653,6 +4287,16 @@
                     },
                     "403": {
                         "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3751,6 +4395,18 @@
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
                         }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
                     }
                 ],
                 "requestBody": {
@@ -3823,6 +4479,16 @@
                                 }
                             }
                         }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -3865,6 +4531,18 @@
                         "schema": {
                             "type": "string",
                             "pattern": "[^/]{1,64}"
+                        }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
                         }
                     }
                 ],
@@ -3911,6 +4589,16 @@
                     },
                     "403": {
                         "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4030,6 +4718,18 @@
                             "type": "string",
                             "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
                         }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
                     }
                 ],
                 "requestBody": {
@@ -4132,6 +4832,16 @@
                     },
                     "403": {
                         "description": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0435 \u0441\u043e\u0441\u0442\u043e\u0438\u0442 \u0432 \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
                         "content": {
                             "application/json": {
                                 "schema": {

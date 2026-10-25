@@ -112,6 +112,8 @@ x-api-env: &api-env
   # deployment job задаёт её явно в /opt/conwix/.env перед первым compose-вызовом.
   # :? остаётся fail-closed предохранителем для ручных запусков и старого workflow.
   SELLER_APP_ORIGIN: ${SELLER_APP_ORIGIN:-https://app.conwix.com}
+  SESSION_SELLER_ORIGINS: ${SESSION_SELLER_ORIGINS:-https://app.conwix.com}
+  SESSION_ADMIN_ORIGINS: ${SESSION_ADMIN_ORIGINS:-https://admin.conwix.com}
   REGISTRATION_DOCUMENTS_VERSION: ${REGISTRATION_DOCUMENTS_VERSION:?}
   # Хранилище сырья внешних API — S3 Timeweb Cloud (ADR-024). Бакет
   # и ключи с правами только на него заводит владелец в панели Timeweb;

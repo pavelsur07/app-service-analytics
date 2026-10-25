@@ -12,11 +12,11 @@ use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 use Monolog\Handler\TestHandler;
 use Opis\JsonSchema\Errors\ErrorFormatter;
 use Opis\JsonSchema\Validator;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
  * Выдача подключений сервисам вне монолита — сервисный контур
