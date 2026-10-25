@@ -238,7 +238,10 @@ export function problems(data: ServiceCoverageResponse): Problem[] {
   if (data.serviceGeneratedAt == null) {
     return []
   }
-  const settled = settledUntil(data.to)
+  // Граница прошедших дней — от даты снимка, а не сегодняшней: дни после
+  // снимка сервис в нём показать не мог, и PHP за них — не расхождение.
+  const snapshotDay = moscowDay(data.serviceGeneratedAt)
+  const settled = settledUntil(snapshotDay < data.to ? snapshotDay : data.to)
   const serviceFrom = serviceWindowStart(data)
   const found: Problem[] = [...staleProblems(data, data.serviceGeneratedAt)]
   for (const row of data.rows) {
@@ -257,10 +260,14 @@ export function verdict(
   data: ServiceCoverageResponse,
   found: readonly Problem[],
 ): Verdict {
+  // Остановленный воркер важнее исхода его последней попытки: иначе давний
+  // «не отвечает» выглядел бы текущим и вёл бы смотреть не тот процесс.
+  if (data.serviceState !== 'never' && captureStale(data)) {
+    return 'capture_stale'
+  }
   if (data.serviceState !== 'ok') {
     return data.serviceState
   }
-  if (captureStale(data)) return 'capture_stale'
   if (found.some((p) => p.kind === 'attention')) return 'attention'
   return found.length > 0 ? 'lagging' : 'ok'
 }
@@ -312,6 +319,17 @@ const MOSCOW_TIME = new Intl.DateTimeFormat('ru-RU', {
 })
 
 // Время ответа и загрузок — по Москве, как и даты периодов.
+const MOSCOW_DAY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Moscow',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+function moscowDay(iso: string): string {
+  return MOSCOW_DAY.format(new Date(iso))
+}
+
 export function formatMoscowTime(iso: string): string {
   return MOSCOW_TIME.format(new Date(iso))
 }

@@ -300,6 +300,51 @@ describe('проблемы', () => {
     expect(verdict(fresh, [])).toBe('ok')
     expect(verdict(stale, [])).toBe('capture_stale')
   })
+
+  it('остановленный воркер важнее исхода его последней попытки', () => {
+    for (const state of ['unavailable', 'disabled', 'not_ready'] as const) {
+      const data = coverage([], {
+        serviceState: state,
+        attemptedAt: '2026-10-25T07:00:00+00:00',
+      })
+
+      expect(verdict(data, [])).toBe('capture_stale')
+    }
+  })
+
+  it('дни после старого снимка не сравниваются с PHP', () => {
+    const data = coverage(
+      [
+        row({
+          periodKey: '2026-10-19',
+          lastSuccessAt: '2026-10-21T07:00:00+00:00',
+        }),
+        row({
+          periodKey: '2026-10-20',
+          cabinetsExpected: null,
+          done: 0,
+          lastSuccessAt: null,
+          phpCabinets: 1,
+        }),
+        row({
+          periodKey: '2026-10-19',
+          resourceType: 'ozon.ads.daily',
+          cabinetsExpected: null,
+          done: 0,
+          lastSuccessAt: null,
+          phpCabinets: 1,
+        }),
+      ],
+      {
+        serviceState: 'unavailable',
+        serviceGeneratedAt: '2026-10-21T08:00:00+00:00',
+      },
+    )
+
+    expect(problems(data).map((p) => [p.kind, p.periodKey])).toEqual([
+      ['php_mismatch', '2026-10-19'],
+    ])
+  })
 })
 
 describe('раскладка', () => {
