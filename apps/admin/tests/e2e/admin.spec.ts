@@ -30,6 +30,50 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
 
   // Вход ведёт на аккаунты — повседневную работу контура.
   await expect(page).toHaveURL(/\/accounts$/)
+
+  await page.context().route('http://evil.conwix.internal/**', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<title>Sibling origin</title>',
+    }),
+  )
+  await page.goto('http://evil.conwix.internal/')
+  const attacker = `csrf-${String(Date.now())}@example.test`
+  const rejected = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/admin/administrators') &&
+      response.request().method() === 'POST',
+  )
+  await page.evaluate((attackerEmail) => {
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = 'http://admin.conwix.internal/api/admin/administrators'
+    form.enctype = 'text/plain'
+    const input = document.createElement('input')
+    input.name = JSON.stringify({
+      email: attackerEmail,
+      password: 'attacker-password-1234',
+      padding: '',
+    }).slice(0, -2)
+    input.value = '"}'
+    form.append(input)
+    document.body.append(form)
+    form.submit()
+  }, attacker)
+  expect((await rejected).status()).toBe(403)
+
+  // 201 тем же email доказывает отсутствие строки после атаки и сохранение сессии.
+  const legitimate = await page
+    .context()
+    .request.post('http://admin.conwix.internal/api/admin/administrators', {
+      headers: {
+        'X-Conwix-Request': '1',
+        Origin: 'http://admin.conwix.internal',
+      },
+      data: { email: attacker, password: 'legitimate-password-1234' },
+    })
+  expect(legitimate.status()).toBe(201)
+  await page.goto('/accounts')
   await expect(
     page.getByRole('navigation', { name: 'Разделы администрирования' }),
   ).toBeVisible()
@@ -159,7 +203,10 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
   // свежую version и повторное действие сработает без reload.
   const externalDisable = await page.request.post(
     `/api/admin/links/${encodeURIComponent(createdLink.id)}/status`,
-    { data: { status: 'disabled', version: 1 } },
+    {
+      headers: { 'X-Conwix-Request': '1' },
+      data: { status: 'disabled', version: 1 },
+    },
   )
   expect(externalDisable.ok()).toBe(true)
   await linkRow.getByRole('button', { name: 'Отключить' }).click()

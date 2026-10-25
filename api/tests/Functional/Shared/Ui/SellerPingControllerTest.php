@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Functional\Shared\Ui;
 
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 
 final class SellerPingControllerTest extends WebTestCase
 {

@@ -1735,7 +1735,10 @@ export interface operations {
     post_identity_admin_auth_login: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -1759,6 +1762,24 @@ export interface operations {
             };
             /** @description Неверный email или пароль — сообщение одинаково для обоих случаев (ADR-007) */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1800,7 +1821,10 @@ export interface operations {
     post_identity_admin_administrator_create: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -1834,6 +1858,15 @@ export interface operations {
             };
             /** @description Администратор с таким email уже существует */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1887,7 +1920,10 @@ export interface operations {
     post_identity_admin_company_register: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -1911,8 +1947,26 @@ export interface operations {
                     "application/json": components["schemas"]["AdminCompanyResponse"];
                 };
             };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Пользователь с таким email уже существует; компания при этом не создана */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1934,7 +1988,10 @@ export interface operations {
     post_identity_admin_company_status: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 id: string;
             };
@@ -1956,6 +2013,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClientAccountStatusResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Неизвестный статус */
@@ -2001,7 +2076,10 @@ export interface operations {
     post_identity_extension_token_issue: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
             };
@@ -2018,12 +2096,33 @@ export interface operations {
                     "application/json": components["schemas"]["IssueExtensionTokenResponse"];
                 };
             };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
         };
     };
     delete_identity_extension_token_revoke: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
                 id: string;
@@ -2039,8 +2138,26 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Токена с таким id в этой компании нет */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2053,7 +2170,10 @@ export interface operations {
     post_identity_password_reset_request: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -2074,6 +2194,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SelfRegistrationResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Некорректный email или CAPTCHA */
@@ -2112,7 +2250,10 @@ export interface operations {
     post_identity_password_reset_confirm: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -2132,6 +2273,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PasswordResetResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Ссылка недействительна или пароль не подходит */
@@ -2159,7 +2318,10 @@ export interface operations {
     post_identity_email_verification_confirm: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -2180,6 +2342,15 @@ export interface operations {
                     "application/json": components["schemas"]["EmailConfirmationResponse"];
                 };
             };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Токен уже использован */
             409: {
                 headers: {
@@ -2198,6 +2369,15 @@ export interface operations {
                     "application/json": components["schemas"]["EmailConfirmationResponse"];
                 };
             };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Некорректный запрос */
             422: {
                 headers: {
@@ -2212,7 +2392,10 @@ export interface operations {
     post_identity_email_verification_resend: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -2234,6 +2417,24 @@ export interface operations {
                     "application/json": components["schemas"]["SelfRegistrationResponse"];
                 };
             };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Некорректный email */
             422: {
                 headers: {
@@ -2248,7 +2449,10 @@ export interface operations {
     post_identity_self_registration: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -2272,6 +2476,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SelfRegistrationResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Некорректные данные или согласие не дано */
@@ -2310,7 +2532,10 @@ export interface operations {
     post_identity_auth_login: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -2334,6 +2559,24 @@ export interface operations {
             };
             /** @description Неверный email или пароль — сообщение одинаково для обоих случаев (ADR-007) */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2429,7 +2672,10 @@ export interface operations {
     post_ingestion_company_connection_connect: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
             };
@@ -2473,6 +2719,15 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Площадка не приняла ключ (целиком или на отдельной области — товары/карточки товаров/продажи/расходы/возвраты, код называет какой: credentials_rejected, credentials_rejected_product_info, credentials_rejected_sales, credentials_rejected_expenses, credentials_rejected_returns) либо тело запроса неполное */
             422: {
                 headers: {
@@ -2496,7 +2751,10 @@ export interface operations {
     put_ingestion_listing_cost_correct: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
                 costId: string;
@@ -2550,6 +2808,15 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Тело запроса некорректно либо валюта отличается от валюты позиции */
             422: {
                 headers: {
@@ -2564,7 +2831,10 @@ export interface operations {
     delete_ingestion_connection_discard: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
                 marketplaceAccountId: string;
@@ -2600,6 +2870,15 @@ export interface operations {
             };
             /** @description У подключения есть загруженные документы — удалить нельзя, только заменить ключ */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2801,7 +3080,10 @@ export interface operations {
     post_ingestion_listing_cost_set: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
             };
@@ -2844,6 +3126,15 @@ export interface operations {
             };
             /** @description Цена с этой датой уже задана — её нужно исправлять, а не заводить вторую */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2900,7 +3191,10 @@ export interface operations {
     put_ingestion_connection_advertising_credentials_replace: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
                 marketplaceAccountId: string;
@@ -2955,6 +3249,15 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Площадка не приняла ключ (advertising_credentials_rejected), ключ от другого кабинета (advertising_credentials_of_another_cabinet), подключение отозвано либо тело запроса неполное */
             422: {
                 headers: {
@@ -2978,7 +3281,10 @@ export interface operations {
     put_ingestion_connection_credentials_replace: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
                 marketplaceAccountId: string;
@@ -3025,6 +3331,15 @@ export interface operations {
             };
             /** @description Подключение изменил кто-то ещё — перечитать и повторить (ADR-008) */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3548,7 +3863,10 @@ export interface operations {
     post_links_admin_status: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 id: string;
             };
@@ -3573,6 +3891,15 @@ export interface operations {
                     "application/json": components["schemas"]["ShortLinkResponse"];
                 };
             };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Ссылка не найдена */
             404: {
                 headers: {
@@ -3584,6 +3911,15 @@ export interface operations {
             };
             /** @description Версия ссылки устарела */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3637,7 +3973,10 @@ export interface operations {
     post_links_admin_create: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -3658,6 +3997,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ShortLinkResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Название или URL некорректны */
@@ -3725,7 +4082,10 @@ export interface operations {
     post_links_admin_update: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 id: string;
             };
@@ -3751,6 +4111,15 @@ export interface operations {
                     "application/json": components["schemas"]["ShortLinkResponse"];
                 };
             };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Ссылка не найдена */
             404: {
                 headers: {
@@ -3762,6 +4131,15 @@ export interface operations {
             };
             /** @description Версия ссылки устарела */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4082,7 +4460,10 @@ export interface operations {
     put_sales_planning_plan_day_change: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
                 planId: string;
@@ -4133,6 +4514,15 @@ export interface operations {
             };
             /** @description План изменил кто-то ещё либо он уже не черновик */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4199,7 +4589,10 @@ export interface operations {
     post_sales_planning_plan_create: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
             };
@@ -4245,6 +4638,15 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Тело некорректно, период или подключение не годятся */
             422: {
                 headers: {
@@ -4262,7 +4664,10 @@ export interface operations {
                 /** @description Версия плана из ответа чтения (ADR-008) */
                 version: number;
             };
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
                 planId: string;
@@ -4301,6 +4706,15 @@ export interface operations {
             };
             /** @description План изменил кто-то ещё либо он уже не черновик */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4369,7 +4783,10 @@ export interface operations {
     put_sales_planning_plan_skus_set: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
             path: {
                 companyId: string;
                 planId: string;
@@ -4421,6 +4838,15 @@ export interface operations {
             };
             /** @description План изменил кто-то ещё либо он уже не черновик */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

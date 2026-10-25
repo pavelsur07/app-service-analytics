@@ -19,9 +19,9 @@ use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\ExtensionTokenBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
  * Блокировка аккаунта останавливает доступ (ADR-017) — обязательное

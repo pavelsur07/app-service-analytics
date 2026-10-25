@@ -15,9 +15,9 @@ use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceListingBuilder;
 use App\Tests\Support\Builder\MarketplaceListingCostBuilder;
 use App\Tests\Support\Builder\UserBuilder;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Uid\Uuid;
 
 /**

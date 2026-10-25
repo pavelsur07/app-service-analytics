@@ -9,9 +9,9 @@ use App\Identity\Domain\ValueObject\AdminRole;
 use App\Identity\Infrastructure\Repository\DoctrineAdministratorRepository;
 use App\Identity\Ui\Request\CreateAdministratorRequest;
 use App\Tests\Support\Builder\AdministratorBuilder;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
  * `SuperAdmin` заводит `Admin` (ADR-017). Через HTTP, потому что предмет

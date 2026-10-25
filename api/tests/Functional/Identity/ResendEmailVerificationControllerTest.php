@@ -6,10 +6,10 @@ namespace App\Tests\Functional\Identity;
 
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Tests\Support\Builder\UserBuilder;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Mailer\Event\MessageEvent;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 use Symfony\Component\Mime\Email;

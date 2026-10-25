@@ -10,10 +10,10 @@ use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\UserBuilder;
+use App\Tests\Support\SessionWebTestCase as WebTestCase;
 use Doctrine\ORM\EntityManagerInterface;
 use Predis\Client as PredisClient;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
 
 /**
@@ -119,7 +119,7 @@ final class AuthControllerTest extends WebTestCase
         $this->login($client, 'logout@example.com', 'some-password');
         self::assertResponseIsSuccessful();
 
-        $client->request('GET', '/api/auth/logout');
+        $client->request('POST', '/api/auth/logout');
 
         $client->request('GET', '/api/auth/me');
         self::assertResponseStatusCodeSame(401);

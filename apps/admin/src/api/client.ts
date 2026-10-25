@@ -25,7 +25,7 @@ export async function apiPost<T = unknown>(
 ): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Conwix-Request': '1' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
   if (!response.ok) {
