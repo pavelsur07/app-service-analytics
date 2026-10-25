@@ -72,7 +72,7 @@ func TestPostingPagesStoredWithCursorAndRawKey(t *testing.T) {
 	require.Len(t, h.raw.puts, 2)
 	assert.Equal(t, ResourceOrdersFBS, h.raw.puts[0].ResourceType)
 	assert.Equal(t, "2026-10-19", h.raw.puts[0].PeriodKey)
-	assert.Equal(t, "ozon", h.raw.puts[0].Provider)
+	assert.Equal(t, task(ResourceOrdersFBS, "2026-10-19").Account, h.raw.refs[0], "объект пишется под подключением задачи")
 	assert.Equal(t, store.StatusDone, h.tasks.finished.Status)
 }
 

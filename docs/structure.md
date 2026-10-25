@@ -60,7 +60,8 @@ app-service-analytics/
 │   └── extension/        расширение браузера (MV3), выкладка через
 │                         Chrome Web Store, не через наш конвейер
 ├── services/             сервисы вне монолита (ADR-043): свой процесс,
-│   │                     своя БД и бакет; контракты с PHP — _contracts/
+│   │                     своя БД, свой префикс в бакете сырья (ADR-044);
+│   │                     контракты с PHP — _contracts/
 │   ├── AGENTS.md         правила всех сервисов
 │   ├── go.md             правила Go
 │   ├── _contracts/       JSON Schema контрактов сервис ↔ PHP по версиям

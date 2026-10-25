@@ -1,5 +1,6 @@
 // Package rawstore — неизменяемые raw-объекты в S3 (services/AGENTS.md §9):
 // gzip исходных байтов ответа, ключ по содержимому, запрет перезаписи.
+// Объекты лежат в бакете сырья Conwix под префиксом сервиса (ADR-044).
 package rawstore
 
 import (
@@ -10,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -42,17 +44,22 @@ func (s *Store) Ping(ctx context.Context) error {
 	return nil
 }
 
-// Object — страница ответа источника.
+// Object — страница ответа источника. Подключение передаётся в Put отдельно.
 type Object struct {
-	Provider     string // ozon
-	Account      account.Ref
 	ResourceType string
 	PeriodKey    string
-	AttemptID    string
-	PageNo       int
-	FetchedAt    time.Time
 	ContentType  string
 	Body         []byte
+}
+
+// Locator — поля, из которых собирается ключ объекта подключения: ресурс,
+// период и содержимое. Готовый ключ порт не принимает (CLAUDE.md §1):
+// при чтении он пересобирается из строки raw_object, найденной по подключению.
+type Locator struct {
+	ResourceType string
+	PeriodKey    string
+	SHA256       string // от несжатых байтов
+	ContentType  string
 }
 
 // Stored — что записано: для raw_object и envelope (storage_uri, checksum, size_bytes).
@@ -87,13 +94,16 @@ func (s *Store) WithPutTimeout(d time.Duration) *Store {
 	return &clone
 }
 
-// Put записывает объект. Ключ содержит попытку, страницу и sha256: тот же
+// Put записывает объект подключения ref. Ключ — sha256 содержимого: тот же
 // ключ — те же байты, поэтому повтор после сбоя идемпотентен, а
 // существующий объект (412 на If-None-Match) — успех, а не перезапись.
-func (s *Store) Put(ctx context.Context, obj Object) (Stored, error) {
+func (s *Store) Put(ctx context.Context, ref account.Ref, obj Object) (Stored, error) {
 	sum := sha256.Sum256(obj.Body)
 	digest := hex.EncodeToString(sum[:])
-	key := Key(obj, digest)
+	key, err := Key(ref, Locator{ResourceType: obj.ResourceType, PeriodKey: obj.PeriodKey, SHA256: digest, ContentType: obj.ContentType})
+	if err != nil {
+		return Stored{}, err
+	}
 
 	compressed, err := gzipBytes(obj.Body)
 	if err != nil {
@@ -120,8 +130,8 @@ func (s *Store) Put(ctx context.Context, obj Object) (Stored, error) {
 			"sha256":                 digest,
 			"source-type":            obj.ContentType,
 			"source-size":            fmt.Sprint(len(obj.Body)),
-			"company-id":             obj.Account.CompanyID,
-			"marketplace-account-id": obj.Account.AccountID,
+			"company-id":             ref.CompanyID,
+			"marketplace-account-id": ref.AccountID,
 		},
 	})
 	if err != nil && !isAlreadyExists(err) {
@@ -141,11 +151,46 @@ func (s *Store) Put(ctx context.Context, obj Object) (Stored, error) {
 	}, nil
 }
 
-// Key — {provider}/{company_id}/{marketplace_account_id}/{resource_type}/{period_key}/{fetched_at}_{attempt}_p{NNN}_{sha8}.{ext}.gz
-func Key(obj Object, digest string) string {
-	return fmt.Sprintf("%s/%s/%s/%s/%s/%s_%s_p%03d_%s.%s.gz",
-		safe(obj.Provider), safe(obj.Account.CompanyID), safe(obj.Account.AccountID), safe(obj.ResourceType), safe(obj.PeriodKey),
-		obj.FetchedAt.UTC().Format("20060102T150405Z"), safe(obj.AttemptID), obj.PageNo, digest[:8], extension(obj.ContentType))
+// Prefix — пространство сервиса в бакете сырья Conwix (ADR-044). Константа,
+// а не настройка: ошибкой конфигурации сервис не попадёт в префикс PHP
+// (conwix/raw/v1, ADR-024). Срок хранения и права ключа хранилища задаются
+// на этот префикс.
+const Prefix = "conwix/svc/ozon-fetcher/v1"
+
+// ErrInvalidKey — сегмент ключа вне допустимой формы: собранный из него путь
+// мог бы выйти из префикса подключения.
+var ErrInvalidKey = errors.New("rawstore: invalid key segment")
+
+var (
+	keySegment = regexp.MustCompile(`^[a-z0-9]+([.-][a-z0-9]+)*$`)
+	sha256Form = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
+
+// ConnectionPrefix — префикс всех объектов подключения, с завершающим "/".
+func ConnectionPrefix(ref account.Ref) string {
+	return Prefix + "/companies/" + ref.CompanyID + "/accounts/" + ref.AccountID + "/"
+}
+
+// Key — {Prefix}/companies/{company_id}/accounts/{marketplace_account_id}/{resource_type}/{period_key}/{sha256}.{ext}.gz
+//
+// Сегменты не исправляются, а проверяются: компания и подключение — UUID
+// (account.Parse), ресурс и период — латиница в нижнем регистре, цифры, точка
+// и дефис между ними, sha256 — 64 hex. Разделителя пути и ".." в ключе
+// быть не может, поэтому ключ всегда лежит под ConnectionPrefix(ref).
+func Key(ref account.Ref, loc Locator) (string, error) {
+	if _, err := account.Parse(ref.CompanyID, ref.AccountID); err != nil {
+		return "", fmt.Errorf("%w: %w", ErrInvalidKey, err)
+	}
+	if !keySegment.MatchString(loc.ResourceType) {
+		return "", fmt.Errorf("%w: resource_type %q", ErrInvalidKey, loc.ResourceType)
+	}
+	if !keySegment.MatchString(loc.PeriodKey) {
+		return "", fmt.Errorf("%w: period_key %q", ErrInvalidKey, loc.PeriodKey)
+	}
+	if !sha256Form.MatchString(loc.SHA256) {
+		return "", fmt.Errorf("%w: sha256 %q", ErrInvalidKey, loc.SHA256)
+	}
+	return ConnectionPrefix(ref) + loc.ResourceType + "/" + loc.PeriodKey + "/" + loc.SHA256 + "." + extension(loc.ContentType) + ".gz", nil
 }
 
 func extension(contentType string) string {
@@ -159,23 +204,6 @@ func extension(contentType string) string {
 	default:
 		return "bin"
 	}
-}
-
-// safe — сегмент ключа без разделителей пути, управляющих символов и "..".
-func safe(s string) string {
-	mapped := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
-			return r
-		default:
-			return '_'
-		}
-	}, s)
-	mapped = strings.ReplaceAll(mapped, "..", "__")
-	if mapped == "" || mapped == "." {
-		return "_"
-	}
-	return mapped
 }
 
 // gzipBytes — детерминированный gzip: без имени и времени в заголовке.

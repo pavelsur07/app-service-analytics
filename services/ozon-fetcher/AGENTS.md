@@ -1,7 +1,8 @@
 # ozon-fetcher — правила сервиса
 
 Загрузка raw Ozon Seller API и Performance API по активным подключениям
-Conwix: raw — в бакет сервиса, журнал загрузок — в свою БД (ADR-043).
+Conwix: raw — в бакет сырья Conwix под префиксом `conwix/svc/ozon-fetcher/v1/`
+(ADR-044), журнал загрузок — в свою БД (ADR-043).
 План работ — `docs/plan/ozon-fetcher.md`. Общие правила — `services/AGENTS.md`
 и `services/go.md`; этот файл их уточняет для каталога и не отменяет.
 
@@ -42,8 +43,11 @@ Conwix: raw — в бакет сервиса, журнал загрузок — 
 - Своя БД `ozon_fetcher` (роль `svc_ozon_fetcher`) — только техническое
   состояние. Одна стартовая миграция с рабочим `down`; новые идентификаторы —
   UUIDv7 (`internal/uuidv7`).
-- Raw immutable — новый объект на каждую загрузку, sha256 и размер
-  в `raw_object`.
+- Raw — в бакете сырья Conwix под `conwix/svc/ozon-fetcher/v1/` (ADR-044).
+  Объект неизменяем, имя — sha256 содержимого: та же страница задачи —
+  тот же объект (412 на `If-None-Match` — успех). sha256, размер
+  и `content_type` записанного объекта — в `raw_object`; по ним и задаче
+  ключ пересобирается при чтении.
 
 ## Специфика Ozon
 

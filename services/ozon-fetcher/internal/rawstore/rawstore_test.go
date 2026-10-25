@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/account"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/account/accounttest"
 )
 
@@ -68,12 +70,15 @@ func (f *fakePutter) PutObject(ctx context.Context, in *s3.PutObjectInput, _ ...
 	return &s3.PutObjectOutput{}, nil
 }
 
+var testRef = accounttest.Ref("0193-ref")
+
 func page(body string) Object {
-	return Object{
-		Provider: "ozon", Account: accounttest.Ref("0193-ref"), ResourceType: "ozon.finance.accrual-by-day", PeriodKey: "2026-10-15",
-		AttemptID: "0193-attempt", PageNo: 2, FetchedAt: time.Date(2026, 10, 17, 9, 30, 5, 0, time.FixedZone("MSK", 3*3600)),
-		ContentType: "application/json", Body: []byte(body),
-	}
+	return Object{ResourceType: "ozon.finance.accrual-by-day", PeriodKey: "2026-10-15", ContentType: "application/json", Body: []byte(body)}
+}
+
+// locator — поля строки raw_object, по которым читается объект page(body).
+func locator(body string) Locator {
+	return Locator{ResourceType: "ozon.finance.accrual-by-day", PeriodKey: "2026-10-15", SHA256: sha256Of(body), ContentType: "application/json"}
 }
 
 func gunzip(t *testing.T, b []byte) []byte {
@@ -90,14 +95,14 @@ func TestPutStoresGzipOfOriginalBytesUnderContentKey(t *testing.T) {
 	sum := sha256.Sum256([]byte(body))
 	digest := hex.EncodeToString(sum[:])
 	putter := &fakePutter{}
-	ref := accounttest.Ref("0193-ref")
+	ref := testRef
 
-	stored, err := New(putter, "conwix-ozon-fetcher-raw", 2).Put(context.Background(), page(body))
+	stored, err := New(putter, "conwix-raw", 2).Put(context.Background(), ref, page(body))
 
 	require.NoError(t, err)
-	wantKey := "ozon/" + ref.CompanyID + "/" + ref.AccountID + "/ozon.finance.accrual-by-day/2026-10-15/20261017T063005Z_0193-attempt_p002_" + digest[:8] + ".json.gz"
+	wantKey := "conwix/svc/ozon-fetcher/v1/companies/" + ref.CompanyID + "/accounts/" + ref.AccountID + "/ozon.finance.accrual-by-day/2026-10-15/" + digest + ".json.gz"
 	assert.Equal(t, wantKey, stored.Key)
-	assert.Equal(t, "s3://conwix-ozon-fetcher-raw/"+wantKey, stored.URI)
+	assert.Equal(t, "s3://conwix-raw/"+wantKey, stored.URI)
 	assert.Equal(t, digest, stored.SHA256)
 	assert.EqualValues(t, len(body), stored.SizeBytes)
 	assert.Equal(t, body, string(gunzip(t, putter.objects[wantKey])))
@@ -115,9 +120,9 @@ func TestPutTreatsExistingObjectAsSuccess(t *testing.T) {
 	putter := &fakePutter{}
 	store := New(putter, "b", 1)
 
-	first, err := store.Put(context.Background(), page(`{"a":1}`))
+	first, err := store.Put(context.Background(), testRef, page(`{"a":1}`))
 	require.NoError(t, err)
-	second, err := store.Put(context.Background(), page(`{"a":1}`))
+	second, err := store.Put(context.Background(), testRef, page(`{"a":1}`))
 	require.NoError(t, err)
 
 	assert.Equal(t, first, second)
@@ -127,7 +132,7 @@ func TestPutTreatsExistingObjectAsSuccess(t *testing.T) {
 func TestPutReturnsStorageErrors(t *testing.T) {
 	putter := &fakePutter{err: errors.New("connection reset")}
 
-	_, err := New(putter, "b", 1).Put(context.Background(), page(`{}`))
+	_, err := New(putter, "b", 1).Put(context.Background(), testRef, page(`{}`))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "connection reset")
@@ -142,8 +147,7 @@ func TestPutLimitsParallelism(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			obj := page(`{"n":` + strconv.Itoa(i) + `}`)
-			obj.PageNo = i
-			_, err := store.Put(context.Background(), obj)
+			_, err := store.Put(context.Background(), testRef, obj)
 			assert.NoError(t, err)
 		}()
 	}
@@ -152,21 +156,77 @@ func TestPutLimitsParallelism(t *testing.T) {
 	assert.Len(t, putter.objects, 8)
 }
 
-func TestKeySanitizesSegmentsAndExtensions(t *testing.T) {
-	obj := page("x")
-	obj.Account.AccountID = "../evil/ref"
-	obj.ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-	key := Key(obj, "abcdef0123456789")
+func TestKeyExtensionFollowsContentType(t *testing.T) {
+	loc := locator("x")
+	for contentType, want := range map[string]string{
+		"application/json": ".json.gz",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx.gz",
+		"text/csv": ".csv.gz",
+		"":         ".bin.gz",
+	} {
+		loc.ContentType = contentType
+		key, err := Key(testRef, loc)
+		require.NoError(t, err)
+		assert.True(t, strings.HasSuffix(key, want), key)
+	}
+}
 
-	assert.NotContains(t, key, "..")
-	assert.Contains(t, key, "/___evil_ref/")
+// Сегмент, из которого путь мог бы выйти из префикса подключения, не
+// исправляется, а отклоняется: ключ всегда под ConnectionPrefix(ref).
+func TestKeyRejectsSegmentsLeavingConnectionPrefix(t *testing.T) {
+	good := locator("x")
+	for name, mutate := range map[string]func(*account.Ref, *Locator){
+		"company not uuid":      func(r *account.Ref, _ *Locator) { r.CompanyID = "../" + r.CompanyID },
+		"account not uuid":      func(r *account.Ref, _ *Locator) { r.AccountID = "x/../../y" },
+		"company upper case":    func(r *account.Ref, _ *Locator) { r.CompanyID = strings.ToUpper(r.CompanyID) },
+		"resource dot-dot":      func(_ *account.Ref, l *Locator) { l.ResourceType = ".." },
+		"resource slash":        func(_ *account.Ref, l *Locator) { l.ResourceType = "ozon/../../other" },
+		"resource empty":        func(_ *account.Ref, l *Locator) { l.ResourceType = "" },
+		"resource double dot":   func(_ *account.Ref, l *Locator) { l.ResourceType = "ozon..stocks" },
+		"period slash":          func(_ *account.Ref, l *Locator) { l.PeriodKey = "2026/10" },
+		"period leading dot":    func(_ *account.Ref, l *Locator) { l.PeriodKey = ".hidden" },
+		"period space":          func(_ *account.Ref, l *Locator) { l.PeriodKey = "2026 10" },
+		"sha256 short":          func(_ *account.Ref, l *Locator) { l.SHA256 = l.SHA256[:8] },
+		"sha256 with separator": func(_ *account.Ref, l *Locator) { l.SHA256 = "../" + l.SHA256[3:] },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ref, loc := testRef, good
+			mutate(&ref, &loc)
+			_, err := Key(ref, loc)
+			require.ErrorIs(t, err, ErrInvalidKey)
+		})
+	}
 
-	obj.Account.CompanyID = "."
-	assert.Contains(t, Key(obj, "abcdef0123456789"), "ozon/_/")
-	assert.Contains(t, key, ".xlsx.gz")
+	key, err := Key(testRef, good)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(key, ConnectionPrefix(testRef)))
+	assert.True(t, strings.HasPrefix(key, Prefix+"/companies/"+testRef.CompanyID+"/"), "компания — первый сегмент после префикса сервиса")
+}
 
-	obj.ContentType = ""
-	assert.Contains(t, Key(obj, "abcdef0123456789"), ".bin.gz")
+func TestPutRefusesInvalidKeyWithoutWriting(t *testing.T) {
+	putter := &fakePutter{}
+	obj := page(`{}`)
+	obj.PeriodKey = "../2026-10-15"
+
+	_, err := New(putter, "b", 1).Put(context.Background(), testRef, obj)
+
+	require.ErrorIs(t, err, ErrInvalidKey)
+	assert.Empty(t, putter.inputs)
+}
+
+// Объект одной компании не записывается под префикс другой: ключ собирается
+// только из подключения, переданного в Put.
+func TestObjectOfOneCompanyIsNotStoredUnderAnother(t *testing.T) {
+	putter := &fakePutter{}
+	store := New(putter, "b", 1)
+	a, b := accounttest.Ref("company-a"), accounttest.Ref("company-b")
+
+	stored, err := store.Put(context.Background(), a, page(`{"a":1}`))
+	require.NoError(t, err)
+
+	assert.True(t, strings.HasPrefix(stored.Key, ConnectionPrefix(a)))
+	assert.NotContains(t, stored.Key, b.CompanyID)
+	assert.NotContains(t, stored.Key, "/companies/"+b.CompanyID+"/")
 }
 
 func TestGzipIsDeterministic(t *testing.T) {
@@ -188,12 +248,15 @@ func TestPutAgainstS3(t *testing.T) {
 	ctx := context.Background()
 	_, _ = client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)})
 	store := New(client, bucket, 2)
+	// Своё подключение на прогон: ключ по содержимому, повтор прогона не
+	// должен встретить объект прошлого.
+	ref := accounttest.Ref(time.Now().Format("150405.000000000"))
 	obj := page(`{"accruals":[],"last_id":""}`)
-	obj.AttemptID = time.Now().Format("150405.000000000")
 
-	stored, err := store.Put(ctx, obj)
+	stored, err := store.Put(ctx, ref, obj)
 	require.NoError(t, err)
-	again, err := store.Put(ctx, obj)
+	assert.True(t, strings.HasPrefix(stored.Key, ConnectionPrefix(ref)))
+	again, err := store.Put(ctx, ref, obj)
 	require.NoError(t, err, "повтор того же объекта — успех")
 	assert.Equal(t, stored, again)
 
@@ -205,9 +268,14 @@ func TestPutAgainstS3(t *testing.T) {
 	assert.Equal(t, string(obj.Body), string(gunzip(t, raw)))
 	assert.Equal(t, stored.SHA256, got.Metadata["sha256"])
 
-	read, err := NewReader(client, bucket).Get(ctx, stored.URI, stored.SHA256)
+	reader := NewReader(client, bucket)
+	loc := Locator{ResourceType: obj.ResourceType, PeriodKey: obj.PeriodKey, SHA256: stored.SHA256, ContentType: obj.ContentType}
+	read, err := reader.Get(ctx, ref, loc)
 	require.NoError(t, err, "Reader читает записанное")
 	assert.Equal(t, string(obj.Body), string(read))
+
+	_, err = reader.Get(ctx, accounttest.InCompany(time.Now().Format("150405.000000000")+"-other", "x"), loc)
+	require.ErrorIs(t, err, ErrObjectNotFound, "под чужим подключением объекта нет")
 }
 
 // envOr — локальный S3 (seaweedfs) принимает любые ключи.
@@ -221,7 +289,7 @@ func envOr(name, fallback string) string {
 func TestConditionalConflictIsNotSuccess(t *testing.T) {
 	putter := &fakePutter{err: &smithy.GenericAPIError{Code: "ConditionalRequestConflict"}}
 
-	_, err := New(putter, "b", 1).Put(context.Background(), page(`{}`))
+	_, err := New(putter, "b", 1).Put(context.Background(), testRef, page(`{}`))
 
 	require.Error(t, err, "409 не доказывает, что объект сохранён")
 }
@@ -230,7 +298,7 @@ func TestHungPutIsBoundedByTimeout(t *testing.T) {
 	store := New(&fakePutter{hang: true}, "b", 1).WithPutTimeout(20 * time.Millisecond)
 
 	started := time.Now()
-	_, err := store.Put(context.Background(), page(`{}`))
+	_, err := store.Put(context.Background(), testRef, page(`{}`))
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)

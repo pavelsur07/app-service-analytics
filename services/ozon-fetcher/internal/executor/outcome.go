@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/ozon"
+	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/rawstore"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/store"
 )
 
@@ -117,7 +118,9 @@ func (e *Executor) outcome(parent, taskCtx context.Context, task store.Task, run
 		log.Error("stored product list page is not readable", slog.String("stage", "fetch"), slog.String("error", err.Error()))
 		return store.Outcome{Status: store.StatusFailedPermanent, Label: "catalog_raw_invalid", ErrorClass: "catalog_raw_invalid", NextRunAt: now}
 	}
-	if errors.Is(err, errUnknownResource) || errors.Is(err, errBadPeriod) {
+	// Ресурс или период задачи вне формы сегмента ключа: повтор той же задачи
+	// соберёт тот же ключ, поэтому это постоянная ошибка, а не сбой хранилища.
+	if errors.Is(err, errUnknownResource) || errors.Is(err, errBadPeriod) || errors.Is(err, rawstore.ErrInvalidKey) {
 		return store.Outcome{Status: store.StatusFailedPermanent, Label: "invalid_task", ErrorClass: "invalid_task", NextRunAt: now}
 	}
 	var se *storeError

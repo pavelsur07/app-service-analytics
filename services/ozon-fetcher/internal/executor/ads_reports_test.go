@@ -104,12 +104,12 @@ func reportsHarness(t *testing.T, at string, campaigns string, daily map[string]
 	h.tasks.content = map[string][]store.RawObject{}
 	if campaigns != "" {
 		uri := "s3://raw/campaigns"
-		reader.bodies[uri] = campaigns
+		reader.bodies[sha(campaigns)] = campaigns
 		h.tasks.content[ResourceAdsCampaigns+"/"+clk.Now().In(DefaultConfig().Location).Format(time.DateOnly)] = []store.RawObject{{PageNo: 1, StorageURI: uri, SHA256: sha(campaigns)}}
 	}
 	for day, body := range daily {
 		uri := "s3://raw/daily/" + day
-		reader.bodies[uri] = body
+		reader.bodies[sha(body)] = body
 		h.tasks.content[ResourceAdsDaily+"/"+day] = []store.RawObject{{PageNo: 1, StorageURI: uri, SHA256: sha(body)}}
 	}
 	h.exec = h.exec.WithRawReader(reader)
