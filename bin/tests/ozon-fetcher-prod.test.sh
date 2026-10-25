@@ -112,8 +112,7 @@ fake_compose_env() {
     cat > "$work/compose.sh" <<EOF
 #!/bin/sh
 if [ "\$*" = "config --environment" ]; then
-    cat '$work/resolved'
-    exit 0
+    exec cat '$work/resolved'
 fi
 printf 'ARGS %s\n' "\$*" >> '$work/calls'
 EOF
@@ -143,6 +142,17 @@ test_compose_wrapper_adds_profile_only_when_enabled() {
     grep -qx 'ARGS --profile ozon-fetcher run --rm --no-deps -T ozon-fetcher -migrations-check' "$work/calls" ||
         fail 'профиль не добавлен включённому сервису'
     [[ "$output" != *do-not-print-me* ]] || fail 'окружение compose напечатано'
+
+    # Сбой compose — не «выключен»: код 2 и ни одной команды без профиля.
+    rm -f "$work/resolved"
+    : > "$work/calls"
+    local rc=0
+    COMPOSE="$work/compose.sh" sh "$COMPOSE_WRAPPER" --enabled 2>/dev/null || rc=$?
+    [[ $rc == 2 ]] || fail "сбой compose: код $rc вместо 2"
+    rc=0
+    COMPOSE="$work/compose.sh" sh "$COMPOSE_WRAPPER" up -d 2>/dev/null || rc=$?
+    [[ $rc == 2 ]] || fail 'сбой compose: up -d не отказал'
+    [[ ! -s "$work/calls" ]] || fail 'сбой compose: команда выполнена без профиля'
 }
 
 test_secrets_are_generated_once_and_never_printed

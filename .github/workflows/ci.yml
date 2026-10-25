@@ -825,10 +825,15 @@ jobs:
           set -eu
           SSH="ssh -i $HOME/.ssh/deploy -o BatchMode=yes root@${{ secrets.DEPLOY_HOST }}"
           IMAGE='ghcr.io/${{ github.repository }}/ozon-fetcher:${{ needs.image.outputs.tag }}'
-          if ! $SSH 'cd /opt/conwix && sh ozon-fetcher/ozon-fetcher-compose.sh --enabled'; then
-            echo 'ozon-fetcher выключен (OZON_FETCHER_ENABLED) — шаг пропущен'
-            exit 0
-          fi
+          # 0 — включён, 1 — выключен; любой другой код (сбой compose
+          # или ssh) — отказ шага, а не пропуск гейта.
+          rc=0
+          $SSH 'cd /opt/conwix && sh ozon-fetcher/ozon-fetcher-compose.sh --enabled' || rc=$?
+          case $rc in
+            0) ;;
+            1) echo 'ozon-fetcher выключен (OZON_FETCHER_ENABLED) — шаг пропущен'; exit 0 ;;
+            *) echo "включённость ozon-fetcher не определена (код $rc)" >&2; exit 1 ;;
+          esac
           # Токен — через stdin ssh, не в тексте удалённой команды.
           printf '%s' "$GHCR_TOKEN" \
             | $SSH "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
@@ -854,9 +859,14 @@ jobs:
              # Выключенный ozon-fetcher (OZON_FETCHER_ENABLED=false) —
              # откат выкладкой (ADR-043): up -d без профиля работающий
              # контейнер не трогает, поэтому он останавливается явно.
-             if ! sh ozon-fetcher/ozon-fetcher-compose.sh --enabled; then
-               docker compose -f docker-compose.prod.yml --profile ozon-fetcher rm -sf ozon-fetcher
-             fi'
+             # Только при «выключен» (код 1); сбой определения — отказ.
+             rc=0
+             sh ozon-fetcher/ozon-fetcher-compose.sh --enabled || rc=$?
+             case $rc in
+               0) ;;
+               1) docker compose -f docker-compose.prod.yml --profile ozon-fetcher rm -sf ozon-fetcher ;;
+               *) exit 1 ;;
+             esac'
 
       # С повторами, а не один запрос после sleep: контейнер поднимается
       # не мгновенно, и одиночная проверка ловила пустой ответ, объявляя
