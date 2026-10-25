@@ -5,6 +5,11 @@
 //
 // Подключения: cab-ok (обычное), cab-429 (каждый 3-й запрос by-day — 429 с
 // Retry-After: 1), cab-401 (ключ отклонён). Счётчики — GET /stats.
+//
+// Ozon-часть принимает и подключения настоящей выдачи PHP песочницы:
+// ключ сверяется по Client-Id вида client-<метка> и Api-Key key-<метка>,
+// так что подключение, заведённое в Conwix с такими ключами, грузится
+// сквозь мок (сквозной прогон — README сервиса, «Стенд»).
 package main
 
 import (
@@ -48,7 +53,7 @@ func cabinet(ref string) map[string]any {
 		"marketplace_account_id": accounts[ref][0], "company_id": accounts[ref][1], "provider": "ozon",
 		"updated_at":     "2026-10-17T09:00:00+03:00",
 		"credentials":    map[string]any{"seller": map[string]string{"client_id": "client-" + ref, "api_key": "key-" + ref}, "performance": nil},
-		"resource_types": []string{"ozon.finance.accrual-by-day", "ozon.finance.accrual-types", "ozon.finance.realization", "ozon.finance.mutual-settlement"},
+		"resource_types": []string{"ozon.finance.accrual-by-day", "ozon.orders.fbo", "ozon.products.list", "ozon.products.info"},
 	}
 }
 
@@ -115,6 +120,36 @@ func main() {
 		count(ref + " report-info")
 		// Отчёт не формируется на стенде: проверяем исход not_ready.
 		writeJSON(w, 200, map[string]any{"result": map[string]any{"status": "processing"}})
+	}))
+	// Первая волна ADR-043: FBO v3 — одна страница с двумя отправлениями,
+	// каталог — страница товаров и пустая страница-конец, карточки — по
+	// запрошенным product_id.
+	mux.HandleFunc("POST /v3/posting/fbo/list", ozon(func(w http.ResponseWriter, _ *http.Request, ref string, _ map[string]any) {
+		count(ref + " fbo")
+		writeJSON(w, 200, map[string]any{"postings": []any{
+			map[string]any{"posting_number": "0000-" + ref + "-1", "status": "delivered"},
+			map[string]any{"posting_number": "0000-" + ref + "-2", "status": "delivering"},
+		}, "has_next": false, "cursor": ""})
+	}))
+	mux.HandleFunc("POST /v3/product/list", ozon(func(w http.ResponseWriter, _ *http.Request, ref string, body map[string]any) {
+		count(ref + " product-list")
+		if lastID, _ := body["last_id"].(string); lastID != "" {
+			writeJSON(w, 200, map[string]any{"result": map[string]any{"items": []any{}, "last_id": "", "total": 2}})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"result": map[string]any{"items": []any{
+			map[string]any{"product_id": 1001, "offer_id": ref + "-a"},
+			map[string]any{"product_id": 1002, "offer_id": ref + "-b"},
+		}, "last_id": "p1", "total": 2}})
+	}))
+	mux.HandleFunc("POST /v3/product/info/list", ozon(func(w http.ResponseWriter, _ *http.Request, ref string, body map[string]any) {
+		count(ref + " product-info")
+		ids, _ := body["product_id"].([]any)
+		items := make([]any, 0, len(ids))
+		for _, id := range ids {
+			items = append(items, map[string]any{"id": id, "name": "item " + ref})
+		}
+		writeJSON(w, 200, map[string]any{"items": items})
 	}))
 	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, _ *http.Request) {
 		mu.Lock()

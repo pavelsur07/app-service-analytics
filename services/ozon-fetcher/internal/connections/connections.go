@@ -38,6 +38,9 @@ const (
 	maxPages = 1000
 	// ForceRefreshMinInterval — 401 у нескольких кабинетов не превращается в шторм запросов.
 	ForceRefreshMinInterval = 30 * time.Second
+	// DefaultMaxStale — срок снимка без подтверждения выдачей (ADR-043 п. 4):
+	// шесть интервалов поллинга по 5 минут.
+	DefaultMaxStale = 30 * time.Minute
 )
 
 // Cabinet — подключение Ozon. Ключи — только в памяти, при печати скрыты.
@@ -338,10 +341,18 @@ type Fetcher interface {
 }
 
 // Cache — последний успешный снимок. Безопасен для параллельного чтения.
+//
+// Правила отзыва (ADR-043 п. 4, services/AGENTS.md §2): подключение, которого
+// нет в успешно собранной выдаче, сразу теряет ключи — снимок заменяется
+// целиком; снимок без подтверждения дольше maxStale не годится (Fresh —
+// false), и задачи стоят до успешной выдачи. Об обоих событиях узнают
+// подписчики (OnChange): идущие задачи отзываются, а не дорабатывают
+// со снятым ключом.
 type Cache struct {
-	source Fetcher
-	logger *slog.Logger
-	now    func() time.Time
+	source   Fetcher
+	logger   *slog.Logger
+	now      func() time.Time
+	maxStale time.Duration
 
 	mu          sync.RWMutex
 	byRef       map[account.Ref]Cabinet
@@ -350,17 +361,19 @@ type Cache struct {
 	lastAttempt time.Time
 	lastSuccess time.Time // начало последнего успешного обновления
 	refreshMu   sync.Mutex
-	allow       map[string]bool // пусто — все кабинеты
+	allow       map[string]bool // marketplace_account_id; пусто — ни одного
+	stale       bool            // о переходе в «устарел» уже сообщено
+	onChange    []func()
 }
 
 func NewCache(source Fetcher, logger *slog.Logger, now func() time.Time) *Cache {
-	return &Cache{source: source, logger: logger, now: now, byRef: map[account.Ref]Cabinet{}}
+	return &Cache{source: source, logger: logger, now: now, maxStale: DefaultMaxStale, byRef: map[account.Ref]Cabinet{}, allow: map[string]bool{}}
 }
 
-// WithAllowlist — грузить только подключения, чей marketplace_account_id или
-// company_id в списке (поэтапное включение на проде); пустой список — все.
-// Семантика пустого списка меняется на «ни одного» на этапе 5 плана
-// (ADR-043 п. 5); до него планировщик выключен.
+// WithAllowlist — грузить только подключения, чей marketplace_account_id
+// в списке. Закрыт по умолчанию (ADR-043 п. 5): пустой список — ни одного
+// подключения, значения «все» нет; подключения добавляются поимённо,
+// каждое с согласия владельца кабинета.
 func (c *Cache) WithAllowlist(ids []string) *Cache {
 	c.allow = map[string]bool{}
 	for _, id := range ids {
@@ -371,8 +384,27 @@ func (c *Cache) WithAllowlist(ids []string) *Cache {
 	return c
 }
 
+// WithMaxStale — срок снимка без подтверждения выдачей (CONNECTIONS_MAX_STALE).
+func (c *Cache) WithMaxStale(d time.Duration) *Cache {
+	c.maxStale = d
+	return c
+}
+
+// OnChange — вызывается после каждого успешного обновления снимка и при
+// переходе снимка в «устарел»; подписчик сверяет с кэшем идущие задачи.
+// Подписка — до Run.
+func (c *Cache) OnChange(fn func()) {
+	c.onChange = append(c.onChange, fn)
+}
+
+func (c *Cache) notify() {
+	for _, fn := range c.onChange {
+		fn()
+	}
+}
+
 func (c *Cache) allowed(cab Cabinet) bool {
-	return len(c.allow) == 0 || c.allow[cab.Account.AccountID] || c.allow[cab.Account.CompanyID]
+	return c.allow[cab.Account.AccountID]
 }
 
 // Ready — есть хотя бы один успешный снимок.
@@ -380,6 +412,38 @@ func (c *Cache) Ready() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.ready
+}
+
+// Fresh — снимок есть и подтверждён выдачей не раньше maxStale назад.
+// Устаревший снимок задач не даёт: отзыв в Conwix ключ у Ozon не отзывает,
+// и без подтверждения сервис не узнал бы, что ключ снят (ADR-043 п. 4).
+func (c *Cache) Fresh() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.freshLocked()
+}
+
+func (c *Cache) freshLocked() bool {
+	return c.ready && c.now().Sub(c.lastSuccess) <= c.maxStale
+}
+
+// checkStale сообщает о переходе снимка в «устарел» один раз: ERROR
+// в журнал и трекер, подписчикам — отозвать идущие задачи.
+func (c *Cache) checkStale() {
+	c.mu.Lock()
+	becameStale := c.ready && !c.freshLocked() && !c.stale
+	if becameStale {
+		c.stale = true
+	}
+	since := c.lastSuccess
+	c.mu.Unlock()
+	if !becameStale {
+		return
+	}
+	c.logger.Error("connections snapshot is stale, all tasks stopped until the next successful issue",
+		slog.String("stage", "connections"), slog.String("error_class", "connections_stale"),
+		slog.Time("last_success", since), slog.Duration("max_stale", c.maxStale))
+	c.notify()
 }
 
 // List — кабинеты последнего снимка; глубокая копия: вызывающий не меняет кэш.
@@ -438,6 +502,7 @@ func (c *Cache) refreshLocked(ctx context.Context) error {
 		return err
 	}
 
+	issued := len(cabinets)
 	kept := cabinets[:0:0]
 	for _, cab := range cabinets {
 		if c.allowed(cab) {
@@ -451,11 +516,17 @@ func (c *Cache) refreshLocked(ctx context.Context) error {
 	}
 	c.mu.Lock()
 	c.byRef, c.list, c.ready, c.lastSuccess = byRef, cabinets, true, started
+	recovered := c.stale
+	c.stale = false
 	c.mu.Unlock()
 
 	c.logger.Info("connections refreshed",
 		slog.String("stage", "connections"), slog.String("outcome", "ok"),
-		slog.Int("cabinets", len(cabinets)), slog.Int64("duration_ms", duration))
+		slog.Int("cabinets", len(cabinets)), slog.Int("issued", issued), slog.Int64("duration_ms", duration))
+	if recovered {
+		c.logger.Info("connections snapshot confirmed again, tasks resume", slog.String("stage", "connections"))
+	}
+	c.notify()
 	return nil
 }
 
@@ -482,8 +553,32 @@ func (c *Cache) ForceRefresh(ctx context.Context) (bool, error) {
 }
 
 // Run обновляет снимок сразу и затем раз в interval до отмены ctx.
+// Срок снимка проверяется отдельным таймером — ровно в момент истечения,
+// а не на следующем тике поллинга, который может висеть на запросе к PHP.
 func (c *Cache) Run(ctx context.Context, interval time.Duration) {
-	_ = c.Refresh(ctx)
+	if len(c.allow) == 0 {
+		c.logger.Warn("connection allowlist is empty: no connection will be loaded",
+			slog.String("stage", "connections"))
+	}
+	refresh := func() {
+		_ = c.Refresh(ctx)
+		c.checkStale()
+	}
+	staleTimer := time.NewTimer(c.untilStale())
+	go func() {
+		defer staleTimer.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-staleTimer.C:
+				c.checkStale()
+				staleTimer.Reset(c.untilStale())
+			}
+		}
+	}()
+
+	refresh()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -491,7 +586,22 @@ func (c *Cache) Run(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_ = c.Refresh(ctx)
+			refresh()
 		}
 	}
+}
+
+// untilStale — сколько осталось до истечения снимка; уже истёк или снимка
+// нет — повторная проверка через maxStale.
+func (c *Cache) untilStale() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if !c.ready {
+		return c.maxStale
+	}
+	left := c.lastSuccess.Add(c.maxStale).Sub(c.now()) + time.Millisecond
+	if left <= 0 {
+		return c.maxStale
+	}
+	return left
 }

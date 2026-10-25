@@ -155,14 +155,27 @@ func (t *Tasks) PlanOnce(ctx context.Context, ref account.Ref, kind, runDate str
 	return true, nil
 }
 
-// ClaimNextAcrossConnections захватывает готовую задачу одного из refs (активный снимок):
-// подключение без running-задачи и без паузы, ресурс не остановлен.
+// Connection — подключение снимка выдачи и версия его ключей (updated_at
+// выдачи): по ней выдача задач узнаёт, что отказанный ключ заменён.
+type Connection struct {
+	Account    account.Ref
+	KeyVersion time.Time
+}
+
+// ClaimNextAcrossConnections захватывает готовую задачу одного из conns (активный снимок):
+// подключение без running-задачи и без паузы, ресурс не остановлен, ключ
+// семейства задачи не отказан дважды в выданной версии.
 // Порядок — приоритет, давно не обслуживавшееся подключение, время.
 // Межарендаторное чтение операционной задачи (CLAUDE.md §1, ADR-043):
 // диспетчер обслуживает подключения всех компаний.
-func (t *Tasks) ClaimNextAcrossConnections(ctx context.Context, refs []account.Ref, owner, attemptID, traceID string, now time.Time, lease time.Duration) (Task, error) {
-	if len(refs) == 0 {
+func (t *Tasks) ClaimNextAcrossConnections(ctx context.Context, conns []Connection, owner, attemptID, traceID string, now time.Time, lease time.Duration) (Task, error) {
+	if len(conns) == 0 {
 		return Task{}, ErrNoTask
+	}
+	refs := make([]account.Ref, len(conns))
+	versions := make([]time.Time, len(conns))
+	for i, c := range conns {
+		refs[i], versions[i] = c.Account, c.KeyVersion
 	}
 	companies, accounts := splitRefs(refs)
 	tx, err := t.pool.Begin(ctx)
@@ -178,13 +191,21 @@ func (t *Tasks) ClaimNextAcrossConnections(ctx context.Context, refs []account.R
 		       COALESCE(t.cursor, ''), t.next_page_no, t.page_hashes, COALESCE(t.content_hash, ''), t.revision,
 		       COALESCE(t.last_error_class, '')
 		FROM fetch_task t
+		JOIN unnest($1::uuid[], $2::uuid[], $4::timestamptz[]) AS v(company_id, marketplace_account_id, key_version)
+		       ON v.company_id = t.company_id AND v.marketplace_account_id = t.marketplace_account_id
 		LEFT JOIN connection_state cs
 		       ON cs.company_id = t.company_id AND cs.marketplace_account_id = t.marketplace_account_id
 		WHERE t.status IN ('pending', 'not_ready', 'failed_retryable')
 		  AND t.next_run_at <= $3
-		  AND (t.company_id, t.marketplace_account_id) IN (SELECT * FROM unnest($1::uuid[], $2::uuid[]))
-		  -- Пауза подключения — по отказу ключа seller; у рекламы свой ключ.
-		  AND (t.resource_type LIKE 'ozon.ads.%' OR cs.suspended_until IS NULL OR cs.suspended_until <= $3)
+		  -- Отказ ключа (ADR-043 п. 4) — по семейству задачи: у рекламы свой
+		  -- ключ. Короткая пауза после первого 401; со второго отказа той же
+		  -- версии — до новых ключей в выдаче, без срока.
+		  AND CASE WHEN t.resource_type LIKE 'ozon.ads.%'
+		      THEN (cs.ads_suspended_until IS NULL OR cs.ads_suspended_until <= $3)
+		           AND NOT (COALESCE(cs.ads_auth_failures, 0) >= $5 AND cs.ads_auth_key_version IS NOT DISTINCT FROM v.key_version)
+		      ELSE (cs.suspended_until IS NULL OR cs.suspended_until <= $3)
+		           AND NOT (COALESCE(cs.auth_failures, 0) >= $5 AND cs.auth_key_version IS NOT DISTINCT FROM v.key_version)
+		      END
 		  -- Одна running-задача на (подключение, семейство API): индекс
 		  -- fetch_task_one_running_per_connection_family.
 		  AND NOT EXISTS (SELECT 1 FROM fetch_task r
@@ -201,7 +222,7 @@ func (t *Tasks) ClaimNextAcrossConnections(ctx context.Context, refs []account.R
 		ORDER BY t.priority DESC, cs.last_served_at ASC NULLS FIRST, t.next_run_at ASC
 		LIMIT 1
 		FOR UPDATE OF t SKIP LOCKED`,
-		companies, accounts, now,
+		companies, accounts, now, versions, AuthPauseFailures,
 	).Scan(&task.Account.CompanyID, &task.Account.AccountID, &task.ResourceType, &task.PeriodKey, &task.Attempts,
 		&task.Cursor, &task.NextPageNo, &pageHashes, &task.ContentHash, &task.Revision, &task.LastErrorClass)
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -75,10 +75,37 @@ func (t *Tasks) SuspendConnection(ctx context.Context, ref account.Ref, reason s
 	return nil
 }
 
-// RecordAuthFailure — отказ ключа кабинета: счётчик подряд +1 и пауза до
-// until (длина паузы зависит от счётчика — решает вызывающий через pauseFor).
-// Возвращает номер отказа подряд.
-func (t *Tasks) RecordAuthFailure(ctx context.Context, ref account.Ref, now time.Time, pauseFor func(failures int) time.Duration) (int, error) {
+// KeyFamily — ключ подключения: у Seller API и рекламы (Performance API)
+// свои ключи, свои отказы и свои паузы.
+type KeyFamily string
+
+const (
+	KeySeller KeyFamily = "seller"
+	KeyAds    KeyFamily = "ads"
+)
+
+// AuthPauseFailures — со скольких 401 одной версии ключей семейство
+// кабинета стоит до новых ключей в выдаче (ADR-043 п. 4: одно обновление
+// выдачи и один повтор).
+const AuthPauseFailures = 2
+
+// authColumns — столбцы connection_state семейства ключа. Имена из этой
+// таблицы, не из ввода.
+func authColumns(family KeyFamily) (failures, version, suspended string) {
+	if family == KeyAds {
+		return "ads_auth_failures", "ads_auth_key_version", "ads_suspended_until"
+	}
+	return "auth_failures", "auth_key_version", "suspended_until"
+}
+
+// RecordAuthFailure — 401 по ключу семейства: счётчик отказов этой версии
+// ключей +1 (другая версия — счёт заново с 1) и пауза на pauseFor(n);
+// нулевая пауза — без паузы по времени: со второго отказа той же версии
+// выдачу закрывает сама версия (ClaimNextAcrossConnections), пока
+// в выдаче не появятся новые ключи (ADR-043 п. 4). Возвращает номер
+// отказа этой версии.
+func (t *Tasks) RecordAuthFailure(ctx context.Context, ref account.Ref, family KeyFamily, keyVersion, now time.Time, pauseFor func(failures int) time.Duration) (int, error) {
+	failuresCol, versionCol, suspendedCol := authColumns(family)
 	tx, err := t.pool.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("store: auth failure begin: %w", err)
@@ -86,16 +113,30 @@ func (t *Tasks) RecordAuthFailure(ctx context.Context, ref account.Ref, now time
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var failures int
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO connection_state (company_id, marketplace_account_id, auth_failures, updated_at) VALUES ($1, $2, 1, $3)
-		ON CONFLICT (company_id, marketplace_account_id) DO UPDATE SET auth_failures = connection_state.auth_failures + 1, updated_at = $3
-		RETURNING auth_failures`, ref.CompanyID, ref.AccountID, now).Scan(&failures); err != nil {
+	if err := tx.QueryRow(ctx, fmt.Sprintf(`
+		INSERT INTO connection_state (company_id, marketplace_account_id, %[1]s, %[2]s, updated_at) VALUES ($1, $2, 1, $3, $4)
+		ON CONFLICT (company_id, marketplace_account_id) DO UPDATE SET
+			%[1]s = CASE WHEN connection_state.%[2]s = EXCLUDED.%[2]s THEN connection_state.%[1]s + 1 ELSE 1 END,
+			%[2]s = EXCLUDED.%[2]s, updated_at = $4
+		RETURNING %[1]s`, failuresCol, versionCol), ref.CompanyID, ref.AccountID, keyVersion, now).Scan(&failures); err != nil {
 		return 0, fmt.Errorf("store: auth failure count: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE connection_state SET suspended_until = $3, suspend_reason = 'auth' WHERE company_id = $1 AND marketplace_account_id = $2`,
-		ref.CompanyID, ref.AccountID, now.Add(pauseFor(failures))); err != nil {
+	var until *time.Time
+	if pause := pauseFor(failures); pause > 0 {
+		u := now.Add(pause)
+		until = &u
+	}
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`
+		UPDATE connection_state SET %s = $3 WHERE company_id = $1 AND marketplace_account_id = $2`, suspendedCol),
+		ref.CompanyID, ref.AccountID, until); err != nil {
 		return 0, fmt.Errorf("store: auth failure pause: %w", err)
+	}
+	if family == KeySeller {
+		if _, err := tx.Exec(ctx, `
+			UPDATE connection_state SET suspend_reason = CASE WHEN suspended_until IS NULL THEN NULL ELSE 'auth' END
+			WHERE company_id = $1 AND marketplace_account_id = $2`, ref.CompanyID, ref.AccountID); err != nil {
+			return 0, fmt.Errorf("store: auth failure reason: %w", err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("store: auth failure commit: %w", err)
@@ -104,11 +145,17 @@ func (t *Tasks) RecordAuthFailure(ctx context.Context, ref account.Ref, now time
 }
 
 // ResumeConnection снимает паузу и сбрасывает счётчик отказов ключа
-// (успешный запрос после смены ключа).
-func (t *Tasks) ResumeConnection(ctx context.Context, ref account.Ref) error {
-	if _, err := t.pool.Exec(ctx, `
-		UPDATE connection_state SET suspended_until = NULL, suspend_reason = NULL, auth_failures = 0, updated_at = now()
-		WHERE company_id = $1 AND marketplace_account_id = $2 AND (suspended_until IS NOT NULL OR auth_failures > 0)`, ref.CompanyID, ref.AccountID); err != nil {
+// семейства (успешный запрос этим ключом).
+func (t *Tasks) ResumeConnection(ctx context.Context, ref account.Ref, family KeyFamily) error {
+	failuresCol, versionCol, suspendedCol := authColumns(family)
+	reason := ""
+	if family == KeySeller {
+		reason = ", suspend_reason = NULL"
+	}
+	if _, err := t.pool.Exec(ctx, fmt.Sprintf(`
+		UPDATE connection_state SET %[3]s = NULL, %[1]s = 0, %[2]s = NULL%[4]s, updated_at = now()
+		WHERE company_id = $1 AND marketplace_account_id = $2 AND (%[3]s IS NOT NULL OR %[1]s > 0)`,
+		failuresCol, versionCol, suspendedCol, reason), ref.CompanyID, ref.AccountID); err != nil {
 		return fmt.Errorf("store: resume connection: %w", err)
 	}
 	return nil

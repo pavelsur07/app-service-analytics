@@ -235,14 +235,71 @@ func TestLoadPlannerAndIngestionSettings(t *testing.T) {
 }
 
 func TestLoadConnectionAllowlist(t *testing.T) {
+	const a, b = "019a1b2c-0000-7000-8000-0000000000a1", "019a1b2c-0000-7000-8000-0000000000a2"
 	t.Setenv("SYMFONY_INTERNAL_BASE_URL", "")
-	t.Setenv("CONNECTION_ALLOWLIST", " ref-a, ,company-b ")
+
+	// ADR-043 п. 5: пустой или отсутствующий список — ни одного подключения.
+	t.Setenv("OZON_FETCHER_CONNECTION_ALLOWLIST", "")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(cfg.ConnectionAllowlist, "|") != "ref-a|company-b" {
+	if len(cfg.ConnectionAllowlist) != 0 {
+		t.Errorf("allowlist = %q, want empty", cfg.ConnectionAllowlist)
+	}
+
+	t.Setenv("OZON_FETCHER_CONNECTION_ALLOWLIST", " "+a+", ,"+b+" ")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(cfg.ConnectionAllowlist, "|") != a+"|"+b {
 		t.Errorf("allowlist = %q", cfg.ConnectionAllowlist)
+	}
+
+	// Поимённо: не UUID (в том числе «все») — отказ запуска, а не молча
+	// выпавшее или, наоборот, включённое подключение.
+	for _, bad := range []string{"*", "all", "ref-a", strings.ToUpper(a)} {
+		t.Setenv("OZON_FETCHER_CONNECTION_ALLOWLIST", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "OZON_FETCHER_CONNECTION_ALLOWLIST") {
+			t.Errorf("%q: err = %v, want allowlist error", bad, err)
+		}
+	}
+
+	// Прежнее имя переменной ничего не включает.
+	t.Setenv("OZON_FETCHER_CONNECTION_ALLOWLIST", "")
+	t.Setenv("CONNECTION_ALLOWLIST", a)
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ConnectionAllowlist) != 0 {
+		t.Errorf("CONNECTION_ALLOWLIST must not be read, got %q", cfg.ConnectionAllowlist)
+	}
+}
+
+func TestLoadConnectionsMaxStale(t *testing.T) {
+	t.Setenv("SYMFONY_INTERNAL_BASE_URL", "")
+	t.Setenv("CONNECTIONS_POLL_INTERVAL", "")
+	t.Setenv("CONNECTIONS_MAX_STALE", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectionsMaxStale != 30*time.Minute {
+		t.Errorf("default max stale = %s, want 30m", cfg.ConnectionsMaxStale)
+	}
+
+	t.Setenv("CONNECTIONS_MAX_STALE", "45m")
+	if cfg, err = Load(); err != nil || cfg.ConnectionsMaxStale != 45*time.Minute {
+		t.Errorf("max stale = %s, err = %v", cfg.ConnectionsMaxStale, err)
+	}
+
+	for _, bad := range []string{"0", "-1m", "soon", "5m", "4m"} {
+		t.Setenv("CONNECTIONS_MAX_STALE", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "CONNECTIONS_MAX_STALE") {
+			t.Errorf("%q: err = %v, want max stale error", bad, err)
+		}
 	}
 }
 

@@ -48,7 +48,7 @@ func Start(ctx context.Context, cfg config.Config, pool *store.Pool, logger *slo
 
 	cabinets := connections.NewCache(
 		connections.NewClient(cfg.SymfonyBaseURL, cfg.InternalAuthToken, &http.Client{Timeout: 30 * time.Second}),
-		logger, now).WithAllowlist(cfg.ConnectionAllowlist)
+		logger, now).WithAllowlist(cfg.ConnectionAllowlist).WithMaxStale(cfg.ConnectionsMaxStale)
 
 	limits := ratelimit.New(ratelimit.DefaultConfig(), now, ozon.SleepContext, func(ref account.Ref, endpoint string, rps float64) {
 		go func() {
@@ -85,6 +85,9 @@ func Start(ctx context.Context, cfg config.Config, pool *store.Pool, logger *slo
 	exec := executor.New(execCfg, tasks, raw, client, cabinets, logger, now, jitter, ozon.SleepContext).
 		WithRawReader(rawstore.NewReader(s3Client, cfg.S3Bucket)).
 		WithPerformance(perf)
+	// Отзыв доходит до идущих задач (ADR-043 п. 4): после каждого обновления
+	// снимка и при его устаревании исполнитель сверяет их с выдачей.
+	cabinets.OnChange(exec.Reconcile)
 
 	// Пустой ORDERS_FROM — с M-2, как первичная загрузка начислений.
 	var ordersFrom time.Time
@@ -121,7 +124,7 @@ func Start(ctx context.Context, cfg config.Config, pool *store.Pool, logger *slo
 		}()
 	}
 	logger.Info("ingestion started", slog.String("stage", "start"), slog.Int("max_parallel", cfg.MaxParallelConnections),
-		slog.Int("allowlist", len(cfg.ConnectionAllowlist)))
+		slog.Int("allowlist", len(cfg.ConnectionAllowlist)), slog.Duration("connections_max_stale", cfg.ConnectionsMaxStale))
 	return ing, nil
 }
 

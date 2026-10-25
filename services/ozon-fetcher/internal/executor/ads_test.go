@@ -74,7 +74,7 @@ func TestAdsResourcesLoadOnePageWithPerformanceKey(t *testing.T) {
 	assert.Equal(t, []string{"expense:" + today, "daily:" + today}, p.days, "день = period_key")
 	require.Len(t, p.creds, 3)
 	assert.Equal(t, perfSecret, p.creds[0].ClientSecret)
-	assert.Empty(t, h.tasks.resumed, "успех рекламы не сбрасывает счётчик отказов seller")
+	assert.Equal(t, []string{"ads:ref-a", "ads:ref-a", "ads:ref-a"}, h.tasks.resumed, "успех рекламы сбрасывает только отказы рекламного ключа")
 	assert.NotContains(t, h.logs.String(), perfSecret)
 	assert.Equal(t, ResourceAdsExpense, h.raw.puts[1].ResourceType)
 }
@@ -118,26 +118,25 @@ func TestAdsCampaignsOfPassedDayAreMissed(t *testing.T) {
 	assert.Equal(t, "done", res.Outcome, "расход прошлого дня — обычная загрузка")
 }
 
-func TestAdsAuthPausesOnlyTheTask(t *testing.T) {
+// У рекламы свой ключ (ADR-043 п. 4): один повтор после обновления выдачи,
+// затем пауза рекламного ключа кабинета до новых ключей; продажи идут.
+func TestAdsAuthPausesTheAdsKeyUntilNewKeys(t *testing.T) {
 	p := &fakePerf{err: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: ozonperf.EndpointExpense, Status: 401}}
 	h := adsHarness(p)
 
 	res := h.exec.Run(context.Background(), task(ResourceAdsExpense, today), adsCabinet, "trace")
 
 	assert.Equal(t, "auth", res.Outcome)
-	assert.Equal(t, store.StatusFailedRetryable, h.tasks.finished.Status)
-	assert.True(t, h.tasks.finished.NextRunAt.Equal(t0.Add(DefaultConfig().AuthRetryPause)))
-	assert.Empty(t, h.tasks.pauses, "кабинет (seller) не приостанавливается")
+	assert.Equal(t, store.StatusPending, h.tasks.finished.Status)
+	assert.Equal(t, []time.Duration{DefaultConfig().AuthRetryPause}, h.tasks.pauses, "короткая пауза рекламного ключа")
+	assert.Equal(t, []string{"ads@" + adsCabinet.UpdatedAt.Format(time.RFC3339)}, h.tasks.authKeys, "отказ — по ключу рекламы, не seller")
 	assert.Equal(t, 1, h.refresher.calls, "снимок кабинетов — за новым ключом")
 	assert.NotContains(t, h.logs.String(), `"level":"ERROR"`)
 
-	again := task(ResourceAdsExpense, today)
-	again.LastErrorClass = string(ozon.ClassAuth)
-	res = h.exec.Run(context.Background(), again, adsCabinet, "trace")
+	res = h.exec.Run(context.Background(), task(ResourceAdsExpense, today), adsCabinet, "trace")
 	assert.Equal(t, "auth", res.Outcome)
-	assert.True(t, h.tasks.finished.NextRunAt.Equal(t0.Add(DefaultConfig().AuthSuspend)))
+	assert.Equal(t, []time.Duration{DefaultConfig().AuthRetryPause, 0}, h.tasks.pauses, "второй отказ — до новых ключей, без срока")
 	assert.Contains(t, h.logs.String(), `"level":"ERROR"`)
-	assert.Empty(t, h.tasks.pauses)
 	assert.NotContains(t, h.logs.String(), perfSecret)
 }
 

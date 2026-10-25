@@ -26,10 +26,12 @@ func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }
 
 type fakeCabinets struct {
 	ready atomic.Bool
+	stale atomic.Bool
 	list  []connections.Cabinet
 }
 
 func (f *fakeCabinets) Ready() bool                 { return f.ready.Load() }
+func (f *fakeCabinets) Fresh() bool                 { return f.ready.Load() && !f.stale.Load() }
 func (f *fakeCabinets) List() []connections.Cabinet { return f.list }
 func (f *fakeCabinets) Get(ref account.Ref) (connections.Cabinet, bool) {
 	for _, c := range f.list {
@@ -43,11 +45,14 @@ func (f *fakeCabinets) Get(ref account.Ref) (connections.Cabinet, bool) {
 func cabinets(refs ...string) *fakeCabinets {
 	f := &fakeCabinets{}
 	for _, r := range refs {
-		f.list = append(f.list, connections.Cabinet{Account: accounttest.Ref(r)})
+		f.list = append(f.list, connections.Cabinet{Account: accounttest.Ref(r), UpdatedAt: keyVersion})
 	}
 	f.ready.Store(true)
 	return f
 }
+
+// keyVersion — версия ключей кабинетов фейка; доходит до выдачи задач.
+var keyVersion = time.Date(2026, 10, 25, 6, 0, 0, 0, time.UTC)
 
 // queueClaimer — очередь задач в памяти с правилом «один кабинет — одна задача».
 type queueClaimer struct {
@@ -57,13 +62,14 @@ type queueClaimer struct {
 	err      error
 	claims   int
 	released atomic.Int32
+	versions []time.Time // версии ключей, переданные в последней выдаче
 }
 
 func newQueue(tasks ...store.Task) *queueClaimer {
 	return &queueClaimer{queue: tasks, running: map[string]bool{}}
 }
 
-func (q *queueClaimer) ClaimNextAcrossConnections(_ context.Context, refs []account.Ref, _, attemptID, _ string, _ time.Time, _ time.Duration) (store.Task, error) {
+func (q *queueClaimer) ClaimNextAcrossConnections(_ context.Context, conns []store.Connection, _, attemptID, _ string, _ time.Time, _ time.Duration) (store.Task, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.claims++
@@ -71,8 +77,10 @@ func (q *queueClaimer) ClaimNextAcrossConnections(_ context.Context, refs []acco
 		return store.Task{}, q.err
 	}
 	allowed := map[string]bool{}
-	for _, r := range refs {
-		allowed[accounttest.Label(r)] = true
+	q.versions = q.versions[:0]
+	for _, c := range conns {
+		allowed[accounttest.Label(c.Account)] = true
+		q.versions = append(q.versions, c.KeyVersion)
 	}
 	for i, t := range q.queue {
 		if allowed[accounttest.Label(t.Account)] && !q.running[accounttest.Label(t.Account)] {
@@ -260,6 +268,28 @@ func TestOnlyActiveCabinetsAreClaimed(t *testing.T) {
 
 	runUntil(t, d, func() bool { return q.remaining() == 2 })
 	assert.Equal(t, 2, q.remaining(), "задачи исчезнувшего кабинета не выдаются")
+}
+
+// ADR-043 п. 4: снимок без подтверждения дольше CONNECTIONS_MAX_STALE
+// задач не даёт — выдача даже не спрашивается; подтвердился — задачи идут.
+func TestStaleSnapshotClaimsNothing(t *testing.T) {
+	q := newQueue(tasksFor("a", 1)...)
+	c := cabinets("a")
+	c.stale.Store(true)
+	r := &recordingRunner{queue: q, delay: func(string) time.Duration { return 0 }}
+	d := newDispatcher(q, c, r, 1)
+
+	time.AfterFunc(50*time.Millisecond, func() {
+		q.mu.Lock()
+		claims := q.claims
+		q.mu.Unlock()
+		assert.Zero(t, claims, "устаревший снимок — ни одного запроса выдачи")
+		c.stale.Store(false)
+	})
+	runUntil(t, d, func() bool { return q.remaining() == 0 })
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	assert.Equal(t, []time.Time{keyVersion}, q.versions, "в выдачу уходит версия ключей кабинета")
 }
 
 func TestShutdownWaitsForWorkers(t *testing.T) {

@@ -20,14 +20,21 @@ type StatusReport struct {
 }
 
 type CabinetStatus struct {
-	CompanyID      string           `json:"company_id"`
-	AccountID      string           `json:"marketplace_account_id"`
-	SuspendedUntil *time.Time       `json:"suspended_until"`
-	SuspendReason  string           `json:"suspend_reason,omitempty"`
-	AuthFailures   int              `json:"auth_failures"`
-	Resources      []ResourceStatus `json:"resources"`
-	Limits         []Limit          `json:"limits"`
-	Outcomes24h    map[string]int   `json:"outcomes_24h"`
+	CompanyID      string     `json:"company_id"`
+	AccountID      string     `json:"marketplace_account_id"`
+	SuspendedUntil *time.Time `json:"suspended_until"`
+	SuspendReason  string     `json:"suspend_reason,omitempty"`
+	AuthFailures   int        `json:"auth_failures"`
+	// AuthPausedKeyVersion — версия ключей продавца, отказанная Ozon
+	// AuthPauseFailures раз подряд: кабинет стоит без срока, пока PHP
+	// не выдаст другую (ADR-043 п. 4). Ads* — то же для ключа рекламы.
+	AuthPausedKeyVersion    *time.Time       `json:"auth_paused_key_version"`
+	AdsSuspendedUntil       *time.Time       `json:"ads_suspended_until"`
+	AdsAuthFailures         int              `json:"ads_auth_failures"`
+	AdsAuthPausedKeyVersion *time.Time       `json:"ads_auth_paused_key_version"`
+	Resources               []ResourceStatus `json:"resources"`
+	Limits                  []Limit          `json:"limits"`
+	Outcomes24h             map[string]int   `json:"outcomes_24h"`
 }
 
 type ResourceStatus struct {
@@ -124,7 +131,8 @@ func (t *Tasks) StatusAllConnections(ctx context.Context, now time.Time, windowF
 	}
 
 	rows, err = t.pool.Query(ctx, `
-		SELECT company_id, marketplace_account_id, suspended_until, COALESCE(suspend_reason, ''), auth_failures
+		SELECT company_id, marketplace_account_id, suspended_until, COALESCE(suspend_reason, ''), auth_failures,
+		       auth_key_version, ads_suspended_until, ads_auth_failures, ads_auth_key_version
 		FROM connection_state`)
 	if err != nil {
 		return StatusReport{}, fmt.Errorf("store: status state: %w", err)
@@ -132,9 +140,10 @@ func (t *Tasks) StatusAllConnections(ctx context.Context, now time.Time, windowF
 	for rows.Next() {
 		var ref account.Ref
 		var reason string
-		var until *time.Time
-		var failures int
-		if err := rows.Scan(&ref.CompanyID, &ref.AccountID, &until, &reason, &failures); err != nil {
+		var until, version, adsUntil, adsVersion *time.Time
+		var failures, adsFailures int
+		if err := rows.Scan(&ref.CompanyID, &ref.AccountID, &until, &reason, &failures,
+			&version, &adsUntil, &adsFailures, &adsVersion); err != nil {
 			rows.Close()
 			return StatusReport{}, fmt.Errorf("store: status state scan: %w", err)
 		}
@@ -143,6 +152,16 @@ func (t *Tasks) StatusAllConnections(ctx context.Context, now time.Time, windowF
 			c.SuspendedUntil, c.SuspendReason = until, reason
 		}
 		c.AuthFailures = failures
+		if failures >= AuthPauseFailures {
+			c.AuthPausedKeyVersion = version
+		}
+		if adsUntil != nil && adsUntil.After(now) {
+			c.AdsSuspendedUntil = adsUntil
+		}
+		c.AdsAuthFailures = adsFailures
+		if adsFailures >= AuthPauseFailures {
+			c.AdsAuthPausedKeyVersion = adsVersion
+		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
