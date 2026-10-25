@@ -16,7 +16,7 @@ Conwix. Правила — `services/AGENTS.md` §3.
 | Контракт | Версии | Стороны | Статус |
 |---|---|---|---|
 | [marketplace-connections](marketplace-connections/v1/) | v1 | производитель: PHP (сервисный контур, ADR-043); потребитель: `services/*` | **проект** до этапа 4 |
-| [service-coverage](service-coverage/v1/) | v1 | производитель: `services/*` (`GET /internal/coverage`); потребитель: PHP (позже) | действует у сервиса |
+| [service-coverage](service-coverage/v1/) | v1 | производитель: `services/*` (`GET /internal/coverage`); потребитель: PHP (экран «Покрытие GO» админки) | действует |
 
 Контракт выдачи фактов (`source-fact-envelope` ВашФинДир) не перенесён:
 передача данных сервиса в PHP — вторая волна, отдельный ADR.

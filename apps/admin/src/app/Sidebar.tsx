@@ -1,4 +1,4 @@
-import { Building2, Link2, LogOut, ShieldCheck } from 'lucide-react'
+import { Activity, Building2, Link2, LogOut, ShieldCheck } from 'lucide-react'
 import { NavLink } from 'react-router'
 
 import { Button } from '../../../../packages/ui/src'
@@ -38,6 +38,17 @@ export function Sidebar() {
       >
         <Link2 aria-hidden="true" size={16} />
         Ссылки
+      </NavLink>
+
+      {/* Обе роли: экран только читает и данных компаний не показывает. */}
+      <NavLink
+        to="/service-coverage"
+        className={({ isActive }) =>
+          `${ITEM} ${isActive ? ITEM_ACTIVE : ITEM_IDLE}`
+        }
+      >
+        <Activity aria-hidden="true" size={16} />
+        Покрытие GO
       </NavLink>
 
       {currentAdmin.data?.role === 'super_admin' && (

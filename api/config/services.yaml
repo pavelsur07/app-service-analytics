@@ -105,6 +105,19 @@ services:
 
     App\Ingestion\Domain\RawDocumentStorage: '@App\Ingestion\Infrastructure\Storage\S3RawDocumentStorage'
 
+    # Экран «Покрытие GO» (ADR-043 п. 6): переключатель, адрес ozon-fetcher
+    # и токен направления «PHP → сервис»; выключен или пусто — экран
+    # показывает «сервис выключен». Allowlist — тот же, что у сервиса.
+    App\Ingestion\Infrastructure\ServiceCoverage\OzonFetcherCoverageClient:
+        arguments:
+            $enabled: '%env(OZON_FETCHER_ENABLED)%'
+            $baseUrl: '%env(OZON_FETCHER_BASE_URL)%'
+            $token: '%env(OZON_FETCHER_SERVICE_API_TOKEN)%'
+
+    App\Ingestion\Infrastructure\ServiceCoverage\OzonFetcherAllowlist:
+        arguments:
+            $allowlist: '%env(OZON_FETCHER_CONNECTION_ALLOWLIST)%'
+
     App\Identity\Domain\CaptchaVerifier: '@App\Identity\Infrastructure\Api\YandexSmartCaptchaVerifier'
 
     App\Identity\Infrastructure\Api\YandexSmartCaptchaVerifier:

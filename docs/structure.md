@@ -404,6 +404,14 @@ SKU за дни раньше вчерашнего — асинхронные о�
 В песочнице хранилище — сервис `s3` (SeaweedFS) из `docker-compose.yml`
 (бакеты `conwix-dev` и `conwix-test`), на проде — S3 Timeweb Cloud.
 
+**Экран «Покрытие GO» админки (ADR-043 п. 6)** — потребитель контракта
+`services/_contracts/service-coverage/v1`: клиент сервиса и разбор
+ответа — `Ingestion/Infrastructure/ServiceCoverage/` (`OzonFetcherCoverageClient`,
+`OzonFetcherAllowlist`), загрузка PHP по кабинетам allowlist —
+`Infrastructure/Query/PhpDayLoadsForAdminQuery` (межарендаторное чтение
+системного контура), вход — `Ui/Controller/Admin/GetServiceCoverageController`,
+ответ — `Ui/Response/Admin`. Запрос и контроллер — в узких слоях Deptrac.
+
 Общая абстракция коннектора появляется после второго коннектора,
 не до первого.
 
@@ -734,8 +742,11 @@ apps/admin/src/
 │   ├── auth/           вход, выход
 │   ├── accounts/       список аккаунтов, регистрация, блокировка
 │   ├── administrators/ SuperAdmin заводит Admin
-│   └── links/          короткие ссылки и переходы по дням месяца;
-│                       формы создания и изменения в локальном LinkFormDialog
+│   ├── links/          короткие ссылки и переходы по дням месяца;
+│   │                   формы создания и изменения в локальном LinkFormDialog
+│   └── service-coverage/ «Покрытие GO»: покрытие ozon-fetcher рядом
+│                       с загрузкой PHP; состояние ячейки, проблемы
+│                       и вердикт — чистые функции в model/coverage.ts
 ├── shared/
 │   ├── lib/            adminQueryKey, форматирование
 │   └── model/          useCurrentAdmin — «кто я», нужен и оболочке,
