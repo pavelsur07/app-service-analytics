@@ -38,6 +38,7 @@ final class OzonFetcherCoverageClientTest extends TestCase
         $snapshot = OzonFetcherCoverageClient::parse($example);
 
         self::assertSame(ServiceCoverageState::Ok, $snapshot->state);
+        self::assertSame($example, $snapshot->payload, 'сохраняется ровно разобранный ответ');
         self::assertSame(1, $snapshot->cabinetsTotal);
         self::assertSame('2026-10-25T09:00:00+00:00', $snapshot->generatedAt?->format(\DATE_ATOM));
         self::assertCount(5, $snapshot->rows);
@@ -162,6 +163,12 @@ final class OzonFetcherCoverageClientTest extends TestCase
             return $p;
         }];
         yield 'кривое время' => [static fn (array $p): array => [...$p, 'generated_at' => 'вчера']];
+        yield 'несуществующая дата во времени' => [static fn (array $p): array => [...$p, 'generated_at' => '2026-02-30T09:00:00Z']];
+        yield 'несуществующая дата успеха' => [static function (array $p): array {
+            $p['rows'][0]['last_success_at'] = '2026-10-32T08:00:00Z';
+
+            return $p;
+        }];
         yield 'кривая дата окна' => [static fn (array $p): array => [...$p, 'from' => '2026-02-30']];
         yield 'строки не список' => [static fn (array $p): array => [...$p, 'rows' => ['a' => 1]]];
     }

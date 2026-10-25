@@ -11,6 +11,9 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 /**
  * Потребитель контракта service-coverage v1 (`services/_contracts/`,
  * ADR-043 п. 6): сводка покрытия ozon-fetcher для экрана «Покрытие GO».
+ * Вызывается только процессом снятия сводки по расписанию
+ * (CaptureServiceCoverageAction), не из запроса пользователя
+ * (services/AGENTS.md §2).
  *
  * Токен — направления «PHP → сервис» (`OZON_FETCHER_SERVICE_API_TOKEN`).
  * Ни он, ни тело ответа не попадают в журнал: при отказе пишется только
@@ -24,10 +27,10 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 final readonly class OzonFetcherCoverageClient
 {
     /**
-     * Запрос идёт внутри запроса администратора — короткий потолок
-     * без повторов, как у капчи.
+     * Следующая попытка — через интервал процесса снятия, повторы
+     * внутри одной не нужны.
      */
-    private const float TIMEOUT = 5.0;
+    private const float TIMEOUT = 10.0;
 
     private const array STATUSES = ['done', 'running', 'pending', 'not_ready', 'failed_retryable', 'failed_permanent'];
 
@@ -150,7 +153,7 @@ final readonly class OzonFetcherCoverageClient
             );
         }
 
-        return ServiceCoverageSnapshot::ok($generatedAt, self::count($payload['cabinets_total'], 'cabinets_total'), $rows);
+        return ServiceCoverageSnapshot::ok($generatedAt, self::count($payload['cabinets_total'], 'cabinets_total'), $rows, $body);
     }
 
     private function unavailable(string $reason, ?int $status = null): ServiceCoverageSnapshot
@@ -221,7 +224,9 @@ final readonly class OzonFetcherCoverageClient
         // format: date-time схемы — RFC 3339, с долями секунды или без.
         foreach ([\DateTimeInterface::RFC3339, \DateTimeInterface::RFC3339_EXTENDED] as $format) {
             $parsed = \is_string($value) ? \DateTimeImmutable::createFromFormat($format, $value) : false;
-            if (false !== $parsed) {
+            // Несуществующая дата (30 февраля) разбирается с предупреждением
+            // и молча переносится на март — для контракта это нарушение.
+            if (false !== $parsed && false === \DateTimeImmutable::getLastErrors()) {
                 return $parsed;
             }
         }

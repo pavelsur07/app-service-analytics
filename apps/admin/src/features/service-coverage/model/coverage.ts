@@ -26,7 +26,14 @@ export interface Problem {
 }
 
 export type Verdict =
-  'ok' | 'lagging' | 'attention' | 'unavailable' | 'disabled' | 'not_ready'
+  | 'ok'
+  | 'lagging'
+  | 'attention'
+  | 'unavailable'
+  | 'disabled'
+  | 'not_ready'
+  | 'never'
+  | 'capture_stale'
 
 // Последние сутки отчёты площадки ещё формируются, и сервис и PHP
 // догружают их по своему расписанию — как в bin/ozon-fetcher-observe.sh,
@@ -36,6 +43,10 @@ const SETTLE_DAYS = 2
 // Порог контроля свежести PHP (NotifyStaleAccountsAction), чтобы
 // «отставание» значило одно и то же на обоих экранах.
 const STALE_HOURS = 36
+
+// worker-service-coverage снимает сводку раз в пять минут; попытка старше
+// трёх интервалов значит, что воркер стоит, и сводка на экране — старая.
+const CAPTURE_STALE_MINUTES = 15
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
@@ -95,7 +106,17 @@ function settledUntil(to: string): string {
   return shiftDay(to, -SETTLE_DAYS)
 }
 
-function rowProblem(row: ServiceCoverageRow, settled: string): Problem | null {
+// Сравнение идёт по факту успешной загрузки (lastSuccessAt), а не по
+// текущему статусу: сервис регулярно перезагружает прошлые дни, и на время
+// перезагрузки done = 0 у дня, который уже загружен, — как
+// в bin/ozon-fetcher-observe.sh (last_success_at). Сравнивается только
+// окно, которое сервис ведёт: день раньше первой задачи ресурса сервис
+// и не должен был планировать.
+function rowProblem(
+  row: ServiceCoverageRow,
+  settled: string,
+  serviceFrom: ReadonlyMap<string, string>,
+): Problem | null {
   const state = cellState(row)
   const base = { resourceType: row.resourceType, periodKey: row.periodKey }
   const expected = row.cabinetsExpected ?? 0
@@ -106,24 +127,28 @@ function rowProblem(row: ServiceCoverageRow, settled: string): Problem | null {
       detail: `ошибка без повтора: ${String(row.failedPermanent)} из ${String(expected)}`,
     }
   }
-  const recent = isDay(row.periodKey) && row.periodKey > settled
-  const php = row.phpCabinets ?? null
-  if (!recent && php !== null && php > row.done) {
+  const first = serviceFrom.get(row.resourceType)
+  const compared =
+    isDay(row.periodKey) &&
+    row.periodKey <= settled &&
+    (first === undefined || row.periodKey >= first)
+  const loadedOnce = row.lastSuccessAt != null
+  if (compared && (row.phpCabinets ?? 0) > 0 && !loadedOnce) {
     return {
       ...base,
       kind: 'php_mismatch',
-      detail: `PHP загрузил ${String(php)}, сервис — ${String(row.done)}`,
+      detail: `PHP загрузил ${String(row.phpCabinets ?? 0)}, сервис — ни разу`,
     }
   }
-  if (
-    !recent &&
-    isDay(row.periodKey) &&
-    (state === 'missing' || state === 'partial')
-  ) {
+  // Давний день, который сервис так и не загрузил, — пропуск в любом
+  // статусе: «отчёт не готов» или «в работе» через двое суток уже не норма.
+  if (compared && expected > 0 && (!loadedOnce || state === 'partial')) {
     return {
       ...base,
       kind: 'missing',
-      detail: `загружено ${String(row.done)} из ${String(expected)}`,
+      detail: loadedOnce
+        ? `загружено ${String(row.done)} из ${String(expected)}`
+        : `ни одной успешной загрузки; сейчас: ${CELL_STATE_TEXT[state]}`,
     }
   }
   if (state === 'retrying') {
@@ -136,8 +161,39 @@ function rowProblem(row: ServiceCoverageRow, settled: string): Problem | null {
   return null
 }
 
-// Ресурс с дневными периодами без успешной загрузки дольше порога.
-function staleProblems(data: ServiceCoverageResponse): Problem[] {
+const CELL_STATE_TEXT: Record<CellState, string> = {
+  attention: 'нужен человек',
+  retrying: 'ошибка, повтор',
+  in_progress: 'в работе',
+  not_ready: 'отчёт не готов',
+  loaded: 'загружено',
+  partial: 'частично',
+  missing: 'нет задачи',
+  no_data: 'нет данных',
+}
+
+// Первый день, по которому у сервиса есть задача ресурса.
+function serviceWindowStart(
+  data: ServiceCoverageResponse,
+): Map<string, string> {
+  const first = new Map<string, string>()
+  for (const row of data.rows) {
+    if (!isDay(row.periodKey) || row.cabinetsExpected == null) continue
+    const known = first.get(row.resourceType)
+    if (known === undefined || row.periodKey < known) {
+      first.set(row.resourceType, row.periodKey)
+    }
+  }
+  return first
+}
+
+// Ресурс с дневными периодами без успешной загрузки дольше порога —
+// на момент снятия сводки, а не открытия экрана: иначе старый снимок
+// показал бы отставание, которого у сервиса нет.
+function staleProblems(
+  data: ServiceCoverageResponse,
+  generatedAt: string,
+): Problem[] {
   const latest = new Map<string, number | null>()
   for (const row of data.rows) {
     if (!isDay(row.periodKey) || (row.cabinetsExpected ?? 0) === 0) continue
@@ -150,10 +206,10 @@ function staleProblems(data: ServiceCoverageResponse): Problem[] {
       latest.set(row.resourceType, at)
     }
   }
-  const checkedAt = Date.parse(data.checkedAt)
+  const reference = Date.parse(generatedAt)
   const problems: Problem[] = []
   for (const [resourceType, at] of latest) {
-    if (at === null || checkedAt - at > STALE_HOURS * 3_600_000) {
+    if (at === null || reference - at > STALE_HOURS * 3_600_000) {
       problems.push({
         kind: 'stale',
         resourceType,
@@ -176,16 +232,17 @@ const SEVERITY: Record<ProblemKind, number> = {
   retrying: 4,
 }
 
-// Проблемы — только при ответившем сервисе: без сводки сервиса любой
-// день выглядел бы пропущенным.
+// Проблемы — по последней успешной сводке, даже если последняя попытка
+// не удалась: без сводки сервиса любой день выглядел бы пропущенным.
 export function problems(data: ServiceCoverageResponse): Problem[] {
-  if (data.serviceState !== 'ok') {
+  if (data.serviceGeneratedAt == null) {
     return []
   }
   const settled = settledUntil(data.to)
-  const found: Problem[] = [...staleProblems(data)]
+  const serviceFrom = serviceWindowStart(data)
+  const found: Problem[] = [...staleProblems(data, data.serviceGeneratedAt)]
   for (const row of data.rows) {
-    const problem = rowProblem(row, settled)
+    const problem = rowProblem(row, settled, serviceFrom)
     if (problem !== null) found.push(problem)
   }
   return found.sort(
@@ -203,8 +260,15 @@ export function verdict(
   if (data.serviceState !== 'ok') {
     return data.serviceState
   }
+  if (captureStale(data)) return 'capture_stale'
   if (found.some((p) => p.kind === 'attention')) return 'attention'
   return found.length > 0 ? 'lagging' : 'ok'
+}
+
+function captureStale(data: ServiceCoverageResponse): boolean {
+  if (data.attemptedAt == null) return false
+  const age = Date.parse(data.checkedAt) - Date.parse(data.attemptedAt)
+  return age > CAPTURE_STALE_MINUTES * 60_000
 }
 
 export interface DailyMatrix {

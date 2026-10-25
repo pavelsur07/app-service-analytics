@@ -22,13 +22,16 @@ final readonly class ServiceCoverageResponse
         public string $to,
         /** время запроса, ATOM UTC */
         public string $checkedAt,
-        #[OA\Property(enum: ['ok', 'disabled', 'not_ready', 'unavailable'])]
+        /** исход последней попытки снять сводку; never — ещё не снимали */
+        #[OA\Property(enum: ['ok', 'disabled', 'not_ready', 'unavailable', 'never'])]
         public string $serviceState,
-        /** время сводки сервиса, ATOM UTC; есть только у ok */
+        /** время последней попытки снять сводку, ATOM UTC */
+        public ?string $attemptedAt,
+        /** время последней удачной сводки (по часам сервиса), ATOM UTC; строки — из неё */
         public ?string $serviceGeneratedAt,
-        /** кабинеты сервиса с ключом Seller; есть только у ok */
+        /** кабинеты сервиса с ключом Seller — из последней удачной сводки */
         public ?int $cabinetsSeller,
-        /** кабинеты сервиса с ключом Performance (по рекламным строкам); есть только у ok */
+        /** кабинеты сервиса с ключом Performance (по рекламным строкам) — из последней удачной сводки */
         public ?int $cabinetsPerformance,
         /** задан ли allowlist сервиса в api: без него загрузку PHP сравнивать не с чем */
         public bool $phpCompared,

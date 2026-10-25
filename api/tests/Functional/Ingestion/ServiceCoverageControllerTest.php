@@ -8,17 +8,16 @@ use App\Identity\Infrastructure\Repository\DoctrineAdministratorRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Infrastructure\Persistence\DbalServiceCoverageCaptureStore;
 use App\Ingestion\Infrastructure\ServiceCoverage\OzonFetcherAllowlist;
-use App\Ingestion\Infrastructure\ServiceCoverage\OzonFetcherCoverageClient;
+use App\Ingestion\Infrastructure\ServiceCoverage\ServiceCoverageState;
 use App\Tests\Support\Builder\AdministratorBuilder;
 use App\Tests\Support\Builder\MarketplaceDayLoadBuilder;
+use App\Tests\Support\Builder\ServiceCoverageCaptureBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\ORM\EntityManagerInterface;
-use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\HttpClient\MockHttpClient;
-use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -28,12 +27,12 @@ use Symfony\Component\Uid\Uuid;
  * изоляции: загрузка PHP считается только по кабинетам allowlist сервиса,
  * а в ответ не попадают ни компании, ни кабинеты, ни токен сервиса;
  * экран закрыт для анонима и сессии продавца. И намеренный сигнал
- * наружу: недоступный сервис — состояние, а не пустая сводка (§9).
+ * наружу: неудачная попытка и «ещё не снимали» — состояния, а не пустая
+ * сводка (§9). Сервис экран не вызывает — читает сохранённую сводку.
  */
 final class ServiceCoverageControllerTest extends WebTestCase
 {
     private const string URL = '/api/admin/services/ozon-fetcher/coverage';
-    private const string TOKEN = 'php-to-service-token-0123456789abcdef';
 
     public function testAdminSeesServiceNextToPhpLoadsOfAllowlistOnly(): void
     {
@@ -54,17 +53,15 @@ final class ServiceCoverageControllerTest extends WebTestCase
         MarketplaceDayLoadBuilder::aMarketplaceDayLoad()->withCompanyId($foreignCompany)->withMarketplaceAccountId($foreign)
             ->withReportType(MarketplaceReportType::OzonPostingFboList)->withPeriod(new \DateTimeImmutable($yesterday))->persistWith($this->dayLoads());
 
-        $asked = null;
-        $this->stubService($client, static function (string $method, string $url) use (&$asked, $yesterday, $twoDaysAgo): MockResponse {
-            $asked = $url;
-
-            return new MockResponse(self::coverage([
-                self::row('ozon.orders.fbo', $yesterday, done: 1),
-                self::row('ozon.orders.fbo', $twoDaysAgo, done: 1),
-                self::row('ozon.ads.expense', $yesterday, done: 1),
-                self::row('ozon.products.list', 'ref', done: 1),
-            ]));
-        }, $allowed->toRfc4122());
+        $this->allow($client, $allowed->toRfc4122());
+        $this->capture(self::coverage([
+            self::row('ozon.orders.fbo', $yesterday, done: 1),
+            self::row('ozon.orders.fbo', $twoDaysAgo, done: 1),
+            self::row('ozon.ads.expense', $yesterday, done: 1),
+            self::row('ozon.products.list', 'ref', done: 1),
+            // Сводка снята за 93 дня — в окно 31 день не попадает.
+            self::row('ozon.orders.fbo', $this->day(-40), done: 1),
+        ]));
 
         $client->request('GET', self::URL);
 
@@ -77,7 +74,8 @@ final class ServiceCoverageControllerTest extends WebTestCase
         self::assertSame(1, $payload['cabinetsPerformance']);
         self::assertSame($this->day(-30), $payload['from']);
         self::assertSame($this->day(0), $payload['to']);
-        self::assertSame(\sprintf('http://ozon-fetcher.test:8080/internal/coverage?from=%s&to=%s', $this->day(-30), $this->day(0)), $asked);
+        self::assertSame('2026-10-25T09:00:00+00:00', $payload['serviceGeneratedAt']);
+        self::assertIsString($payload['attemptedAt']);
 
         $rows = $this->rowsByKey($payload);
         self::assertSame(1, $rows['ozon.orders.fbo|'.$yesterday]['phpCabinets'], 'кабинет вне allowlist не считается');
@@ -86,31 +84,47 @@ final class ServiceCoverageControllerTest extends WebTestCase
         self::assertNull($rows['ozon.products.list|ref']['phpCabinets'], 'у справочника нет пары в PHP');
         self::assertNull($rows['ozon.finance.accrual-by-day|'.$threeDaysAgo]['cabinetsExpected'], 'строка только PHP');
         self::assertSame(1, $rows['ozon.finance.accrual-by-day|'.$threeDaysAgo]['phpCabinets']);
+        self::assertArrayNotHasKey('ozon.orders.fbo|'.$this->day(-40), $rows, 'строка вне окна');
 
         foreach ([$company, $allowed, $foreignCompany, $foreign] as $id) {
             self::assertStringNotContainsString($id->toRfc4122(), $body, 'в ответе нет идентификаторов компаний и кабинетов');
         }
-        self::assertStringNotContainsString(self::TOKEN, $body);
     }
 
-    public function testUnavailableServiceIsAStateAndPhpLoadsStayVisible(): void
+    public function testFailedAttemptIsAStateAndLastCaptureStaysVisible(): void
     {
         $client = $this->adminClient();
         $allowed = Uuid::v7();
         MarketplaceDayLoadBuilder::aMarketplaceDayLoad()->withMarketplaceAccountId($allowed)
             ->withReportType(MarketplaceReportType::OzonPostingFboList)->withPeriod(new \DateTimeImmutable($this->day(-1)))->persistWith($this->dayLoads());
-        $this->stubService($client, static fn (): MockResponse => new MockResponse('oops', ['http_code' => 502]), $allowed->toRfc4122());
+        $this->allow($client, $allowed->toRfc4122());
+        $this->capture(self::coverage([self::row('ozon.orders.fbo', $this->day(-2), done: 1)]));
+        ServiceCoverageCaptureBuilder::aCapture()->failedAs(ServiceCoverageState::Unavailable)->persistWith($this->captures());
 
         $client->request('GET', self::URL);
 
         self::assertResponseIsSuccessful();
         $payload = $this->decode((string) $client->getResponse()->getContent());
         self::assertSame('unavailable', $payload['serviceState']);
-        self::assertNull($payload['serviceGeneratedAt']);
-        self::assertNull($payload['cabinetsSeller']);
+        self::assertSame('2026-10-25T09:00:00+00:00', $payload['serviceGeneratedAt'], 'последняя удачная сводка остаётся');
+        self::assertSame(1, $payload['cabinetsSeller']);
         $rows = $this->rowsByKey($payload);
-        self::assertCount(1, $rows);
+        self::assertSame(1, $rows['ozon.orders.fbo|'.$this->day(-2)]['done']);
         self::assertSame(1, $rows['ozon.orders.fbo|'.$this->day(-1)]['phpCabinets']);
+    }
+
+    public function testNeverCapturedIsAStateNotAnEmptyCoverage(): void
+    {
+        $client = $this->adminClient();
+        $this->allow($client, '');
+
+        $client->request('GET', self::URL);
+
+        $payload = $this->decode((string) $client->getResponse()->getContent());
+        self::assertSame('never', $payload['serviceState']);
+        self::assertNull($payload['attemptedAt']);
+        self::assertNull($payload['serviceGeneratedAt']);
+        self::assertSame([], $payload['rows']);
     }
 
     public function testWithoutAllowlistPhpIsNotCompared(): void
@@ -118,7 +132,8 @@ final class ServiceCoverageControllerTest extends WebTestCase
         $client = $this->adminClient();
         MarketplaceDayLoadBuilder::aMarketplaceDayLoad()
             ->withReportType(MarketplaceReportType::OzonPostingFboList)->withPeriod(new \DateTimeImmutable($this->day(-1)))->persistWith($this->dayLoads());
-        $this->stubService($client, fn (): MockResponse => new MockResponse(self::coverage([self::row('ozon.orders.fbo', $this->day(-1), done: 1)])), '');
+        $this->allow($client, '');
+        $this->capture(self::coverage([self::row('ozon.orders.fbo', $this->day(-1), done: 1)]));
 
         $client->request('GET', self::URL);
 
@@ -132,18 +147,12 @@ final class ServiceCoverageControllerTest extends WebTestCase
     public function testWindowIsMonthOrContractLimit(): void
     {
         $client = $this->adminClient();
-        $asked = null;
-        $this->stubService($client, static function (string $method, string $url) use (&$asked): MockResponse {
-            $asked = $url;
-
-            return new MockResponse(self::coverage([]));
-        }, '');
+        $this->allow($client, '');
 
         foreach (['7', '30', '94', 'abc'] as $days) {
             $client->request('GET', self::URL.'?days='.$days);
             self::assertResponseStatusCodeSame(422, $days);
         }
-        self::assertNull($asked, 'на неверном окне сервис не спрашивают');
 
         $client->request('GET', self::URL.'?days=93');
         self::assertResponseIsSuccessful();
@@ -169,7 +178,7 @@ final class ServiceCoverageControllerTest extends WebTestCase
     private function adminClient(): KernelBrowser
     {
         $client = static::createClient();
-        // Подменённые клиент сервиса и allowlist живут до перезагрузки ядра.
+        // Подменённый allowlist живёт до перезагрузки ядра.
         $client->disableReboot();
 
         /** @var EntityManagerInterface $entityManager */
@@ -193,20 +202,25 @@ final class ServiceCoverageControllerTest extends WebTestCase
         return $client;
     }
 
-    /**
-     * @param callable(string, string, array<string, mixed>): MockResponse $responder
-     */
-    private function stubService(KernelBrowser $client, callable $responder, string $allowlist): void
+    private function allow(KernelBrowser $client, string $allowlist): void
     {
-        $container = $client->getContainer();
-        $container->set(OzonFetcherCoverageClient::class, new OzonFetcherCoverageClient(
-            new MockHttpClient($responder),
-            new NullLogger(),
-            'true',
-            'http://ozon-fetcher.test:8080',
-            self::TOKEN,
-        ));
-        $container->set(OzonFetcherAllowlist::class, new OzonFetcherAllowlist($allowlist));
+        $client->getContainer()->set(OzonFetcherAllowlist::class, new OzonFetcherAllowlist($allowlist));
+    }
+
+    private function capture(string $payload): void
+    {
+        ServiceCoverageCaptureBuilder::aCapture()
+            ->withPayload($payload)
+            ->withAt(new \DateTimeImmutable('-1 minute'))
+            ->persistWith($this->captures());
+    }
+
+    private function captures(): DbalServiceCoverageCaptureStore
+    {
+        /** @var DbalServiceCoverageCaptureStore $store */
+        $store = static::getContainer()->get(DbalServiceCoverageCaptureStore::class);
+
+        return $store;
     }
 
     /**

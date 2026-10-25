@@ -25,6 +25,7 @@ describe('запрос покрытия GO', () => {
           to: '2026-10-25',
           checkedAt: '2026-10-25T09:00:00+00:00',
           serviceState: 'unavailable',
+          attemptedAt: '2026-10-25T08:58:00+00:00',
           serviceGeneratedAt: null,
           cabinetsSeller: null,
           cabinetsPerformance: null,

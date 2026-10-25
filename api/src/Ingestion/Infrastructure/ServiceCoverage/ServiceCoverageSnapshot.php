@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\ServiceCoverage;
 
 /**
- * Ответ сервиса на запрос покрытия. Строки и время есть только
- * у состояния Ok.
+ * Ответ сервиса на запрос покрытия. Строки, время и исходный ответ
+ * (для сохранения снимка) есть только у состояния Ok.
  */
 final readonly class ServiceCoverageSnapshot
 {
@@ -18,15 +18,17 @@ final readonly class ServiceCoverageSnapshot
         public ?\DateTimeImmutable $generatedAt,
         public int $cabinetsTotal,
         public array $rows,
+        /** ответ сервиса, прошедший разбор по схеме v1 */
+        public ?string $payload,
     ) {
     }
 
     /**
      * @param list<ServiceCoverageRow> $rows
      */
-    public static function ok(\DateTimeImmutable $generatedAt, int $cabinetsTotal, array $rows): self
+    public static function ok(\DateTimeImmutable $generatedAt, int $cabinetsTotal, array $rows, string $payload): self
     {
-        return new self(ServiceCoverageState::Ok, $generatedAt, $cabinetsTotal, $rows);
+        return new self(ServiceCoverageState::Ok, $generatedAt, $cabinetsTotal, $rows, $payload);
     }
 
     public static function without(ServiceCoverageState $state): self
@@ -35,6 +37,6 @@ final readonly class ServiceCoverageSnapshot
             throw new \LogicException('An ok snapshot carries rows; use ok().');
         }
 
-        return new self($state, null, 0, []);
+        return new self($state, null, 0, [], null);
     }
 }

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Controller\Admin;
 
+use App\Ingestion\Application\ServiceCoverage\CaptureServiceCoverageAction;
+use App\Ingestion\Infrastructure\Persistence\DbalServiceCoverageCaptureStore;
 use App\Ingestion\Infrastructure\Query\PhpDayLoadRow;
 use App\Ingestion\Infrastructure\Query\PhpDayLoadsForAdminQuery;
 use App\Ingestion\Infrastructure\ServiceCoverage\OzonFetcherAllowlist;
-use App\Ingestion\Infrastructure\ServiceCoverage\OzonFetcherCoverageClient;
 use App\Ingestion\Infrastructure\ServiceCoverage\ServiceCoverageRow;
 use App\Ingestion\Infrastructure\ServiceCoverage\ServiceCoverageSnapshot;
-use App\Ingestion\Infrastructure\ServiceCoverage\ServiceCoverageState;
 use App\Ingestion\Ui\Response\Admin\ServiceCoverageResponse;
 use App\Ingestion\Ui\Response\Admin\ServiceCoverageRowResponse;
 use App\Shared\Ui\QueryParameter;
@@ -27,6 +27,10 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  * Экран «Покрытие GO» системного раздела: сводка покрытия ozon-fetcher
  * (контракт service-coverage v1, ADR-043 п. 6) рядом с загрузкой PHP
  * по тем же кабинетам.
+ *
+ * Сервис отсюда не вызывается (services/AGENTS.md §2): сводку снимает
+ * по расписанию CaptureServiceCoverageCommand, экран читает сохранённую
+ * и показывает время попытки и время сводки.
  *
  * **Межарендаторное чтение из HTTP — системный контур** (CLAUDE.md §1,
  * ADR-018): Deptrac держит класс в узком слое IngestionAdminCoverageUi,
@@ -47,7 +51,7 @@ final class GetServiceCoverageController
     private const string ADS_PREFIX = 'ozon.ads.';
 
     public function __construct(
-        private readonly OzonFetcherCoverageClient $service,
+        private readonly DbalServiceCoverageCaptureStore $captures,
         private readonly PhpDayLoadsForAdminQuery $phpDayLoads,
         private readonly OzonFetcherAllowlist $allowlist,
     ) {
@@ -85,19 +89,21 @@ final class GetServiceCoverageController
         $from = $today->modify(\sprintf('-%d days', $days - 1))->format('Y-m-d');
         $to = $today->format('Y-m-d');
 
-        $snapshot = $this->service->fetch($from, $to);
+        $capture = $this->captures->latest(CaptureServiceCoverageAction::SERVICE);
+        $snapshot = $capture?->lastSuccess;
         $php = $this->phpLoads($from, $to);
 
         return new JsonResponse(new ServiceCoverageResponse(
             from: $from,
             to: $to,
             checkedAt: $now->format(\DATE_ATOM),
-            serviceState: $snapshot->state->value,
-            serviceGeneratedAt: $snapshot->generatedAt?->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM),
-            cabinetsSeller: ServiceCoverageState::Ok === $snapshot->state ? $snapshot->cabinetsTotal : null,
-            cabinetsPerformance: ServiceCoverageState::Ok === $snapshot->state ? self::performanceCabinets($snapshot) : null,
+            serviceState: $capture?->state->value ?? 'never',
+            attemptedAt: self::atom($capture?->attemptedAt),
+            serviceGeneratedAt: self::atom($snapshot?->generatedAt),
+            cabinetsSeller: $snapshot?->cabinetsTotal,
+            cabinetsPerformance: null !== $snapshot ? self::performanceCabinets($snapshot) : null,
             phpCompared: null !== $php,
-            rows: self::rows($snapshot, $php),
+            rows: self::rows($snapshot, $php, $from, $to),
         ));
     }
 
@@ -130,10 +136,14 @@ final class GetServiceCoverageController
      *
      * @return list<ServiceCoverageRowResponse>
      */
-    private static function rows(ServiceCoverageSnapshot $snapshot, ?array $php): array
+    private static function rows(?ServiceCoverageSnapshot $snapshot, ?array $php, string $from, string $to): array
     {
         $rows = [];
-        foreach ($snapshot->rows as $row) {
+        foreach ($snapshot->rows ?? [] as $row) {
+            // Сводка снята за 93 дня — короткое окно вырезается здесь.
+            if (!self::inWindow($row->periodKey, $from, $to)) {
+                continue;
+            }
             $rows[self::key($row->resourceType, $row->periodKey)] = self::serviceRow($row, $php);
         }
         foreach ($php ?? [] as $key => $cabinets) {
@@ -188,6 +198,23 @@ final class GetServiceCoverageController
         }
 
         return $max;
+    }
+
+    /**
+     * День — внутри окна; месяц — пересекается с окном; справочник — всегда.
+     */
+    private static function inWindow(string $periodKey, string $from, string $to): bool
+    {
+        return match (\strlen($periodKey)) {
+            10 => $periodKey >= $from && $periodKey <= $to,
+            7 => $periodKey >= substr($from, 0, 7) && $periodKey <= substr($to, 0, 7),
+            default => true,
+        };
+    }
+
+    private static function atom(?\DateTimeImmutable $at): ?string
+    {
+        return $at?->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM);
     }
 
     private static function key(string $resourceType, string $periodKey): string

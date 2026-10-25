@@ -944,13 +944,18 @@ export interface components {
             to: string;
             /** время запроса, ATOM UTC */
             checkedAt: string;
-            /** @enum {string} */
-            serviceState: "ok" | "disabled" | "not_ready" | "unavailable";
-            /** время сводки сервиса, ATOM UTC; есть только у ok */
+            /**
+             * исход последней попытки снять сводку; never — ещё не снимали
+             * @enum {string}
+             */
+            serviceState: "ok" | "disabled" | "not_ready" | "unavailable" | "never";
+            /** время последней попытки снять сводку, ATOM UTC */
+            attemptedAt?: string | null;
+            /** время последней удачной сводки (по часам сервиса), ATOM UTC; строки — из неё */
             serviceGeneratedAt?: string | null;
-            /** кабинеты сервиса с ключом Seller; есть только у ok */
+            /** кабинеты сервиса с ключом Seller — из последней удачной сводки */
             cabinetsSeller?: number | null;
-            /** кабинеты сервиса с ключом Performance (по рекламным строкам); есть только у ok */
+            /** кабинеты сервиса с ключом Performance (по рекламным строкам) — из последней удачной сводки */
             cabinetsPerformance?: number | null;
             /** задан ли allowlist сервиса в api: без него загрузку PHP сравнивать не с чем */
             phpCompared: boolean;

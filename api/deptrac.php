@@ -500,10 +500,11 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($ingestionRawVerificationQuery)->accesses($symfonyComponent, $symfonyUid),
             // ingestionDomain — ради MarketplaceReportType в условии запроса.
             Ruleset::forLayer($ingestionAdminCoverageQuery)->accesses($ingestionInfrastructure, $ingestionDomain, $symfonyComponent),
-            // Узкий запрос — только здесь; ingestionInfrastructure — ради
-            // клиента сервиса и Row-DTO запроса, ingestionUi — ради
-            // собственных Response-DTO.
-            Ruleset::forLayer($ingestionAdminCoverageUi)->accesses($ingestionAdminCoverageQuery, $ingestionInfrastructure, $ingestionUi, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
+            // Узкий запрос — только здесь; ingestionApplication — ради имени
+            // сервиса снятия сводки, ingestionInfrastructure — ради хранилища
+            // сводки и Row-DTO запроса, ingestionUi — ради собственных
+            // Response-DTO.
+            Ruleset::forLayer($ingestionAdminCoverageUi)->accesses($ingestionAdminCoverageQuery, $ingestionApplication, $ingestionInfrastructure, $ingestionUi, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($ingestionOperationalCommand)->accesses($ingestionSyncAction, $ingestionFreshnessAction, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent),
             // ingestionInfrastructure — синхронные запросы чтения, которые
             // Application только склеивает для экрана

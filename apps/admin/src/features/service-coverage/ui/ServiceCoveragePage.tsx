@@ -69,14 +69,14 @@ const VERDICT: Record<
   unavailable: {
     title: 'Сервис не отвечает',
     description:
-      'Сводка сервиса не получена: сеть, ошибка или ответ вне контракта. Покрытие сервиса неизвестно — это не ноль.',
+      'Последняя попытка снять сводку не удалась: сеть, ошибка или ответ вне контракта. Ниже — последняя успешная сводка; текущее покрытие неизвестно — это не ноль.',
     tone: 'negative',
     icon: <CircleX aria-hidden="true" size={16} />,
   },
   disabled: {
     title: 'Сервис выключен',
     description:
-      'Адрес или токен сервиса не заданы, либо загрузка в нём выключена.',
+      'Адрес или токен сервиса у worker-service-coverage не заданы, либо загрузка в сервисе выключена.',
     tone: 'neutral',
     icon: <CircleOff aria-hidden="true" size={16} />,
   },
@@ -86,6 +86,20 @@ const VERDICT: Record<
       'Сервис ещё не получил список подключений — обновите через минуту.',
     tone: 'neutral',
     icon: <Clock aria-hidden="true" size={16} />,
+  },
+  never: {
+    title: 'Сводку ещё не снимали',
+    description:
+      'worker-service-coverage ещё ни разу не обращался к сервису — проверьте, что он запущен.',
+    tone: 'neutral',
+    icon: <Clock aria-hidden="true" size={16} />,
+  },
+  capture_stale: {
+    title: 'Сводка не обновляется',
+    description:
+      'Последняя попытка снять сводку была больше 15 минут назад — worker-service-coverage, похоже, стоит. Ниже — последняя полученная сводка.',
+    tone: 'warning',
+    icon: <TriangleAlert aria-hidden="true" size={16} />,
   },
 }
 
@@ -234,7 +248,11 @@ function Coverage({ data }: { data: ServiceCoverageResponse }) {
                 ? formatMoscowTime(data.serviceGeneratedAt)
                 : '—'}
             </Fact>
-            <Fact label="Запрошено">{formatMoscowTime(data.checkedAt)}</Fact>
+            <Fact label="Последняя попытка">
+              {data.attemptedAt != null
+                ? formatMoscowTime(data.attemptedAt)
+                : '—'}
+            </Fact>
             <Fact label="Кабинеты Seller / Performance">
               {data.cabinetsSeller != null
                 ? `${String(data.cabinetsSeller)} / ${String(data.cabinetsPerformance ?? 0)}`

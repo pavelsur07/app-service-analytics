@@ -592,14 +592,18 @@ ADR-007 «с первого дня», и ограничение по адрес�
       с подключением не связан. Покрытие — дни, загруженные PHP, которые
       сервис ни разу не загрузил успешно; два последних дня не сверяются
 - [ ] **Экран «Покрытие GO»** в админке (ADR-043 п. 6): покрытие сервиса
-      рядом с загрузкой PHP по кабинетам allowlist — без ssh. У api те же
-      `OZON_FETCHER_ENABLED`, `OZON_FETCHER_SERVICE_API_TOKEN`
-      и `OZON_FETCHER_CONNECTION_ALLOWLIST`, что у сервиса (подставляет
-      compose из `.env`); новых значений не требует. «Сервис не отвечает»
-      при включённом сервисе — смотреть `docker compose ps ozon-fetcher`
-      и журнал api (`ozon-fetcher coverage is unavailable`, причина
-      в контексте). Счёт 429/403 экран не показывает — он по-прежнему
-      в `bin/ozon-fetcher-observe.sh`
+      рядом с загрузкой PHP по кабинетам allowlist — без ssh. Сводку
+      сервиса раз в 5 минут снимает `worker-service-coverage` в таблицу
+      `service_coverage_capture`; экран читает таблицу. У воркера те же
+      `OZON_FETCHER_ENABLED` и `OZON_FETCHER_SERVICE_API_TOKEN`, что
+      у сервиса, у api — `OZON_FETCHER_CONNECTION_ALLOWLIST` (подставляет
+      compose из `.env`); новых значений не требует. «Сводка не
+      обновляется» или «ещё не снимали» — `docker compose ps
+      worker-service-coverage` и его журнал. «Сервис не отвечает» —
+      `docker compose ps ozon-fetcher` и журнал воркера (`ozon-fetcher
+      coverage is unavailable`, причина в контексте); экран при этом
+      показывает последнюю успешную сводку с её временем. Счёт 429/403
+      экран не показывает — он по-прежнему в `bin/ozon-fetcher-observe.sh`
 - [ ] Журналы PHP-контейнеров и ozon-fetcher — в journald хоста
       (`x-journald-logging`), выкладка их не стирает:
       `journalctl CONTAINER_NAME=conwix-worker-ingestion-1 --since today`.
