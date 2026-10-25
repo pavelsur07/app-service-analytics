@@ -25,6 +25,8 @@ sentry:
         # IP пользователя не должны улетать в GlitchTip без осознанного
         # решения. Данные компаний — финансовые (CLAUDE.md).
         send_default_pii: false
+        # Отдельная настройка SDK: false выше не исключает JSON-тело запроса.
+        max_request_body_size: never
         # Подстраховка на будущее: вырезает заголовки-кандидаты на секрет
         # (Api-Key, Authorization) из breadcrumbs/extra, если они там
         # когда-нибудь появятся — сейчас (tracing выключен, сообщения

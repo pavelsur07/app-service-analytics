@@ -227,6 +227,8 @@ docker compose exec -T postgres psql -U app -d app -q \
     -c "DELETE FROM short_link_click" \
     -c "DELETE FROM short_link" \
     -c "DELETE FROM audit_record WHERE actor_admin_id IS NOT NULL" \
+    -c "DELETE FROM administrator_mfa_recovery_code" \
+    -c "DELETE FROM administrator_mfa" \
     -c "DELETE FROM administrator" > /dev/null
 
 # Пароль приходит из пайпа: аргументом он оседал бы в истории оболочки

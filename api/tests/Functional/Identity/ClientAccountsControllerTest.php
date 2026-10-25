@@ -244,7 +244,7 @@ final class ClientAccountsControllerTest extends WebTestCase
 
         $boss = AdministratorBuilder::aBootstrapSuperAdmin()->withEmail('boss@conwix.local')->persistWith($administrators);
         $admin = AdministratorBuilder::anAdministrator()->withEmail('ops@conwix.local')->createdBy($boss)->persistWith($administrators);
-        $client->loginUser($admin, 'admin');
+        $this->authenticateAdministrator($client, $admin);
 
         // Управление аккаунтами доступно обеим ролям (ADR-017),
         // в отличие от заведения администраторов.
@@ -287,7 +287,7 @@ final class ClientAccountsControllerTest extends WebTestCase
             ->withEmail('admin@conwix.local')
             ->persistWith(new DoctrineAdministratorRepository($this->entityManager()));
 
-        $client->loginUser($administrator, 'admin');
+        $this->authenticateAdministrator($client, $administrator);
     }
 
     private function storedStatus(string $companyId): string

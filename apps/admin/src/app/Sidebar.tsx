@@ -67,6 +67,16 @@ export function Sidebar() {
         <span className="truncate px-2 text-xs text-text-muted">
           {currentAdmin.data?.email}
         </span>
+        <NavLink
+          to="/security"
+          className={({ isActive }) =>
+            `${ITEM} ${isActive ? ITEM_ACTIVE : ITEM_IDLE}`
+          }
+        >
+          <ShieldCheck aria-hidden="true" size={16} />
+          Безопасность
+        </NavLink>
+
         <Button
           type="button"
           variant="ghost"

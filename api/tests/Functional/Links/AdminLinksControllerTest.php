@@ -38,7 +38,7 @@ final class AdminLinksControllerTest extends WebTestCase
         $administrator = AdministratorBuilder::aBootstrapSuperAdmin()
             ->withEmail('admin-links@conwix.local')
             ->persistWith(new DoctrineAdministratorRepository($this->entityManager()));
-        $client->loginUser($administrator, 'admin');
+        $this->authenticateAdministrator($client, $administrator);
 
         return $administrator;
     }

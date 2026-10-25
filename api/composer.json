@@ -18,6 +18,7 @@
         "pagerfanta/doctrine-dbal-adapter": "^4.8",
         "predis/predis": "^3.5",
         "sentry/sentry-symfony": "^5.12",
+        "spomky-labs/otphp": "11.5.0",
         "symfony/console": "7.4.*",
         "symfony/doctrine-bridge": "7.4.*",
         "symfony/doctrine-messenger": "7.4.*",

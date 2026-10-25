@@ -36,7 +36,14 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       currentAdmin.error instanceof ApiError &&
       currentAdmin.error.status === 401
     ) {
-      return <Navigate to="/login" replace />
+      return (
+        <Navigate
+          to={
+            currentAdmin.error.code === 'admin_mfa_required' ? '/mfa' : '/login'
+          }
+          replace
+        />
+      )
     }
 
     return (

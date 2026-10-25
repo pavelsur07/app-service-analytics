@@ -4,6 +4,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 import { AccountsPage } from '../features/accounts/ui/AccountsPage'
 import { CreateAdministratorPage } from '../features/administrators/ui/CreateAdministratorPage'
 import { LoginPage } from '../features/auth/ui/LoginPage'
+import { MfaPage } from '../features/auth/ui/MfaPage'
 import { LinksPage } from '../features/links/ui/LinksPage'
 import { ServiceCoveragePage } from '../features/service-coverage/ui/ServiceCoveragePage'
 import { AdminLayout } from './AdminLayout'
@@ -25,6 +26,7 @@ const router = createBrowserRouter([
   // а заведение администраторов — редкое действие верхней роли.
   { path: '/', element: <Navigate to="/accounts" replace /> },
   { path: '/login', element: <LoginPage /> },
+  { path: '/mfa', element: <MfaPage /> },
   {
     element: (
       <RequireAuth>
@@ -33,6 +35,7 @@ const router = createBrowserRouter([
     ),
     children: [
       { path: '/accounts', element: <AccountsPage /> },
+      { path: '/security', element: <MfaPage settings /> },
       { path: '/links', element: <LinksPage /> },
       { path: '/service-coverage', element: <ServiceCoveragePage /> },
       { path: '/administrators', element: <CreateAdministratorPage /> },

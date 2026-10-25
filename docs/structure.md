@@ -304,6 +304,13 @@ HTTP-входы сессии находятся в `Ui/Controller/Session` (`Log
 Остальные системные HTTP-входы находятся в `Ui/Controller/Admin` (`AdminLogin`,
 `AdminMe`, `CreateAdministrator`, `ListClientAccounts`,
 `SetClientAccountStatus`).
+MFA администраторов (ADR-045): `Ui/Controller/Admin/AdminMfaController`,
+`Ui/Security/AdminMfaSession`, `Ui/EventListener/AdminMfaGuardSubscriber`;
+системная auth lifecycle-запись — `Infrastructure/Repository/DoctrineAdminMfaRepository`,
+TOTP adapter — `Infrastructure/Security/OtpAdminTotp`, зашифрованный секрет —
+`Infrastructure/Crypto/AdminMfaSecretCipher`. `AdministratorMfa` и
+`AdministratorMfaRecoveryCode` описывают схему. Восстановление при потере
+всех факторов — только `Ui/Command/ResetAdminMfaCommand`, не HTTP endpoint.
 Сервисный контур (ADR-043) — в `Ui/Controller/Internal`
 (`MarketplaceConnections`: выдача подключений сервисам `services/`
 по контракту `services/_contracts/marketplace-connections/v1`); отказ

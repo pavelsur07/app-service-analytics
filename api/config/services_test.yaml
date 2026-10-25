@@ -16,3 +16,10 @@ services:
 
     Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface:
         alias: App\Tests\Support\Probe\PasswordHasherProbe
+
+    App\Tests\Support\Fake\MutableMfaClock:
+        public: true
+        shared: true
+
+    Psr\Clock\ClockInterface:
+        alias: App\Tests\Support\Fake\MutableMfaClock

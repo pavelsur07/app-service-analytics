@@ -36,6 +36,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/auth/mfa/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_identity_admin_mfa_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/auth/mfa/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_admin_mfa_enroll"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/auth/mfa/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_admin_mfa_confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/auth/mfa/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_admin_mfa_verify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/auth/mfa/recovery-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_identity_admin_mfa_recovery_codes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/administrators": {
         parameters: {
             query?: never;
@@ -856,14 +936,30 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        AdminMeResponse: {
-            email: string;
-            role: string;
+        AdminMfaStatusResponse: {
+            /** @enum {string} */
+            state: "enrollment_required" | "verification_required" | "authenticated";
         };
         ValidationErrorResponse: {
             status: number;
             code: string;
             message: string;
+        };
+        AdminMeResponse: {
+            email: string;
+            role: string;
+        };
+        AdminMfaEnrollmentResponse: {
+            secret: string;
+            provisioningUri: string;
+        };
+        AdminMfaCodeRequest: {
+            code: string;
+        };
+        AdminMfaCompletedResponse: {
+            /** @enum {string} */
+            state: "authenticated";
+            recoveryCodes: string[];
         };
         AdministratorResponse: {
             id: string;
@@ -1751,13 +1847,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Вход администратора выполнен, сессия установлена */
-            200: {
+            /** @description Пароль подтверждён, требуется настройка или проверка MFA */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminMeResponse"];
+                    "application/json": components["schemas"]["AdminMfaStatusResponse"];
                 };
             };
             /** @description Неверный email или пароль — сообщение одинаково для обоих случаев (ADR-007) */
@@ -1809,6 +1905,337 @@ export interface operations {
             };
             /** @description Сессия администратора отсутствует или истекла */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_identity_admin_mfa_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Состояние MFA-сессии */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMfaStatusResponse"];
+                };
+            };
+            /** @description Требуется свежий вход по паролю */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Код неверен или уже использован */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Слишком много попыток MFA */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_identity_admin_mfa_enroll: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Секрет для настройки authenticator; не кэшировать */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMfaEnrollmentResponse"];
+                };
+            };
+            /** @description Требуется свежий вход по паролю */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Код неверен или уже использован */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Слишком много попыток MFA */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_identity_admin_mfa_confirm: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AdminMfaCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Фактор подключён, резервные коды показываются один раз */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMfaCompletedResponse"];
+                };
+            };
+            /** @description Требуется свежий вход по паролю */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Код неверен или уже использован */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Слишком много попыток MFA */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_identity_admin_mfa_verify: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AdminMfaCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Второй фактор подтверждён */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMfaCompletedResponse"];
+                };
+            };
+            /** @description Требуется свежий вход по паролю */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Код неверен или уже использован */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Слишком много попыток MFA */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_identity_admin_mfa_recovery_codes: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AdminMfaCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Новый набор кодов, прежний отменён */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMfaCompletedResponse"];
+                };
+            };
+            /** @description Требуется свежий вход по паролю */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Код неверен или уже использован */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Слишком много попыток MFA */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

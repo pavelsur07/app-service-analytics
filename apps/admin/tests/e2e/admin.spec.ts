@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 import { expect, test } from '@playwright/test'
 
 const email = process.env.E2E_ADMIN_EMAIL
@@ -29,6 +31,46 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
   await page.getByRole('button', { name: 'Войти' }).click()
 
   // Вход ведёт на аккаунты — повседневную работу контура.
+  await expect(page).toHaveURL(/\/mfa$/)
+  const partial = await page.request.get('/api/admin/companies')
+  expect(partial.status()).toBe(401)
+  await page.getByRole('button', { name: 'Настроить второй фактор' }).click()
+  const secret = await page.getByLabel('Секрет аутентификатора').inputValue()
+  await page
+    .getByLabel('Код аутентификатора', { exact: true })
+    .fill(totpCode(secret))
+  await page.getByRole('button', { name: 'Подтвердить', exact: true }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Сохраните резервные коды' }),
+  ).toBeVisible()
+  const recoveryCodes = await page
+    .getByRole('list', { name: 'Резервные коды' })
+    .locator('code')
+    .allTextContents()
+  expect(recoveryCodes).toHaveLength(10)
+  const confirmation = recoveryCodes[9]
+  if (!confirmation) throw new Error('Missing synthetic confirmation code')
+  await page.getByRole('button', { name: 'Коды сохранены, продолжить' }).click()
+  await expect(page).toHaveURL(/\/accounts$/)
+  await page.getByRole('link', { name: 'Безопасность', exact: true }).click()
+  await page
+    .getByLabel('Код аутентификатора или резервный код')
+    .fill(confirmation)
+  await page
+    .getByRole('button', { name: 'Перевыпустить резервные коды' })
+    .click()
+  await expect(
+    page.getByRole('heading', { name: 'Сохраните резервные коды' }),
+  ).toBeVisible()
+  const regenerated = await page
+    .getByRole('list', { name: 'Резервные коды' })
+    .locator('code')
+    .allTextContents()
+  expect(regenerated).toHaveLength(10)
+  const recovery = regenerated[0]
+  if (!recovery) throw new Error('Missing synthetic recovery code')
+  expect(regenerated).not.toContain(confirmation)
+  await page.getByRole('button', { name: 'Коды сохранены, продолжить' }).click()
   await expect(page).toHaveURL(/\/accounts$/)
 
   await page.context().route('http://evil.conwix.internal/**', (route) =>
@@ -300,8 +342,54 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
   // Выход возвращает на вход и не оставляет доступ к разделу.
   await page.getByRole('button', { name: 'Выйти' }).click()
   await expect(page).toHaveURL(/\/login$/)
+
+  // Восстановление по одноразовому коду и отказ его повторного применения.
+  for (const attempt of [0, 1]) {
+    await page.getByLabel('Email', { exact: true }).fill(email ?? '')
+    await page.getByLabel('Пароль', { exact: true }).fill(password ?? '')
+    await page.getByRole('button', { name: 'Войти' }).click()
+    await expect(page).toHaveURL(/\/mfa$/)
+    await page
+      .getByLabel('Код аутентификатора или резервный код')
+      .fill(recovery)
+    await page.getByRole('button', { name: 'Подтвердить', exact: true }).click()
+    if (attempt === 1) break
+    await expect(page).toHaveURL(/\/accounts$/)
+    await page.getByRole('button', { name: 'Выйти' }).click()
+    await expect(page).toHaveURL(/\/login$/)
+  }
+  await expect(page.getByRole('alert')).toContainText('Код неверен')
+  const stillPartial = await page.request.get('/api/admin/companies')
+  expect(stillPartial.status()).toBe(401)
+  await page.getByRole('button', { name: 'Выйти' }).click()
+  await expect(page).toHaveURL(/\/login$/)
 })
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function totpCode(secret: string): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let bits = 0
+  let buffer = 0
+  const bytes: number[] = []
+  for (const character of secret.replace(/=+$/, '')) {
+    const index = alphabet.indexOf(character)
+    if (index < 0) throw new Error('Invalid synthetic TOTP secret')
+    buffer = (buffer << 5) | index
+    bits += 5
+    if (bits >= 8) {
+      bits -= 8
+      bytes.push((buffer >> bits) & 255)
+    }
+  }
+  const counter = Buffer.alloc(8)
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)))
+  const digest = createHmac('sha1', Buffer.from(bytes)).update(counter).digest()
+  const offset = (digest[digest.length - 1] ?? 0) & 15
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(
+    6,
+    '0',
+  )
 }

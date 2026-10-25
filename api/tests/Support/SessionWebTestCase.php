@@ -10,6 +10,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 /** Штатный API-клиент; негативные CSRF-тесты используют исходный WebTestCase. */
 abstract class SessionWebTestCase extends WebTestCase
 {
+    use AuthenticateAdministrator;
+
     /**
      * @param array<array-key, mixed> $options
      * @param array<array-key, mixed> $server
