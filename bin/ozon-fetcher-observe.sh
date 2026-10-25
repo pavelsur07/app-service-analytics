@@ -3,10 +3,11 @@
 # docs/plan/ozon-fetcher.md) по каждому подключению из allowlist.
 # Только чтение: ни ключей, ни тел, ни сумм — счётчики, даты и пути методов.
 #
-#   ssh conwix-prod 'cd /opt/conwix && SINCE=2026-10-26 sh -s' < bin/ozon-fetcher-observe.sh
+#   ssh conwix-prod 'cd /opt/conwix && sh -s' < bin/ozon-fetcher-observe.sh
 #
-# SINCE — первый день наблюдения (по умолчанию 7 дней назад), UNTIL —
-# последний (по умолчанию сегодня). Сутки — UTC, границы журнала тоже.
+# SINCE — первый день (по умолчанию 7 суток назад, но не раньше первых
+# суток с журналом в journald — JOURNALD_SINCE ниже), UNTIL — последний
+# (по умолчанию сегодня). Сутки — UTC, границы журнала тоже.
 #
 # Что печатает, по дням и отдельно по Seller и Performance:
 # - ответы 429 Ozon: PHP — `warning` клиентов (ADR-028, этап 4), сервис —
@@ -42,13 +43,15 @@ C=${COMPOSE:-docker compose -f docker-compose.prod.yml}
 J=${JOURNALCTL:-journalctl}
 D=${DOCKER:-docker}
 BASELINE=${BASELINE:-0}
-# Первые полные сутки UTC, когда журналы PHP и сервиса уже в journald
-# (выкладка этапа 8 — 25.10.2026). Раньше записей нет: json-file стёрт.
-JOURNALD_SINCE=${JOURNALD_SINCE:-2026-10-26}
-SINCE=${SINCE:-$(date -u -d '-7 days' +%F)}
 UNTIL=${UNTIL:-$(date -u +%F)}
+# Контейнеры проекта: долгоживущие (-1) и разовые `docker compose run`
+# (-run-<hash>) — ручной запуск консоли, ходящий в Ozon, тоже в счёте.
+# Вывод `exec` в журнал контейнера не попадает: на время наблюдения
+# команды, ходящие в Ozon, — через `run` (operations-checklist.md).
 PHP_CONTAINERS='api worker-ingestion worker-backfill worker-calc worker-scheduler worker-freshness'
+PHP_NAME_RE='^conwix-(api|worker-[a-z]+)-(1|run-[0-9a-f]+)$'
 SERVICE_CONTAINER=conwix-ozon-fetcher-1
+SERVICE_NAME_RE='^conwix-ozon-fetcher-(1|run-[0-9a-f]+)$'
 # Пары «тип отчёта PHP — ресурс сервиса» для покрытия; дни не свежее
 # COVERAGE_LAG суток — свежие догружает текущий тик обеих сторон.
 COVERAGE_PAIRS='ozon_posting_fbo_list:ozon.orders.fbo ozon_accrual_by_day:ozon.finance.accrual-by-day ozon_ad_expense:ozon.ads.expense ozon_ad_daily:ozon.ads.daily'
@@ -68,6 +71,25 @@ die() {
 
 command -v jq > /dev/null || die "нужен jq"
 command -v python3 > /dev/null || die "нужен python3"
+# JOURNALD_SINCE — первые полные сутки UTC, когда журналы уже в journald:
+# следующие сутки после первой записи сервиса в journald (сервис пишет
+# каждый запрос; PHP-контейнеры пересоздаёт та же выкладка, что перевела
+# журналы, — docker-compose.prod.yml, x-journald-logging). Раньше записей
+# нет: json-file стёрт пересозданием. Выводится из факта, а не из даты
+# выкладки; переменная окружения — только переопределение.
+if [ -z "${JOURNALD_SINCE:-}" ]; then
+    first=$($J -o json --output-fields=__REALTIME_TIMESTAMP "CONTAINER_NAME=$SERVICE_CONTAINER" | head -n 1) ||
+        die "journald сервиса не прочитан"
+    [ -n "$first" ] || die "у $SERVICE_CONTAINER нет записей в journald — журнал не собран"
+    JOURNALD_SINCE=$(printf '%s' "$first" | jq -r '.__REALTIME_TIMESTAMP|tonumber/1000000 + 86400|strftime("%Y-%m-%d")') ||
+        die "первая запись journald не разобрана"
+fi
+# По умолчанию — последние 7 суток, но не раньше JOURNALD_SINCE: иначе
+# каждый запуск недели давал бы 2 за заведомо несобранные сутки.
+if [ -z "${SINCE:-}" ]; then
+    SINCE=$(date -u -d '-7 days' +%F)
+    [ "$(echo "$SINCE" | tr -d -)" -ge "$(echo "$JOURNALD_SINCE" | tr -d -)" ] || SINCE=$JOURNALD_SINCE
+fi
 for d in "$SINCE" "$UNTIL" "$JOURNALD_SINCE"; do
     printf '%s' "$d" | grep -Eqx '[0-9]{4}-[0-9]{2}-[0-9]{2}' || die "даты — YYYY-MM-DD"
 done
@@ -88,44 +110,33 @@ psql_svc() {
     $C exec -T postgres sh -c 'psql -X -q -At -F"|" -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d ozon_fetcher "$@"' sh "$@"
 }
 
-# Записи journald за период как JSON-строки сообщений с днём UTC:
-# {"day":"YYYY-MM-DD","m":<сообщение>}. Не-JSON строки пропускаются.
-# Сбой journalctl — отказ сверки, а не нулевой счёт.
-journal() {
-    matches=
-    for name in "$@"; do
-        matches="$matches CONTAINER_NAME=$name"
-    done
-    # shellcheck disable=SC2086 # matches — список полей journald
-    raw=$($J -o json --since "$SINCE 00:00:00 UTC" --until "$after_until 00:00:00 UTC" $matches) || return 1
-    [ -n "$raw" ] || return 0
-    printf '%s\n' "$raw" |
-        jq -c 'select(.MESSAGE|type=="string") | {day: (.__REALTIME_TIMESTAMP|tonumber/1000000|strftime("%Y-%m-%d")), m: (.MESSAGE|fromjson? // empty)}'
-}
+# Записи контейнеров (драйвер journald — dockerd) за период как JSON:
+# {"day":"YYYY-MM-DD","c":<контейнер>,"m":<сообщение>}. Не-JSON строки
+# пропускаются. Сбой journalctl — отказ сверки, а не нулевой счёт; чтение
+# и разбор — два шага: в конвейере код выхода был бы у jq.
+raw=$($J -o json --since "$SINCE 00:00:00 UTC" --until "$after_until 00:00:00 UTC" _SYSTEMD_UNIT=docker.service) ||
+    die "journald не прочитан"
+journal=$(printf '%s\n' "$raw" | jq -c 'select((.MESSAGE|type=="string") and (.CONTAINER_NAME|type=="string")) | {day: (.__REALTIME_TIMESTAMP|tonumber/1000000|strftime("%Y-%m-%d")), c: .CONTAINER_NAME, m: (.MESSAGE|fromjson? // empty)}')
+unset raw
 
 # Счёт по журналу верен, только если журнал контейнера в journald:
-# json-file стирается выкладкой (docker-compose.prod.yml, x-journald-logging).
-php_names=
+# json-file стирается выкладкой.
 for svc in $PHP_CONTAINERS; do
-    php_names="$php_names conwix-$svc-1"
+    names="${names:-} conwix-$svc-1"
 done
-for name in $php_names $SERVICE_CONTAINER; do
+for name in $names $SERVICE_CONTAINER; do
     driver=$($D inspect -f '{{.HostConfig.LogConfig.Type}}' "$name" 2> /dev/null) ||
         die "контейнера $name нет — счёт по журналу неполный"
     [ "$driver" = journald ] || die "журнал $name — $driver, не journald: счёт по журналу неполный"
 done
 
-# Чтение журнала и разбор — два шага: в конвейере код выхода был бы
-# у jq, и сбой journalctl превратился бы в нулевой счёт.
-# shellcheck disable=SC2086
-php_journal=$(journal $php_names) || die "journald PHP не прочитан"
-svc_journal=$(journal "$SERVICE_CONTAINER") || die "journald сервиса не прочитан"
-php_log=$(printf '%s\n' "$php_journal" | jq -c 'select(.m.message|type=="string" and test("^Ozon (Seller|Performance) API answered")) | {day, api: .m.context.api, status: .m.context.status, method: .m.context.method, path: .m.context.path, client: (.m.context.client_id|tostring)}')
-svc_log=$(printf '%s\n' "$svc_journal" | jq -c 'select(.m.msg=="ozon request" or .m.msg=="ozon performance request") | {day, api: (if .m.msg=="ozon request" then "seller" else "performance" end), status: .m.status, account: .m.marketplace_account_id, endpoint: .m.endpoint}')
+php_log=$(printf '%s\n' "$journal" | jq -c --arg re "$PHP_NAME_RE" 'select((.c|test($re)) and (.m.message|type=="string") and (.m.message|test("^Ozon (Seller|Performance) API answered"))) | {day, api: .m.context.api, status: .m.context.status, method: .m.context.method, path: .m.context.path, client: (.m.context.client_id|tostring)}')
+svc_log=$(printf '%s\n' "$journal" | jq -c --arg re "$SERVICE_NAME_RE" 'select((.c|test($re)) and (.m.msg=="ozon request" or .m.msg=="ozon performance request")) | {day, api: (if .m.msg=="ozon request" then "seller" else "performance" end), status: .m.status, account: .m.marketplace_account_id, endpoint: .m.endpoint}')
+unset journal
 
 verdict=0
 incomplete=0
-echo "Наблюдение ozon-fetcher: $SINCE..$UNTIL (сутки UTC), критерий 429: сумма PHP+сервис по API за сутки <= $((BASELINE + 3))"
+echo "Наблюдение ozon-fetcher: $SINCE..$UNTIL (сутки UTC; журнал собран с $JOURNALD_SINCE), критерий 429: сумма PHP+сервис по API за сутки <= $((BASELINE + 3))"
 
 for account in $(printf '%s' "$allowlist" | tr ',' ' '); do
     printf '%s' "$account" | grep -Eqx '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' ||

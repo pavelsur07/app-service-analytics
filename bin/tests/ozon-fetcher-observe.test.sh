@@ -37,12 +37,15 @@ setup() {
 #!/bin/sh
 cat '$work/driver'
 EOF
+    # Первая запись сервиса в journald — сутками раньше наблюдения.
+    jq -cn --arg ts "$((TS - 86400000000))" '{__REALTIME_TIMESTAMP: $ts}' > "$work/first"
     cat > "$work/journalctl" <<EOF
 #!/bin/sh
 [ -f '$work/journal_fail' ] && exit 1
 case "\$*" in
-    *conwix-ozon-fetcher-1*) cat '$work/svc.json' ;;
-    *) cat '$work/php.json' ;;
+    *CONTAINER_NAME=conwix-ozon-fetcher-1*) cat '$work/first' ;;
+    *_SYSTEMD_UNIT=docker.service*) cat '$work/php.json' '$work/svc.json' ;;
+    *) exit 64 ;;
 esac
 EOF
     cat > "$work/compose" <<EOF
@@ -60,33 +63,35 @@ EOF
     chmod +x "$work/docker" "$work/journalctl" "$work/compose"
 }
 
-# Запись journald с JSON-сообщением.
-entry() {
-    jq -cn --arg msg "$1" --arg ts "$TS" '{__REALTIME_TIMESTAMP: $ts, MESSAGE: $msg}'
+# Запись journald драйвера docker: контейнер и JSON-сообщение.
+entry() { # container message
+    jq -cn --arg c "$1" --arg msg "$2" --arg ts "$TS" '{__REALTIME_TIMESTAMP: $ts, CONTAINER_NAME: $c, MESSAGE: $msg}'
 }
 
-php_answer() { # api status client_id
+php_answer() { # api status client_id [container]
     local name=Seller
     [[ $1 == performance ]] && name=Performance
-    entry "$(jq -cn --arg msg "Ozon $name API answered {status}" --arg api "$1" --argjson st "$2" --arg c "$3" \
+    entry "${4:-conwix-worker-ingestion-1}" "$(jq -cn --arg msg "Ozon $name API answered {status}" --arg api "$1" --argjson st "$2" --arg c "$3" \
         '{message: $msg, context: {api: $api, status: $st, method: "POST", path: "/v3/finance/transaction/list", client_id: $c}}')" >> "$work/php.json"
 }
 
 svc_request() { # msg status account
-    entry "$(jq -cn --arg m "$1" --argjson st "$2" --arg a "$3" \
+    entry conwix-ozon-fetcher-1 "$(jq -cn --arg m "$1" --argjson st "$2" --arg a "$3" \
         '{msg: $m, status: $st, marketplace_account_id: $a, endpoint: "/v3/posting/fbo/list"}')" >> "$work/svc.json"
 }
 
 run() {
     rc=0
     output=$(cd "$work" && DOTENV="$work/.env" COMPOSE="$work/compose" JOURNALCTL="$work/journalctl" \
-        DOCKER="$work/docker" SINCE=${SINCE:-$DAY} UNTIL=$DAY JOURNALD_SINCE=$DAY sh "$OBSERVE" 2>&1) || rc=$?
+        DOCKER="$work/docker" SINCE=${SINCE:-$DAY} UNTIL=$DAY sh "$OBSERVE" 2>&1) || rc=$?
 }
 
 test_429_threshold_is_per_api_and_per_connection() {
     setup
-    for _ in 1 2; do php_answer seller 429 25218; done
+    php_answer seller 429 25218
+    php_answer seller 429 25218 conwix-api-run-0a1b2c3d4e5f # ручной `compose run` — в счёте
     php_answer seller 429 99999 # чужой кабинет Seller — не в счёт
+    php_answer seller 429 25218 other-project-api-1 # чужой контейнер — не в счёт
     svc_request 'ozon request' 429 "$ACC"
     svc_request 'ozon request' 429 "$OTHER" # чужое подключение — не в счёт
     svc_request 'ozon request' 200 "$ACC"
@@ -137,6 +142,12 @@ test_incomplete_days_are_not_success() {
     SINCE=2026-10-25 run
     [[ $rc == 2 ]] || fail "сутки до journald: код $rc вместо 2"
     grep -q '2026-10-25 .*НЕ СОБРАНО(журнал до journald)' <<< "$output" || fail "сутки до journald не помечены: $output"
+    grep -q "журнал собран с $DAY" <<< "$output" || fail "JOURNALD_SINCE не выведен из первой записи: $output"
+
+    setup
+    : > "$work/first" # у сервиса нет ни одной записи в journald
+    run
+    [[ $rc == 2 ]] || fail "пустой journald сервиса: код $rc вместо 2"
 
     setup
     printf '%s\n' "$DAY|12" > "$work/attempts" # попытки есть, записей запросов в журнале нет
