@@ -200,6 +200,7 @@ test-e2e: ## сеет тестовые данные (dev-БД) и прогоня
 		-e E2E_ADMIN_EMAIL=$$(sed -n '1p' var/e2e-admin-credentials) \
 		-e E2E_ADMIN_PASSWORD=$$(sed -n '2p' var/e2e-admin-credentials) \
 		playwright npx playwright test
+	$(COMPOSE) exec playwright node apps/extension/tests/browser/storage.mjs
 
 test-cov: ## покрытие (драйвер pcov в php-cli, docker/php/Dockerfile)
 	$(COMPOSE) exec php-cli composer test:cov
