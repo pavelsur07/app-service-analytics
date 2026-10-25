@@ -502,6 +502,9 @@ func (t *Tasks) FinishTask(ctx context.Context, key TaskKey, attemptID string, o
 		key.Account.CompanyID, key.Account.AccountID, attemptID, now, out.Label, out.HTTPStatus); err != nil {
 		return 0, fmt.Errorf("store: finish attempt: %w", err)
 	}
+	if err := countOutcome(ctx, tx, key.Account, out.Label, now); err != nil {
+		return 0, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("store: finish commit: %w", err)
 	}
@@ -543,12 +546,47 @@ func (t *Tasks) ReleaseExpiredAcrossConnections(ctx context.Context, now time.Ti
 			FROM released r
 			WHERE a.company_id = r.company_id AND a.marketplace_account_id = r.marketplace_account_id AND a.attempt_id = r.attempt_id
 			RETURNING 1
+		), counted AS (
+			-- Счётчик исходов за час (attempt_outcome_hour, тот же, что у FinishTask).
+			INSERT INTO attempt_outcome_hour (company_id, marketplace_account_id, hour, outcome, attempts)
+			SELECT company_id, marketplace_account_id, date_trunc('hour', $1::timestamptz), 'lease_expired', count(*)
+			FROM released GROUP BY 1, 2
+			ON CONFLICT (company_id, marketplace_account_id, hour, outcome)
+			DO UPDATE SET attempts = attempt_outcome_hour.attempts + EXCLUDED.attempts
+			RETURNING 1
 		)
 		SELECT count(*) FROM released`, now).Scan(&released)
 	if err != nil {
 		return 0, fmt.Errorf("store: release expired: %w", err)
 	}
 	return released, nil
+}
+
+// OutcomeRetention — сколько хранится счётчик исходов за час.
+const OutcomeRetention = 48 * time.Hour
+
+// countOutcome — +1 к счётчику исхода подключения за текущий час в
+// транзакции закрытия попытки. Первая запись нового часа подключения
+// удаляет его часы старше OutcomeRetention: таблица не растёт.
+func countOutcome(ctx context.Context, tx pgx.Tx, ref account.Ref, outcome string, now time.Time) error {
+	var opened bool
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO attempt_outcome_hour (company_id, marketplace_account_id, hour, outcome, attempts)
+		VALUES ($1, $2, date_trunc('hour', $3::timestamptz), $4, 1)
+		ON CONFLICT (company_id, marketplace_account_id, hour, outcome)
+		DO UPDATE SET attempts = attempt_outcome_hour.attempts + 1
+		RETURNING xmax = 0`, ref.CompanyID, ref.AccountID, now, outcome).Scan(&opened); err != nil {
+		return fmt.Errorf("store: count outcome: %w", err)
+	}
+	if !opened {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM attempt_outcome_hour WHERE company_id = $1 AND marketplace_account_id = $2 AND hour < $3`,
+		ref.CompanyID, ref.AccountID, now.Add(-OutcomeRetention)); err != nil {
+		return fmt.Errorf("store: prune outcomes: %w", err)
+	}
+	return nil
 }
 
 // splitRefs — параллельные массивы компаний и подключений для unnest.

@@ -15,6 +15,7 @@ import (
 
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/account"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/connections"
+	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/observability"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/ozon"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/rawstore"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/store"
@@ -312,11 +313,15 @@ type Result struct {
 // Run выполняет задачу. traceID — сквозной идентификатор для логов.
 func (e *Executor) Run(ctx context.Context, task store.Task, cabinet connections.Cabinet, traceID string) Result {
 	started := e.now()
-	log := e.logger.With(
+	fields := []slog.Attr{
 		slog.String("job_id", task.AttemptID), slog.String("trace_id", traceID),
 		slog.String("company_id", task.Account.CompanyID), slog.String("marketplace_account_id", task.Account.AccountID), slog.String("resource_type", task.ResourceType),
-		slog.String("period_key", task.PeriodKey), slog.Int("retry_count", task.Attempts-1),
-	)
+	}
+	// Поля задачи — и в логгер задачи, и в контекст: из контекста их получит
+	// каждая запись, сделанная с ним, в том числе запросы клиентов Ozon
+	// и хранилища (services/AGENTS.md §8).
+	ctx = observability.WithFields(ctx, fields...)
+	log := slog.New(e.logger.Handler().WithAttrs(fields)).With(slog.String("period_key", task.PeriodKey), slog.Int("retry_count", task.Attempts-1))
 	log.Info("fetch task started", slog.String("stage", "fetch"))
 
 	taskCtx, cancel := context.WithCancelCause(ctx)

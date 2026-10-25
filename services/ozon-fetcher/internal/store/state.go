@@ -16,29 +16,57 @@ type Limit struct {
 	Current  float64     `json:"rps_current"`
 }
 
+// LimitsPageSize — строк connection_limit за один запрос при загрузке.
+const LimitsPageSize = 500
+
 // LoadLimitsAllConnections — все сохранённые лимиты (для ratelimit.Registry.Seed
-// при старте). Межарендаторное чтение операционной задачи (CLAUDE.md §1,
-// ADR-043): лимитер сервиса один на подключения всех компаний.
+// при старте), страницами keyset по первичному ключу: список с лимитом
+// (services/AGENTS.md §5), а не одной выборкой таблицы. Межарендаторное
+// чтение операционной задачи (CLAUDE.md §1, ADR-043): лимиты подключений
+// всех компаний восстанавливаются при запуске.
 func (t *Tasks) LoadLimitsAllConnections(ctx context.Context) ([]Limit, error) {
+	var limits []Limit
+	for {
+		page, err := t.limitsPage(ctx, limits)
+		if err != nil {
+			return nil, err
+		}
+		limits = append(limits, page...)
+		if len(page) < LimitsPageSize {
+			return limits, nil
+		}
+	}
+}
+
+// limitsPage — следующая страница после последней строки loaded.
+func (t *Tasks) limitsPage(ctx context.Context, loaded []Limit) ([]Limit, error) {
+	var company, acc, endpoint *string
+	if n := len(loaded); n > 0 {
+		last := loaded[n-1]
+		company, acc, endpoint = &last.Account.CompanyID, &last.Account.AccountID, &last.Endpoint
+	}
 	rows, err := t.pool.Query(ctx, `
 		SELECT company_id, marketplace_account_id, endpoint, COALESCE(rps_override, 0)::float8, COALESCE(rps_current, 0)::float8
-		FROM connection_limit`)
+		FROM connection_limit
+		WHERE $1::uuid IS NULL OR (company_id, marketplace_account_id, endpoint) > ($1::uuid, $2::uuid, $3::text)
+		ORDER BY company_id, marketplace_account_id, endpoint
+		LIMIT $4`, company, acc, endpoint, LimitsPageSize)
 	if err != nil {
 		return nil, fmt.Errorf("store: load limits: %w", err)
 	}
 	defer rows.Close()
-	var limits []Limit
+	page := make([]Limit, 0, LimitsPageSize)
 	for rows.Next() {
 		var l Limit
 		if err := rows.Scan(&l.Account.CompanyID, &l.Account.AccountID, &l.Endpoint, &l.Override, &l.Current); err != nil {
 			return nil, fmt.Errorf("store: scan limit: %w", err)
 		}
-		limits = append(limits, l)
+		page = append(page, l)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: load limits: %w", err)
 	}
-	return limits, nil
+	return page, nil
 }
 
 // SaveCurrentRate — адаптированная скорость пары (ratelimit OnChange).
