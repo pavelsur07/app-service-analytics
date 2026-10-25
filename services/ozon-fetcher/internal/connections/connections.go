@@ -348,6 +348,7 @@ type Cache struct {
 	list        []Cabinet
 	ready       bool
 	lastAttempt time.Time
+	lastSuccess time.Time // начало последнего успешного обновления
 	refreshMu   sync.Mutex
 	allow       map[string]bool // пусто — все кабинеты
 }
@@ -449,13 +450,21 @@ func (c *Cache) refreshLocked(ctx context.Context) error {
 		byRef[cab.Account] = cab
 	}
 	c.mu.Lock()
-	c.byRef, c.list, c.ready = byRef, cabinets, true
+	c.byRef, c.list, c.ready, c.lastSuccess = byRef, cabinets, true, started
 	c.mu.Unlock()
 
 	c.logger.Info("connections refreshed",
 		slog.String("stage", "connections"), slog.String("outcome", "ok"),
 		slog.Int("cabinets", len(cabinets)), slog.Int64("duration_ms", duration))
 	return nil
+}
+
+// RefreshedAt — начало последнего успешного обновления: снимок отражает
+// выдачу не раньше этого момента. Неудачная попытка его не сдвигает.
+func (c *Cache) RefreshedAt() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.lastSuccess
 }
 
 // ForceRefresh — после 401 от Ozon: ключ мог смениться. Не чаще

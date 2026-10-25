@@ -113,10 +113,12 @@ type Ozon interface {
 }
 
 // Refresher — обновление снимка кабинетов после 401 и 403; Get — подключение
-// из снимка (версия ключей перед решением об остановке).
+// из снимка, RefreshedAt — начало последнего успешного обновления (версия
+// ключей перед решением об остановке).
 type Refresher interface {
 	ForceRefresh(ctx context.Context) (bool, error)
 	Get(ref account.Ref) (connections.Cabinet, bool)
+	RefreshedAt() time.Time
 }
 
 // Config — тайминги исполнителя.

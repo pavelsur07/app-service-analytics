@@ -343,6 +343,7 @@ type postingCall struct {
 type fakeRefresher struct {
 	calls     int
 	err       error
+	refreshed time.Time // RefreshedAt; нулевое — t0
 	updatedAt time.Time
 	keys      map[account.Ref]time.Time
 	missing   bool
@@ -351,6 +352,13 @@ type fakeRefresher struct {
 func (f *fakeRefresher) ForceRefresh(context.Context) (bool, error) {
 	f.calls++
 	return true, f.err
+}
+
+func (f *fakeRefresher) RefreshedAt() time.Time {
+	if f.refreshed.IsZero() {
+		return t0
+	}
+	return f.refreshed
 }
 
 func (f *fakeRefresher) Get(ref account.Ref) (connections.Cabinet, bool) {
@@ -689,6 +697,20 @@ func TestForbiddenAfterKeyChangeInPHPRetriesWithoutHalt(t *testing.T) {
 func TestForbiddenWithUnrefreshedConnectionsRetries(t *testing.T) {
 	h := newHarness(&fakeOzon{singleErr: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: "/v1/x", Status: http.StatusForbidden}})
 	h.refresher.err = errors.New("php down")
+	h.tasks.loaded = true
+
+	res := h.exec.Run(context.Background(), task(ResourceAccrualTypes, PeriodRef), cabinet, "trace")
+
+	assert.Equal(t, "auth", res.Outcome)
+	assert.Empty(t, h.tasks.halts)
+	assert.Empty(t, h.tasks.paused)
+}
+
+// Запрос обновления подавлен, а последний успешный снимок старше интервала
+// подавления — свежесть выдачи не доказана: повтор, без остановки.
+func TestForbiddenWithStaleConnectionsSnapshotRetries(t *testing.T) {
+	h := newHarness(&fakeOzon{singleErr: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: "/v1/x", Status: http.StatusForbidden}})
+	h.refresher.refreshed = t0.Add(-5 * time.Minute)
 	h.tasks.loaded = true
 
 	res := h.exec.Run(context.Background(), task(ResourceAccrualTypes, PeriodRef), cabinet, "trace")
