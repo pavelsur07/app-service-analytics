@@ -497,6 +497,18 @@ func TestMonthlyResources(t *testing.T) {
 	assert.Equal(t, "invalid_task", h.tasks.finished.Label)
 }
 
+// Ресурс задачи вне формы сегмента ключа хранилища — постоянная ошибка:
+// повтор соберёт тот же ключ.
+func TestInvalidStorageKeyIsPermanent(t *testing.T) {
+	h := newHarness(&fakeOzon{pages: twoPageDay()})
+	h.raw.fail = map[int]error{1: rawstore.ErrInvalidKey}
+
+	h.exec.Run(context.Background(), task(ResourceAccrualByDay, "2026-10-15"), cabinet, "trace")
+
+	assert.Equal(t, store.StatusFailedPermanent, h.tasks.finished.Status)
+	assert.Equal(t, "invalid_task", h.tasks.finished.Label)
+}
+
 func TestNoSellerCredentialsPostpones(t *testing.T) {
 	h := newHarness(&fakeOzon{})
 	h.exec.Run(context.Background(), task(ResourceAccrualByDay, "2026-10-15"), connections.Cabinet{Account: accounttest.Ref("ref-a"), HasPerformance: true}, "trace")
@@ -683,7 +695,7 @@ func TestHungControlWriteIsBoundedAndKeepsTaskRetryable(t *testing.T) {
 
 func TestUnchangedPagesAreNotUploadedAgain(t *testing.T) {
 	h := newHarness(&fakeOzon{pages: twoPageDay()})
-	h.tasks.known = []store.RawObject{{PageNo: 1, StorageURI: "s3://b/old-p1", SHA256: sha(`{"p":1}`), StoredBytes: 7}}
+	h.tasks.known = []store.RawObject{{PageNo: 1, StorageURI: "s3://b/old-p1", SHA256: sha(`{"p":1}`), StoredBytes: 7, ContentType: "text/plain"}}
 
 	res := h.exec.Run(context.Background(), task(ResourceAccrualByDay, "2026-10-15"), cabinet, "trace")
 
@@ -692,6 +704,7 @@ func TestUnchangedPagesAreNotUploadedAgain(t *testing.T) {
 	assert.JSONEq(t, `{"p":2}`, string(h.raw.puts[0].Body))
 	require.Len(t, h.tasks.pages, 2, "журнал попытки — обе страницы")
 	assert.Equal(t, "s3://b/old-p1", h.tasks.pages[0].StorageURI)
+	assert.Equal(t, "text/plain", h.tasks.pages[0].ContentType, "content_type записанного объекта: по нему пересобирается ключ")
 	assert.Contains(t, h.logs.String(), `"pages_reused":1`)
 }
 

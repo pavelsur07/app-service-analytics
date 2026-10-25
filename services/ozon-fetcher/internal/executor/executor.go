@@ -449,7 +449,9 @@ func (r *taskRun) store(ctx context.Context, p ozon.Page) error {
 		return &storeError{err}
 	}
 	if found {
-		obj.StorageURI, obj.StoredBytes = existing.StorageURI, existing.StoredBytes
+		// content_type — того объекта, что записан: при чтении из него
+		// пересобирается расширение ключа (ADR-044).
+		obj.StorageURI, obj.StoredBytes, obj.ContentType = existing.StorageURI, existing.StoredBytes, existing.ContentType
 		r.reused++
 	} else {
 		stored, err := e.raw.Put(ctx, r.task.Account, rawstore.Object{

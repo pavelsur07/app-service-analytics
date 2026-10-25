@@ -74,8 +74,9 @@
 компаний (операционная задача, CLAUDE.md §1, обоснование — ADR-043).
 Deptrac этого не видит, поэтому правило исполняется так:
 
-- **ключ объекта хранилища начинается с компании**:
-  `{provider}/{company_id}/{marketplace_account_id}/…`. `company_id`
+- **ключ объекта хранилища начинается с компании** после префикса сервиса:
+  `conwix/svc/{сервис}/v{N}/companies/{company_id}/accounts/{marketplace_account_id}/…`
+  (ADR-044). `company_id`
   и подключение берутся из одной записи выдачи подключений, сегменты
   проверяются при сборке ключа; ключ не принимается готовым извне;
 - каждая функция, работающая с данными подключения, принимает
@@ -211,7 +212,7 @@ CLAUDE.md §4 действует целиком:
 | Вопрос | ВашФинДир | Conwix |
 |---|---|---|
 | Идентификатор подключения | `connection_ref` | `company_id` + `marketplace_account_id` |
-| Ключ объекта | `ozon/{connection_ref}/…` | `ozon/{company_id}/{marketplace_account_id}/…` |
+| Ключ объекта | `ozon/{connection_ref}/…` | `conwix/svc/ozon-fetcher/v1/companies/{company_id}/accounts/{marketplace_account_id}/…/{sha256}.{ext}.gz` (ADR-044) |
 | Фикстуры | обезличенные | побайтовые ответы кабинета (§9) |
 | Миграции | forward-only, применяет выкладка | рабочий `down`, одна на задачу, `db-rebuild-check`; выкладка только проверяет |
 | Allowlist подключений | пустой — все подключения | пустой — ни одного; подключения поимённо |
