@@ -222,11 +222,17 @@ deptrac: ## границы модулей
 structure-check: ## api/src содержит только Shared/Identity/Ingestion/PriceMonitoring/Links/SalesPlanning/Kernel.php
 	$(COMPOSE) exec php-cli sh bin/check-src-structure.sh
 
-audit: ## composer audit + npm audit (оба приложения и packages/api-schema)
+audit: ## Composer и все шесть npm lock-деревьев, включая dev-зависимости
 	$(COMPOSE) exec php-cli composer audit
 	$(COMPOSE) exec node-seller npm audit
 	$(COMPOSE) exec node-admin npm audit
+	$(COMPOSE) exec node-extension npm audit
 	$(COMPOSE) exec -w /var/www/packages/api-schema node-seller npm audit
+	$(COMPOSE) exec -w /var/www/packages/ui node-seller npm audit --package-lock-only
+	$(COMPOSE) run --rm -T \
+		-v "$(CURDIR)/package.json:/tmp/conwix-root-audit/package.json:ro" \
+		-v "$(CURDIR)/package-lock.json:/tmp/conwix-root-audit/package-lock.json:ro" \
+		-w /tmp/conwix-root-audit node-seller npm audit --package-lock-only
 
 front-typecheck: ## tsc --noEmit (APP=seller|admin, по умолчанию — оба)
 	@for app in $(APPS); do $(COMPOSE) exec node-$$app npm run typecheck || exit 1; done
