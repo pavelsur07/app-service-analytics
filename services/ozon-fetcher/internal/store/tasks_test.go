@@ -45,9 +45,26 @@ func newAttemptID() string {
 	return fmt.Sprintf("00000000-0000-7000-8000-%012d", attemptSeq.Add(1))
 }
 
+// testKeyVersion — версия ключей подключений снимка в тестах выдачи.
+var testKeyVersion = time.Date(2026, 10, 25, 6, 0, 0, 0, time.UTC)
+
+// connsOf — подключения снимка с версией ключей version.
+func connsOf(refs []account.Ref, version time.Time) []Connection {
+	conns := make([]Connection, len(refs))
+	for i, r := range refs {
+		conns[i] = Connection{Account: r, KeyVersion: version}
+	}
+	return conns
+}
+
 func claim(t *testing.T, tasks *Tasks, refs []account.Ref, now time.Time) (Task, error) {
 	t.Helper()
-	return tasks.ClaimNextAcrossConnections(context.Background(), refs, "worker-1", newAttemptID(), "trace-1", now, time.Minute)
+	return claimWithKey(t, tasks, refs, testKeyVersion, now)
+}
+
+func claimWithKey(t *testing.T, tasks *Tasks, refs []account.Ref, version, now time.Time) (Task, error) {
+	t.Helper()
+	return tasks.ClaimNextAcrossConnections(context.Background(), connsOf(refs, version), "worker-1", newAttemptID(), "trace-1", now, time.Minute)
 }
 
 func status(t *testing.T, tasks *Tasks, key TaskKey) string {
@@ -129,7 +146,7 @@ func TestConcurrentClaimsNeverRunOneConnectionTwice(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			task, err := tasks.ClaimNextAcrossConnections(ctx, accounttest.Refs("ref-a", "ref-b"), "w", newAttemptID(), "trace", t0, time.Minute)
+			task, err := tasks.ClaimNextAcrossConnections(ctx, connsOf(accounttest.Refs("ref-a", "ref-b"), testKeyVersion), "w", newAttemptID(), "trace", t0, time.Minute)
 			if errors.Is(err, ErrNoTask) {
 				return
 			}
@@ -369,33 +386,86 @@ func TestPlanOnceRunsOncePerDateEvenConcurrently(t *testing.T) {
 	assert.True(t, done, "следующая дата — новый проход")
 }
 
-func TestAuthFailuresAreCountedPerCabinet(t *testing.T) {
+// ADR-043 п. 4: 401 — одно обновление выдачи и один повтор, затем пауза
+// ключа до новых ключей в выдаче, а не до времени. Счёт — по версии ключей.
+func TestAuthFailuresPauseTheKeyUntilNewKeysAreIssued(t *testing.T) {
 	tasks := testTasks(t)
 	ctx := context.Background()
+	ref := accounttest.Ref("ref-a")
+	v1, v2 := testKeyVersion, testKeyVersion.Add(time.Hour)
 	pause := func(n int) time.Duration {
 		if n >= 2 {
-			return time.Hour
+			return 0
 		}
 		return time.Minute
 	}
 	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{spec("ref-a", "r", "2026-10-01", 0), spec("ref-a", "r", "2026-10-02", 0)}))
 
-	n, err := tasks.RecordAuthFailure(ctx, accounttest.Ref("ref-a"), t0, pause)
+	n, err := tasks.RecordAuthFailure(ctx, ref, KeySeller, v1, t0, pause)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
-	_, err = claim(t, tasks, accounttest.Refs("ref-a"), t0.Add(30*time.Second))
-	assert.ErrorIs(t, err, ErrNoTask, "короткая пауза кабинета")
+	_, err = claimWithKey(t, tasks, accounttest.Refs("ref-a"), v1, t0.Add(30*time.Second))
+	assert.ErrorIs(t, err, ErrNoTask, "короткая пауза после первого отказа")
 
-	n, err = tasks.RecordAuthFailure(ctx, accounttest.Ref("ref-a"), t0.Add(2*time.Minute), pause)
+	n, err = tasks.RecordAuthFailure(ctx, ref, KeySeller, v1, t0.Add(2*time.Minute), pause)
 	require.NoError(t, err)
-	assert.Equal(t, 2, n, "второй отказ — по кабинету, задача может быть другой")
-	_, err = claim(t, tasks, accounttest.Refs("ref-a"), t0.Add(30*time.Minute))
-	assert.ErrorIs(t, err, ErrNoTask, "длинная пауза")
+	assert.Equal(t, 2, n, "второй отказ той же версии — по кабинету, задача может быть другой")
+	_, err = claimWithKey(t, tasks, accounttest.Refs("ref-a"), v1, t0.Add(30*24*time.Hour))
+	assert.ErrorIs(t, err, ErrNoTask, "с той же версией ключей выдача закрыта без срока")
 
-	require.NoError(t, tasks.ResumeConnection(ctx, accounttest.Ref("ref-a")))
-	n, err = tasks.RecordAuthFailure(ctx, accounttest.Ref("ref-a"), t0.Add(3*time.Hour), pause)
+	task, err := claimWithKey(t, tasks, accounttest.Refs("ref-a"), v2, t0.Add(3*time.Minute))
+	require.NoError(t, err, "новые ключи в выдаче — задачи снова идут")
+	_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusPending, Label: "auth", NextRunAt: t0}, t0.Add(3*time.Minute))
 	require.NoError(t, err)
-	assert.Equal(t, 1, n, "успех после смены ключа сбрасывает счётчик")
+
+	n, err = tasks.RecordAuthFailure(ctx, ref, KeySeller, v2, t0.Add(4*time.Minute), pause)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "отказ новой версии — счёт заново: один повтор и ей")
+
+	require.NoError(t, tasks.ResumeConnection(ctx, ref, KeySeller))
+	n, err = tasks.RecordAuthFailure(ctx, ref, KeySeller, v2, t0.Add(5*time.Minute), pause)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "успех сбрасывает счётчик")
+}
+
+// У рекламы свой ключ: его отказ не закрывает продажи кабинета, и наоборот.
+func TestAdsAndSellerKeysArePausedSeparately(t *testing.T) {
+	tasks := testTasks(t)
+	ctx := context.Background()
+	ref := accounttest.Ref("ref-a")
+	never := func(int) time.Duration { return 0 }
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{
+		spec("ref-a", "ozon.ads.daily", "2026-10-01", 0),
+		spec("ref-a", "ozon.finance.accrual-by-day", "2026-10-01", 0),
+	}))
+	for range 2 {
+		_, err := tasks.RecordAuthFailure(ctx, ref, KeyAds, testKeyVersion, t0, never)
+		require.NoError(t, err)
+	}
+
+	task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
+	require.NoError(t, err)
+	assert.Equal(t, "ozon.finance.accrual-by-day", task.ResourceType, "продажи идут при отказанном рекламном ключе")
+	_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusDone, Label: "done", ContentHash: hash("x")}, t0)
+	require.NoError(t, err)
+	_, err = claim(t, tasks, accounttest.Refs("ref-a"), t0)
+	assert.ErrorIs(t, err, ErrNoTask, "реклама стоит до новых ключей")
+
+	require.NoError(t, tasks.ResumeConnection(ctx, ref, KeyAds))
+	task, err = claim(t, tasks, accounttest.Refs("ref-a"), t0)
+	require.NoError(t, err)
+	assert.Equal(t, "ozon.ads.daily", task.ResourceType)
+
+	for range 2 {
+		_, err := tasks.RecordAuthFailure(ctx, ref, KeySeller, testKeyVersion, t0, never)
+		require.NoError(t, err)
+	}
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{spec("ref-a", "ozon.ads.expense", "2026-10-01", 0)}))
+	_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusDone, Label: "done", ContentHash: hash("y")}, t0)
+	require.NoError(t, err)
+	task, err = claim(t, tasks, accounttest.Refs("ref-a"), t0)
+	require.NoError(t, err)
+	assert.Equal(t, "ozon.ads.expense", task.ResourceType, "реклама идёт при отказанном ключе Seller")
 }
 
 func TestStatusReport(t *testing.T) {
@@ -418,7 +488,7 @@ func TestStatusReport(t *testing.T) {
 	_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusPending, Label: "rate_limit", ErrorClass: "rate_limit", NextRunAt: t0}, t0)
 	require.NoError(t, err)
 	require.NoError(t, tasks.SaveCurrentRate(ctx, accounttest.Ref("ref-a"), "/v1/finance/accrual/by-day", 0.5))
-	_, err = tasks.RecordAuthFailure(ctx, accounttest.Ref("ref-b"), t0, func(int) time.Duration { return time.Hour })
+	_, err = tasks.RecordAuthFailure(ctx, accounttest.Ref("ref-b"), KeySeller, testKeyVersion, t0, func(int) time.Duration { return time.Hour })
 	require.NoError(t, err)
 	require.NoError(t, tasks.StopResourceAllConnections(ctx, "ozon.finance.mutual-settlement", "obsolete"))
 

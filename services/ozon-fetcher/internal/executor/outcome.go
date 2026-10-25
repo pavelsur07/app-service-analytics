@@ -38,12 +38,9 @@ func (e *Executor) outcome(parent, taskCtx context.Context, task store.Task, run
 		if hash == task.ContentHash {
 			label = "unchanged"
 		}
-		// Успех с ключом seller сбрасывает счётчик отказов кабинета, даже если
-		// эта задача сама 401 не получала (no-op, когда сбрасывать нечего);
-		// у рекламы свой ключ — счётчик seller она не трогает.
-		if !IsAdsResource(task.ResourceType) {
-			e.sideEffect(log, "resume connection", e.tasks.ResumeConnection(side, task.Account))
-		}
+		// Успех сбрасывает счётчик отказов ключа своего семейства, даже если
+		// эта задача сама 401 не получала (no-op, когда сбрасывать нечего).
+		e.sideEffect(log, "resume connection", e.tasks.ResumeConnection(side, task.Account, keyFamily(task.ResourceType)))
 		return store.Outcome{Status: store.StatusDone, Label: label, ContentHash: hash}
 	}
 
@@ -54,6 +51,16 @@ func (e *Executor) outcome(parent, taskCtx context.Context, task store.Task, run
 		// Остановка всех подключений: задача возвращается с курсором, выдача
 		// закрыта строкой service_halt до -resume-halt.
 		return store.Outcome{Status: store.StatusPending, Label: "halted", KeepCursor: true, NextRunAt: now}
+	}
+	if cause := context.Cause(taskCtx); errors.Is(cause, errRevoked) || errors.Is(cause, errStale) {
+		// Ключи сняты или не подтверждены: задача возвращается с курсором.
+		// Выдача её не отдаст, пока подключение не вернётся в свежий снимок;
+		// вернётся — продолжит сразу, без отложенного срока.
+		label := "revoked"
+		if errors.Is(cause, errStale) {
+			label = "connections_stale"
+		}
+		return store.Outcome{Status: store.StatusPending, Label: label, ErrorClass: label, KeepCursor: true, NextRunAt: now}
 	}
 	if parent.Err() != nil && errors.Is(err, parent.Err()) {
 		// Graceful shutdown: задача возвращается в очередь с курсором.
@@ -157,43 +164,7 @@ func (e *Executor) outcome(parent, taskCtx context.Context, task store.Task, run
 		if apiErr.Status == http.StatusForbidden {
 			return e.forbidden(side, task, run, apiErr, now, log)
 		}
-		if IsAdsResource(task.ResourceType) {
-			// Ключ Performance: пауза только этой задачи рекламы — продажи
-			// кабинета идут; подряд второй отказ — длинная пауза + ERROR.
-			_, refreshErr := e.refresher.ForceRefresh(side)
-			e.sideEffect(log, "refresh connections", refreshErr)
-			pause := e.cfg.AuthRetryPause
-			if task.LastErrorClass == string(ozon.ClassAuth) {
-				pause = e.cfg.AuthSuspend
-				log.Error("ozon performance rejected cabinet keys again, ads task paused",
-					slog.String("stage", "fetch"), slog.Int("http_status", apiErr.Status),
-					slog.Time("paused_until", now.Add(pause)))
-			}
-			return store.Outcome{Status: store.StatusFailedRetryable, Label: string(apiErr.Class), ErrorClass: string(apiErr.Class), HTTPStatus: apiErr.Status, KeepCursor: true, NextRunAt: now.Add(pause)}
-		}
-		// Счётчик подряд — по кабинету: первая пауза короткая (снимок с новым
-		// ключом успевает обновиться), со второго отказа — длинная + ERROR.
-		failures, err := e.tasks.RecordAuthFailure(side, task.Account, now, func(n int) time.Duration {
-			if n >= 2 {
-				return e.cfg.AuthSuspend
-			}
-			return e.cfg.AuthRetryPause
-		})
-		if err != nil {
-			// Пауза не записана — кабинет не должен сразу уйти в новый круг 401.
-			e.sideEffect(log, "record auth failure", err)
-			out := e.retryable(task, string(apiErr.Class), now, true)
-			out.HTTPStatus = apiErr.Status
-			return out
-		}
-		_, refreshErr := e.refresher.ForceRefresh(side)
-		e.sideEffect(log, "refresh connections", refreshErr)
-		if failures >= 2 {
-			log.Error("ozon rejected cabinet keys again, cabinet suspended",
-				slog.String("stage", "fetch"), slog.Int("http_status", apiErr.Status), slog.Int("auth_failures", failures),
-				slog.Time("suspended_until", now.Add(e.cfg.AuthSuspend)))
-		}
-		return store.Outcome{Status: store.StatusPending, Label: string(apiErr.Class), ErrorClass: string(apiErr.Class), HTTPStatus: apiErr.Status, KeepCursor: true, NextRunAt: now}
+		return e.unauthorized(side, task, run, apiErr, now, log)
 
 	case ozon.ClassObsoleteEndpoint:
 		if err := e.tasks.StopResourceAllConnections(side, task.ResourceType, apiErr.Endpoint); err != nil {
@@ -318,4 +289,44 @@ func (e *Executor) sideEffect(log *slog.Logger, what string, err error) {
 	if err != nil {
 		log.Warn("fetch task side effect failed", slog.String("stage", "fetch"), slog.String("action", what), slog.String("error", err.Error()))
 	}
+}
+
+// keyFamily — чей ключ у задачи: реклама ходит с ключом Performance API.
+func keyFamily(resourceType string) store.KeyFamily {
+	if IsAdsResource(resourceType) {
+		return store.KeyAds
+	}
+	return store.KeySeller
+}
+
+// unauthorized — 401 Ozon (ADR-043 п. 4): одно обновление выдачи и один
+// повтор, затем пауза ключа кабинета до появления в выдаче новых ключей.
+// Отказы считаются по версии ключей, с которой шла задача, а не подряд по
+// времени: повтор отказанным ключом через час — тот поток ошибочных
+// запросов, за который Ozon ограничивает доступ (ADR-028). У рекламы свой
+// ключ: её отказ продажи кабинета не останавливает, и наоборот.
+func (e *Executor) unauthorized(side context.Context, task store.Task, run *taskRun, apiErr *ozon.APIError, now time.Time, log *slog.Logger) store.Outcome {
+	family := keyFamily(task.ResourceType)
+	failures, err := e.tasks.RecordAuthFailure(side, task.Account, family, run.cabinet.UpdatedAt, now, func(n int) time.Duration {
+		if n >= 2 {
+			return 0 // дальше выдачу закрывает версия ключей, без срока
+		}
+		return e.cfg.AuthRetryPause
+	})
+	if err != nil {
+		// Отказ не записан — кабинет не должен сразу уйти в новый круг 401.
+		e.sideEffect(log, "record auth failure", err)
+		out := e.retryable(task, string(apiErr.Class), now, true)
+		out.HTTPStatus = apiErr.Status
+		return out
+	}
+	_, refreshErr := e.refresher.ForceRefresh(side)
+	e.sideEffect(log, "refresh connections", refreshErr)
+	if failures >= 2 {
+		log.Error("ozon rejected cabinet keys again, key paused until new keys are issued",
+			slog.String("stage", "fetch"), slog.String("error_class", "auth_paused"), slog.String("key_family", string(family)),
+			slog.Int("http_status", apiErr.Status), slog.Int("auth_failures", failures),
+			slog.Time("key_version", run.cabinet.UpdatedAt))
+	}
+	return store.Outcome{Status: store.StatusPending, Label: string(apiErr.Class), ErrorClass: string(apiErr.Class), HTTPStatus: apiErr.Status, KeepCursor: true, NextRunAt: now}
 }

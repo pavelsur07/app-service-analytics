@@ -70,13 +70,13 @@ func TestByDayFailureMidPaginationResumesWithoutDuplicates(t *testing.T) {
 	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []store.TaskSpec{{TaskKey: key, RunAt: now}}))
 
 	// Попытка 1: страница 1 сохранена, страница 2 — 502.
-	first, err := tasks.ClaimNextAcrossConnections(ctx, accounttest.Refs("ref-int"), "w", "00000000-0000-7000-8000-000000000001", "trace", now, time.Minute)
+	first, err := tasks.ClaimNextAcrossConnections(ctx, []store.Connection{{Account: accounttest.Ref("ref-int")}}, "w", "00000000-0000-7000-8000-000000000001", "trace", now, time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, "transient", exec.Run(ctx, first, cab, "trace").Outcome)
 
 	// Попытка 2 — после backoff, с курсора.
 	now = now.Add(2 * time.Minute)
-	second, err := tasks.ClaimNextAcrossConnections(ctx, accounttest.Refs("ref-int"), "w", "00000000-0000-7000-8000-000000000002", "trace", now, time.Minute)
+	second, err := tasks.ClaimNextAcrossConnections(ctx, []store.Connection{{Account: accounttest.Ref("ref-int")}}, "w", "00000000-0000-7000-8000-000000000002", "trace", now, time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, "c1", second.Cursor)
 	assert.Equal(t, 2, second.NextPageNo)

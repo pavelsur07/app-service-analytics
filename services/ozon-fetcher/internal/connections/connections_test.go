@@ -317,10 +317,13 @@ func (c *clock) Advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
+// newCache — кэш с allowlist из всех подключений тестов: allowlist закрыт
+// по умолчанию, и без него снимок был бы пуст.
 func newCache(f Fetcher) (*Cache, *clock, *bytes.Buffer) {
 	logs := &bytes.Buffer{}
 	clk := &clock{now: time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)}
-	return NewCache(f, slog.New(slog.NewJSONHandler(logs, nil)), clk.Now), clk, logs
+	allow := []string{refA.AccountID, refB.AccountID, accounttest.Ref("ref-a").AccountID, accounttest.Ref("ref-b").AccountID}
+	return NewCache(f, slog.New(slog.NewJSONHandler(logs, nil)), clk.Now).WithAllowlist(allow), clk, logs
 }
 
 func exampleCabinets(t *testing.T) []Cabinet {
@@ -478,24 +481,118 @@ type fetcherFunc func(context.Context) ([]Cabinet, error)
 
 func (f fetcherFunc) Fetch(ctx context.Context) ([]Cabinet, error) { return f(ctx) }
 
+// ADR-043 п. 5: allowlist закрыт по умолчанию и поимённый — только
+// marketplace_account_id; пустой список — ни одного подключения.
 func TestAllowlistKeepsOnlyListedCabinets(t *testing.T) {
 	cabinets := exampleCabinets(t)
-	for name, allow := range map[string][]string{
-		"by marketplace_account_id": {refA.AccountID},
-		"by company_id":             {" " + refA.CompanyID + " ", ""},
-	} {
-		t.Run(name, func(t *testing.T) {
-			cache, _, _ := newCache(&scriptedFetcher{results: []fetchResult{{cabinets: cabinets}}})
-			require.NoError(t, cache.WithAllowlist(allow).Refresh(context.Background()))
-			list := cache.List()
-			require.Len(t, list, 1)
-			assert.Equal(t, refA, list[0].Account)
-			_, ok := cache.Get(refB)
-			assert.False(t, ok)
-		})
+	logs := &bytes.Buffer{}
+	newFor := func(allow []string) *Cache {
+		return NewCache(&scriptedFetcher{results: []fetchResult{{cabinets: cabinets}}}, slog.New(slog.NewJSONHandler(logs, nil)), time.Now).WithAllowlist(allow)
 	}
 
-	cache, _, _ := newCache(&scriptedFetcher{results: []fetchResult{{cabinets: cabinets}}})
-	require.NoError(t, cache.WithAllowlist(nil).Refresh(context.Background()))
-	assert.Len(t, cache.List(), 2, "пустой список — все подключения (меняется на этапе 5)")
+	cache := newFor([]string{" " + refA.AccountID + " ", ""})
+	require.NoError(t, cache.Refresh(context.Background()))
+	list := cache.List()
+	require.Len(t, list, 1)
+	assert.Equal(t, refA, list[0].Account)
+	_, ok := cache.Get(refB)
+	assert.False(t, ok)
+	assert.Contains(t, logs.String(), `"issued":2`, "в журнале видно, сколько выдал PHP до фильтра")
+
+	for name, allow := range map[string][]string{
+		"empty":      nil,
+		"blank":      {"", " "},
+		"company_id": {refA.CompanyID},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cache := newFor(allow)
+			require.NoError(t, cache.Refresh(context.Background()))
+			assert.Empty(t, cache.List(), "ни одного подключения")
+			assert.True(t, cache.Ready(), "снимок при этом получен")
+		})
+	}
+	cache = NewCache(&scriptedFetcher{results: []fetchResult{{cabinets: cabinets}}}, slog.New(slog.NewJSONHandler(logs, nil)), time.Now)
+	require.NoError(t, cache.Refresh(context.Background()))
+	assert.Empty(t, cache.List(), "без WithAllowlist — тоже ни одного")
+}
+
+// ADR-043 п. 4: снимок без подтверждения выдачей живёт не дольше maxStale;
+// неудачное обновление срок не продлевает, удачное — восстанавливает.
+func TestSnapshotIsFreshOnlyWithinMaxStale(t *testing.T) {
+	f := &scriptedFetcher{results: []fetchResult{{cabinets: []Cabinet{{Account: accounttest.Ref("ref-a")}}}, {err: errors.New("php down")}, {cabinets: []Cabinet{{Account: accounttest.Ref("ref-a")}}}}}
+	cache, clk, _ := newCache(f)
+	cache.WithMaxStale(30 * time.Minute)
+	assert.False(t, cache.Fresh(), "снимка ещё нет")
+
+	require.NoError(t, cache.Refresh(context.Background()))
+	clk.Advance(30 * time.Minute)
+	assert.True(t, cache.Fresh(), "ровно на сроке — ещё годен")
+	require.Error(t, cache.Refresh(context.Background()))
+	clk.Advance(time.Second)
+	assert.False(t, cache.Fresh(), "неудачное обновление срок не продлевает")
+	_, ok := cache.Get(accounttest.Ref("ref-a"))
+	assert.True(t, ok, "ключи последнего снимка в памяти, но задач по ним нет — решает Fresh")
+
+	require.NoError(t, cache.Refresh(context.Background()))
+	assert.True(t, cache.Fresh())
+}
+
+// Переход в «устарел» — одна ERROR-запись и уведомление подписчиков;
+// повторная проверка молчит; подтверждение — info и снова уведомление.
+func TestStaleTransitionIsReportedOnceAndNotified(t *testing.T) {
+	f := &scriptedFetcher{results: []fetchResult{{cabinets: []Cabinet{{Account: accounttest.Ref("ref-a")}}}, {cabinets: []Cabinet{{Account: accounttest.Ref("ref-a")}}}}}
+	cache, clk, logs := newCache(f)
+	cache.WithMaxStale(time.Minute)
+	var notified int
+	cache.OnChange(func() { notified++ })
+
+	cache.checkStale()
+	assert.Zero(t, notified, "без снимка устаревать нечему")
+	require.NoError(t, cache.Refresh(context.Background()))
+	assert.Equal(t, 1, notified, "каждое успешное обновление — подписчикам")
+
+	clk.Advance(2 * time.Minute)
+	cache.checkStale()
+	cache.checkStale()
+	assert.Equal(t, 2, notified, "переход сообщается один раз")
+	assert.Equal(t, 1, strings.Count(logs.String(), `"level":"ERROR"`))
+	assert.Contains(t, logs.String(), "connections_stale")
+
+	require.NoError(t, cache.Refresh(context.Background()))
+	assert.Equal(t, 3, notified)
+	assert.Contains(t, logs.String(), "confirmed again")
+	clk.Advance(2 * time.Minute)
+	cache.checkStale()
+	assert.Equal(t, 2, strings.Count(logs.String(), `"level":"ERROR"`), "новое устаревание — новая запись")
+}
+
+// Run замечает истечение срока таймером, не дожидаясь следующего поллинга.
+func TestRunReportsStaleWithoutWaitingForThePoll(t *testing.T) {
+	var calls atomic.Int32
+	f := fetcherFunc(func(context.Context) ([]Cabinet, error) {
+		if calls.Add(1) == 1 {
+			return []Cabinet{{Account: accounttest.Ref("ref-a")}}, nil
+		}
+		return nil, errors.New("php down")
+	})
+	cache := NewCache(f, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now).
+		WithAllowlist([]string{accounttest.Ref("ref-a").AccountID}).WithMaxStale(30 * time.Millisecond)
+	var notified atomic.Int32
+	cache.OnChange(func() { notified.Add(1) })
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		cache.Run(ctx, time.Hour)
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool { return notified.Load() == 2 }, 2*time.Second, time.Millisecond, "обновление и устаревание")
+	assert.False(t, cache.Fresh())
+	assert.Equal(t, int32(1), calls.Load(), "поллинг ещё не наступал")
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Run did not stop")
+	}
 }

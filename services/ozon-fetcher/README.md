@@ -18,12 +18,24 @@ Go-сервис загрузки raw Ozon (ADR-043): по активным по�
 **Статус:** перенесён, загрузка выключена конфигурацией — без
 `SYMFONY_INTERNAL_BASE_URL` планировщик и диспетчер не стартуют, сервис
 отвечает только `/health` и `/ready`. Выдача подключений в PHP — этап 4,
-включение — этапы 5–7 плана. До включения доводятся записанные правила
-`services/AGENTS.md`, которых в перенесённом коде ещё нет: срок жизни кэша
-`CONNECTIONS_MAX_STALE`, отзыв и закрытый по умолчанию allowlist (этап 5);
-обязательные поля журнала через общий обработчик, лимиты списков и отказ
-от `COUNT(*)` по журналу попыток в `/internal/fetch-status`
-и `/internal/coverage` (этап 6).
+приём выдачи по правилам отзыва — этап 5, включение на проде — этап 7
+плана. До включения доводятся записанные правила `services/AGENTS.md`,
+которых в перенесённом коде ещё нет: обязательные поля журнала через общий
+обработчик, лимиты списков и отказ от `COUNT(*)` по журналу попыток
+в `/internal/fetch-status` и `/internal/coverage` (этап 6).
+
+**Подключения из PHP** (ADR-043 п. 4–5, `services/AGENTS.md` §2):
+
+- снимок выдачи — только в памяти и только целиком собранный; подключение,
+  которого в нём нет, сразу теряет ключи, его идущие задачи прерываются
+  с курсором (`revoked`), новые не выдаются;
+- снимок без подтверждения дольше `CONNECTIONS_MAX_STALE` — задачи стоят
+  все (`connections_stale`), ERROR в журнал и трекер один раз на переход;
+- 401 Ozon — одно обновление выдачи и один повтор, затем ключ кабинета на
+  паузе до новой версии ключей (`updated_at` выдачи), без срока; у ключа
+  рекламы — свой счёт и своя пауза;
+- `OZON_FETCHER_CONNECTION_ALLOWLIST` закрыт по умолчанию: пусто — ни одного
+  подключения; только `marketplace_account_id`, поимённо.
 
 **Ресурсы — первая волна** (ADR-043): начисления по дням, FBO v3,
 каталог, карточки, кампании, расход и дневная статистика рекламы
@@ -121,7 +133,8 @@ gzip исходных байтов, `If-None-Match: *`, sha256 несжатых 
 | `SERVICE_API_TOKEN` | Токен направления «PHP → сервис» для `/internal/*` сервиса, ≥ 32 символов; пусто — `/internal/*` закрыт (401) |
 | `CONNECTIONS_POLL_INTERVAL` | Интервал опроса выдачи подключений, по умолчанию `5m` |
 | `MAX_PARALLEL_CONNECTIONS` | Сколько подключений загружается одновременно (по умолчанию 4) |
-| `CONNECTION_ALLOWLIST` | `marketplace_account_id` или `company_id` через запятую; пусто сейчас — все, закрытым по умолчанию станет на этапе 5 |
+| `CONNECTIONS_MAX_STALE` | Сколько снимок выдачи живёт без подтверждения, по умолчанию `30m`; больше интервала опроса; дольше — все задачи стоят |
+| `OZON_FETCHER_CONNECTION_ALLOWLIST` | `marketplace_account_id` через запятую — только эти подключения; пусто — ни одного (ADR-043 п. 5); не UUID — отказ запуска |
 | `SENTRY_DSN`, `SENTRY_RELEASE`, `SENTRY_ENVIRONMENT` | GlitchTip: записи ERROR уходят событием; пустой DSN — только журнал |
 | `OZON_BASE_URL`, `OZON_PERFORMANCE_BASE_URL` | Seller и Performance API (в песочнице — мок) |
 | `TAIL_DAYS`, `RECONCILE_WEEKDAY`, `FINAL_DAY`, `PLAN_EVERY` | Окна планировщика: 3, 1 (пн), 10, 1h |
@@ -150,6 +163,37 @@ make ozon-fetcher-vulncheck  # govulncheck
 Тулчейн — контейнеры `ozon-fetcher-dev` (golang:1.27.3, cgo для `-race`)
 и `ozon-fetcher-lint` профиля `services`. Состав гейтов — `services/go.md`
 «Гейты»; в конвейере — задача `services`.
+
+## Стенд: сквозной прогон в песочнице
+
+PHP-выдача → сервис → мок Ozon (`test/stand/mock`) → raw в SeaweedFS.
+Реальных ключей и обращений к Ozon нет: мок принимает ключ вида
+`client-<метка>` / `key-<метка>`, метка `cab-401` всегда получает 401.
+
+1. Подключения с фиктивными ключами:
+   `make api-console CMD="app:identity:seed-ozon-sandbox-company 'E2E A' client-e2e-a key-e2e-a"`
+   (и так же `client-cab-401 key-cab-401` для проверки 401).
+2. Токен «сервис → PHP» на время прогона — строкой `INTERNAL_AUTH_TOKEN=…`
+   (≥ 32 символов) в `api/.env.local`; после прогона убрать.
+3. `make ozon-fetcher-migrate`, затем мок и сервис в сети песочницы:
+
+```bash
+docker compose --profile services run -d --name ozon-stand-mock ozon-fetcher-dev go run ./test/stand/mock
+docker compose --profile services run -d --name ozon-fetcher-e2e \
+  -e SYMFONY_INTERNAL_BASE_URL=http://api-internal -e INTERNAL_AUTH_TOKEN=<токен из шага 2> \
+  -e SERVICE_API_TOKEN=<≥ 32 символов> -e OZON_BASE_URL=http://ozon-stand-mock:8090 \
+  -e S3_ENDPOINT=http://s3:8333 -e S3_REGION=ru-1 -e S3_BUCKET=conwix-dev \
+  -e S3_ACCESS_KEY_ID=sandbox -e S3_SECRET_ACCESS_KEY=sandbox \
+  -e OZON_FETCHER_CONNECTION_ALLOWLIST=<marketplace_account_id через запятую> \
+  -e CONNECTIONS_POLL_INTERVAL=20s -e CONNECTIONS_MAX_STALE=1m \
+  ozon-fetcher-dev go run ./cmd/ozon-fetcher
+```
+
+4. Проверка: `GET /internal/fetch-status` (задачи `done`), объекты под
+   `conwix/svc/ozon-fetcher/v1/` бакета `conwix-dev`, счётчики мока —
+   `GET http://ozon-stand-mock:8090/stats`. Отзыв — `state = 'revoked'`
+   у подключения в PHP; срок снимка — убрать токен из `api/.env.local`.
+5. `docker rm -f ozon-fetcher-e2e ozon-stand-mock`.
 
 ## План
 

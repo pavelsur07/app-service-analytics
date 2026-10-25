@@ -23,6 +23,10 @@ var ErrInvalid = errors.New("account: invalid ref")
 
 var canonicalUUID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
+// ValidID — идентификатор в канонической форме UUID (как в Parse): для
+// списков подключений из конфигурации.
+func ValidID(id string) bool { return canonicalUUID.MatchString(id) }
+
 // Parse проверяет обе части: UUID в нижнем регистре с дефисами — форма, в
 // которой их отдаёт PHP и хранит PostgreSQL.
 func Parse(companyID, accountID string) (Ref, error) {

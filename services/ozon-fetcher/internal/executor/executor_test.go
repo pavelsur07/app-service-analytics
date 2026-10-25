@@ -45,8 +45,9 @@ type fakeTasks struct {
 	revision     int
 	known        []store.RawObject // объекты прежних попыток (для FindObject)
 	suspendErr   error
-	authFailures int             // счётчик отказов кабинета подряд
+	authFailures int             // счётчик отказов ключа этой версии
 	pauses       []time.Duration // паузы, выданные RecordAuthFailure
+	authKeys     []string        // семейство@версия ключа каждого отказа
 	stopErr      error
 	content      map[string][]store.RawObject // ресурс/период → страницы ревизии (ContentPages)
 	contentAt    time.Time                    // StartedAt ревизии (по умолчанию t0)
@@ -144,7 +145,7 @@ func (f *fakeTasks) FinishTask(_ context.Context, _ store.TaskKey, _ string, out
 	return f.revision, f.finishErr
 }
 
-func (f *fakeTasks) RecordAuthFailure(ctx context.Context, ref account.Ref, now time.Time, pauseFor func(int) time.Duration) (int, error) {
+func (f *fakeTasks) RecordAuthFailure(ctx context.Context, ref account.Ref, family store.KeyFamily, keyVersion, _ time.Time, pauseFor func(int) time.Duration) (int, error) {
 	if f.controlHang {
 		<-ctx.Done()
 		return 0, ctx.Err()
@@ -153,13 +154,18 @@ func (f *fakeTasks) RecordAuthFailure(ctx context.Context, ref account.Ref, now 
 		return 0, f.suspendErr
 	}
 	f.authFailures++
+	f.authKeys = append(f.authKeys, string(family)+"@"+keyVersion.Format(time.RFC3339))
 	f.suspended = append(f.suspended, accounttest.Label(ref))
 	f.pauses = append(f.pauses, pauseFor(f.authFailures))
 	return f.authFailures, nil
 }
 
-func (f *fakeTasks) ResumeConnection(_ context.Context, ref account.Ref) error {
-	f.resumed = append(f.resumed, accounttest.Label(ref))
+func (f *fakeTasks) ResumeConnection(_ context.Context, ref account.Ref, family store.KeyFamily) error {
+	label := accounttest.Label(ref)
+	if family == store.KeyAds {
+		label = "ads:" + label
+	}
+	f.resumed = append(f.resumed, label)
 	return nil
 }
 
@@ -339,17 +345,36 @@ type postingCall struct {
 }
 
 // fakeRefresher: подключения снимка — keys (версия ключей по подключению),
-// отсутствующее — с версией updatedAt.
+// отсутствующее — с версией updatedAt. gone — подключения нет в снимке
+// с самого начала, goneAfterRefresh — пропало после ForceRefresh, stale —
+// снимок не подтверждён выдачей.
 type fakeRefresher struct {
-	calls     int
-	err       error
-	refreshed time.Time // RefreshedAt; нулевое — t0
-	updatedAt time.Time
-	keys      map[account.Ref]time.Time
-	missing   bool
+	mu               sync.Mutex
+	calls            int
+	err              error
+	refreshed        time.Time // RefreshedAt; нулевое — t0
+	updatedAt        time.Time
+	keys             map[account.Ref]time.Time
+	gone             bool
+	goneAfterRefresh bool
+	stale            bool
+}
+
+func (f *fakeRefresher) Fresh() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return !f.stale
+}
+
+func (f *fakeRefresher) set(fn func(*fakeRefresher)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	fn(f)
 }
 
 func (f *fakeRefresher) ForceRefresh(context.Context) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls++
 	return true, f.err
 }
@@ -362,11 +387,14 @@ func (f *fakeRefresher) RefreshedAt() time.Time {
 }
 
 func (f *fakeRefresher) Get(ref account.Ref) (connections.Cabinet, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	updated, ok := f.keys[ref]
 	if !ok {
 		updated = f.updatedAt
 	}
-	return connections.Cabinet{Account: ref, UpdatedAt: updated}, !f.missing
+	present := !f.gone && (!f.goneAfterRefresh || f.calls == 0)
+	return connections.Cabinet{Account: ref, UpdatedAt: updated}, present
 }
 
 func page(body, cursor string) ozon.Page {
@@ -500,9 +528,11 @@ func TestOutcomeTable(t *testing.T) {
 			assert.Equal(t, []time.Duration{time.Minute}, h.tasks.pauses)
 			assert.NotContains(t, h.logs.String(), `"level":"ERROR"`)
 		}},
-		{name: "auth again on cabinet suspends for long", err: apiErr(ozon.ClassAuth, 0), authFailures: 1, wantStatus: store.StatusPending, wantLabel: "auth", wantKeep: true, check: func(t *testing.T, h *harness) {
-			assert.Equal(t, []time.Duration{time.Hour}, h.tasks.pauses, "второй отказ кабинета — длинная пауза, даже если задача другая")
+		{name: "auth again with the same keys pauses until new keys", err: apiErr(ozon.ClassAuth, 0), authFailures: 1, wantStatus: store.StatusPending, wantLabel: "auth", wantKeep: true, check: func(t *testing.T, h *harness) {
+			assert.Equal(t, []time.Duration{0}, h.tasks.pauses, "второй отказ той же версии — без срока: выдачу закрывает версия ключей")
+			assert.Equal(t, []string{"seller@" + cabinet.UpdatedAt.Format(time.RFC3339)}, h.tasks.authKeys, "отказ записан с версией ключей задачи")
 			assert.Contains(t, h.logs.String(), `"level":"ERROR"`)
+			assert.Contains(t, h.logs.String(), "auth_paused")
 		}},
 		{name: "obsolete stops resource", err: apiErr(ozon.ClassObsoleteEndpoint, 0), wantStatus: store.StatusFailedPermanent, wantLabel: "obsolete_endpoint", check: func(t *testing.T, h *harness) {
 			assert.Equal(t, []string{ResourceAccrualTypes}, h.tasks.stopped)
@@ -669,12 +699,95 @@ func TestHaltCancelsTasksAlreadyRunning(t *testing.T) {
 	}
 }
 
+// ADR-043 п. 4: подключение пропало из выдачи (отзыв, broken, allowlist) —
+// идущая задача прерывается, а не дорабатывает с копией ключа; задачи
+// других подключений идут; прерванная возвращается с курсором.
+func TestReconcileRevokesRunningTasksOfAVanishedConnection(t *testing.T) {
+	h := newHarness(&fakeOzon{block: make(chan struct{})})
+	running := make(chan Result, 1)
+	go func() {
+		running <- h.exec.Run(context.Background(), task(ResourceAccrualTypes, PeriodRef), cabinet, "trace-a")
+	}()
+	require.Eventually(t, func() bool {
+		h.exec.running.mu.Lock()
+		defer h.exec.running.mu.Unlock()
+		return len(h.exec.running.cancel) == 1
+	}, time.Second, time.Millisecond)
+
+	h.exec.Reconcile()
+	select {
+	case <-running:
+		t.Fatal("подключение в снимке — задача не отзывается")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	h.refresher.set(func(f *fakeRefresher) { f.gone = true })
+	h.exec.Reconcile()
+
+	select {
+	case res := <-running:
+		assert.Equal(t, "revoked", res.Outcome)
+	case <-time.After(time.Second):
+		t.Fatal("задача отозванного подключения не прервана")
+	}
+	require.NotNil(t, h.tasks.finished)
+	assert.Equal(t, store.StatusPending, h.tasks.finished.Status)
+	assert.True(t, h.tasks.finished.KeepCursor, "курсор сохраняется до возвращения подключения")
+	assert.Equal(t, t0, h.tasks.finished.NextRunAt, "вернётся — продолжит сразу")
+}
+
+// Снимок не подтверждён дольше CONNECTIONS_MAX_STALE — прерываются все задачи.
+func TestReconcileStopsEveryTaskOnStaleSnapshot(t *testing.T) {
+	h := newHarness(&fakeOzon{block: make(chan struct{})})
+	running := make(chan Result, 1)
+	go func() {
+		running <- h.exec.Run(context.Background(), task(ResourceAccrualTypes, PeriodRef), cabinet, "trace-a")
+	}()
+	require.Eventually(t, func() bool {
+		h.exec.running.mu.Lock()
+		defer h.exec.running.mu.Unlock()
+		return len(h.exec.running.cancel) == 1
+	}, time.Second, time.Millisecond)
+
+	h.refresher.set(func(f *fakeRefresher) { f.stale = true })
+	h.exec.Reconcile()
+
+	select {
+	case res := <-running:
+		assert.Equal(t, "connections_stale", res.Outcome)
+	case <-time.After(time.Second):
+		t.Fatal("задача при устаревшем снимке не прервана")
+	}
+	assert.True(t, h.tasks.finished.KeepCursor)
+}
+
+// Отзыв пришёл между выдачей задачи и её началом: к Ozon она не ходит.
+func TestTaskOfGoneOrStaleConnectionNeverReachesOzon(t *testing.T) {
+	for name, state := range map[string]func(*fakeRefresher){
+		"gone":  func(f *fakeRefresher) { f.gone = true },
+		"stale": func(f *fakeRefresher) { f.stale = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			o := &fakeOzon{pages: twoPageDay()}
+			h := newHarness(o)
+			h.refresher.set(state)
+
+			res := h.exec.Run(context.Background(), task(ResourceAccrualByDay, "2026-10-15"), cabinet, "trace")
+
+			assert.Contains(t, []string{"revoked", "connections_stale"}, res.Outcome)
+			assert.Empty(t, o.creds, "ни одного запроса к Ozon")
+			assert.Empty(t, h.raw.puts)
+			assert.NotContains(t, h.logs.String(), secretKey)
+		})
+	}
+}
+
 // 403 старого ключа, пока кэш выдачи ещё не видел замену: после обновления
 // выдачи версия другая — смена ключа, повтор с новым, без остановки и паузы.
 func TestForbiddenAfterKeyChangeInPHPRetriesWithoutHalt(t *testing.T) {
 	for name, refresher := range map[string]*fakeRefresher{
 		"key replaced":         {updatedAt: t0},
-		"connection withdrawn": {missing: true},
+		"connection withdrawn": {goneAfterRefresh: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			h := newHarness(&fakeOzon{singleErr: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: "/v1/x", Status: http.StatusForbidden}})

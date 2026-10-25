@@ -75,8 +75,8 @@ type TaskStore interface {
 	RecordPage(ctx context.Context, key store.TaskKey, attemptID string, obj store.RawObject, nextCursor string) error
 	FindObject(ctx context.Context, key store.TaskKey, sha256 string) (store.RawObject, bool, error)
 	FinishTask(ctx context.Context, key store.TaskKey, attemptID string, out store.Outcome, now time.Time) (int, error)
-	RecordAuthFailure(ctx context.Context, ref account.Ref, now time.Time, pauseFor func(failures int) time.Duration) (int, error)
-	ResumeConnection(ctx context.Context, ref account.Ref) error
+	RecordAuthFailure(ctx context.Context, ref account.Ref, family store.KeyFamily, keyVersion, now time.Time, pauseFor func(failures int) time.Duration) (int, error)
+	ResumeConnection(ctx context.Context, ref account.Ref, family store.KeyFamily) error
 	StopResourceAllConnections(ctx context.Context, resourceType, reason string) error
 	MarkAttemptKey(ctx context.Context, ref account.Ref, attemptID string, keyVersion time.Time) error
 	ServedWithKey(ctx context.Context, ref account.Ref, resourceType string, keyVersion time.Time) (bool, error)
@@ -114,11 +114,13 @@ type Ozon interface {
 
 // Refresher — обновление снимка кабинетов после 401 и 403; Get — подключение
 // из снимка, RefreshedAt — начало последнего успешного обновления (версия
-// ключей перед решением об остановке).
+// ключей перед решением об остановке), Fresh — снимок подтверждён выдачей
+// в пределах CONNECTIONS_MAX_STALE.
 type Refresher interface {
 	ForceRefresh(ctx context.Context) (bool, error)
 	Get(ref account.Ref) (connections.Cabinet, bool)
 	RefreshedAt() time.Time
+	Fresh() bool
 }
 
 // Config — тайминги исполнителя.
@@ -128,8 +130,10 @@ type Config struct {
 	BackoffBase    time.Duration // transient: base·2^(n−1)
 	BackoffMax     time.Duration
 	RateLimitPause time.Duration // 429 без Retry-After
-	AuthRetryPause time.Duration // пауза кабинета после первого auth: снимок с новым ключом успевает обновиться
-	AuthSuspend    time.Duration // пауза кабинета на втором auth подряд
+	// AuthRetryPause — пауза ключа кабинета после первого 401 этой версии
+	// ключей: снимок с новым ключом успевает обновиться. Второй 401 той же
+	// версии — пауза до новых ключей в выдаче, без срока (ADR-043 п. 4).
+	AuthRetryPause time.Duration
 	// ForbiddenPause — пауза ресурса подключения на 403 по методу, который
 	// у ключа ещё не отвечал 200 (ADR-043 п. 5): у ключа нет роли, и частый
 	// повтор — те самые ошибочные запросы, за которые Ozon ограничивает доступ.
@@ -163,7 +167,6 @@ func DefaultConfig() Config {
 		BackoffMax:           time.Hour,
 		RateLimitPause:       30 * time.Second,
 		AuthRetryPause:       time.Minute,
-		AuthSuspend:          time.Hour,
 		ForbiddenPause:       24 * time.Hour,
 		NoCredentialsIn:      time.Hour,
 		AdsReportWindowFrom:  30 * time.Minute,
@@ -238,8 +241,49 @@ func (r *runningTasks) haltOthers(except *taskRun) {
 	}
 }
 
+// revoke отменяет задачи, для которых check вернул причину (не nil).
+func (r *runningTasks) revoke(check func(*taskRun) error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for run, cancel := range r.cancel {
+		if cause := check(run); cause != nil {
+			cancel(cause)
+		}
+	}
+}
+
 // errHalted — задачу прервала остановка всех подключений.
 var errHalted = errors.New("executor: loading halted for all connections")
+
+// errRevoked — подключения нет в успешно собранной выдаче: ключи сняты
+// (отзыв, broken в Conwix, исключение из allowlist), задача не дорабатывает
+// с копией ключа (ADR-043 п. 4).
+var errRevoked = errors.New("executor: connection is not in the issued snapshot")
+
+// errStale — снимок выдачи не подтверждён дольше CONNECTIONS_MAX_STALE:
+// все задачи стоят до успешной выдачи (ADR-043 п. 4).
+var errStale = errors.New("executor: connections snapshot is stale")
+
+// Reconcile сверяет идущие задачи со снимком выдачи: снимок устарел —
+// отзываются все, подключения нет в снимке — его задачи. Вызывается после
+// каждого обновления снимка и при его устаревании (connections.Cache.OnChange);
+// задача, ещё не дошедшая до первого запроса, проверяет то же в begin.
+func (e *Executor) Reconcile() {
+	fresh := e.refresher.Fresh()
+	e.running.revoke(func(run *taskRun) error {
+		return e.connectionGone(fresh, run)
+	})
+}
+
+func (e *Executor) connectionGone(fresh bool, run *taskRun) error {
+	if !fresh {
+		return errStale
+	}
+	if _, ok := e.refresher.Get(run.task.Account); !ok {
+		return errRevoked
+	}
+	return nil
+}
 
 func New(cfg Config, tasks TaskStore, raw RawStore, client Ozon, refresher Refresher, logger *slog.Logger,
 	now func() time.Time, jitter func(time.Duration) time.Duration, sleep func(context.Context, time.Duration) error) *Executor {
@@ -353,6 +397,12 @@ func (e *Executor) begin(ctx context.Context, cancel context.CancelCauseFunc, ru
 	if halted {
 		cancel(errHalted)
 		return errHalted
+	}
+	// После регистрации в running: отзыв, пришедший между выдачей задачи
+	// и этой точкой, Reconcile уже не пропустит, а пришедший раньше видно здесь.
+	if gone := e.connectionGone(e.refresher.Fresh(), run); gone != nil {
+		cancel(gone)
+		return gone
 	}
 	return nil
 }

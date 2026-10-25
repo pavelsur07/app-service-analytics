@@ -18,13 +18,14 @@ import (
 
 // Claimer — часть store.Tasks для диспетчера.
 type Claimer interface {
-	ClaimNextAcrossConnections(ctx context.Context, refs []account.Ref, owner, attemptID, traceID string, now time.Time, lease time.Duration) (store.Task, error)
+	ClaimNextAcrossConnections(ctx context.Context, conns []store.Connection, owner, attemptID, traceID string, now time.Time, lease time.Duration) (store.Task, error)
 	ReleaseExpiredAcrossConnections(ctx context.Context, now time.Time) (int64, error)
 }
 
 // Cabinets — снимок кабинетов (connections.Cache).
 type Cabinets interface {
 	Ready() bool
+	Fresh() bool
 	List() []connections.Cabinet
 	Get(ref account.Ref) (connections.Cabinet, bool)
 }
@@ -110,19 +111,20 @@ func (d *Dispatcher) Run(ctx context.Context) {
 	}
 }
 
-// claim — следующая задача; false — задач нет, снимка нет или ошибка БД.
+// claim — следующая задача; false — задач нет, снимка нет, снимок устарел
+// (ADR-043 п. 4: без подтверждения выдачей задачи стоят) или ошибка БД.
 func (d *Dispatcher) claim(ctx context.Context) (store.Task, connections.Cabinet, string, bool) {
-	if !d.cabinets.Ready() {
+	if !d.cabinets.Ready() || !d.cabinets.Fresh() {
 		return store.Task{}, connections.Cabinet{}, "", false
 	}
 	list := d.cabinets.List()
-	refs := make([]account.Ref, 0, len(list))
+	conns := make([]store.Connection, 0, len(list))
 	for _, cab := range list {
-		refs = append(refs, cab.Account)
+		conns = append(conns, store.Connection{Account: cab.Account, KeyVersion: cab.UpdatedAt})
 	}
 
 	traceID := d.newID()
-	task, err := d.claimer.ClaimNextAcrossConnections(ctx, refs, d.cfg.Owner, d.newID(), traceID, d.now(), d.cfg.Lease)
+	task, err := d.claimer.ClaimNextAcrossConnections(ctx, conns, d.cfg.Owner, d.newID(), traceID, d.now(), d.cfg.Lease)
 	switch {
 	case errors.Is(err, store.ErrNoTask):
 		return store.Task{}, connections.Cabinet{}, "", false
@@ -132,7 +134,7 @@ func (d *Dispatcher) claim(ctx context.Context) (store.Task, connections.Cabinet
 		}
 		return store.Task{}, connections.Cabinet{}, "", false
 	}
-	cabinet, _ := d.cabinets.Get(task.Account) // исчез — исполнитель отложит задачу
+	cabinet, _ := d.cabinets.Get(task.Account) // исчез — исполнитель отзовёт задачу до первого запроса
 	return task, cabinet, traceID, true
 }
 

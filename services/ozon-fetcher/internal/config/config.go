@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/account"
 )
 
 // MinInternalTokenLength — как InternalAccessPolicy::MIN_TOKEN_LENGTH в Symfony.
@@ -16,8 +18,10 @@ const MinInternalTokenLength = 32
 
 const (
 	defaultPollInterval = 5 * time.Minute
-	defaultMaxParallel  = 4
-	maxMaxParallel      = 64
+	// defaultMaxStale — шесть интервалов поллинга (ADR-043 п. 4).
+	defaultMaxStale    = 30 * time.Minute
+	defaultMaxParallel = 4
+	maxMaxParallel     = 64
 )
 
 type Config struct {
@@ -31,9 +35,13 @@ type Config struct {
 	// сервиса (service-gateway.md §2.9); пусто — /internal/* закрыт.
 	ServiceAPIToken         string
 	ConnectionsPollInterval time.Duration
+	// ConnectionsMaxStale — сколько живёт снимок без успешного подтверждения
+	// выдачей; дольше — все задачи стоят (ADR-043 п. 4).
+	ConnectionsMaxStale time.Duration
 	// MaxParallelConnections — сколько кабинетов загружается одновременно.
 	MaxParallelConnections int
-	// ConnectionAllowlist — только эти подключения (marketplace_account_id или company_id); пусто — все.
+	// ConnectionAllowlist — только эти подключения (marketplace_account_id);
+	// пусто — ни одного (ADR-043 п. 5: закрыт по умолчанию, значения «все» нет).
 	ConnectionAllowlist []string
 
 	// OzonBaseURL — Seller API (на стенде — мок).
@@ -74,6 +82,7 @@ func Load() (Config, error) {
 		InternalAuthToken:        os.Getenv("INTERNAL_AUTH_TOKEN"),
 		ServiceAPIToken:          os.Getenv("SERVICE_API_TOKEN"),
 		ConnectionsPollInterval:  defaultPollInterval,
+		ConnectionsMaxStale:      defaultMaxStale,
 		MaxParallelConnections:   defaultMaxParallel,
 		OzonBaseURL:              envOr("OZON_BASE_URL", "https://api-seller.ozon.ru"),
 		OzonPerformanceBaseURL:   envOr("OZON_PERFORMANCE_BASE_URL", "https://api-performance.ozon.ru"),
@@ -105,6 +114,19 @@ func Load() (Config, error) {
 		cfg.ConnectionsPollInterval = d
 	}
 
+	if raw := os.Getenv("CONNECTIONS_MAX_STALE"); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil || d <= 0 {
+			return Config{}, fmt.Errorf("config: CONNECTIONS_MAX_STALE must be a positive duration, got %q", raw)
+		}
+		cfg.ConnectionsMaxStale = d
+	}
+	// Срок не короче интервала поллинга: иначе снимок устаревал бы между
+	// двумя штатными обновлениями и задачи стояли бы без сбоя выдачи.
+	if cfg.ConnectionsMaxStale <= cfg.ConnectionsPollInterval {
+		return Config{}, fmt.Errorf("config: CONNECTIONS_MAX_STALE (%s) must exceed CONNECTIONS_POLL_INTERVAL (%s)", cfg.ConnectionsMaxStale, cfg.ConnectionsPollInterval)
+	}
+
 	if raw := os.Getenv("MAX_PARALLEL_CONNECTIONS"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 || n > maxMaxParallel {
@@ -113,10 +135,17 @@ func Load() (Config, error) {
 		cfg.MaxParallelConnections = n
 	}
 
-	for _, id := range strings.Split(os.Getenv("CONNECTION_ALLOWLIST"), ",") {
-		if id = strings.TrimSpace(id); id != "" {
-			cfg.ConnectionAllowlist = append(cfg.ConnectionAllowlist, id)
+	// Подключения добавляются поимённо (ADR-043 п. 5): только
+	// marketplace_account_id; опечатка — отказ запуска, а не молча
+	// выпавшее подключение.
+	for _, id := range strings.Split(os.Getenv("OZON_FETCHER_CONNECTION_ALLOWLIST"), ",") {
+		if id = strings.TrimSpace(id); id == "" {
+			continue
 		}
+		if !account.ValidID(id) {
+			return Config{}, fmt.Errorf("config: OZON_FETCHER_CONNECTION_ALLOWLIST entries must be marketplace_account_id UUIDs, got %q", id)
+		}
+		cfg.ConnectionAllowlist = append(cfg.ConnectionAllowlist, id)
 	}
 
 	if err := loadPlanner(&cfg); err != nil {
