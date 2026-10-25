@@ -706,18 +706,22 @@ func TestForbiddenWithUnrefreshedConnectionsRetries(t *testing.T) {
 	assert.Empty(t, h.tasks.paused)
 }
 
-// Запрос обновления подавлен, а последний успешный снимок старше интервала
-// подавления — свежесть выдачи не доказана: повтор, без остановки.
-func TestForbiddenWithStaleConnectionsSnapshotRetries(t *testing.T) {
-	h := newHarness(&fakeOzon{singleErr: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: "/v1/x", Status: http.StatusForbidden}})
-	h.refresher.refreshed = t0.Add(-5 * time.Minute)
-	h.tasks.loaded = true
+// Запрос обновления подавлен, и последний успешный снимок начат до этого
+// 403 — даже за секунду: ключ мог смениться между ними. Повтор, без остановки.
+func TestForbiddenWithSnapshotOlderThan403Retries(t *testing.T) {
+	for name, age := range map[string]time.Duration{"a second": time.Second, "five minutes": 5 * time.Minute} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(&fakeOzon{singleErr: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: "/v1/x", Status: http.StatusForbidden}})
+			h.refresher.refreshed = t0.Add(-age)
+			h.tasks.loaded = true
 
-	res := h.exec.Run(context.Background(), task(ResourceAccrualTypes, PeriodRef), cabinet, "trace")
+			res := h.exec.Run(context.Background(), task(ResourceAccrualTypes, PeriodRef), cabinet, "trace")
 
-	assert.Equal(t, "auth", res.Outcome)
-	assert.Empty(t, h.tasks.halts)
-	assert.Empty(t, h.tasks.paused)
+			assert.Equal(t, "auth", res.Outcome)
+			assert.Empty(t, h.tasks.halts)
+			assert.Empty(t, h.tasks.paused)
+		})
+	}
 }
 
 // Версия ключей не записана — запросов к Ozon нет, повтор: иначе успешные

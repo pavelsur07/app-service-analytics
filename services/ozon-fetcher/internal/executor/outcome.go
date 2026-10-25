@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/connections"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/ozon"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/rawstore"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/store"
@@ -256,12 +255,13 @@ func (e *Executor) forbidden(side context.Context, task store.Task, run *taskRun
 	// Решение — по выдаче, а не по снимку попытки: кэш отстаёт от PHP на
 	// интервал опроса, и 403 старого ключа после его замены — смена ключа,
 	// а не ограничение доступа (ADR-043 п. 5: «updated_at тот же»).
-	// Запрос в PHP подавляется чаще ForceRefreshMinInterval, в том числе после
-	// неудачной попытки, — поэтому свежесть проверяется по последнему
-	// успешному обновлению, а не по ответу ForceRefresh.
+	// Выдача должна быть прочитана после этого 403. Запрос в PHP подавляется
+	// чаще ForceRefreshMinInterval, в том числе после неудачной попытки, —
+	// поэтому проверяется начало последнего успешного обновления, а не ответ
+	// ForceRefresh; подавленный запрос — повтор, решение на следующем 403.
 	_, refreshErr := e.refresher.ForceRefresh(side)
 	e.sideEffect(log, "refresh connections", refreshErr)
-	if refreshErr != nil || now.Sub(e.refresher.RefreshedAt()) > connections.ForceRefreshMinInterval {
+	if refreshErr != nil || e.refresher.RefreshedAt().Before(now) {
 		return retry()
 	}
 	if current, ok := e.refresher.Get(task.Account); !ok || !current.UpdatedAt.Equal(run.cabinet.UpdatedAt) {
