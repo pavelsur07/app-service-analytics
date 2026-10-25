@@ -36,6 +36,7 @@ func run(setFlush func(func())) error {
 	// config.Load тоже запись журнала с обязательными полями (§8).
 	slog.SetDefault(slog.New(observability.NewHandler(slog.NewJSONHandler(os.Stdout, nil), nil)).With(slog.String("service", observability.Service)))
 	migrate := flag.Bool("migrate", false, "apply database migrations and exit")
+	migrationsCheck := flag.Bool("migrations-check", false, "exit with an error if service database migrations are pending (deploy gate) and exit")
 	resumeHalt := flag.Bool("resume-halt", false, "lift the halt set on a possible Ozon access restriction (ADR-043 p. 5) and exit")
 	flag.Parse()
 
@@ -58,6 +59,9 @@ func run(setFlush func(func())) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		return store.Migrate(ctx, cfg.DBDSN)
+	}
+	if *migrationsCheck {
+		return checkMigrations(cfg.DBDSN)
 	}
 	if *resumeHalt {
 		return resumeAllConnections(cfg.DBDSN)
@@ -153,5 +157,25 @@ func resumeAllConnections(dsn string) error {
 		return err
 	}
 	slog.Info("resume-halt", slog.Bool("resumed", resumed))
+	return nil
+}
+
+// checkMigrations — гейт выкладки (services/AGENTS.md §5): ошибка, если
+// миграции сервисной БД не применены; выкладка останавливается до запуска
+// контейнера, агент применяет -migrate отдельным шагом.
+func checkMigrations(dsn string) error {
+	if dsn == "" {
+		return errors.New("migrations-check: DB_DSN is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pending, err := store.MigrationsPending(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	if pending {
+		return errors.New("migrations-check: service database migrations are pending, apply ozon-fetcher -migrate")
+	}
+	slog.Info("migrations-check: service database is up to date", slog.String("stage", "migrate"))
 	return nil
 }

@@ -583,6 +583,22 @@ jobs:
           docker push "$image:${{ steps.tag.outputs.tag }}"
           docker push "$image:latest"
 
+      # Образ ozon-fetcher (ADR-043) — тот же тег, что у api: выкладка
+      # знает один тег сборки. Публикуется на каждом master, а
+      # разворачивается только при включённом профиле на сервере
+      # (docs/operations-checklist.md, «ozon-fetcher на проде»). latest
+      # не публикуется: сервер ссылается на образ только тегом.
+      - name: образ ozon-fetcher
+        run: |
+          set -eu
+          image="ghcr.io/${{ github.repository }}/ozon-fetcher:${{ steps.tag.outputs.tag }}"
+          docker build -f services/ozon-fetcher/docker/Dockerfile -t "$image" services/ozon-fetcher
+          # Гейт выкладки в образе есть — иначе шаг миграций сервиса
+          # на сервере проверял бы неизвестный флаг.
+          docker run --rm "$image" -h 2>&1 | grep -q -- '-migrations-check' \
+            || { echo "в образе ozon-fetcher нет флага -migrations-check" >&2; exit 1; }
+          docker push "$image"
+
       # Явная проверка того, что --target выбран верно: dev-стадия
       # содержит composer и pcov, prod не должна. Ошибиться здесь легко
       # (опечатка в target собирает последнюю стадию файла), а заметить
@@ -718,6 +734,12 @@ jobs:
           # на проде при зелёной выкладке.
           rsync -az --inplace -e "$SSH" traefik/dynamic.prod.yml "$HOST:/opt/conwix/traefik/"
           rsync -az --inplace -e "$SSH" docker/nginx/prod.conf "$HOST:/opt/conwix/docker/nginx/"
+          # ozon-fetcher: обёртка compose с профилем по OZON_FETCHER_ENABLED,
+          # роль, БД и pg_hba (правила — тот же файл, что у песочницы,
+          # services/docker/postgres/init).
+          $SSH "$HOST" 'mkdir -p /opt/conwix/ozon-fetcher'
+          rsync -az -e "$SSH" bin/ozon-fetcher-prod-db.sh bin/ozon-fetcher-compose.sh \
+            services/docker/postgres/init/02-ozon-fetcher-hba.sh "$HOST:/opt/conwix/ozon-fetcher/"
 
       # Проверка, а не доверие: --inplace выше решает проблему, но её
       # возврат (кто-нибудь уберёт флаг, или файл станет монтироваться
@@ -789,13 +811,62 @@ jobs:
                php bin/console doctrine:migrations:up-to-date" \
             || { echo "Есть непринятые миграции. Примените их вручную и повторите выкладку." >&2; exit 1; }
 
+      # ozon-fetcher (ADR-043, services/AGENTS.md §5, §10) — только при
+      # OZON_FETCHER_ENABLED=true в .env; включённость определяет сам compose
+      # (ozon-fetcher-compose.sh --enabled). Новый образ, роль и БД, затем
+      # гейт миграций сервиса против НОВОГО образа — тот же порядок, что
+      # у api выше. Неприменённые миграции останавливают выкладку до
+      # запуска контейнера: агент применяет `ozon-fetcher -migrate`
+      # отдельным шагом и повторяет выкладку.
+      - name: ozon-fetcher — образ, БД и проверка миграций
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          SSH="ssh -i $HOME/.ssh/deploy -o BatchMode=yes root@${{ secrets.DEPLOY_HOST }}"
+          IMAGE='ghcr.io/${{ github.repository }}/ozon-fetcher:${{ needs.image.outputs.tag }}'
+          # 0 — включён, 1 — выключен; любой другой код (сбой compose
+          # или ssh) — отказ шага, а не пропуск гейта.
+          rc=0
+          $SSH 'cd /opt/conwix && sh ozon-fetcher/ozon-fetcher-compose.sh --enabled' || rc=$?
+          case $rc in
+            0) ;;
+            1) echo 'ozon-fetcher выключен (OZON_FETCHER_ENABLED) — шаг пропущен'; exit 0 ;;
+            *) echo "включённость ozon-fetcher не определена (код $rc)" >&2; exit 1 ;;
+          esac
+          # Токен — через stdin ssh, не в тексте удалённой команды.
+          printf '%s' "$GHCR_TOKEN" \
+            | $SSH "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+          $SSH "set -eu
+             cd /opt/conwix
+             trap 'docker logout ghcr.io >/dev/null' EXIT
+             docker pull '$IMAGE'
+             sed -i '/^OZON_FETCHER_IMAGE=/d' .env
+             echo 'OZON_FETCHER_IMAGE=$IMAGE' >> .env
+             sh ozon-fetcher/ozon-fetcher-prod-db.sh
+             sh ozon-fetcher/ozon-fetcher-compose.sh run --rm --no-deps -T ozon-fetcher -migrations-check \
+               || { echo 'Есть неприменённые миграции ozon-fetcher. Примените: sh ozon-fetcher/ozon-fetcher-compose.sh run --rm --no-deps -T ozon-fetcher -migrate — и повторите выкладку.' >&2; exit 1; }"
+
       - name: выкладка
         run: |
           set -eu
           # Образ уже подтянут и прописан в .env шагом выше — здесь только
           # замена работающих контейнеров на него.
           ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes 'root@${{ secrets.DEPLOY_HOST }}' \
-            'cd /opt/conwix && docker compose -f docker-compose.prod.yml up -d'
+            'set -eu
+             cd /opt/conwix
+             sh ozon-fetcher/ozon-fetcher-compose.sh up -d
+             # Выключенный ozon-fetcher (OZON_FETCHER_ENABLED=false) —
+             # откат выкладкой (ADR-043): up -d без профиля работающий
+             # контейнер не трогает, поэтому он останавливается явно.
+             # Только при «выключен» (код 1); сбой определения — отказ.
+             rc=0
+             sh ozon-fetcher/ozon-fetcher-compose.sh --enabled || rc=$?
+             case $rc in
+               0) ;;
+               1) docker compose -f docker-compose.prod.yml --profile ozon-fetcher rm -sf ozon-fetcher ;;
+               *) exit 1 ;;
+             esac'
 
       # С повторами, а не один запрос после sleep: контейнер поднимается
       # не мгновенно, и одиночная проверка ловила пустой ответ, объявляя
@@ -861,6 +932,10 @@ jobs:
         run: |
           set -eu
           ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes 'root@${{ secrets.DEPLOY_HOST }}' \
-            "cd /opt/conwix
-             docker compose -f docker-compose.prod.yml ps --format '{{.Service}} {{.Status}}'
-             ! docker compose -f docker-compose.prod.yml ps --format '{{.Status}}' | grep -qE 'unhealthy|Restarting'"
+            "set -eu
+             cd /opt/conwix
+             # Состояния — в переменную: сбой обёртки (включённость
+             # неизвестна) роняет шаг, а не проходит пустой проверкой.
+             statuses=\$(sh ozon-fetcher/ozon-fetcher-compose.sh ps --format '{{.Service}} {{.Status}}')
+             printf '%s\n' \"\$statuses\"
+             ! printf '%s\n' \"\$statuses\" | grep -qE 'unhealthy|Restarting'"

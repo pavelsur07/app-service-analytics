@@ -19,7 +19,9 @@ Go-сервис загрузки raw Ozon (ADR-043): по активным по�
 `SYMFONY_INTERNAL_BASE_URL` планировщик и диспетчер не стартуют, сервис
 отвечает только `/health` и `/ready`. Выдача подключений в PHP — этап 4,
 приём выдачи по правилам отзыва — этап 5, наблюдаемость — этап 6,
-включение на проде — этап 7 плана.
+вывод на прод — этап 7 плана: образ публикуется с `master`, контейнер
+включается `OZON_FETCHER_ENABLED=true` в `/opt/conwix/.env`
+(`docs/operations-checklist.md`, «ozon-fetcher на проде»).
 
 **Журнал** (`services/AGENTS.md` §8): JSON в stdout. Обязательные поля —
 `service`, `company_id`, `marketplace_account_id`, `job_id`, `trace_id`,
@@ -91,6 +93,10 @@ postgres, на существующем `make ozon-fetcher-db`. Пароль —
 `00002_access_guard.sql`, пауза ключей по версии `00003_auth_key_version.sql`, счётчики исходов
 `00004_attempt_outcome_hour.sql`; прогон —
 `make ozon-fetcher-migrate`, проверка с пустой базы — в `make db-rebuild-check`.
+Гейт выкладки — `ozon-fetcher -migrations-check`: ошибка при неприменённых
+миграциях, выкладка останавливается до запуска контейнера; применение —
+`ozon-fetcher -migrate` отдельным шагом (`docs/operations-checklist.md`,
+«ozon-fetcher на проде»).
 
 | Таблица | Назначение |
 |---|---|
@@ -135,7 +141,7 @@ gzip исходных байтов, `If-None-Match: *`, sha256 несжатых 
 |---|---|
 | `LISTEN_ADDR` | Адрес HTTP, по умолчанию `:8080` |
 | `DB_DSN` | PostgreSQL сервисной БД; пусто — без БД |
-| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Бакет сырья Conwix (ADR-024) и пользователь хранилища с правами на префикс `conwix/svc/ozon-fetcher/` (этап 7, ADR-044) |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Бакет сырья Conwix (ADR-024). На проде — пока ключ PHP (`RAW_STORAGE_*`, решение владельца 25.10.2026); по ADR-044 — отдельный пользователь с правами на префикс `conwix/svc/ozon-fetcher/`, открытая издержка в `docs/operations-checklist.md` |
 | `SYMFONY_INTERNAL_BASE_URL` | Базовый URL PHP для `GET /api/internal/marketplace-connections`; пусто — загрузка выключена |
 | `INTERNAL_AUTH_TOKEN` | Токен направления «сервис → PHP» |
 | `SERVICE_API_TOKEN` | Токен направления «PHP → сервис» для `/internal/*` сервиса, ≥ 32 символов; пусто — `/internal/*` закрыт (401) |
