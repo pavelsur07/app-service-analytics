@@ -27,8 +27,11 @@ setup() {
     printf '%s\n' "OZON_FETCHER_CONNECTION_ALLOWLIST=$ACC" > "$work/.env"
     : > "$work/php.json"
     : > "$work/svc.json"
-    printf '%s\n' "$DAY" > "$work/svc_days"
-    printf '%s\n' "$DAY" > "$work/php_days"
+    # Покрытие: задачи сервиса «ресурс|день|успех» и дни PHP «тип|день».
+    printf '%s\n' "ozon.orders.fbo|$DAY|t" "ozon.finance.accrual-by-day|$DAY|t" \
+        "ozon.ads.expense|$DAY|t" "ozon.ads.daily|$DAY|t" > "$work/svc_rows"
+    printf '%s\n' "ozon_posting_fbo_list|$DAY" > "$work/php_rows"
+    : > "$work/attempts"
     echo journald > "$work/driver"
     cat > "$work/docker" <<EOF
 #!/bin/sh
@@ -47,9 +50,10 @@ EOF
 sql=\$(cat)
 case "\$sql" in
     *'FROM marketplace_account'*) echo '$CO|25218|2026-08-09 14:26:15' ;;
-    *'FROM fetch_task'*) cat '$work/svc_days' ;;
-    *'period BETWEEN'*) cat '$work/php_days' ;;
     *service_halt*) echo 'service_halt: 0' ;;
+    *'FROM fetch_task'*) cat '$work/svc_rows' ;;
+    *'period BETWEEN'*) cat '$work/php_rows' ;;
+    *'FROM fetch_attempt'*) cat '$work/attempts' ;;
     *) : ;;
 esac
 EOF
@@ -76,7 +80,7 @@ svc_request() { # msg status account
 run() {
     rc=0
     output=$(cd "$work" && DOTENV="$work/.env" COMPOSE="$work/compose" JOURNALCTL="$work/journalctl" \
-        DOCKER="$work/docker" SINCE=$DAY UNTIL=$DAY sh "$OBSERVE" 2>&1) || rc=$?
+        DOCKER="$work/docker" SINCE=${SINCE:-$DAY} UNTIL=$DAY JOURNALD_SINCE=$DAY sh "$OBSERVE" 2>&1) || rc=$?
 }
 
 test_429_threshold_is_per_api_and_per_connection() {
@@ -89,7 +93,7 @@ test_429_threshold_is_per_api_and_per_connection() {
     for _ in 1 2 3; do php_answer performance 429 ads-1; done
     run
     [[ $rc == 0 ]] || fail "ровно порог (3 и 3) — нарушение: $output"
-    grep -Eq "^$DAY +2 +1 +3 +3 +0 +3 +2\$" <<< "$output" || fail "неверный счёт: $output"
+    grep -Eq "^$DAY +2 +1 +3 +3 +0 +3 +2 +0\$" <<< "$output" || fail "неверный счёт: $output"
 
     php_answer seller 429 25218
     run
@@ -113,11 +117,37 @@ test_403_is_reported() {
 
 test_missing_service_day_is_a_violation() {
     setup
-    printf '%s\n' 2026-10-25 "$DAY" > "$work/php_days"
-    printf '%s\n' 2026-10-24 "$DAY" > "$work/svc_days"
+    # 25.10 у сервиса есть задача, но успешной загрузки не было; 24.10 PHP
+    # не загружал; 26.10 сервис перезагружает (pending), но уже загружал.
+    printf '%s\n' "ozon.orders.fbo|2026-10-24|t" "ozon.orders.fbo|2026-10-25|f" "ozon.orders.fbo|$DAY|t" \
+        "ozon.finance.accrual-by-day|$DAY|t" "ozon.ads.expense|$DAY|t" "ozon.ads.daily|$DAY|t" > "$work/svc_rows"
+    printf '%s\n' "ozon_posting_fbo_list|2026-10-25" "ozon_posting_fbo_list|$DAY" > "$work/php_rows"
     run
-    [[ $rc == 1 ]] || fail 'пропуск дня в сервисе не нарушение'
-    grep -q 'нет в сервисе: 2026-10-25' <<< "$output" || fail "пропущенный день не назван: $output"
+    [[ $rc == 1 ]] || fail "день без успешной загрузки сервиса не нарушение: $output"
+    grep -q 'ozon.orders.fbo: сервис не загрузил: 2026-10-25$' <<< "$output" || fail "пропущенный день не назван: $output"
+
+    setup
+    grep -v ads.daily "$work/svc_rows" > "$work/svc_rows.new" && mv "$work/svc_rows.new" "$work/svc_rows"
+    run
+    [[ $rc == 1 ]] || fail 'ресурс без задач сервиса не нарушение'
+}
+
+test_incomplete_days_are_not_success() {
+    setup
+    SINCE=2026-10-25 run
+    [[ $rc == 2 ]] || fail "сутки до journald: код $rc вместо 2"
+    grep -q '2026-10-25 .*НЕ СОБРАНО(журнал до journald)' <<< "$output" || fail "сутки до journald не помечены: $output"
+
+    setup
+    printf '%s\n' "$DAY|12" > "$work/attempts" # попытки есть, записей запросов в журнале нет
+    run
+    [[ $rc == 2 ]] || fail "попытки без журнала: код $rc вместо 2"
+
+    setup
+    printf '%s\n' "$DAY|12" > "$work/attempts"
+    php_answer seller 403 25218
+    run
+    [[ $rc == 1 ]] || fail "403 при неполных сутках: код $rc вместо 1 — признак спрятан"
 }
 
 test_unreadable_journal_fails_closed() {
@@ -136,4 +166,5 @@ test_429_threshold_is_per_api_and_per_connection
 test_403_is_reported
 test_missing_service_day_is_a_violation
 test_unreadable_journal_fails_closed
+test_incomplete_days_are_not_success
 echo 'ozon-fetcher-observe: OK'
