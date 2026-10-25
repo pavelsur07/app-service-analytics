@@ -8,6 +8,9 @@
 declare namespace chrome {
   namespace storage {
     interface StorageArea {
+      setAccessLevel(options: {
+        accessLevel: 'TRUSTED_CONTEXTS'
+      }): Promise<void>
       get(keys: string[] | string | null): Promise<Record<string, unknown>>
       set(items: Record<string, unknown>): Promise<void>
       remove(keys: string[] | string): Promise<void>

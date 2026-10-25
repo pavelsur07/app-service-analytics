@@ -19,8 +19,35 @@ export interface Storage {
   clear(): Promise<void>
 }
 
+const trustedStorage = new WeakMap<chrome.storage.StorageArea, Storage>()
+
 export function browserStorage(): Storage {
-  return chrome.storage.local
+  const local = chrome.storage.local
+  const existing = trustedStorage.get(local)
+  if (undefined !== existing) return existing
+
+  const ready = Promise.resolve().then(() =>
+    local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }),
+  )
+  // Даже если контекст пока не обращается к storage, отказ инициализации
+  // обработан. Сам ready остаётся rejected: операции ниже отказ не обходят.
+  void ready.catch(() => undefined)
+  const storage: Storage = {
+    get: async (keys) => {
+      await ready
+      return local.get(keys)
+    },
+    set: async (items) => {
+      await ready
+      await local.set(items)
+    },
+    clear: async () => {
+      await ready
+      await local.clear()
+    },
+  }
+  trustedStorage.set(local, storage)
+  return storage
 }
 
 export async function readConnection(

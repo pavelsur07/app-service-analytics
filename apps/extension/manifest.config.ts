@@ -31,7 +31,7 @@ const EXTENSION_KEY =
  * сообщает версию с каждым снимком (ADR-014), и разъехавшиеся числа
  * означали бы, что по журналу нельзя понять, какая сборка их прислала.
  */
-export const EXTENSION_VERSION = '0.3.0'
+export const EXTENSION_VERSION = '0.3.1'
 
 const PROD_HOSTS = ['https://app.conwix.com/*']
 const DEV_HOSTS = [
@@ -74,6 +74,7 @@ export function buildManifest(mode: string): Record<string, unknown> {
 
   return {
     manifest_version: 3,
+    minimum_chrome_version: '140',
     name: isDev ? 'Conwix (dev)' : 'Conwix',
     // Версия расширения живёт отдельно от версии сервиса: в сторе она
     // обязана только возрастать, а выкладка бэкенда происходит чаще.
