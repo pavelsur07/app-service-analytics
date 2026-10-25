@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,7 +49,9 @@ func deps(t *testing.T) Deps {
 
 func TestFetchStatusRequiresToken(t *testing.T) {
 	d := deps(t)
-	d.Status = func(context.Context, time.Time, string) (store.StatusReport, error) { return store.StatusReport{}, nil }
+	d.Status = func(context.Context, time.Time, string, store.StatusPage) (store.StatusReport, error) {
+		return store.StatusReport{}, nil
+	}
 	h := New(d)
 
 	for _, auth := range []string{"", "Bearer wrong", token, "Basic " + token} {
@@ -66,8 +69,9 @@ func TestFetchStatusRequiresToken(t *testing.T) {
 func TestFetchStatusReturnsReportForMoscowWindow(t *testing.T) {
 	d := deps(t)
 	var gotWindow string
-	d.Status = func(_ context.Context, now time.Time, windowFrom string) (store.StatusReport, error) {
-		gotWindow = windowFrom
+	var gotPage store.StatusPage
+	d.Status = func(_ context.Context, now time.Time, windowFrom string, page store.StatusPage) (store.StatusReport, error) {
+		gotWindow, gotPage = windowFrom, page
 		return store.StatusReport{Cabinets: []store.CabinetStatus{{CompanyID: accounttest.Ref("ref-a").CompanyID, AccountID: accounttest.Ref("ref-a").AccountID, Outcomes24h: map[string]int{"done": 3}}}, StoppedResources: []string{}}, nil
 	}
 
@@ -80,6 +84,27 @@ func TestFetchStatusReturnsReportForMoscowWindow(t *testing.T) {
 	assert.Equal(t, accounttest.Ref("ref-a").AccountID, cab["marketplace_account_id"])
 	assert.Equal(t, accounttest.Ref("ref-a").CompanyID, cab["company_id"])
 	assert.Equal(t, "2026-08-01", body["window_from"])
+	assert.Equal(t, store.StatusPage{Limit: DefaultStatusLimit}, gotPage, "без параметров — первая страница по умолчанию")
+}
+
+func TestFetchStatusPageIsBounded(t *testing.T) {
+	d := deps(t)
+	var gotPage store.StatusPage
+	d.Status = func(_ context.Context, _ time.Time, _ string, page store.StatusPage) (store.StatusReport, error) {
+		gotPage = page
+		return store.StatusReport{Cabinets: []store.CabinetStatus{}, StoppedResources: []string{}}, nil
+	}
+	cursor := accounttest.Ref("ref-a").AccountID
+
+	code, _ := do(t, New(d), "/internal/fetch-status?limit=200&cursor="+cursor, "Bearer "+token)
+	assert.Equal(t, http.StatusOK, code)
+	assert.Equal(t, store.StatusPage{Limit: MaxStatusLimit, Cursor: cursor}, gotPage)
+
+	for _, query := range []string{"limit=201", "limit=0", "limit=-1", "limit=abc", "cursor=not-a-uuid", "cursor=" + strings.ToUpper(cursor)} {
+		code, body := do(t, New(d), "/internal/fetch-status?"+query, "Bearer "+token)
+		assert.Equal(t, http.StatusUnprocessableEntity, code, query)
+		assert.Equal(t, "invalid_page", body["error"].(map[string]any)["code"], query)
+	}
 }
 
 func TestFetchStatusErrorsAndDisabled(t *testing.T) {
@@ -88,7 +113,7 @@ func TestFetchStatusErrorsAndDisabled(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, code)
 	assert.Equal(t, "ingestion_disabled", body["error"].(map[string]any)["code"])
 
-	d.Status = func(context.Context, time.Time, string) (store.StatusReport, error) {
+	d.Status = func(context.Context, time.Time, string, store.StatusPage) (store.StatusReport, error) {
 		return store.StatusReport{}, errors.New("db down")
 	}
 	code, body = do(t, New(d), "/internal/fetch-status", "Bearer "+token)

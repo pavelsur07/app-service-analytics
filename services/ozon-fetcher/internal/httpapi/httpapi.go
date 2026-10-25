@@ -7,8 +7,10 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,7 +27,7 @@ type Deps struct {
 	DBPing        func(ctx context.Context) error
 	CabinetsReady func() bool
 	S3Ping        func(ctx context.Context) error
-	Status        func(ctx context.Context, now time.Time, windowFrom string) (store.StatusReport, error)
+	Status        func(ctx context.Context, now time.Time, windowFrom string, page store.StatusPage) (store.StatusReport, error)
 	Cabinets      func() []connections.Cabinet
 	Coverage      func(ctx context.Context, refs []account.Ref, from, to string) ([]store.CoverageRow, error)
 	Location      *time.Location
@@ -81,10 +83,16 @@ func New(d Deps) http.Handler {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]string{"code": "ingestion_disabled", "message": "loading is disabled"}})
 			return
 		}
+		page, ok := statusPage(r)
+		if !ok {
+			writeError(w, http.StatusUnprocessableEntity, "invalid_page",
+				fmt.Sprintf("limit must be 1..%d, cursor a marketplace_account_id", MaxStatusLimit))
+			return
+		}
 		now := d.Now()
 		local := now.In(d.Location)
 		windowFrom := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, d.Location).AddDate(0, -2, 0).Format(time.DateOnly)
-		report, err := d.Status(r.Context(), now, windowFrom)
+		report, err := d.Status(r.Context(), now, windowFrom, page)
 		if err != nil {
 			d.Logger.Warn("fetch status failed", slog.String("stage", "status"), slog.String("error", err.Error()))
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]string{"code": "status_unavailable", "message": "status is unavailable"}})
@@ -99,6 +107,31 @@ func New(d Deps) http.Handler {
 		}
 	})
 	return mux
+}
+
+// Страница кабинетов /internal/fetch-status (services/AGENTS.md §5;
+// числа — как у списков Conwix, CLAUDE.md §5).
+const (
+	DefaultStatusLimit = 50
+	MaxStatusLimit     = 200
+)
+
+// statusPage — limit и cursor запроса; неверные — false (422), а не
+// исправление молча.
+func statusPage(r *http.Request) (store.StatusPage, bool) {
+	q := r.URL.Query()
+	page := store.StatusPage{Limit: DefaultStatusLimit, Cursor: q.Get("cursor")}
+	if raw := q.Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > MaxStatusLimit {
+			return store.StatusPage{}, false
+		}
+		page.Limit = n
+	}
+	if page.Cursor != "" && !account.ValidID(page.Cursor) {
+		return store.StatusPage{}, false
+	}
+	return page, true
 }
 
 func requireToken(w http.ResponseWriter, r *http.Request, token string) bool {

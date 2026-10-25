@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -498,7 +499,7 @@ func TestStatusReport(t *testing.T) {
 	}
 	require.NoError(t, tasks.StopResourceAllConnections(ctx, "ozon.finance.mutual-settlement", "obsolete"))
 
-	report, err := tasks.StatusAllConnections(ctx, t0.Add(time.Minute), "2026-08-01")
+	report, err := tasks.StatusAllConnections(ctx, t0.Add(time.Minute), "2026-08-01", StatusPage{Limit: 50})
 	require.NoError(t, err)
 
 	require.Len(t, report.Cabinets, 3)
@@ -513,7 +514,7 @@ func TestStatusReport(t *testing.T) {
 	byDay := a.Resources[0]
 	assert.Equal(t, []string{"2026-08"}, a.Resources[2].MissingPeriods, "отчёт за месяц начала окна считается")
 	assert.Equal(t, "ozon.finance.accrual-by-day", byDay.ResourceType)
-	assert.Equal(t, 3, byDay.ByStatus[StatusPending]+byDay.ByStatus[StatusDone])
+	assert.Equal(t, 2, byDay.ByStatus[StatusPending]+byDay.ByStatus[StatusDone], "статусы — только по окну: день до окна не считается")
 	assert.Equal(t, 1, byDay.MissingCount, "только незагруженные дни окна")
 	assert.Equal(t, []string{"2026-10-02"}, byDay.MissingPeriods)
 	assert.Equal(t, map[string]int{"done": 1, "rate_limit": 1}, a.Outcomes24h)
@@ -533,6 +534,122 @@ func TestStatusReport(t *testing.T) {
 	require.NotNil(t, c.AdsAuthPausedKeyVersion)
 	assert.True(t, testKeyVersion.Equal(*c.AdsAuthPausedKeyVersion))
 	assert.Equal(t, []string{"ozon.finance.mutual-settlement"}, report.StoppedResources)
+	assert.Empty(t, report.NextCursor)
+}
+
+func TestStatusCabinetsArePaged(t *testing.T) {
+	tasks := testTasks(t)
+	ctx := context.Background()
+	labels := []string{"ref-a", "ref-b", "ref-c"}
+	for _, l := range labels {
+		require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{spec(l, "ozon.orders.fbo", "2026-10-01", 0)}))
+	}
+	// Задача вне окна — не повод показывать кабинет.
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{spec("ref-old", "ozon.orders.fbo", "2026-07-01", 0)}))
+
+	var seen []string
+	page := StatusPage{Limit: 2}
+	for range 3 {
+		report, err := tasks.StatusAllConnections(ctx, t0, "2026-08-01", page)
+		require.NoError(t, err)
+		assert.LessOrEqual(t, len(report.Cabinets), 2)
+		for _, c := range report.Cabinets {
+			seen = append(seen, c.AccountID)
+			require.Len(t, c.Resources, 1, "у кабинета только его задачи")
+		}
+		if report.NextCursor == "" {
+			break
+		}
+		assert.Equal(t, seen[len(seen)-1], report.NextCursor)
+		page.Cursor = report.NextCursor
+	}
+
+	var want []string
+	for _, l := range labels {
+		want = append(want, accounttest.Ref(l).AccountID)
+	}
+	sort.Strings(want)
+	assert.Equal(t, want, seen, "каждый кабинет окна ровно один раз, по marketplace_account_id")
+}
+
+func TestStatusOutcomesAreCountedPerHourForADay(t *testing.T) {
+	tasks := testTasks(t)
+	ctx := context.Background()
+	finish := func(period string, at time.Time, label string) {
+		t.Helper()
+		require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{spec("ref-a", "ozon.orders.fbo", period, 0)}))
+		task, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
+		require.NoError(t, err)
+		require.Equal(t, period, task.PeriodKey)
+		// Окончательный статус: закрытые задачи больше не выдаются, исход
+		// попадает в час закрытия at.
+		_, err = tasks.FinishTask(ctx, task.TaskKey, task.AttemptID, Outcome{Status: StatusFailedPermanent, Label: label, NextRunAt: at}, at)
+		require.NoError(t, err)
+	}
+	finish("2026-10-01", t0.Add(-25*time.Hour), "transient") // старше суток
+	finish("2026-10-02", t0.Add(-23*time.Hour), "transient") // час, начавшийся 23 часа назад, — в сутках
+	finish("2026-10-03", t0.Add(-time.Minute), "rate_limit")
+	finish("2026-10-04", t0, "rate_limit")
+
+	// Просроченный lease — тоже исход.
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, []TaskSpec{spec("ref-a", "ozon.orders.fbo", "2026-10-05", 0)}))
+	_, err := claim(t, tasks, accounttest.Refs("ref-a"), t0)
+	require.NoError(t, err)
+	released, err := tasks.ReleaseExpiredAcrossConnections(ctx, t0.Add(time.Hour))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, released)
+
+	report, err := tasks.StatusAllConnections(ctx, t0.Add(time.Minute), "2026-08-01", StatusPage{Limit: 50})
+	require.NoError(t, err)
+	require.Len(t, report.Cabinets, 1)
+	assert.Equal(t, map[string]int{"transient": 1, "rate_limit": 2, "lease_expired": 1}, report.Cabinets[0].Outcomes24h)
+
+	// Через двое суток сборщик lease удаляет старые часы всех подключений —
+	// и того, что больше не закрывает попыток (ref-a здесь молчит).
+	_, err = tasks.ReleaseExpiredAcrossConnections(ctx, t0.Add(OutcomeRetention+2*time.Hour))
+	require.NoError(t, err)
+	var hours int
+	require.NoError(t, tasks.pool.QueryRow(ctx, `SELECT count(*) FROM attempt_outcome_hour`).Scan(&hours))
+	assert.Zero(t, hours, "старые часы удалены без новых попыток подключения")
+}
+
+func TestStatusMissingPeriodsAreCappedButCounted(t *testing.T) {
+	tasks := testTasks(t)
+	ctx := context.Background()
+	var specs []TaskSpec
+	day := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	for i := range MaxMissingListed + 9 {
+		specs = append(specs, spec("ref-a", "ozon.finance.accrual-by-day", day.AddDate(0, 0, i).Format(time.DateOnly), 0))
+	}
+	require.NoError(t, tasks.UpsertAcrossConnections(ctx, specs))
+
+	report, err := tasks.StatusAllConnections(ctx, t0, "2026-08-01", StatusPage{Limit: 50})
+	require.NoError(t, err)
+	require.Len(t, report.Cabinets, 1)
+	r := report.Cabinets[0].Resources[0]
+	assert.Equal(t, MaxMissingListed+9, r.MissingCount)
+	require.Len(t, r.MissingPeriods, MaxMissingListed)
+	assert.Equal(t, "2026-08-01", r.MissingPeriods[0], "ранние периоды первыми")
+}
+
+func TestLoadLimitsReadsEveryPage(t *testing.T) {
+	tasks := testTasks(t)
+	ctx := context.Background()
+	ref := accounttest.Ref("ref-a")
+	_, err := tasks.pool.Exec(ctx, `
+		INSERT INTO connection_limit (company_id, marketplace_account_id, endpoint, rps_current, updated_at)
+		SELECT $1, $2, '/e/' || lpad(g::text, 4, '0'), 1, now() FROM generate_series(1, $3) g`,
+		ref.CompanyID, ref.AccountID, LimitsPageSize*2+1)
+	require.NoError(t, err)
+
+	limits, err := tasks.LoadLimitsAllConnections(ctx)
+	require.NoError(t, err)
+	require.Len(t, limits, LimitsPageSize*2+1)
+	seen := map[string]bool{}
+	for _, l := range limits {
+		seen[l.Endpoint] = true
+	}
+	assert.Len(t, seen, LimitsPageSize*2+1, "без повторов на границе страниц")
 }
 
 func TestFindObjectByContentWithinTask(t *testing.T) {

@@ -3,6 +3,7 @@ package observability
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -131,4 +132,62 @@ func TestSetupSendsErrorEventToGlitchTip(t *testing.T) {
 	assert.Contains(t, bodies[0], `"environment":"prod"`)
 	assert.Contains(t, bodies[0], `"service":"ozon-fetcher"`)
 	assert.NotContains(t, bodies[0], "rate_limit")
+}
+
+func decodeLines(t *testing.T, out *bytes.Buffer) []map[string]any {
+	t.Helper()
+	var records []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+		var rec map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &rec), line)
+		records = append(records, rec)
+	}
+	return records
+}
+
+func TestEveryRecordCarriesTheRequiredFields(t *testing.T) {
+	out := &bytes.Buffer{}
+	logger := slog.New(NewHandler(slog.NewJSONHandler(out, nil), nil)) // без With("service") и без GlitchTip
+
+	logger.Info("service started")
+	ctx := WithFields(context.Background(), slog.String("job_id", "j-1"), slog.String("company_id", "c-1"))
+	logger.InfoContext(ctx, "ozon request", slog.String("outcome", "ok"), slog.String("company_id", "c-record"))
+
+	records := decodeLines(t, out)
+	require.Len(t, records, 2)
+	for _, rec := range records {
+		for _, key := range Required {
+			assert.Contains(t, rec, key, "поле %s в каждой записи", key)
+		}
+		assert.Equal(t, Service, rec["service"])
+	}
+	assert.Nil(t, records[0]["job_id"], "неизвестное поле — null, не пропуск")
+	assert.Equal(t, "j-1", records[1]["job_id"], "поле задачи из контекста")
+	assert.Equal(t, "c-record", records[1]["company_id"], "поле записи приоритетнее контекста")
+	assert.Equal(t, "ok", records[1]["outcome"])
+	assert.Equal(t, 1, strings.Count(strings.Split(out.String(), "\n")[1], `"company_id"`), "поле не дублируется")
+}
+
+func TestRequiredFieldsAreNotDuplicatedWhenSetByWith(t *testing.T) {
+	out := &bytes.Buffer{}
+	logger := slog.New(NewHandler(slog.NewJSONHandler(out, nil), nil)).With(slog.String("service", Service), slog.String("trace_id", "t-with"))
+
+	logger.InfoContext(WithFields(context.Background(), slog.String("trace_id", "t-ctx")), "fetch task started")
+
+	line := out.String()
+	assert.Equal(t, 1, strings.Count(line, `"trace_id"`))
+	assert.Equal(t, 1, strings.Count(line, `"service"`))
+	assert.Contains(t, line, `"trace_id":"t-with"`)
+}
+
+func TestUnsetRequiredFieldsDoNotBecomeGlitchTipTags(t *testing.T) {
+	logger, _, c := newLogger()
+
+	logger.ErrorContext(WithFields(context.Background(), slog.String("resource_type", "ozon.orders.fbo")), "fetch task finish failed", slog.String("error_class", "db"))
+
+	require.Len(t, c.events, 1)
+	e := c.events[0]
+	assert.Equal(t, "ozon.orders.fbo", e.Tags["resource_type"], "поле из контекста — тег")
+	assert.NotContains(t, e.Tags, "company_id")
+	assert.NotContains(t, e.Contexts["log"], "job_id")
 }
