@@ -415,6 +415,54 @@ services:
     healthcheck:
       disable: true
 
+  # Загрузка Ozon отдельным Go-сервисом (ADR-043, этап 7
+  # docs/plan/ozon-fetcher.md). Профиль, а не всегда: контейнер есть только
+  # при COMPOSE_PROFILES=ozon-fetcher в /opt/conwix/.env — без него выкладка
+  # сервис не трогает, роль и БД не создаёт. Включение и выключение —
+  # docs/operations-checklist.md, «ozon-fetcher на проде».
+  #
+  # Значения ниже — с пустыми умолчаниями, не :?: compose подставляет
+  # переменные во весь файл, и обязательное значение неактивного сервиса
+  # остановило бы выкладку остальных. Наличие всех значений при включённом
+  # профиле проверяет выкладка (bin/ozon-fetcher-prod-db.sh) до запуска.
+  ozon-fetcher:
+    image: ${OZON_FETCHER_IMAGE:-ozon-fetcher-image-is-not-set}
+    profiles: ["ozon-fetcher"]
+    restart: unless-stopped
+    environment:
+      LISTEN_ADDR: ":8080"
+      # Своя БД и роль на том же инстансе (ADR-043 п. 3); пароль — hex,
+      # в URL не экранируется.
+      DB_DSN: "postgres://svc_ozon_fetcher:${OZON_FETCHER_DB_PASSWORD:-}@postgres:5432/ozon_fetcher?sslmode=disable"
+      # Выдача подключений — внутренний vhost nginx (алиас api-internal
+      # только в сети internal), тот же токен, что у api.
+      SYMFONY_INTERNAL_BASE_URL: http://api-internal
+      INTERNAL_AUTH_TOKEN: ${INTERNAL_AUTH_TOKEN:-}
+      SERVICE_API_TOKEN: ${OZON_FETCHER_SERVICE_API_TOKEN:-}
+      OZON_FETCHER_CONNECTION_ALLOWLIST: ${OZON_FETCHER_CONNECTION_ALLOWLIST:-}
+      # Бакет и ключи сырья PHP (ADR-024): отдельный ключ на префикс
+      # conwix/svc/ozon-fetcher/ (ADR-044) отложен решением владельца
+      # 25.10.2026; граница с conwix/raw/ держится портом хранилища —
+      # открытая издержка в docs/operations-checklist.md.
+      S3_ENDPOINT: ${RAW_STORAGE_ENDPOINT:?}
+      S3_REGION: ${RAW_STORAGE_REGION:?}
+      S3_BUCKET: ${RAW_STORAGE_BUCKET:?}
+      S3_ACCESS_KEY_ID: ${RAW_STORAGE_ACCESS_KEY:?}
+      S3_SECRET_ACCESS_KEY: ${RAW_STORAGE_SECRET_KEY:?}
+      # Пусто — ошибки только в журнал (DSN GlitchTip — позже).
+      SENTRY_DSN: ${OZON_FETCHER_SENTRY_DSN:-}
+      SENTRY_RELEASE: ${OZON_FETCHER_IMAGE:-}
+      SENTRY_ENVIRONMENT: prod
+    # internal — БД и api-internal; egress — Ozon и S3. Роутера Traefik нет:
+    # наружу сервис не отвечает.
+    networks: [internal, egress]
+    dns: *egress-dns
+    mem_limit: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Проверка живости — HEALTHCHECK образа (/health).
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped

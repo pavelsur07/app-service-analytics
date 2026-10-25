@@ -513,6 +513,47 @@ ADR-007 «с первого дня», и ограничение по адрес�
 - [ ] Каждое обращение видно в журнале строкой канала `service_audit`
       (`marketplace connections issued to service`); ключей в ней нет.
 
+## ozon-fetcher на проде (ADR-043, этап 7)
+
+Сервис — профиль compose `ozon-fetcher`: контейнер есть только при
+`COMPOSE_PROFILES=ozon-fetcher` в `/opt/conwix/.env`. Без него выкладка
+сервис не трогает.
+
+- [ ] **Секреты:** `ssh conwix-prod 'sh -s' < bin/set-ozon-fetcher-env.sh` —
+      `INTERNAL_AUTH_TOKEN`, `OZON_FETCHER_SERVICE_API_TOKEN`,
+      `OZON_FETCHER_DB_PASSWORD` генерируются на сервере, уже заданные
+      не меняются. Ключи хранилища — те же `RAW_STORAGE_*`; DSN GlitchTip
+      (`OZON_FETCHER_SENTRY_DSN`) — пока пуст, ошибки только в журнал
+- [ ] **Открытая издержка (решение владельца 25.10.2026):** сервис ходит
+      в бакет ключом PHP (`RAW_STORAGE_*`), а не отдельным ключом на префикс
+      `conwix/svc/ozon-fetcher/` (ADR-044). Граница с `conwix/raw/` держится
+      только портом хранилища (префикс — константа в коде). Закрывается
+      отдельным ключом на префикс до расширения сервиса (этап 8)
+- [ ] Правило lifecycle 90 дней на `conwix/svc/ozon-fetcher/` (см. «Хранилище
+      сырья») — до включения
+- [ ] **Включение:** `OZON_FETCHER_CONNECTION_ALLOWLIST=<marketplace_account_id>`
+      (поимённо, с согласия владельца кабинета; пусто — ни одного) и
+      `COMPOSE_PROFILES=ozon-fetcher` в `.env`, затем перезапуск выкладки.
+      Выкладка создаёт роль `svc_ozon_fetcher` и БД `ozon_fetcher`
+      (`ozon-fetcher/ozon-fetcher-prod-db.sh`: пароль, `REVOKE CONNECT`
+      на БД Conwix, `pg_hba` — роль только к своей БД) и проверяет миграции
+      сервиса. Неприменённые — выкладка останавливается:
+      `cd /opt/conwix && docker compose -f docker-compose.prod.yml run --rm --no-deps -T ozon-fetcher -migrate`,
+      затем повтор выкладки
+- [ ] **Проверка после включения:** контейнер `healthy`; роль не входит
+      в БД Conwix (`psql -h 127.0.0.1 -U svc_ozon_fetcher -d "$POSTGRES_DB"`
+      в контейнере postgres — отказ `pg_hba`); `/internal/fetch-status`
+      (`docker compose exec ozon-fetcher wget -qO- --header "Authorization: Bearer $OZON_FETCHER_SERVICE_API_TOKEN" http://127.0.0.1:8080/internal/fetch-status`)
+      — задачи доходят до `done`; объекты — только под
+      `conwix/svc/ozon-fetcher/v1/companies/…`, в `conwix/raw/` новых
+      объектов от сервиса нет; снаружи `/api/internal/` — 404
+- [ ] **Выключение:** убрать `ozon-fetcher` из `COMPOSE_PROFILES` и
+      `docker compose -f docker-compose.prod.yml --profile ozon-fetcher stop ozon-fetcher`
+      — `up -d` без профиля работающий контейнер не останавливает. Роль, БД
+      и объекты остаются
+- [ ] **Признак ограничения доступа Ozon** (403, ADR-043 п. 5): выдача задач
+      стоит до `-resume-halt`; снимает человек после разбора
+
 ## После выкладки восстановления пароля (ADR-037)
 
 - [x] Миграция `password_reset_token` применена 2026-10-15; `doctrine:migrations:up-to-date` зелёный.

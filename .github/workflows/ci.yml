@@ -583,6 +583,22 @@ jobs:
           docker push "$image:${{ steps.tag.outputs.tag }}"
           docker push "$image:latest"
 
+      # Образ ozon-fetcher (ADR-043) — тот же тег, что у api: выкладка
+      # знает один тег сборки. Публикуется на каждом master, а
+      # разворачивается только при включённом профиле на сервере
+      # (docs/operations-checklist.md, «ozon-fetcher на проде»). latest
+      # не публикуется: сервер ссылается на образ только тегом.
+      - name: образ ozon-fetcher
+        run: |
+          set -eu
+          image="ghcr.io/${{ github.repository }}/ozon-fetcher:${{ steps.tag.outputs.tag }}"
+          docker build -f services/ozon-fetcher/docker/Dockerfile -t "$image" services/ozon-fetcher
+          # Гейт выкладки в образе есть — иначе шаг миграций сервиса
+          # на сервере проверял бы неизвестный флаг.
+          docker run --rm "$image" -h 2>&1 | grep -q -- '-migrations-check' \
+            || { echo "в образе ozon-fetcher нет флага -migrations-check" >&2; exit 1; }
+          docker push "$image"
+
       # Явная проверка того, что --target выбран верно: dev-стадия
       # содержит composer и pcov, prod не должна. Ошибиться здесь легко
       # (опечатка в target собирает последнюю стадию файла), а заметить
@@ -718,6 +734,11 @@ jobs:
           # на проде при зелёной выкладке.
           rsync -az --inplace -e "$SSH" traefik/dynamic.prod.yml "$HOST:/opt/conwix/traefik/"
           rsync -az --inplace -e "$SSH" docker/nginx/prod.conf "$HOST:/opt/conwix/docker/nginx/"
+          # Роль, БД и pg_hba ozon-fetcher: скрипт и правила pg_hba — те же
+          # файлы, что у песочницы (services/docker/postgres/init).
+          $SSH "$HOST" 'mkdir -p /opt/conwix/ozon-fetcher'
+          rsync -az -e "$SSH" bin/ozon-fetcher-prod-db.sh \
+            services/docker/postgres/init/02-ozon-fetcher-hba.sh "$HOST:/opt/conwix/ozon-fetcher/"
 
       # Проверка, а не доверие: --inplace выше решает проблему, но её
       # возврат (кто-нибудь уберёт флаг, или файл станет монтироваться
@@ -788,6 +809,32 @@ jobs:
              docker compose -f docker-compose.prod.yml run --rm --no-deps -T api \
                php bin/console doctrine:migrations:up-to-date" \
             || { echo "Есть непринятые миграции. Примените их вручную и повторите выкладку." >&2; exit 1; }
+
+      # ozon-fetcher (ADR-043, services/AGENTS.md §5) — только при
+      # включённом профиле: COMPOSE_PROFILES=ozon-fetcher в .env. Новый
+      # образ, роль и БД, затем гейт миграций сервиса против НОВОГО образа —
+      # тот же порядок, что у api выше. Неприменённые миграции
+      # останавливают выкладку до запуска контейнера: агент применяет
+      # `ozon-fetcher -migrate` отдельным шагом и повторяет выкладку.
+      - name: ozon-fetcher — образ, БД и проверка миграций
+        run: |
+          set -eu
+          IMAGE='ghcr.io/${{ github.repository }}/ozon-fetcher:${{ needs.image.outputs.tag }}'
+          ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes 'root@${{ secrets.DEPLOY_HOST }}' \
+            "set -eu
+             cd /opt/conwix
+             if ! grep -Eq '^COMPOSE_PROFILES=([^#]*,)?ozon-fetcher(,|\$)' .env; then
+               echo 'ozon-fetcher выключен (COMPOSE_PROFILES) — шаг пропущен'
+               exit 0
+             fi
+             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+             docker pull '$IMAGE'
+             docker logout ghcr.io
+             sed -i '/^OZON_FETCHER_IMAGE=/d' .env
+             echo 'OZON_FETCHER_IMAGE=$IMAGE' >> .env
+             sh ozon-fetcher/ozon-fetcher-prod-db.sh
+             docker compose -f docker-compose.prod.yml run --rm --no-deps -T ozon-fetcher -migrations-check \
+               || { echo 'Есть неприменённые миграции ozon-fetcher. Примените: docker compose -f docker-compose.prod.yml run --rm --no-deps -T ozon-fetcher -migrate — и повторите выкладку.' >&2; exit 1; }"
 
       - name: выкладка
         run: |

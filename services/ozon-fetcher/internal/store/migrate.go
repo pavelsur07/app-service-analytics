@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"io/fs"
 
 	"github.com/pressly/goose/v3"
 
@@ -30,4 +31,29 @@ func Migrate(ctx context.Context, dsn string) error {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
 	return nil
+}
+
+// MigrationsPending — есть ли неприменённые миграции сервисной БД. Гейт
+// выкладки (services/AGENTS.md §5, аналог doctrine:migrations:up-to-date):
+// при неприменённых выкладка останавливается до запуска контейнера,
+// миграции применяет агент отдельным шагом (-migrate).
+func MigrationsPending(ctx context.Context, dsn string) (bool, error) {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return false, fmt.Errorf("store: open: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+	sources, err := fs.Sub(migrationsFS, "migrations")
+	if err != nil {
+		return false, fmt.Errorf("store: migrations fs: %w", err)
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, sources)
+	if err != nil {
+		return false, fmt.Errorf("store: migrations provider: %w", err)
+	}
+	pending, err := provider.HasPending(ctx)
+	if err != nil {
+		return false, fmt.Errorf("store: migrations pending: %w", err)
+	}
+	return pending, nil
 }

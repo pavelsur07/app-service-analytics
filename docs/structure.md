@@ -28,6 +28,10 @@ app-service-analytics/
 │   ├── set-raw-storage-env.sh  реквизиты хранилища сырья (ADR-024)
 │   │                         в /opt/conwix/.env: ввод человеком,
 │   │                         секрет — через stdin SSH, не argv
+│   ├── set-ozon-fetcher-env.sh  секреты ozon-fetcher (токены, пароль
+│   │                         роли) генерирует на сервере, ssh 'sh -s'
+│   ├── ozon-fetcher-prod-db.sh  роль, БД и pg_hba ozon-fetcher на боевом
+│   │                         postgres; выполняет выкладка на сервере
 │   ├── tests/             автономные shell-контрактные тесты утилит
 │   └── e2e-seed.sh       сеет компанию/подключение и разбирает фикстуру
 │                         Ozon в sales_fact перед Playwright (make test-e2e);
@@ -131,7 +135,9 @@ Redis, PostgreSQL.
 сырья (`RAW_STORAGE_*`, ADR-024): ключи выпускает владелец в панели
 Timeweb Cloud и вводит на своей машине в `bin/set-raw-storage-env.sh`,
 который передаёт их на сервер через stdin SSH — не в argv, не в историю
-shell и не в файл на машине. В GitHub хранится только ключ
+shell и не в файл на машине. Секреты ozon-fetcher (токены двух
+направлений и пароль роли) генерирует на сервере
+`bin/set-ozon-fetcher-env.sh`. В GitHub хранится только ключ
 доступа для выкладки и адрес сервера.
 
 **Известное ограничение площадки.** Машина имеет 1.9 ГиБ памяти на семь

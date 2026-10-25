@@ -33,3 +33,29 @@ func TestMigrationsRoundTrip(t *testing.T) {
 
 	require.NoError(t, Migrate(ctx, dsn))
 }
+
+// Гейт выкладки: на пустой базе и после отката последней миграции —
+// неприменённые есть, после Migrate — нет.
+func TestMigrationsPendingGate(t *testing.T) {
+	dsn := storetest.DSN(t, "migrate_gate")
+	ctx := context.Background()
+
+	pending, err := MigrationsPending(ctx, dsn)
+	require.NoError(t, err)
+	assert.True(t, pending, "пустая база")
+
+	require.NoError(t, Migrate(ctx, dsn))
+	pending, err = MigrationsPending(ctx, dsn)
+	require.NoError(t, err)
+	assert.False(t, pending, "всё применено")
+
+	db, err := sql.Open("pgx", dsn)
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	goose.SetBaseFS(migrationsFS)
+	require.NoError(t, goose.SetDialect("postgres"))
+	require.NoError(t, goose.DownContext(ctx, db, "migrations"))
+	pending, err = MigrationsPending(ctx, dsn)
+	require.NoError(t, err)
+	assert.True(t, pending, "последняя миграция откачена")
+}
