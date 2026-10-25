@@ -404,6 +404,22 @@ SKU за дни раньше вчерашнего — асинхронные о�
 В песочнице хранилище — сервис `s3` (SeaweedFS) из `docker-compose.yml`
 (бакеты `conwix-dev` и `conwix-test`), на проде — S3 Timeweb Cloud.
 
+**Экран «Покрытие GO» админки (ADR-043 п. 6)** — потребитель контракта
+`services/_contracts/service-coverage/v1`. Сервис из запроса пользователя
+не вызывается (`services/AGENTS.md` §2): сводку снимает по расписанию
+`Ui/Command/CaptureServiceCoverageCommand`
+(`app:ingestion:capture-service-coverage`, воркер `worker-service-coverage`)
+через `Application/ServiceCoverage/CaptureServiceCoverageAction`; клиент
+сервиса и разбор ответа — `Infrastructure/ServiceCoverage/`
+(`OzonFetcherCoverageClient`, `OzonFetcherAllowlist`). Последняя попытка
+и последняя успешная сводка — строка `Domain/ServiceCoverageCapture`
+(таблица `service_coverage_capture`), пишет и читает её
+`Infrastructure/Persistence/DbalServiceCoverageCaptureStore`. Загрузка PHP
+по кабинетам allowlist — `Infrastructure/Query/PhpDayLoadsForAdminQuery`
+(межарендаторное чтение системного контура), вход —
+`Ui/Controller/Admin/GetServiceCoverageController`, ответ —
+`Ui/Response/Admin`. Запрос и контроллер — в узких слоях Deptrac.
+
 Общая абстракция коннектора появляется после второго коннектора,
 не до первого.
 
@@ -734,8 +750,11 @@ apps/admin/src/
 │   ├── auth/           вход, выход
 │   ├── accounts/       список аккаунтов, регистрация, блокировка
 │   ├── administrators/ SuperAdmin заводит Admin
-│   └── links/          короткие ссылки и переходы по дням месяца;
-│                       формы создания и изменения в локальном LinkFormDialog
+│   ├── links/          короткие ссылки и переходы по дням месяца;
+│   │                   формы создания и изменения в локальном LinkFormDialog
+│   └── service-coverage/ «Покрытие GO»: покрытие ozon-fetcher рядом
+│                       с загрузкой PHP; состояние ячейки, проблемы
+│                       и вердикт — чистые функции в model/coverage.ts
 ├── shared/
 │   ├── lib/            adminQueryKey, форматирование
 │   └── model/          useCurrentAdmin — «кто я», нужен и оболочке,

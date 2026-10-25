@@ -1,0 +1,45 @@
+{
+    "schema_version": "1",
+    "service": "ozon-fetcher",
+    "generated_at": "2026-10-25T09:00:00Z",
+    "from": "2026-10-23",
+    "to": "2026-10-25",
+    "cabinets_total": 1,
+    "rows": [
+        {
+            "resource_type": "ozon.ads.campaigns",
+            "period_key": "ref",
+            "cabinets_expected": 1,
+            "by_status": {"done": 1, "running": 0, "pending": 0, "not_ready": 0, "failed_retryable": 0, "failed_permanent": 0},
+            "last_success_at": "2026-10-25T08:40:12Z"
+        },
+        {
+            "resource_type": "ozon.ads.daily",
+            "period_key": "2026-10-24",
+            "cabinets_expected": 1,
+            "by_status": {"done": 0, "running": 0, "pending": 0, "not_ready": 1, "failed_retryable": 0, "failed_permanent": 0},
+            "last_success_at": null
+        },
+        {
+            "resource_type": "ozon.finance.accrual-by-day",
+            "period_key": "2026-10-23",
+            "cabinets_expected": 1,
+            "by_status": {"done": 1, "running": 0, "pending": 0, "not_ready": 0, "failed_retryable": 0, "failed_permanent": 0},
+            "last_success_at": "2026-10-25T08:15:03Z"
+        },
+        {
+            "resource_type": "ozon.orders.fbo",
+            "period_key": "2026-10-25",
+            "cabinets_expected": 1,
+            "by_status": {"done": 0, "running": 1, "pending": 0, "not_ready": 0, "failed_retryable": 0, "failed_permanent": 0},
+            "last_success_at": "2026-10-25T07:30:00Z"
+        },
+        {
+            "resource_type": "ozon.finance.realization",
+            "period_key": "2026-10",
+            "cabinets_expected": 1,
+            "by_status": {"done": 0, "running": 0, "pending": 0, "not_ready": 0, "failed_retryable": 1, "failed_permanent": 0},
+            "last_success_at": null
+        }
+    ]
+}

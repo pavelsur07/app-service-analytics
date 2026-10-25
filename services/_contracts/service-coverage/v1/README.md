@@ -1,9 +1,13 @@
 # service-coverage v1
 
 Стандартный endpoint покрытия данных — `GET /internal/coverage` — у каждого
-сервиса `services/` (ADR-043 п. 4, `services/AGENTS.md` §2). Потребителя
-в PHP в первой волне нет; токен «PHP → сервис» заводится сразу.
-Schema: [schema.json](schema.json). История: [CHANGELOG.md](CHANGELOG.md).
+сервиса `services/` (ADR-043 п. 4, `services/AGENTS.md` §2). Потребитель
+в PHP — экран «Покрытие GO» админки: сводку по расписанию снимает воркер
+`worker-service-coverage` (`OzonFetcherCoverageClient`), токен
+«PHP → сервис»; экран читает сохранённый снимок.
+Schema: [schema.json](schema.json). Эталон: [example.json](example.json) —
+его проверяют по схеме обе стороны, PHP разбирает его своим клиентом.
+История: [CHANGELOG.md](CHANGELOG.md).
 
 ## Запрос
 

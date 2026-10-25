@@ -244,6 +244,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/services/ozon-fetcher/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_admin_service_coverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/connections": {
         parameters: {
             query?: never;
@@ -903,6 +919,47 @@ export interface components {
         MeResponse: {
             email: string;
             companies: components["schemas"]["MeCompanyResponse"][];
+        };
+        ServiceCoverageRowResponse: {
+            resourceType: string;
+            /** Y-m-d — день, Y-m — месяц, ref — справочник */
+            periodKey: string;
+            /** кабинеты, у которых ресурс ожидается; null — строки у сервиса нет */
+            cabinetsExpected?: number | null;
+            done: number;
+            running: number;
+            pending: number;
+            notReady: number;
+            failedRetryable: number;
+            failedPermanent: number;
+            /** последняя успешная загрузка, ATOM UTC */
+            lastSuccessAt?: string | null;
+            /** кабинеты allowlist с загруженным PHP днём; null — у ресурса нет пары в PHP или сравнение выключено */
+            phpCabinets?: number | null;
+        };
+        ServiceCoverageResponse: {
+            /** первый день окна, Y-m-d по Москве */
+            from: string;
+            /** последний день окна (сегодня), Y-m-d по Москве */
+            to: string;
+            /** время запроса, ATOM UTC */
+            checkedAt: string;
+            /**
+             * исход последней попытки снять сводку; never — ещё не снимали
+             * @enum {string}
+             */
+            serviceState: "ok" | "disabled" | "not_ready" | "unavailable" | "never";
+            /** время последней попытки снять сводку, ATOM UTC */
+            attemptedAt?: string | null;
+            /** время последней удачной сводки (по часам сервиса), ATOM UTC; строки — из неё */
+            serviceGeneratedAt?: string | null;
+            /** кабинеты сервиса с ключом Seller — из последней удачной сводки */
+            cabinetsSeller?: number | null;
+            /** кабинеты сервиса с ключом Performance (по рекламным строкам) — из последней удачной сводки */
+            cabinetsPerformance?: number | null;
+            /** задан ли allowlist сервиса в api: без него загрузку PHP сравнивать не с чем */
+            phpCompared: boolean;
+            rows: components["schemas"]["ServiceCoverageRowResponse"][];
         };
         ConnectionResponse: {
             id: string;
@@ -2302,6 +2359,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_admin_service_coverage: {
+        parameters: {
+            query?: {
+                /** @description Длина окна в днях по Москве, заканчивая сегодняшним */
+                days?: 31 | 93;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Покрытие сервиса и загрузка PHP за окно */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceCoverageResponse"];
+                };
+            };
+            /** @description Длина окна не 31 и не 93 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
         };

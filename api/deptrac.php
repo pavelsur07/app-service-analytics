@@ -263,6 +263,7 @@ return static function (DeptracConfig $config): void {
                     mustNot: [
                         ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\(RecentlyIngestedAccounts|RecentStockSnapshotAccounts)Query$'),
                         ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\AllCompaniesRawObject(sSinceQuery|Row)$'),
+                        ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\PhpDayLoadsForAdminQuery$'),
                         DirectoryConfig::create('src/Ingestion/Infrastructure/Storage/.*'),
                     ],
                 ),
@@ -293,12 +294,24 @@ return static function (DeptracConfig $config): void {
             $ingestionRawVerificationCommand = Layer::withName('IngestionRawVerificationCommand')->collectors(
                 ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\VerifyRawStorageCommand$'),
             ),
+            // Экран «Покрытие GO» (ADR-043 п. 6) — системный контур CLAUDE.md §1,
+            // тот же приём, что у IdentityAdminAccounts*: межарендаторный
+            // запрос загрузки PHP по кабинетам allowlist сервиса в узком слое,
+            // и единственный контроллер, которому он выдан. Остальной
+            // IngestionUi и Ui продавца запроса не видят.
+            $ingestionAdminCoverageQuery = Layer::withName('IngestionAdminCoverageQuery')->collectors(
+                ClassLikeConfig::create('^App\\Ingestion\\Infrastructure\\Query\\PhpDayLoadsForAdminQuery$'),
+            ),
+            $ingestionAdminCoverageUi = Layer::withName('IngestionAdminCoverageUi')->collectors(
+                ClassLikeConfig::create('^App\\Ingestion\\Ui\\Controller\\Admin\\GetServiceCoverageController$'),
+            ),
             $ingestionUi = Layer::withName('IngestionUi')->collectors(
                 BoolConfig::create(
                     must: [DirectoryConfig::create('src/Ingestion/Ui/.*')],
                     mustNot: [
                         ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\(ScheduleOzonSync|CheckDataFreshness)Command$'),
                         ClassLikeConfig::create('^App\\Ingestion\\Ui\\Command\\VerifyRawStorageCommand$'),
+                        ClassLikeConfig::create('^App\\Ingestion\\Ui\\Controller\\Admin\\GetServiceCoverageController$'),
                     ],
                 ),
             ),
@@ -485,6 +498,13 @@ return static function (DeptracConfig $config): void {
             // пересобирается тем же кодом, что при записи и чтении.
             Ruleset::forLayer($ingestionRawVerificationCommand)->accesses($ingestionRawVerificationQuery, $ingestionDomain, $ingestionInfrastructure, $sharedUi, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionRawVerificationQuery)->accesses($symfonyComponent, $symfonyUid),
+            // ingestionDomain — ради MarketplaceReportType в условии запроса.
+            Ruleset::forLayer($ingestionAdminCoverageQuery)->accesses($ingestionInfrastructure, $ingestionDomain, $symfonyComponent),
+            // Узкий запрос — только здесь; ingestionApplication — ради имени
+            // сервиса снятия сводки, ingestionInfrastructure — ради хранилища
+            // сводки и Row-DTO запроса, ingestionUi — ради собственных
+            // Response-DTO.
+            Ruleset::forLayer($ingestionAdminCoverageUi)->accesses($ingestionAdminCoverageQuery, $ingestionApplication, $ingestionInfrastructure, $ingestionUi, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($ingestionOperationalCommand)->accesses($ingestionSyncAction, $ingestionFreshnessAction, $sharedUi, $sharedApplication, $sharedDomain, $symfonyComponent),
             // ingestionInfrastructure — синхронные запросы чтения, которые
             // Application только склеивает для экрана
