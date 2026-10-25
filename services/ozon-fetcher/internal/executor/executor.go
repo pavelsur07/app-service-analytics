@@ -77,6 +77,9 @@ type TaskStore interface {
 	RecordAuthFailure(ctx context.Context, ref account.Ref, now time.Time, pauseFor func(failures int) time.Duration) (int, error)
 	ResumeConnection(ctx context.Context, ref account.Ref) error
 	StopResourceAllConnections(ctx context.Context, resourceType, reason string) error
+	SucceededSince(ctx context.Context, ref account.Ref, resourceType string, since time.Time) (bool, error)
+	HaltAllConnections(ctx context.Context, ref account.Ref, resourceType, reason string) (bool, error)
+	PauseResource(ctx context.Context, ref account.Ref, resourceType string, until time.Time, reason string) error
 	ContentPages(ctx context.Context, key store.TaskKey) (store.Content, error)
 	ReloadWithoutContent(ctx context.Context, key store.TaskKey, now time.Time) (bool, error)
 	SaveCursor(ctx context.Context, key store.TaskKey, attemptID, cursor string) error
@@ -113,13 +116,17 @@ type Refresher interface {
 
 // Config — тайминги исполнителя.
 type Config struct {
-	Lease           time.Duration // срок lease; продление — раз в треть
-	FinishTimeout   time.Duration // запись итога после отмены
-	BackoffBase     time.Duration // transient: base·2^(n−1)
-	BackoffMax      time.Duration
-	RateLimitPause  time.Duration // 429 без Retry-After
-	AuthRetryPause  time.Duration // пауза кабинета после первого auth: снимок с новым ключом успевает обновиться
-	AuthSuspend     time.Duration // пауза кабинета на втором auth подряд
+	Lease          time.Duration // срок lease; продление — раз в треть
+	FinishTimeout  time.Duration // запись итога после отмены
+	BackoffBase    time.Duration // transient: base·2^(n−1)
+	BackoffMax     time.Duration
+	RateLimitPause time.Duration // 429 без Retry-After
+	AuthRetryPause time.Duration // пауза кабинета после первого auth: снимок с новым ключом успевает обновиться
+	AuthSuspend    time.Duration // пауза кабинета на втором auth подряд
+	// ForbiddenPause — пауза ресурса подключения на 403 по методу, который
+	// у ключа ещё не отвечал 200 (ADR-043 п. 5): у ключа нет роли, и частый
+	// повтор — те самые ошибочные запросы, за которые Ozon ограничивает доступ.
+	ForbiddenPause  time.Duration
 	NoCredentialsIn time.Duration // повтор задачи без ключа seller
 	NotReadyDelay   map[string]time.Duration
 	ReportPoll      ozon.ReportPoll
@@ -150,6 +157,7 @@ func DefaultConfig() Config {
 		RateLimitPause:       30 * time.Second,
 		AuthRetryPause:       time.Minute,
 		AuthSuspend:          time.Hour,
+		ForbiddenPause:       24 * time.Hour,
 		NoCredentialsIn:      time.Hour,
 		AdsReportWindowFrom:  30 * time.Minute,
 		AdsReportWindowTo:    4 * time.Hour,
@@ -227,7 +235,7 @@ func (e *Executor) Run(ctx context.Context, task store.Task, cabinet connections
 	defer cancel(nil)
 	stopLease := e.keepLease(taskCtx, cancel, task, log)
 
-	run := &taskRun{exec: e, task: task, log: log, hashes: append([]string(nil), task.PageHashes...), cursor: task.Cursor, nextPage: task.NextPageNo}
+	run := &taskRun{exec: e, task: task, cabinet: cabinet, log: log, hashes: append([]string(nil), task.PageHashes...), cursor: task.Cursor, nextPage: task.NextPageNo}
 	fetchErr := run.fetch(taskCtx, cabinet)
 
 	// Lease продлевается и во время побочных действий исхода (пауза кабинета,
@@ -319,6 +327,7 @@ func (e *Executor) keepLease(ctx context.Context, cancel context.CancelCauseFunc
 type taskRun struct {
 	exec     *Executor
 	task     store.Task
+	cabinet  connections.Cabinet
 	log      *slog.Logger
 	hashes   []string
 	cursor   string

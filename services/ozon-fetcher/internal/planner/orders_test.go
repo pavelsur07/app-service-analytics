@@ -22,7 +22,7 @@ func specFor(specs []store.TaskSpec, resource, period string) *store.TaskSpec {
 }
 
 func TestOrdersNotPlannedWithoutResource(t *testing.T) {
-	p := Build(at("2026-10-21 12:00"), []connections.Cabinet{seller("a", allFinance...)}, DefaultConfig(msk))
+	p := Build(at("2026-10-21 12:00"), []connections.Cabinet{seller("a", allFinance...)}, sourceConfig(msk))
 
 	for _, r := range ordersResources {
 		assert.Empty(t, periods(p.Ensure, r), r)
@@ -31,7 +31,7 @@ func TestOrdersNotPlannedWithoutResource(t *testing.T) {
 }
 
 func TestOrdersEnsureFromOrdersFromToTodayAndTodayRefreshes(t *testing.T) {
-	p := Build(at("2026-10-21 12:00"), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO)}, DefaultConfig(msk))
+	p := Build(at("2026-10-21 12:00"), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO)}, sourceConfig(msk))
 
 	assert.Equal(t, []string{"2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21"}, periods(p.Ensure, executor.ResourceOrdersFBO))
 	assert.Empty(t, periods(p.Ensure, executor.ResourceOrdersFBS), "только объявленные ресурсы")
@@ -49,7 +49,7 @@ func TestOrdersEnsureFromOrdersFromToTodayAndTodayRefreshes(t *testing.T) {
 
 func TestOrdersTailOncePerDay(t *testing.T) {
 	cabs := []connections.Cabinet{seller("a", executor.ResourceOrdersFBO, executor.ResourceOrdersFBS)}
-	p := Build(at("2026-10-21 00:20"), cabs, DefaultConfig(msk))
+	p := Build(at("2026-10-21 00:20"), cabs, sourceConfig(msk))
 
 	tail := refresh(p, KindOrders)
 	require.NotNil(t, tail)
@@ -63,7 +63,7 @@ func TestOrdersTailOncePerDay(t *testing.T) {
 }
 
 func TestOrdersTailCoversThirtyDaysForStatusChanges(t *testing.T) {
-	cfg := DefaultConfig(msk)
+	cfg := sourceConfig(msk)
 	cfg.OrdersFrom = time.Date(2026, 8, 1, 0, 0, 0, 0, msk)
 	p := Build(at("2026-10-21 00:20"), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO)}, cfg)
 
@@ -74,7 +74,7 @@ func TestOrdersTailCoversThirtyDaysForStatusChanges(t *testing.T) {
 }
 
 func TestOrdersYesterdayIsReloadedEvenWithZeroTail(t *testing.T) {
-	cfg := DefaultConfig(msk)
+	cfg := sourceConfig(msk)
 	cfg.OrdersTailDays = 0
 	p := Build(at("2026-10-21 00:20"), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO)}, cfg)
 
@@ -84,14 +84,14 @@ func TestOrdersYesterdayIsReloadedEvenWithZeroTail(t *testing.T) {
 }
 
 func TestOrdersTailDoesNotReachBeforeOrdersFrom(t *testing.T) {
-	p := Build(at("2026-10-19 10:00"), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO)}, DefaultConfig(msk))
+	p := Build(at("2026-10-19 10:00"), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO)}, sourceConfig(msk))
 
 	assert.Equal(t, []string{"2026-10-18", "2026-10-19"}, periods(p.Ensure, executor.ResourceOrdersFBO))
 	assert.Equal(t, []string{"2026-10-18"}, periods(refresh(p, KindOrders).Specs, executor.ResourceOrdersFBO))
 }
 
 func TestOrdersBackfillNotDeeperThanM2(t *testing.T) {
-	cfg := DefaultConfig(msk)
+	cfg := sourceConfig(msk)
 	cfg.OrdersFrom = time.Date(2026, 1, 1, 0, 0, 0, 0, msk)
 	p := Build(at("2026-10-21 12:00"), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO)}, cfg)
 
@@ -103,7 +103,7 @@ func TestOrdersBackfillNotDeeperThanM2(t *testing.T) {
 
 func TestOrdersMoscowMidnightDecidesToday(t *testing.T) {
 	// 20.10 21:30 UTC = 21.10 00:30 МСК.
-	p := Build(time.Date(2026, 10, 20, 21, 30, 0, 0, time.UTC), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO)}, DefaultConfig(msk))
+	p := Build(time.Date(2026, 10, 20, 21, 30, 0, 0, time.UTC), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO)}, sourceConfig(msk))
 
 	today := specFor(p.Ensure, executor.ResourceOrdersFBO, "2026-10-21")
 	require.NotNil(t, today)
@@ -112,8 +112,8 @@ func TestOrdersMoscowMidnightDecidesToday(t *testing.T) {
 
 func TestOrdersDoNotChangeFinancePlan(t *testing.T) {
 	now := at("2026-10-21 12:00")
-	finance := Build(now, []connections.Cabinet{seller("a", allFinance...)}, DefaultConfig(msk))
-	both := Build(now, []connections.Cabinet{seller("a", append(append([]string(nil), allFinance...), ordersResources...)...)}, DefaultConfig(msk))
+	finance := Build(now, []connections.Cabinet{seller("a", allFinance...)}, sourceConfig(msk))
+	both := Build(now, []connections.Cabinet{seller("a", append(append([]string(nil), allFinance...), ordersResources...)...)}, sourceConfig(msk))
 
 	for _, r := range allFinance {
 		assert.Equal(t, periods(finance.Ensure, r), periods(both.Ensure, r), r)
@@ -129,7 +129,7 @@ func TestOrdersDoNotChangeFinancePlan(t *testing.T) {
 }
 
 func TestAccrualPostingsEnsureUntilYesterdayAndDailyWindow(t *testing.T) {
-	cfg := DefaultConfig(msk)
+	cfg := sourceConfig(msk)
 	cfg.OrdersFrom = time.Date(2026, 8, 1, 0, 0, 0, 0, msk)
 	cabs := []connections.Cabinet{seller("a", executor.ResourceOrdersFBO, executor.ResourceAccrualPostings)}
 	p := Build(at("2026-10-21 00:20"), cabs, cfg)
@@ -159,17 +159,17 @@ func TestAccrualPostingsEnsureUntilYesterdayAndDailyWindow(t *testing.T) {
 }
 
 func TestAccrualPostingsNotPlannedWithoutResourceAndNotBeforeOrdersFrom(t *testing.T) {
-	p := Build(at("2026-10-21 12:00"), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO)}, DefaultConfig(msk))
+	p := Build(at("2026-10-21 12:00"), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO)}, sourceConfig(msk))
 	assert.Empty(t, periods(p.Ensure, executor.ResourceAccrualPostings))
 	assert.Nil(t, refresh(p, KindAccrualPostings))
 
-	p = Build(at("2026-10-21 12:00"), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO, executor.ResourceAccrualPostings)}, DefaultConfig(msk))
+	p = Build(at("2026-10-21 12:00"), []connections.Cabinet{seller("a", executor.ResourceOrdersFBO, executor.ResourceAccrualPostings)}, sourceConfig(msk))
 	assert.Equal(t, []string{"2026-10-18", "2026-10-19", "2026-10-20"}, periods(p.Ensure, executor.ResourceAccrualPostings))
 	assert.Equal(t, []string{"2026-10-20", "2026-10-19", "2026-10-18"}, periods(refresh(p, KindAccrualPostings).Specs, executor.ResourceAccrualPostings))
 }
 
 func TestAccrualPostingsOlderDaysRefreshWeekly(t *testing.T) {
-	cfg := DefaultConfig(msk)
+	cfg := sourceConfig(msk)
 	cfg.OrdersFrom = time.Date(2026, 8, 1, 0, 0, 0, 0, msk)
 	cabs := []connections.Cabinet{seller("a", executor.ResourceOrdersFBO, executor.ResourceAccrualPostings)}
 	target := "2026-09-20"

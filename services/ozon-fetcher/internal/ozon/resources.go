@@ -61,10 +61,9 @@ func (c *Client) FetchAccrualByDay(ctx context.Context, ref account.Ref, creds C
 			return invalidResponse(EndpointAccrualByDay, fmt.Sprintf("more than %d pages with a non-empty cursor", MaxAccrualPages))
 		}
 
-		req := map[string]string{"date": day}
-		if cursor != "" {
-			req["last_id"] = cursor
-		}
+		// last_id — и на первой странице (пустой строкой), как у PHP
+		// (OzonAccrualByDayClient): тело запроса совпадает побайтово по составу.
+		req := map[string]string{"date": day, "last_id": cursor}
 		resp, err := c.Post(ctx, ref, creds, EndpointAccrualByDay, req)
 		if err != nil {
 			return err

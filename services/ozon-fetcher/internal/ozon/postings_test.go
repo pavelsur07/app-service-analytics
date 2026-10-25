@@ -104,6 +104,7 @@ func TestFetchPostingListRequestHasCursorPaginationOnly(t *testing.T) {
 	}
 	assert.NotContains(t, srv.bodies[0], "cursor")
 	assert.Equal(t, "c1", srv.bodies[1]["cursor"])
+	assert.NotContains(t, srv.bodies[0], "translit", "FBS — вне первой волны, тело как в источнике")
 }
 
 func TestFetchPostingListFirstPageAndSilenceIsAnError(t *testing.T) {

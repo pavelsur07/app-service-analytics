@@ -239,6 +239,9 @@ services:
       TEST_S3_BUCKET: "conwix-test"
     volumes:
       - ./services:/src
+      # Фикстуры Conwix для тестов разбора (internal/ozonfixture): тот же
+      # относительный путь от internal/<пакет>, что в репозитории; только чтение.
+      - ./api/tests/Fixtures/Marketplace/ozon:/api/tests/Fixtures/Marketplace/ozon:ro
       - go_mod:/go/pkg/mod
       - go_build:/root/.cache/go-build
     depends_on:

@@ -28,7 +28,7 @@ func testTasks(t *testing.T) *Tasks {
 	pool, err := Open(ctx, dsn, PoolSize(4))
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	_, err = pool.Exec(ctx, `TRUNCATE raw_object, fetch_attempt, fetch_task, connection_state, connection_limit, resource_stop, planner_run`)
+	_, err = pool.Exec(ctx, `TRUNCATE raw_object, fetch_attempt, fetch_task, connection_state, connection_limit, resource_stop, service_halt, resource_pause, planner_run`)
 	require.NoError(t, err)
 	return NewTasks(pool)
 }

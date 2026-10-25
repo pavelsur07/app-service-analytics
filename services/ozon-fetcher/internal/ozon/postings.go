@@ -54,8 +54,10 @@ func postingEndpoint(scheme PostingScheme) (string, error) {
 }
 
 // postingRequest — тело запроса. offset и dir не отправляются: новые методы
-// молча игнорируют их и отдают первые 100 отправлений окна.
-func postingRequest(w PostingWindow, cursor string) map[string]any {
+// молча игнорируют их и отдают первые 100 отправлений окна. FBO — с
+// translit false, как у PHP (ADR-042): v3 флаг выполняет, и с true кластеры
+// и тип оплаты пришли бы латиницей, не так, как в загрузке PHP.
+func postingRequest(scheme PostingScheme, w PostingWindow, cursor string) map[string]any {
 	filter := map[string]any{"since": w.From.UTC().Format(time.RFC3339), "to": w.To.UTC().Format(time.RFC3339)}
 	req := map[string]any{
 		"filter":   filter,
@@ -64,7 +66,12 @@ func postingRequest(w PostingWindow, cursor string) map[string]any {
 		// Без персональных данных покупателя: только аналитика и финансы.
 		"with": map[string]bool{"analytics_data": true, "financial_data": true},
 	}
-	if cursor != "" {
+	switch {
+	case scheme == SchemeFBO:
+		// Курсор — и на первой странице (пустой строкой), как у PHP.
+		req["translit"] = false
+		req["cursor"] = cursor
+	case cursor != "":
 		req["cursor"] = cursor
 	}
 	return req
@@ -149,7 +156,7 @@ func (c *Client) FetchPostingList(ctx context.Context, ref account.Ref, creds Cr
 		if no > MaxPostingPages {
 			return invalidResponse(endpoint, fmt.Sprintf("more than %d pages with a continuation marker", MaxPostingPages))
 		}
-		resp, err := c.Post(ctx, ref, creds, endpoint, postingRequest(w, cursor))
+		resp, err := c.Post(ctx, ref, creds, endpoint, postingRequest(scheme, w, cursor))
 		if err != nil {
 			return err
 		}

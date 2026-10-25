@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/ozon"
@@ -148,6 +149,9 @@ func (e *Executor) outcome(parent, taskCtx context.Context, task store.Task, run
 		return out
 
 	case ozon.ClassAuth:
+		if apiErr.Status == http.StatusForbidden {
+			return e.forbidden(side, task, run, apiErr, now, log)
+		}
 		if IsAdsResource(task.ResourceType) {
 			// Ключ Performance: пауза только этой задачи рекламы — продажи
 			// кабинета идут; подряд второй отказ — длинная пауза + ERROR.
@@ -220,6 +224,54 @@ func (e *Executor) outcome(parent, taskCtx context.Context, task store.Task, run
 	default: // invalid_response
 		return store.Outcome{Status: store.StatusFailedPermanent, Label: string(apiErr.Class), ErrorClass: string(apiErr.Class), HTTPStatus: apiErr.Status, NextRunAt: now}
 	}
+}
+
+// Исходы 403 (ADR-043 п. 5).
+const (
+	labelAccessRestricted = "access_restricted"
+	labelForbidden        = "forbidden"
+)
+
+// forbidden — 403 Seller или Performance. Метод, который этим же ключом уже
+// отвечал 200 (успешная попытка ресурса после последнего изменения ключей в
+// выдаче), — признак ограничения доступа Ozon: загрузка всех подключений
+// останавливается до ручного снятия, потому что ограничение ложится на
+// Client ID и задевает загрузку PHP. Отзыв или урезание ключа после успешной
+// загрузки от блокировки неотличимы и намеренно считаются признаком. 403 на
+// методе без прежнего 200 — у ключа нет роли на метод: пауза только этого
+// ресурса подключения, остальные идут.
+func (e *Executor) forbidden(side context.Context, task store.Task, run *taskRun, apiErr *ozon.APIError, now time.Time, log *slog.Logger) store.Outcome {
+	retry := func() store.Outcome {
+		out := e.retryable(task, string(apiErr.Class), now, true)
+		out.HTTPStatus = apiErr.Status
+		return out
+	}
+	loaded, err := e.tasks.SucceededSince(side, task.Account, task.ResourceType, run.cabinet.UpdatedAt)
+	if err != nil {
+		// Признак не прочитан — повтор с backoff, решение — на следующем 403.
+		e.sideEffect(log, "read prior success", err)
+		return retry()
+	}
+	if loaded {
+		halted, err := e.tasks.HaltAllConnections(side, task.Account, task.ResourceType, "403 on a method this key already loaded")
+		if err != nil {
+			e.sideEffect(log, "halt service", err)
+			return retry()
+		}
+		if halted {
+			log.Error("ozon answered 403 on a method this key already loaded: possible access restriction, loading halted for all connections until ozon-fetcher -resume-halt",
+				slog.String("stage", "fetch"), slog.String("endpoint", apiErr.Endpoint), slog.Int("http_status", apiErr.Status))
+		}
+		return store.Outcome{Status: store.StatusFailedRetryable, Label: labelAccessRestricted, ErrorClass: labelAccessRestricted, HTTPStatus: apiErr.Status, KeepCursor: true, NextRunAt: now}
+	}
+	until := now.Add(e.cfg.ForbiddenPause)
+	if err := e.tasks.PauseResource(side, task.Account, task.ResourceType, until, labelForbidden); err != nil {
+		e.sideEffect(log, "pause resource", err)
+		return retry()
+	}
+	log.Warn("ozon answered 403 on a method this key never loaded: resource paused for this connection",
+		slog.String("stage", "fetch"), slog.String("endpoint", apiErr.Endpoint), slog.Int("http_status", apiErr.Status), slog.Time("paused_until", until))
+	return store.Outcome{Status: store.StatusFailedRetryable, Label: labelForbidden, ErrorClass: labelForbidden, HTTPStatus: apiErr.Status, KeepCursor: true, NextRunAt: until}
 }
 
 // retryable — failed_retryable с backoff base·2^(n−1) ≤ max и jitter.

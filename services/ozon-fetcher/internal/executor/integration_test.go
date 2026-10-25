@@ -37,7 +37,7 @@ func TestByDayFailureMidPaginationResumesWithoutDuplicates(t *testing.T) {
 	pool, err := store.Open(ctx, dsn, store.PoolSize(4))
 	require.NoError(t, err)
 	defer pool.Close()
-	_, err = pool.Exec(ctx, `TRUNCATE raw_object, fetch_attempt, fetch_task, connection_state, connection_limit, resource_stop`)
+	_, err = pool.Exec(ctx, `TRUNCATE raw_object, fetch_attempt, fetch_task, connection_state, connection_limit, resource_stop, service_halt, resource_pause`)
 	require.NoError(t, err)
 	tasks := store.NewTasks(pool)
 

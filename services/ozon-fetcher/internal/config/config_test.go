@@ -170,7 +170,7 @@ func TestLoadPlannerAndIngestionSettings(t *testing.T) {
 		if cfg.AccrualPostingsDays != 45 || cfg.AccrualPostingsDailyDays != 14 {
 			t.Errorf("accrual postings days = %d/%d", cfg.AccrualPostingsDays, cfg.AccrualPostingsDailyDays)
 		}
-		if cfg.OrdersFrom != "2026-10-18" || cfg.OrdersTailDays != 30 {
+		if cfg.OrdersFrom != "" || cfg.OrdersTailDays != 30 {
 			t.Errorf("orders defaults = %q %d", cfg.OrdersFrom, cfg.OrdersTailDays)
 		}
 		if cfg.OzonBaseURL != "https://api-seller.ozon.ru" || cfg.IngestionEnabled() {

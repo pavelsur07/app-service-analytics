@@ -86,11 +86,15 @@ func Start(ctx context.Context, cfg config.Config, pool *store.Pool, logger *slo
 		WithRawReader(rawstore.NewReader(s3Client, cfg.S3Bucket)).
 		WithPerformance(perf)
 
-	ordersFrom, err := time.ParseInLocation(time.DateOnly, cfg.OrdersFrom, loc)
-	if err != nil {
-		return nil, fmt.Errorf("app: ORDERS_FROM: %w", err)
+	// Пустой ORDERS_FROM — с M-2, как первичная загрузка начислений.
+	var ordersFrom time.Time
+	if cfg.OrdersFrom != "" {
+		var err error
+		if ordersFrom, err = time.ParseInLocation(time.DateOnly, cfg.OrdersFrom, loc); err != nil {
+			return nil, fmt.Errorf("app: ORDERS_FROM: %w", err)
+		}
 	}
-	plannerCfg := planner.Config{Location: loc, TailDays: cfg.TailDays, ReconcileWeekday: cfg.ReconcileWeekday, FinalDay: cfg.FinalDay,
+	plannerCfg := planner.Config{Location: loc, Resources: planner.FirstWave, TailDays: cfg.TailDays, ReconcileWeekday: cfg.ReconcileWeekday, FinalDay: cfg.FinalDay,
 		OrdersFrom: ordersFrom, OrdersTailDays: cfg.OrdersTailDays, AccrualPostingsDays: cfg.AccrualPostingsDays,
 		AccrualPostingsDailyDays: cfg.AccrualPostingsDailyDays}
 	scheduler := planner.NewScheduler(plannerCfg, cfg.PlanEvery, tasks, cabinets, logger, now)

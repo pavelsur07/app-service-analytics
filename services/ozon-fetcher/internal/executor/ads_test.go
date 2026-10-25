@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
@@ -148,4 +149,16 @@ func TestAdsRateLimitKeepsTaskPending(t *testing.T) {
 
 	assert.Equal(t, "rate_limit", res.Outcome)
 	assert.True(t, h.tasks.finished.NextRunAt.Equal(t0.Add(3*time.Second)))
+}
+
+// 403 Performance на методе, который этим ключом уже отвечал 200, — тот же
+// признак ограничения доступа, что у Seller (ADR-043 п. 5).
+func TestAdsForbiddenOnLoadedMethodHaltsAllConnections(t *testing.T) {
+	h := adsHarness(&fakePerf{err: &ozon.APIError{Class: ozon.ClassAuth, Endpoint: "/api/client/statistics/expense/json", Status: http.StatusForbidden}})
+	h.tasks.loaded = true
+
+	res := h.exec.Run(context.Background(), task(ResourceAdsExpense, "2026-10-15"), adsCabinet, "trace")
+
+	assert.Equal(t, "access_restricted", res.Outcome)
+	assert.Equal(t, []string{ResourceAdsExpense}, h.tasks.halts)
 }
