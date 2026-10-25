@@ -171,6 +171,7 @@ final class OzonFetcherCoverageClientTest extends TestCase
         }];
         yield 'кривая дата окна' => [static fn (array $p): array => [...$p, 'from' => '2026-02-30']];
         yield 'строки не список' => [static fn (array $p): array => [...$p, 'rows' => ['a' => 1]]];
+        yield 'строки — пустой объект' => [static fn (array $p): array => [...$p, 'rows' => new \stdClass()]];
     }
 
     /**

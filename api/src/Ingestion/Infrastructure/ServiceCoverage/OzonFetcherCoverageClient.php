@@ -103,6 +103,17 @@ final readonly class OzonFetcherCoverageClient
      *
      * @throws \UnexpectedValueException ответ вне контракта
      */
+    /**
+     * Ассоциативный разбор превращает пустой объект `{}` в `[]`, и пустой
+     * список от объекта уже не отличить; схема требует именно массив.
+     */
+    private static function rowsIsJsonArray(string $body): bool
+    {
+        $decoded = json_decode($body, false, 16, \JSON_THROW_ON_ERROR);
+
+        return $decoded instanceof \stdClass && \is_array($decoded->rows ?? null);
+    }
+
     public static function parse(string $body): ServiceCoverageSnapshot
     {
         try {
@@ -124,7 +135,7 @@ final readonly class OzonFetcherCoverageClient
         if (null === $generatedAt) {
             throw new \UnexpectedValueException('generated_at');
         }
-        if (!\is_array($payload['rows']) || !array_is_list($payload['rows'])) {
+        if (!\is_array($payload['rows']) || !array_is_list($payload['rows']) || !self::rowsIsJsonArray($body)) {
             throw new \UnexpectedValueException('rows');
         }
 
