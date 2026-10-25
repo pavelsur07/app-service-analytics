@@ -85,7 +85,9 @@ when@prod:
                 # ради чего журнал и заводился. Рецепт Flex решал это
                 # через excluded_http_codes у fingers_crossed; здесь
                 # fingers_crossed нет (см. выше), поэтому отсев по каналу.
-                channels: ["!deprecation", "!request"]
+                # `service_audit` — своим обработчиком ниже, с порога info;
+                # без исключения отказ токена (warning) писался бы дважды.
+                channels: ["!deprecation", "!request", "!service_audit"]
             # Настоящие отказы сервера из того же канала — отдельно
             # и с порога critical: 5xx Symfony пишет именно им
             # (4xx — error), так что порог сам отделяет наши поломки
@@ -106,6 +108,9 @@ when@prod:
                 level: info
                 formatter: monolog.formatter.json
                 channels: [deprecation]
+            # Аудит сервисного контура (ADR-043 п. 4): каждое обращение
+            # и каждая выдача — info, поэтому отдельный порог; из `main`
+            # канал исключён, чтобы строка не дублировалась.
             service_audit:
                 type: stream
                 path: php://stderr
