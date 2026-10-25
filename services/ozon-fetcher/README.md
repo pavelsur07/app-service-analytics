@@ -141,7 +141,7 @@ gzip исходных байтов, `If-None-Match: *`, sha256 несжатых 
 |---|---|
 | `LISTEN_ADDR` | Адрес HTTP, по умолчанию `:8080` |
 | `DB_DSN` | PostgreSQL сервисной БД; пусто — без БД |
-| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Бакет сырья Conwix (ADR-024) и пользователь хранилища с правами на префикс `conwix/svc/ozon-fetcher/` (этап 7, ADR-044) |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Бакет сырья Conwix (ADR-024). На проде — пока ключ PHP (`RAW_STORAGE_*`, решение владельца 25.10.2026); по ADR-044 — отдельный пользователь с правами на префикс `conwix/svc/ozon-fetcher/`, открытая издержка в `docs/operations-checklist.md` |
 | `SYMFONY_INTERNAL_BASE_URL` | Базовый URL PHP для `GET /api/internal/marketplace-connections`; пусто — загрузка выключена |
 | `INTERNAL_AUTH_TOKEN` | Токен направления «сервис → PHP» |
 | `SERVICE_API_TOKEN` | Токен направления «PHP → сервис» для `/internal/*` сервиса, ≥ 32 символов; пусто — `/internal/*` закрыт (401) |

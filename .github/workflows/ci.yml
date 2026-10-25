@@ -932,6 +932,10 @@ jobs:
         run: |
           set -eu
           ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes 'root@${{ secrets.DEPLOY_HOST }}' \
-            "cd /opt/conwix
-             sh ozon-fetcher/ozon-fetcher-compose.sh ps --format '{{.Service}} {{.Status}}'
-             ! sh ozon-fetcher/ozon-fetcher-compose.sh ps --format '{{.Status}}' | grep -qE 'unhealthy|Restarting'"
+            "set -eu
+             cd /opt/conwix
+             # Состояния — в переменную: сбой обёртки (включённость
+             # неизвестна) роняет шаг, а не проходит пустой проверкой.
+             statuses=\$(sh ozon-fetcher/ozon-fetcher-compose.sh ps --format '{{.Service}} {{.Status}}')
+             printf '%s\n' \"\$statuses\"
+             ! printf '%s\n' \"\$statuses\" | grep -qE 'unhealthy|Restarting'"
