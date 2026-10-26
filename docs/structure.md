@@ -57,7 +57,9 @@ app-service-analytics/
 ├── docs/
 │   ├── adr/
 │   ├── design/           эталонные макеты дизайн-системы
-│   ├── my/               инструкции продолжения production-задач
+│   ├── plan/             открытые планы и справочные определения отчётов
+│   ├── task/             открытые задачи и исследования для ADR
+│   ├── superpowers/specs/  спецификация онбординга, обоснование ADR-023
 │   ├── structure.md
 │   ├── patterns.md
 │   └── operations-checklist.md
@@ -451,8 +453,8 @@ DTO с ручным разбором тела (не Symfony Form), не проп
 Витрина процента выкупа Ozon также остаётся внутри `Ingestion`: raw-ответы,
 история posting status и return facts лежат в `Domain`/`Infrastructure`,
 DBAL-запросы классифицируют T1/D/T2/P/R, а `Ui` публикует list/daily API.
-Решения и порядок реализации записаны в ADR-019 и
-`docs/plan/ozon-buyout-rate-implementation.md`.
+Решения записаны в ADR-019 и ADR-020; описание показателей —
+`docs/buyout-rate-guide.md`.
 Отчёт выручки по SKU использует тот же дневной прогноз, дополняя его суммами
 заказов и выкупленных единиц по исходной цене `sales_fact` в RUB. `Ui` публикует
 `GET /api/companies/{companyId}/sku-forecast-fact` и ограниченный поиск SKU
@@ -544,7 +546,7 @@ apps/seller/
 
 Отчёт «Локализация» — `apps/seller/src/features/localization/` (`/localization`):
 доля локальных продаж по кластерам Ozon и логистика на штуку. Бэкенд —
-`Ingestion/Infrastructure/Query/Localization`, план и определения —
+`Ingestion/Infrastructure/Query/Localization`, определения —
 `docs/plan/ozon-localization-report.md`.
 Раздел «Локализация» — один пункт меню с вкладками «Спрос | Кластеры
 доставки | Что куда довезти» (`?view=demand|clusters|items`, по умолчанию
@@ -555,13 +557,13 @@ apps/seller/
 Отчёт «Доставка» — `apps/seller/src/features/delivery-speed/` (`/delivery-speed`):
 время от заказа до прибытия по кластерам и маршрутам, потерянные дни ожидания
 из-за раскладки и выкуп по скорости. Бэкенд —
-`Ingestion/Infrastructure/Query/DeliverySpeed`, план и метод оценки моментов —
+`Ingestion/Infrastructure/Query/DeliverySpeed`, метод оценки моментов —
 `docs/plan/ozon-delivery-speed-report.md`.
 
 Отчёт «Остатки» — `apps/seller/src/features/stock-placement/` (`/stock-placement`):
 остаток Ozon FBO по кластерам против спроса, статус и рекомендация «довезти».
 Бэкенд — `Ingestion/Infrastructure/Query/StockPlacement`, источник и снимки —
-ADR-034, план — `docs/plan/ozon-stock-placement-report.md`. Форматирование
+ADR-034, правила рекомендации — `docs/plan/ozon-stock-placement-report.md`. Форматирование
 потерянных часов ожидания общее с «Доставкой» — `shared/lib/formatLostTime.ts`.
 Что считается спросом (кластер покупателя, без отменённых) — единственное
 определение в `Ingestion/Infrastructure/Query/Demand/DemandSql`, дни без
@@ -573,7 +575,7 @@ ADR-034, план — `docs/plan/ozon-stock-placement-report.md`. Формати
 матрица товар × кластер покупателя — заказы за 7/14/28 дней, спрос в день,
 доля кластера, тренд 7 к 28, пометка дней без товара. Бэкенд —
 `Ingestion/Infrastructure/Query/DemandMatrix`, сценарий —
-`Ingestion/Application/DemandMatrix`, план —
+`Ingestion/Application/DemandMatrix`, определения —
 `docs/plan/ozon-demand-matrix-report.md`. Форматирование спроса в день
 общее с «Остатками» — `shared/lib/formatDemand.ts`.
 
@@ -583,7 +585,7 @@ ADR-034, план — `docs/plan/ozon-stock-placement-report.md`. Формати
 описания виджетов — `lib/widgets.ts`, скрытые виджеты и последний период —
 `lib/preferences.ts` поверх `shared/lib/localPreferences.ts`. Бэкенд —
 `Ingestion/Application/Dashboard` и `Infrastructure/Query/Dashboard`,
-план и определения показателей — `docs/plan/dashboard-widgets.md`.
+определения показателей — `docs/plan/dashboard-widgets.md`.
 
 Внутри фичи — `ui/`, `model/` (хуки и запросы), `lib/` (чистые функции).
 Три папки, не больше.
