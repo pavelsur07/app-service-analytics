@@ -16,7 +16,6 @@
 | 2 | [#262](https://github.com/pavelsur07/app-service-analytics/pull/262) | `eab394174ffe5dc4425b597c003b1961f860b4c8` | [success](https://github.com/pavelsur07/app-service-analytics/actions/runs/40223430654), включая image/deploy | `616-eab3941` |
 | 3 | [#263](https://github.com/pavelsur07/app-service-analytics/pull/263) | `02305d81cdf8e7c14606132cf66abe9346d4a327` | [success](https://github.com/pavelsur07/app-service-analytics/actions/runs/40224576183), включая image/deploy | `619-02305d8` |
 | 4 | [#264](https://github.com/pavelsur07/app-service-analytics/pull/264) | `a6bfa6a60df5c996a80615ce71a900a13d4f2d26` | [success](https://github.com/pavelsur07/app-service-analytics/actions/runs/40225372785), включая image/deploy | `620-a6bfa6a` |
-
 | 5 | [#265](https://github.com/pavelsur07/app-service-analytics/pull/265) | `58d018cf7fba11f7526f80f1485b8756c1428be4` | [success после отдельной миграции](https://github.com/pavelsur07/app-service-analytics/actions/runs/40268268961) | `623-58d018c` |
 
 Безопасный публичный smoke 25.10.2026: seller ping вернул
