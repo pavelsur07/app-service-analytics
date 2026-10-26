@@ -1,7 +1,9 @@
 # Этап 6 — контрольный отчёт
 
-25.10.2026. Этапы 1–4 поставлены. Этап 5 реализован и прошёл локальные
-гейты и независимое ревью; окончательные CI и поставка ещё ожидаются.
+26.10.2026. Этапы 1–5 поставлены. Контрольное обследование завершено:
+локальные гейты, независимое ревью, обязательный CI, production-миграция
+и поставка MFA подтверждены. Личная настройка authenticator выполняется
+каждым владельцем при следующем входе; до подтверждения привилегии закрыты.
 Исходный пользовательский `docs/plan/securety_chek.md` не изменён и не
 включён в коммиты. Планы этапов содержат задачи, ожидаемый результат,
 последовательность TDD и критерии готовности.
@@ -14,6 +16,7 @@
 | 2 | [#262](https://github.com/pavelsur07/app-service-analytics/pull/262) | `eab394174ffe5dc4425b597c003b1961f860b4c8` | [success](https://github.com/pavelsur07/app-service-analytics/actions/runs/40223430654), включая image/deploy | `616-eab3941` |
 | 3 | [#263](https://github.com/pavelsur07/app-service-analytics/pull/263) | `02305d81cdf8e7c14606132cf66abe9346d4a327` | [success](https://github.com/pavelsur07/app-service-analytics/actions/runs/40224576183), включая image/deploy | `619-02305d8` |
 | 4 | [#264](https://github.com/pavelsur07/app-service-analytics/pull/264) | `a6bfa6a60df5c996a80615ce71a900a13d4f2d26` | [success](https://github.com/pavelsur07/app-service-analytics/actions/runs/40225372785), включая image/deploy | `620-a6bfa6a` |
+| 5 | [#265](https://github.com/pavelsur07/app-service-analytics/pull/265) | `58d018cf7fba11f7526f80f1485b8756c1428be4` | [success после отдельной миграции](https://github.com/pavelsur07/app-service-analytics/actions/runs/40268268961) | `623-58d018c` |
 
 Безопасный публичный smoke 25.10.2026: seller ping вернул
 `620-a6bfa6a`; `/api/extension/me` без Bearer — 401; POST login с чужим
@@ -59,17 +62,31 @@ Claude CLI недоступен; владелец явно разрешил не
 Идентификаторы пакетов и сводки выводов сохранены в результатах этапов;
 они не зависят от срока хранения локального var/review.
 
-## Незавершённое условие этапа 5
+## Завершение поставки этапа 5
 
-PR [#265](https://github.com/pavelsur07/app-service-analytics/pull/265),
-head `d839e90b29a240db3c3cfe51fa979a61e00152ed`.
-В текущем окружении отсутствует предусмотренный правилами SSH-алиас
-`conwix-prod`: конфигурация оставляет hostname буквально `conwix-prod`,
-подключение не разрешается. Пользователю направлен запрос настроить штатный
-доступ вне репозитория. До его появления merge отложен: после штатного
-отказа migration gate должна быть возможность отдельно применить
-`Version20261025192000`, повторить deploy и проверить версию/схему.
-Нельзя считать миграцию, MFA в production и всю программу завершёнными.
+PR [#265](https://github.com/pavelsur07/app-service-analytics/pull/265)
+объединён 26.10.2026. Проверки финального head `22081eb` прошли
+[CI #622](https://github.com/pavelsur07/app-service-analytics/actions/runs/40228689162).
+SSH-алиас `conwix-prod` настроен вне репозитория, реальное подключение
+проверено. На merge-коммите повторно успешно выполнены все проверки.
+
+Первый deploy CI #623 штатно остановился: `Out-of-date! 1 migration`.
+Список миграций подтвердил единственную ожидающую
+`DoctrineMigrations\Version20261025192000`. Она применена отдельно
+через `conwix-prod` и новый production-образ: 1 migration / 4 SQL,
+19.7 ms, результат UP. Изменение добавляет только две новые MFA-таблицы.
+`doctrine:migrations:up-to-date` после применения: OK, миграций не осталось.
+Повтор только failed job завершился success; API, workers и сервис здоровы.
+
+Production smoke 26.10.2026: публичный seller ping и admin ping с сервера
+вернули `623-58d018c`. `doctrine:schema:validate`: mapping и схема OK.
+`debug:event-dispatcher kernel.request`: CSRF subscriber priority16,
+firewall8, MFA guard0 — guard действует после аутентификации до контроллера.
+Повторные запросы: без Bearer401, чужой Origin403, GET logout405.
+Личные факторы и коды не читались, боевые аккаунты не сбрасывались.
+
+Второй проход документации обновляет только фактические результаты;
+новых ADR и runtime-изменений нет, отдельное ревью по порогу не требуется.
 
 ## Остаточные действия и ограничения
 
