@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace App\Identity\Ui\Security;
 
 use App\Identity\Domain\Administrator;
-use App\Identity\Ui\Response\Admin\AdminMeResponse;
+use App\Identity\Domain\AdminMfaRepository;
+use App\Identity\Ui\Response\Admin\AdminMfaStatusResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -23,14 +24,18 @@ use Symfony\Component\Security\Http\Authentication\AuthenticationSuccessHandlerI
  */
 final class AdminLoginSuccessHandler implements AuthenticationSuccessHandlerInterface
 {
+    public function __construct(private readonly AdminMfaRepository $mfa, private readonly AdminMfaSession $session)
+    {
+    }
+
     public function onAuthenticationSuccess(Request $request, TokenInterface $token): Response
     {
         $administrator = $token->getUser();
         \assert($administrator instanceof Administrator);
 
-        return new JsonResponse(new AdminMeResponse(
-            email: $administrator->email(),
-            role: $administrator->role()->value,
-        ));
+        $state = $this->mfa->state($administrator->id());
+        $this->session->start($request, $administrator->id(), $state->version);
+
+        return new JsonResponse(new AdminMfaStatusResponse($state->enabled ? 'verification_required' : 'enrollment_required'), 202);
     }
 }

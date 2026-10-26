@@ -13,6 +13,14 @@
 # блокировки — и только».
 framework:
     rate_limiter:
+        admin_mfa_account:
+            policy: sliding_window
+            limit: 5
+            interval: '5 minutes'
+        admin_mfa_ip:
+            policy: sliding_window
+            limit: 25
+            interval: '5 minutes'
         price_observations:
             policy: sliding_window
             limit: 500

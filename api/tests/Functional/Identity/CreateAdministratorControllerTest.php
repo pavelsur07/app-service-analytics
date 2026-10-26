@@ -31,7 +31,7 @@ final class CreateAdministratorControllerTest extends WebTestCase
         $administrators = $this->administrators();
 
         $boss = AdministratorBuilder::aBootstrapSuperAdmin()->withEmail('boss@conwix.local')->persistWith($administrators);
-        $client->loginUser($boss, 'admin');
+        $this->authenticateAdministrator($client, $boss);
 
         $this->post($client, ['email' => 'New.Ops@Conwix.Local', 'password' => 'long-enough-password']);
 
@@ -67,7 +67,7 @@ final class CreateAdministratorControllerTest extends WebTestCase
 
         $boss = AdministratorBuilder::aBootstrapSuperAdmin()->withEmail('boss2@conwix.local')->persistWith($administrators);
         $admin = AdministratorBuilder::anAdministrator()->withEmail('ops@conwix.local')->createdBy($boss)->persistWith($administrators);
-        $client->loginUser($admin, 'admin');
+        $this->authenticateAdministrator($client, $admin);
 
         $this->post($client, ['email' => 'sneaky@conwix.local', 'password' => 'long-enough-password']);
 
@@ -90,7 +90,7 @@ final class CreateAdministratorControllerTest extends WebTestCase
         $administrators = $this->administrators();
 
         $boss = AdministratorBuilder::aBootstrapSuperAdmin()->withEmail('boss3@conwix.local')->persistWith($administrators);
-        $client->loginUser($boss, 'admin');
+        $this->authenticateAdministrator($client, $boss);
 
         $this->post($client, ['email' => 'twice@conwix.local', 'password' => 'long-enough-password']);
         self::assertResponseStatusCodeSame(201);
@@ -106,7 +106,7 @@ final class CreateAdministratorControllerTest extends WebTestCase
         $administrators = $this->administrators();
 
         $boss = AdministratorBuilder::aBootstrapSuperAdmin()->withEmail('boss4@conwix.local')->persistWith($administrators);
-        $client->loginUser($boss, 'admin');
+        $this->authenticateAdministrator($client, $boss);
 
         $short = str_repeat('a', CreateAdministratorRequest::MIN_PASSWORD_LENGTH - 1);
         $this->post($client, ['email' => 'ok@conwix.local', 'password' => $short]);
@@ -126,7 +126,7 @@ final class CreateAdministratorControllerTest extends WebTestCase
         $administrators = $this->administrators();
 
         $boss = AdministratorBuilder::aBootstrapSuperAdmin()->withEmail('boss5@conwix.local')->persistWith($administrators);
-        $client->loginUser($boss, 'admin');
+        $this->authenticateAdministrator($client, $boss);
 
         // Поля роли в контракте нет; если оно однажды появится
         // по недосмотру, этот тест покажет это раньше клиента.

@@ -187,6 +187,12 @@ final class AdminContourTest extends WebTestCase
             server: ['CONTENT_TYPE' => 'application/json'],
             content: json_encode(['email' => $email, 'password' => $password], \JSON_THROW_ON_ERROR),
         );
+        if (202 === $client->getResponse()->getStatusCode()) {
+            $administrator = $this->administrators()->findByEmail($email);
+            self::assertNotNull($administrator);
+            $this->authenticateAdministrator($client, $administrator);
+            $client->request('GET', '/api/admin/auth/me');
+        }
     }
 
     private function hash(string $plainPassword): string

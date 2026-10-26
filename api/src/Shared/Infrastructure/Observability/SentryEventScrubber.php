@@ -19,10 +19,20 @@ use Sentry\EventHint;
 final readonly class SentryEventScrubber
 {
     /** @var list<string> */
-    private const array SENSITIVE_KEYS = ['api-key', 'authorization', 'client-id'];
+    private const array SENSITIVE_KEYS = ['api-key', 'authorization', 'client-id', 'secret', 'provisioninguri', 'recoverycodes', 'recovery_codes', 'recovery_code', 'mfa_secret', 'totp_secret'];
 
     public function __invoke(Event $event, ?EventHint $hint): Event
     {
+        // send_default_pii не управляет сбором тела в установленном SDK.
+        // Тела с паролями/кодами не отправляются независимо от их формы.
+        $request = $event->getRequest();
+        unset($request['data']);
+        $event->setRequest($request);
+        $extra = [];
+        foreach ($event->getExtra() as $key => $value) {
+            $extra[$key] = $this->scrubValue($value, $key);
+        }
+        $event->setExtra($extra);
         $event->setBreadcrumb(array_map($this->scrubBreadcrumb(...), $event->getBreadcrumbs()));
 
         return $event;
@@ -39,6 +49,9 @@ final readonly class SentryEventScrubber
 
     private function scrubValue(mixed $value, string $key): mixed
     {
+        if (\in_array(strtolower($key), self::SENSITIVE_KEYS, true)) {
+            return '[scrubbed]';
+        }
         if (\is_array($value)) {
             $scrubbed = [];
             foreach ($value as $nestedKey => $nestedValue) {
@@ -48,6 +61,6 @@ final readonly class SentryEventScrubber
             return $scrubbed;
         }
 
-        return \in_array(strtolower($key), self::SENSITIVE_KEYS, true) ? '[scrubbed]' : $value;
+        return $value;
     }
 }

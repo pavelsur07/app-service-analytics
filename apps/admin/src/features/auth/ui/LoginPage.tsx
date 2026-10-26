@@ -3,6 +3,7 @@ import { CircleAlert } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { Button, Card, Input } from '../../../../../../packages/ui/src'
 import { useLogin } from '../model/useLogin'
+import { mfaRoute } from '../model/mfaRoute'
 
 interface LoginFormValues {
   email: string
@@ -23,8 +24,8 @@ export function LoginPage() {
 
   const onSubmit = handleSubmit((values) => {
     login.mutate(values, {
-      onSuccess: () => {
-        void navigate('/accounts')
+      onSuccess: (status) => {
+        void navigate(mfaRoute(status.state))
       },
     })
   })

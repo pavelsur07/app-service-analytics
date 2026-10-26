@@ -6,6 +6,7 @@ namespace App\Tests\Functional\Identity;
 
 use App\Identity\Infrastructure\Repository\DoctrineAdministratorRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
+use App\Tests\Support\AuthenticateAdministrator;
 use App\Tests\Support\Builder\AdministratorBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\ORM\EntityManagerInterface;
@@ -16,6 +17,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 final class SessionRequestProtectionTest extends WebTestCase
 {
+    use AuthenticateAdministrator;
+
     private KernelBrowser $client;
 
     protected function setUp(): void
@@ -34,7 +37,7 @@ final class SessionRequestProtectionTest extends WebTestCase
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
         self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
         $boss = AdministratorBuilder::aBootstrapSuperAdmin()->persistWith(new DoctrineAdministratorRepository($entityManager));
-        $client->loginUser($boss, 'admin');
+        $this->authenticateAdministrator($client, $boss);
 
         $client->request('POST', $path, server: [
             'CONTENT_TYPE' => 'text/plain',

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Identity\Ui\Controller\Admin;
 
-use App\Identity\Ui\Response\Admin\AdminMeResponse;
+use App\Identity\Ui\Response\Admin\AdminMfaStatusResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
 use Nelmio\ApiDocBundle\Attribute\Model;
 use OpenApi\Attributes as OA;
@@ -25,9 +25,9 @@ use Symfony\Component\Routing\Attribute\Route;
     ],
 ))]
 #[OA\Response(
-    response: 200,
-    description: 'Вход администратора выполнен, сессия установлена',
-    content: new Model(type: AdminMeResponse::class),
+    response: 202,
+    description: 'Пароль подтверждён, требуется настройка или проверка MFA',
+    content: new Model(type: AdminMfaStatusResponse::class),
 )]
 #[OA\Response(
     response: 401,

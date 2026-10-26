@@ -186,7 +186,7 @@ final class ServiceCoverageControllerTest extends WebTestCase
         /** @var PasswordHasherFactoryInterface $hashers */
         $hashers = static::getContainer()->get(PasswordHasherFactoryInterface::class);
         $hash = $hashers->getPasswordHasher(AdministratorBuilder::anAdministrator()->build())->hash('admin-password');
-        AdministratorBuilder::anAdministrator()
+        $administrator = AdministratorBuilder::anAdministrator()
             ->withEmail('coverage@conwix.local')
             ->withPasswordHash($hash)
             ->persistWith(new DoctrineAdministratorRepository($entityManager));
@@ -197,7 +197,8 @@ final class ServiceCoverageControllerTest extends WebTestCase
             server: ['CONTENT_TYPE' => 'application/json'],
             content: json_encode(['email' => 'coverage@conwix.local', 'password' => 'admin-password'], \JSON_THROW_ON_ERROR),
         );
-        self::assertResponseIsSuccessful();
+        self::assertResponseStatusCodeSame(202);
+        $this->authenticateAdministrator($client, $administrator);
 
         return $client;
     }

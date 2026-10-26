@@ -10,7 +10,10 @@ describe('защита изменяющих сессионных запросо�
     server.use(
       http.post('/api/admin/auth/login', ({ request }) => {
         received = request.headers.get('X-Conwix-Request')
-        return HttpResponse.json({ email: 'admin@example.test', role: 'admin' })
+        return HttpResponse.json(
+          { state: 'verification_required' },
+          { status: 202 },
+        )
       }),
     )
 
