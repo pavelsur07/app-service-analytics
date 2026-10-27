@@ -9,4 +9,5 @@ enum SalesCohortGrouping: string
     case Day = 'day';
     case Week = 'week';
     case Month = 'month';
+    case Period = 'period';
 }

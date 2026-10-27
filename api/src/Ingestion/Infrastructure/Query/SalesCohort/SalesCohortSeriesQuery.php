@@ -32,7 +32,7 @@ final readonly class SalesCohortSeriesQuery
         \DateTimeImmutable $calculatedAt,
         ?int $p95Seconds,
     ): QueryBuilder {
-        if (!\in_array($groupBy, ['day', 'week', 'month'], true)) {
+        if (!\in_array($groupBy, ['day', 'week', 'month', 'period'], true)) {
             throw new \InvalidArgumentException('Unknown cohort grouping.');
         }
         $metrics = $this->metrics->build($companyId, $accountId, $skus, $accumulationFrom, $to, $currency, $calculatedAt);
@@ -73,7 +73,7 @@ final readonly class SalesCohortSeriesQuery
                        MAX(day) AS bucket_to
                 FROM dense
                 WHERE day >= :visibleFrom
-                GROUP BY date_trunc(:groupBy, day::timestamp)
+                GROUP BY CASE WHEN :groupBy = 'period' THEN CAST(:visibleFrom AS timestamp) ELSE date_trunc(:groupBy, day::timestamp) END
             ), aggregates AS (
                 SELECT d.sku, b.bucket_from, b.bucket_to, scope.kind,
                        CASE WHEN BOOL_AND(d.orders_coverage = 'complete') THEN 'complete'

@@ -5958,6 +5958,133 @@
                 }
             }
         },
+        "/api/companies/{companyId}/sales-plans/{planId}/performance": {
+            "get": {
+                "operationId": "get_sales_planning_plan_performance",
+                "parameters": [
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "groupBy",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "default": "day",
+                            "enum": [
+                                "day",
+                                "week",
+                                "month",
+                                "period"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 20,
+                            "maximum": 50,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 2048
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "planId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u0418\u0441\u0445\u043e\u0434\u043d\u0430\u044f \u0447\u0438\u0441\u043b\u043e\u0432\u0430\u044f \u0446\u0435\u043b\u044c \u0438 \u0442\u0435\u043a\u0443\u0449\u0438\u0435 \u043a\u043e\u0433\u043e\u0440\u0442\u043d\u044b\u0435 \u043f\u043e\u043a\u0430\u0437\u0430\u0442\u0435\u043b\u0438 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b SKU",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SalesPlanPerformanceResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0447\u043b\u0435\u043d\u0441\u0442\u0432\u0430 \u0432 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041f\u043b\u0430\u043d \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d \u0443 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u041d\u0435\u0442 \u0443\u0442\u0432\u0435\u0440\u0436\u0434\u0451\u043d\u043d\u043e\u0439 \u0431\u0430\u0437\u044b, \u0437\u0430\u043a\u0440\u044b\u0442\u044b\u0439 \u043f\u043b\u0430\u043d \u043b\u0438\u0431\u043e \u043d\u0435\u043f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u043c\u044b\u0439 \u0432\u043d\u0435\u0448\u043d\u0438\u0439 snapshot",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0438\u043b\u0438 \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u0430 \u043c\u0435\u0442\u0440\u0438\u043a\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/ping": {
             "get": {
                 "operationId": "get_admin_ping",
@@ -9295,6 +9422,316 @@
                     "nextCursor": {
                         "type": "string",
                         "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "PerformanceMoneyResponse": {
+                "required": [
+                    "minor",
+                    "currency"
+                ],
+                "properties": {
+                    "minor": {
+                        "type": "integer"
+                    },
+                    "currency": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "PerformanceCohortResponse": {
+                "required": [
+                    "rawOrderedQuantity",
+                    "preHandoverCancelledQuantity",
+                    "effectiveOrderedQuantity",
+                    "observedNetSalesQuantity",
+                    "inFlightQuantity",
+                    "buyoutResolvedQuantity",
+                    "unestimatedQuantity",
+                    "unknownOutcomeQuantity",
+                    "knownProjectedBuyoutQuantity",
+                    "knownProjectedEligibleQuantity",
+                    "maturityStatus",
+                    "netForecastUnavailableReason"
+                ],
+                "properties": {
+                    "rawOrderedQuantity": {
+                        "type": "integer"
+                    },
+                    "preHandoverCancelledQuantity": {
+                        "type": "integer"
+                    },
+                    "effectiveOrderedQuantity": {
+                        "type": "integer"
+                    },
+                    "observedNetSalesQuantity": {
+                        "type": "integer"
+                    },
+                    "observedRevenue": {
+                        "nullable": true,
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/PerformanceMoneyResponse"
+                            }
+                        ]
+                    },
+                    "inFlightQuantity": {
+                        "type": "integer"
+                    },
+                    "buyoutResolvedQuantity": {
+                        "type": "integer"
+                    },
+                    "unestimatedQuantity": {
+                        "type": "integer"
+                    },
+                    "unknownOutcomeQuantity": {
+                        "type": "integer"
+                    },
+                    "knownProjectedBuyoutQuantity": {
+                        "type": "string"
+                    },
+                    "knownProjectedEligibleQuantity": {
+                        "type": "string"
+                    },
+                    "maturityStatus": {
+                        "type": "string"
+                    },
+                    "inFlightRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "knownBuyoutRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "actualBuyoutRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "currentProjectedBuyoutQuantity": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "currentProjectedBuyoutRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "unestimatedRateBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "expectedNetSalesQuantity": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "netForecastUnavailableReason": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "PerformanceValuesResponse": {
+                "required": [
+                    "planQuantity",
+                    "planRevenueRrp",
+                    "calendarDays",
+                    "planSpeed",
+                    "forecastUnavailableReason"
+                ],
+                "properties": {
+                    "planQuantity": {
+                        "type": "integer"
+                    },
+                    "planRevenueRrp": {
+                        "$ref": "#/components/schemas/PerformanceMoneyResponse"
+                    },
+                    "calendarDays": {
+                        "type": "integer"
+                    },
+                    "planSpeed": {
+                        "type": "string"
+                    },
+                    "cohort": {
+                        "nullable": true,
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/PerformanceCohortResponse"
+                            }
+                        ]
+                    },
+                    "actualGoalQuantity": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "quantityDeviation": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "attainmentBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "actualSpeed": {
+                        "title": "Pace of the selected goal metric, units per calendar day.",
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "observedSalesSpeed": {
+                        "title": "Observed retained sales D per calendar day, three decimals, HalfUp.",
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "revenueDeviation": {
+                        "nullable": true,
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/PerformanceMoneyResponse"
+                            }
+                        ]
+                    },
+                    "expectedGoalQuantity": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "expectedAttainmentBps": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "expectedSpeed": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "forecastUnavailableReason": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "PerformancePointResponse": {
+                "required": [
+                    "bucketFrom",
+                    "bucketTo",
+                    "periodCoverage",
+                    "cumulativeCoverage",
+                    "period",
+                    "cumulative"
+                ],
+                "properties": {
+                    "bucketFrom": {
+                        "type": "string"
+                    },
+                    "bucketTo": {
+                        "type": "string"
+                    },
+                    "periodCoverage": {
+                        "type": "string"
+                    },
+                    "cumulativeCoverage": {
+                        "type": "string"
+                    },
+                    "period": {
+                        "$ref": "#/components/schemas/PerformanceValuesResponse"
+                    },
+                    "cumulative": {
+                        "$ref": "#/components/schemas/PerformanceValuesResponse"
+                    }
+                },
+                "type": "object"
+            },
+            "PerformanceSkuResponse": {
+                "required": [
+                    "marketplaceSku",
+                    "points"
+                ],
+                "properties": {
+                    "marketplaceSku": {
+                        "type": "string"
+                    },
+                    "points": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PerformancePointResponse"
+                        },
+                        "maxItems": 184
+                    }
+                },
+                "type": "object"
+            },
+            "SalesPlanPerformanceResponse": {
+                "required": [
+                    "currentPlanId",
+                    "baselinePlanId",
+                    "metric",
+                    "currency",
+                    "accumulationFrom",
+                    "from",
+                    "to",
+                    "groupBy",
+                    "calculatedAt",
+                    "methodology",
+                    "ordersCoverage",
+                    "returnsCoverage",
+                    "skus",
+                    "summaryScope"
+                ],
+                "properties": {
+                    "currentPlanId": {
+                        "type": "string"
+                    },
+                    "baselinePlanId": {
+                        "type": "string"
+                    },
+                    "metric": {
+                        "type": "string"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "accumulationFrom": {
+                        "type": "string"
+                    },
+                    "from": {
+                        "type": "string"
+                    },
+                    "to": {
+                        "type": "string"
+                    },
+                    "groupBy": {
+                        "type": "string",
+                        "enum": [
+                            "day",
+                            "week",
+                            "month",
+                            "period"
+                        ]
+                    },
+                    "calculatedAt": {
+                        "type": "string"
+                    },
+                    "methodology": {
+                        "type": "string"
+                    },
+                    "ordersCoverage": {
+                        "type": "string"
+                    },
+                    "returnsCoverage": {
+                        "type": "string"
+                    },
+                    "skus": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PerformanceSkuResponse"
+                        },
+                        "maxItems": 50
+                    },
+                    "nextCursor": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "summaryScope": {
+                        "type": "string"
                     }
                 },
                 "type": "object"

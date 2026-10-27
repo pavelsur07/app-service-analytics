@@ -980,6 +980,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/sales-plans/{planId}/performance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_sales_planning_plan_performance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/ping": {
         parameters: {
             query?: never;
@@ -1927,6 +1943,81 @@ export interface components {
             groupBy: string;
             skus: components["schemas"]["SalesPlanSkuResponse"][];
             nextCursor?: string | null;
+        };
+        PerformanceMoneyResponse: {
+            minor: number;
+            currency: string;
+        };
+        PerformanceCohortResponse: {
+            rawOrderedQuantity: number;
+            preHandoverCancelledQuantity: number;
+            effectiveOrderedQuantity: number;
+            observedNetSalesQuantity: number;
+            observedRevenue?: components["schemas"]["PerformanceMoneyResponse"] | null;
+            inFlightQuantity: number;
+            buyoutResolvedQuantity: number;
+            unestimatedQuantity: number;
+            unknownOutcomeQuantity: number;
+            knownProjectedBuyoutQuantity: string;
+            knownProjectedEligibleQuantity: string;
+            maturityStatus: string;
+            inFlightRateBps?: number | null;
+            knownBuyoutRateBps?: number | null;
+            actualBuyoutRateBps?: number | null;
+            currentProjectedBuyoutQuantity?: number | null;
+            currentProjectedBuyoutRateBps?: number | null;
+            unestimatedRateBps?: number | null;
+            expectedNetSalesQuantity?: string | null;
+            netForecastUnavailableReason: string;
+        };
+        PerformanceValuesResponse: {
+            planQuantity: number;
+            planRevenueRrp: components["schemas"]["PerformanceMoneyResponse"];
+            calendarDays: number;
+            planSpeed: string;
+            cohort?: components["schemas"]["PerformanceCohortResponse"] | null;
+            actualGoalQuantity?: number | null;
+            quantityDeviation?: number | null;
+            attainmentBps?: number | null;
+            /** Pace of the selected goal metric, units per calendar day. */
+            actualSpeed?: string | null;
+            /** Observed retained sales D per calendar day, three decimals, HalfUp. */
+            observedSalesSpeed?: string | null;
+            revenueDeviation?: components["schemas"]["PerformanceMoneyResponse"] | null;
+            expectedGoalQuantity?: string | null;
+            expectedAttainmentBps?: number | null;
+            expectedSpeed?: string | null;
+            forecastUnavailableReason: string;
+        };
+        PerformancePointResponse: {
+            bucketFrom: string;
+            bucketTo: string;
+            periodCoverage: string;
+            cumulativeCoverage: string;
+            period: components["schemas"]["PerformanceValuesResponse"];
+            cumulative: components["schemas"]["PerformanceValuesResponse"];
+        };
+        PerformanceSkuResponse: {
+            marketplaceSku: string;
+            points: components["schemas"]["PerformancePointResponse"][];
+        };
+        SalesPlanPerformanceResponse: {
+            currentPlanId: string;
+            baselinePlanId: string;
+            metric: string;
+            currency: string;
+            accumulationFrom: string;
+            from: string;
+            to: string;
+            /** @enum {string} */
+            groupBy: "day" | "week" | "month" | "period";
+            calculatedAt: string;
+            methodology: string;
+            ordersCoverage: string;
+            returnsCoverage: string;
+            skus: components["schemas"]["PerformanceSkuResponse"][];
+            nextCursor?: string | null;
+            summaryScope: string;
         };
         AppInfoResponse: {
             app: string;
@@ -5838,6 +5929,71 @@ export interface operations {
                 };
             };
             /** @description Некорректные groupBy, limit или cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sales_planning_plan_performance: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                groupBy?: "day" | "week" | "month" | "period";
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Исходная числовая цель и текущие когортные показатели страницы SKU */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanPerformanceResponse"];
+                };
+            };
+            /** @description Нет членства в компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description План не найден у компании */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Нет утверждённой базы, закрытый план либо неподдерживаемый внешний snapshot */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры или не выбрана метрика */
             422: {
                 headers: {
                     [name: string]: unknown;

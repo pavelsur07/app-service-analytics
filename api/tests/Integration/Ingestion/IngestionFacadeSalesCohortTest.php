@@ -277,6 +277,26 @@ final class IngestionFacadeSalesCohortTest extends KernelTestCase
         }
     }
 
+    public function testPeriodIsOneVisibleBucketAndKeepsHiddenAccumulation(): void
+    {
+        self::bootKernel();
+        $company = Uuid::v7();
+        $account = Uuid::v7();
+        foreach (['2026-08-30' => 3, '2026-08-31' => 2, '2026-09-01' => 7] as $day => $quantity) {
+            $this->point($company, $account, 'SKU', $day, 'delivered', $quantity);
+            $this->complete($company, $account, $day);
+        }
+        $period = $this->facade(self::connection(), new \DateTimeImmutable('2026-10-01T12:00:00Z'))
+            ->salesCohortMetrics($company->toRfc4122(), $account->toRfc4122(),
+                new SalesCohortRequest(['SKU'], new \DateTimeImmutable('2026-08-31'), new \DateTimeImmutable('2026-09-01'), new \DateTimeImmutable('2026-08-30'), SalesCohortGrouping::Period));
+        self::assertCount(1, $period->skus[0]->points);
+        $point = $period->skus[0]->points[0];
+        self::assertSame('2026-08-31', $point->bucketFrom);
+        self::assertSame('2026-09-01', $point->bucketTo);
+        self::assertSame(9, self::components($point->period)->observedNetSalesQuantity);
+        self::assertSame(12, self::components($point->cumulative)->observedNetSalesQuantity);
+    }
+
     private function complete(Uuid $company, Uuid $account, string $day): void
     {
         MarketplaceDayLoadBuilder::aMarketplaceDayLoad()->withCompanyId($company)->withMarketplaceAccountId($account)

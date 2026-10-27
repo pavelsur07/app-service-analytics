@@ -298,6 +298,12 @@ Domain guard статуса и optimistic UPDATE ORM уточнены ADR-047.
 включая superseded/cancelled историю, с company/account/lineage scope и LIMIT1.
 Её id остаётся базой сравнения при новых версиях; индекс company/lineage/version
 поддерживает выбор базы и следующий исторический номер версии.
+`ReadSalesPlanPerformanceAction` и `SalesPlanPerformanceQuery` соединяют
+исходный план с публичным cohort Facade в read-only REPEATABLE READ.
+`SalesPlanPerformanceCalculator` считает только конечные отношения,
+денежные отклонения и скорости из агрегированных компонентов. Публичный
+GET `…/performance` возвращает day/week/month/period с keyset по SKU,
+неизменным началом накопления и отдельными темпом цели/скоростью продаж.
 
 У `IngestionFacade` два потребителя: экран СПП (`listingSnapshotsAt`,
 ADR-016) и планирование продаж — поиск по каталогу подключения
