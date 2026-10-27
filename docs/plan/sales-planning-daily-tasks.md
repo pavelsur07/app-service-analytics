@@ -372,3 +372,18 @@ var/review/runs/20261027T140434.861682Z-5b3ab6ed60bc-defects-lxa0qb7c/review.jso
 
 A16: подробный план и checklist созданы до тестов в sales-planning-tasks/A16.md;
 учёт покрытия заказов не утверждает полноту возвратов.
+
+## A16/A17. Покрытие и зрелость
+
+Выполнены, before-code планы/чек-листы и точные результаты в
+sales-planning-tasks/A16.md,A17.md. Query покрытия возвращает каждый день
+(complete/partial/missing) отдельно от фактов. Maturity переиспользует
+BuyoutMaturityQuery по своему кабинету и назначается каждой SKU-дневной точке;
+known и actual D/(D+T2+P) различаются, наблюдаемые продажи preliminary сохранены.
+Покрытие заказов и зрелость выкупа не означают полноту возвратов.
+
+Общий финальный прогон lint/stan/deptrac/structure/unit/int/func GREEN:
+487/3544,642/5285,357/2639 соответственно; /tmp/a08-final.log.
+A16 Codex0/0, packagefcd0b0254ab4; A17 Codex0/0, package70f5347479ff.
+Уникальных новых принятых в каждом дополнительном проходе0, отклонённых0.
+Полные SHA256 и пути к review.json записаны в отдельных планах задач.

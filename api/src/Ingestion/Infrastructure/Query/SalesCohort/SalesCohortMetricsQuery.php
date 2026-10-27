@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Query\SalesCohort;
 
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutMaturityQuery;
 use App\Shared\Domain\ValueObject\Money;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
@@ -30,6 +31,7 @@ final readonly class SalesCohortMetricsQuery
         \DateTimeImmutable $from,
         \DateTimeImmutable $to,
         ?string $currency = null,
+        ?\DateTimeImmutable $calculatedAt = null,
     ): QueryBuilder {
         if ([] === $marketplaceSkus || \count($marketplaceSkus) > self::MAX_SKUS) {
             throw new \InvalidArgumentException('A cohort batch must contain between 1 and 50 SKUs.');
@@ -63,6 +65,25 @@ final readonly class SalesCohortMetricsQuery
                  THEN COALESCE(SUM(o.quantity::numeric * sf.amount_minor) FILTER (WHERE o.outcome = 'D'), 0)::bigint
                  ELSE NULL END AS observed_revenue_minor
             SQL;
+        // Full account history supplies the measured p95; the requested SKU
+        // and visible days must not shrink its sample. These are current
+        // outcomes, not an arbitrary historical point-in-time reconstruction.
+        $maturityCtes = BuyoutMaturityQuery::maturityCtes();
+        $source = <<<SQL
+            WITH tenant_outcome AS MATERIALIZED (
+                SELECT company_id, marketplace_account_id, posting_number,
+                       marketplace_sku, source_row_id, business_date, quantity,
+                       outcome, resolved_at, resolution_observed, is_in_flight
+                FROM buyout_outcome
+                WHERE company_id = :companyId AND marketplace_account_id = :accountId
+            ), {$maturityCtes}
+            SELECT o.company_id, o.marketplace_account_id, o.marketplace_sku,
+                   o.source_row_id, o.business_date, o.quantity, o.outcome,
+                   o.is_in_flight, m.p95_seconds
+            FROM tenant_outcome o
+            LEFT JOIN maturity m ON m.marketplace_account_id = o.marketplace_account_id
+            SQL;
+        $withinLimit = BuyoutMaturityQuery::inFlightWithinLimitSql('o.quantity', 'o.is_in_flight');
         $daily = $this->connection->createQueryBuilder()
             ->select(
                 'o.marketplace_sku',
@@ -71,10 +92,17 @@ final readonly class SalesCohortMetricsQuery
                 "COALESCE(SUM(o.quantity) FILTER (WHERE o.outcome = 'T1'), 0)::bigint AS pre_handover_cancelled_quantity",
                 "COALESCE(SUM(o.quantity) FILTER (WHERE o.outcome IS DISTINCT FROM 'T1'), 0)::bigint AS effective_ordered_quantity",
                 "COALESCE(SUM(o.quantity) FILTER (WHERE o.outcome = 'D'), 0)::bigint AS observed_net_sales_quantity",
+                "COALESCE(SUM(o.quantity) FILTER (WHERE o.outcome IN ('D', 'T2', 'P')), 0)::bigint AS buyout_resolved_quantity",
+                'COALESCE(SUM(o.quantity) FILTER (WHERE o.is_in_flight), 0)::bigint AS in_flight_quantity',
+                <<<SQL
+                    BOOL_AND(o.p95_seconds IS NOT NULL AND EXTRACT(EPOCH FROM (
+                        CAST(:asOf AS timestamp) - ((o.business_date + 1)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')
+                    )) > o.p95_seconds) AND {$withinLimit} AS mature
+                    SQL,
                 'CAST(:currency AS text) AS valuation_currency',
                 $money,
             )
-            ->from('buyout_outcome', 'o')
+            ->from('('.$source.')', 'o')
             ->where('o.company_id = :companyId')
             ->andWhere('o.marketplace_account_id = :accountId')
             ->andWhere('o.marketplace_sku IN (:skus)')
@@ -101,6 +129,12 @@ final readonly class SalesCohortMetricsQuery
                         'pre_handover_cancelled_quantity', pre_handover_cancelled_quantity,
                         'effective_ordered_quantity', effective_ordered_quantity,
                         'observed_net_sales_quantity', observed_net_sales_quantity,
+                        'maturity_status', CASE WHEN mature THEN 'mature' ELSE 'preliminary' END,
+                        'in_flight_quantity', in_flight_quantity,
+                        'in_flight_rate_bps', ROUND(10000::numeric * in_flight_quantity / NULLIF(raw_ordered_quantity, 0))::int,
+                        'buyout_resolved_quantity', buyout_resolved_quantity,
+                        'known_buyout_rate_bps', ROUND(10000::numeric * observed_net_sales_quantity / NULLIF(buyout_resolved_quantity, 0))::int,
+                        'actual_buyout_rate_bps', CASE WHEN mature THEN ROUND(10000::numeric * observed_net_sales_quantity / NULLIF(buyout_resolved_quantity, 0))::int ELSE NULL END,
                         'observed_revenue_minor', observed_revenue_minor,
                         'valuation_currency', valuation_currency
                     ) ORDER BY business_date)::text AS days
@@ -113,6 +147,7 @@ final readonly class SalesCohortMetricsQuery
             ->setParameter('from', $fromDay->format('Y-m-d'))
             ->setParameter('to', $toDay->format('Y-m-d'))
             ->setParameter('currency', $currency)
+            ->setParameter('asOf', ($calculatedAt ?? new \DateTimeImmutable())->setTimezone($utc)->format('Y-m-d H:i:s'))
             ->groupBy('marketplace_sku')
             ->orderBy('marketplace_sku', 'ASC')
             ->setMaxResults(self::MAX_SKUS);
@@ -163,6 +198,25 @@ final readonly class SalesCohortMetricsQuery
             $revenue = Money::ofMinor($minor, $currency);
         }
 
-        return new SalesCohortMetricsRow($sku, $date, $raw, $cancelled, $effective, $observed, $revenue);
+        $maturity = $row['maturity_status'] ?? null;
+        $inFlight = $row['in_flight_quantity'] ?? null;
+        $resolved = $row['buyout_resolved_quantity'] ?? null;
+        if (!\in_array($maturity, ['mature', 'preliminary'], true) || !\is_int($inFlight) || !\is_int($resolved)) {
+            throw new \UnexpectedValueException('Invalid sales cohort maturity row.');
+        }
+
+        return new SalesCohortMetricsRow($sku, $date, $raw, $cancelled, $effective, $observed, $revenue,
+            $maturity, $inFlight, self::nullableBps($row['in_flight_rate_bps'] ?? null), $resolved,
+            self::nullableBps($row['known_buyout_rate_bps'] ?? null), self::nullableBps($row['actual_buyout_rate_bps'] ?? null),
+        );
+    }
+
+    private static function nullableBps(mixed $value): ?int
+    {
+        if (null !== $value && (!\is_int($value) || $value < 0 || $value > 10000)) {
+            throw new \UnexpectedValueException('Invalid sales cohort rate.');
+        }
+
+        return $value;
     }
 }

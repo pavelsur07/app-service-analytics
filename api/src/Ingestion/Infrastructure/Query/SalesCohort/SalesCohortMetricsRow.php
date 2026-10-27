@@ -19,6 +19,14 @@ final readonly class SalesCohortMetricsRow
         public int $observedNetSalesQuantity,
         /** Оценка оставшихся продаж по исходным ценам, до расходов. */
         public ?Money $observedRevenue,
+        /** Зрелость выкупа по ADR-029, не завершённость возвратного хвоста. */
+        public string $maturityStatus,
+        public int $inFlightQuantity,
+        public ?int $inFlightRateBps,
+        /** D + T2 + P, без T1, R и неизвестных исходов. */
+        public int $buyoutResolvedQuantity,
+        public ?int $knownBuyoutRateBps,
+        public ?int $actualBuyoutRateBps,
     ) {
     }
 }
