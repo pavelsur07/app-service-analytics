@@ -50,10 +50,10 @@ export function useSetListingCost(companyId: string) {
   return useMutation({
     mutationFn: (input: SetListingCostInput) =>
       createCompanyApiClient(companyId).post<null>('/listing-costs', input),
-    onSuccess: () => invalidate(queryClient, companyId),
+    onSuccess: () => invalidateListingCostQueries(queryClient, companyId),
     // Конфликт «цена с этой даты уже задана» означает, что список
     // на экране устарел: где-то уже есть позиция, которой мы не видим.
-    onError: () => invalidate(queryClient, companyId),
+    onError: () => invalidateListingCostQueries(queryClient, companyId),
   })
 }
 
@@ -83,21 +83,26 @@ export function useCorrectListingCost(companyId: string) {
           version: input.version,
         },
       ),
-    onSuccess: () => invalidate(queryClient, companyId),
+    onSuccess: () => invalidateListingCostQueries(queryClient, companyId),
     // Версия в форме после конфликта заведомо устарела, и повторная
     // отправка упрётся в тот же отказ, пока список не перечитан.
-    onError: () => invalidate(queryClient, companyId),
+    onError: () => invalidateListingCostQueries(queryClient, companyId),
   })
 }
 
-function invalidate(
+export async function invalidateListingCostQueries(
   queryClient: ReturnType<typeof useQueryClient>,
   companyId: string,
-): void {
+): Promise<void> {
   // Инвалидируется весь раздел, а не текущая страница: цена меняет
   // и покрытие («задано у 8 из 62»), и порядок ничего, но соседние
   // страницы в кэше остаются со старой ценой.
-  void queryClient.invalidateQueries({
-    queryKey: companyQueryKey(companyId, 'ingestion', 'listing-costs'),
-  })
+  await Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: companyQueryKey(companyId, 'ingestion', 'listing-costs'),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: companyQueryKey(companyId, 'ingestion', 'dashboard'),
+    }),
+  ])
 }
