@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test } from '@playwright/test'
+import { verifySalesPlanning } from './sales-planning-performance.flow'
 
 // Компании и учётные данные сеются make test-e2e перед прогоном
 // (bin/e2e-seed.sh). Компаний две и участник в обеих, поэтому
@@ -39,6 +40,59 @@ async function openSales(page: Page, company: string): Promise<void> {
     .getByRole('link', { name: 'Заказы' })
     .click()
   await expect(page).toHaveURL(`/companies/${company}/sales`)
+}
+
+/** Дополнение основного сквозного сценария: ввод цены и прибыль без нового test. */
+async function checkProfitLifecycle(page: Page): Promise<void> {
+  await page
+    .getByRole('navigation', { name: 'Разделы компании' })
+    .getByRole('link', { name: 'Главная', exact: true })
+    .click()
+  await page.getByRole('button', { name: 'Вчера', exact: true }).click()
+  const profit = page.getByRole('region', { name: 'Прибыль', exact: true })
+  await expect(profit).toContainText('Не задана себестоимость для 1 шт.')
+  await profit.getByRole('link', { name: 'Задать себестоимость' }).click()
+  await page
+    .getByRole('button', { name: 'Новая цена с даты', exact: true })
+    .click()
+  await page.getByLabel('Цена за штуку, ₽').fill('300')
+  await page.getByLabel('Действует с').fill(twoDaysAgo())
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(
+    page.getByRole('button', { name: 'Исправить действующую' }),
+  ).toBeVisible()
+  const nav = page.getByRole('navigation', { name: 'Разделы компании' })
+  await nav.getByRole('link', { name: 'Главная', exact: true }).click()
+  await expect(profit).toContainText('350 ₽')
+  await expect(profit).toContainText('было 150 ₽')
+
+  await page.getByRole('button', { name: '7 дней', exact: true }).click()
+  await expect(profit).toContainText('прибыль недоступна')
+  await page.getByRole('button', { name: 'Вчера', exact: true }).click()
+  await expect(profit).toContainText('350 ₽')
+
+  await profit.getByRole('button', { name: 'Скрыть виджет: Прибыль' }).click()
+  await page.reload()
+  await expect(profit).toHaveCount(0)
+  await page.getByRole('button', { name: /Виджеты ·/ }).click()
+  await page.getByRole('switch', { name: 'Прибыль', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(profit).toContainText('350 ₽')
+
+  await nav.getByRole('link', { name: 'Себестоимость', exact: true }).click()
+  await page.getByRole('button', { name: 'Исправить действующую' }).click()
+  await page.getByLabel('Цена за штуку, ₽').fill('400')
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(page.getByLabel('Цена за штуку, ₽')).toHaveCount(0)
+  await nav.getByRole('link', { name: 'Главная', exact: true }).click()
+  await expect(profit).toContainText('250 ₽')
+  await expect(profit).toContainText('Себестоимость периода исправлялась')
+}
+
+function twoDaysAgo(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow' }).format(
+    new Date(Date.now() - 2 * 86_400_000),
+  )
 }
 
 function companyNameOf(company: string): string {
@@ -143,12 +197,14 @@ test.describe('sales facts', () => {
   test('переключение компании не показывает данные предыдущей', async ({
     page,
   }) => {
+    test.setTimeout(240_000)
     // Сквозной сценарий §10: вход, выбор компании, просмотр данных,
     // переключение компании. Последние два шага до этого теста
     // не проходились ни разу — сид создавал одну компанию, и приложение
     // уводило мимо списка автопереходом.
     await loginAndOpen(page, companyId ?? '')
     await expect(page.locator('tbody tr').first()).toBeVisible()
+    await checkProfitLifecycle(page)
 
     // Возврат к списку — через переключатель компании в топбаре
     // (docs/design/ui-kit/v0.6.html, раздел 10): в сайдбаре его больше нет.
@@ -166,6 +222,14 @@ test.describe('sales facts', () => {
     await expect(
       topbar.getByRole('link', { name: 'E2E Sandbox Two' }),
     ).toBeVisible()
+    await page
+      .getByRole('navigation', { name: 'Разделы компании' })
+      .getByRole('link', { name: 'Главная', exact: true })
+      .click()
+    const profit = page.getByRole('region', { name: 'Прибыль', exact: true })
+    await expect(profit).toBeVisible()
+    await expect(profit).not.toContainText('250 ₽')
+    await verifySalesPlanning(page)
   })
 
   test('a foreign companyId is denied, not shown as an empty screen', async ({

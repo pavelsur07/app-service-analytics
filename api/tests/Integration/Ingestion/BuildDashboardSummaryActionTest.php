@@ -432,6 +432,103 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         self::assertSame($expected->resolutionRateBps, $metrics->buyoutResolutionRateBps);
     }
 
+    public function testProfitUsesAllAccrualsAndDailyCostInTheSamePeriod(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->loaded($container, $company, '2026-08-01');
+        $this->profitCost($container, $company, 30_000);
+        $this->accrual($container, $company, '2026-08-08', 0, 100_000, 'P-1');
+        $this->accrual($container, $company, '2026-08-08', 69, -20_000, 'P-1');
+        $this->accrual($container, $company, '2026-08-08', 32, -5_000, 'P-1');
+        $this->accrual($container, $company, '2026-08-08', 41, -10_000, 'campaign');
+        $summary = $this->summary($container, $company);
+        self::assertSame(35_000, $summary->current->metrics->profitMinor);
+        self::assertSame(35_000, array_sum(array_column($summary->current->days, 'profitMinor')));
+        self::assertSame(65_000, $summary->current->profitDetails->accrualsTotalMinor);
+        self::assertSame(-30_000, $summary->current->profitDetails->costTotalMinor);
+        self::assertTrue($summary->current->profitDetails->hasAccruals);
+        self::assertSame('manual', $summary->current->profitDetails->costMethod);
+        self::assertSame(0, $summary->comparison->metrics->profitMinor);
+        self::assertNull($summary->changes->profitBps);
+    }
+
+    public function testUnknownCostSuppressesOnlyProfitAndItsChanges(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->loaded($container, $company, '2026-08-01');
+        $this->sale($container, $company, '2026-08-03', 'delivered', 1, 100_000);
+        $this->sale($container, $company, '2026-08-08', 'delivered', 1, 200_000);
+        $this->accrual($container, $company, '2026-08-08', 0, 200_000, 'P-1', 2);
+        $summary = $this->summary($container, $company);
+        self::assertNull($summary->current->metrics->profitMinor);
+        self::assertSame(2, $summary->current->profitDetails->quantityWithoutCost);
+        self::assertSame([null, null, null, null, null, null, null], array_column($summary->current->days, 'profitMinor'));
+        self::assertNull($summary->changes->profitBps);
+        self::assertSame(10_000, $summary->changes->ordersAmountBps);
+    }
+
+    public function testIncompletePeriodDoesNotPromiseProfit(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->profitCost($container, $company, 0);
+        $this->accrual($container, $company, '2026-08-08', 0, 100_000, 'P-1');
+        self::assertNull($this->summary($container, $company)->current->metrics->profitMinor);
+    }
+
+    public function testCompleteEmptyPeriodHasKnownZeroProfit(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->loaded($container, $company, '2026-08-01');
+        $summary = $this->summary($container, $company);
+        self::assertSame(0, $summary->current->metrics->profitMinor);
+        self::assertFalse($summary->current->profitDetails->hasAccruals);
+    }
+
+    public function testCorrectingPriceUpdatesProfitAtReadTime(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->loaded($container, $company, '2026-08-01');
+        $cost = $this->profitCost($container, $company, 30_000);
+        $this->accrual($container, $company, '2026-08-08', 0, 100_000, 'P-1');
+        self::assertSame(70_000, $this->summary($container, $company)->current->metrics->profitMinor);
+        $cost->correctTo(Money::ofMinor(40_000, 'RUB'), new \DateTimeImmutable('2026-10-01T12:00:00Z'));
+        /** @var \Doctrine\ORM\EntityManagerInterface $em */
+        $em = $container->get(\Doctrine\ORM\EntityManagerInterface::class);
+        $em->flush();
+        $summary = $this->summary($container, $company);
+        self::assertSame(60_000, $summary->current->metrics->profitMinor);
+        self::assertNotNull($summary->current->profitDetails->costCorrectedAt);
+    }
+
+    public function testProfitRejectsCostInAnotherCurrency(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->profitCost($container, $company, 30_000, 'EUR');
+        $this->accrual($container, $company, '2026-08-08', 0, 100_000, 'P-1');
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('валют');
+        $this->summary($container, $company);
+    }
+
+    private function profitCost(ContainerInterface $container, Company $company, int $minor, string $currency = 'RUB'): \App\Ingestion\Domain\MarketplaceListingCost
+    {
+        /** @var \App\Ingestion\Domain\MarketplaceListingCostRepository $costs */
+        $costs = $container->get(\App\Ingestion\Domain\MarketplaceListingCostRepository::class);
+
+        return \App\Tests\Support\Builder\MarketplaceListingCostBuilder::aMarketplaceListingCost()
+            ->withCompanyId($company->id())
+            ->withMarketplaceAccountId(Uuid::fromString(self::ACCOUNT_ID))
+            ->withMarketplaceSku('1988145769')
+            ->withUnitCost(Money::ofMinor($minor, $currency))
+            ->persistWith($costs);
+    }
+
     private function summary(ContainerInterface $container, Company $company): DashboardSummary
     {
         /** @var BuildDashboardSummaryAction $action */

@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import {
   expect,
-  test,
   type APIResponse,
   type Locator,
   type Page,
@@ -183,26 +182,15 @@ async function addEvent(
     .click()
 }
 
-test('daily original goal, calendar revisions, late return and company isolation', async ({
-  page,
-}) => {
-  test.setTimeout(240_000)
+export async function verifySalesPlanning(page: Page): Promise<void> {
   page.setDefaultTimeout(15_000)
-  test.skip(
-    !existsSync(statePath) ||
-      process.env.E2E_USER_EMAIL === undefined ||
-      process.env.E2E_USER_PASSWORD === undefined,
-    'Run through make test-e2e with the guarded local planning feed.',
-  )
+  expect(
+    existsSync(statePath),
+    'Run through the guarded make test-e2e feed',
+  ).toBe(true)
   const data = fixture()
-  await page.goto('/login')
-  await page
-    .getByLabel('Email', { exact: true })
-    .fill(process.env.E2E_USER_EMAIL ?? '')
-  await page
-    .getByLabel('Пароль', { exact: true })
-    .fill(process.env.E2E_USER_PASSWORD ?? '')
-  await page.getByRole('button', { name: 'Войти', exact: true }).click()
+  // Continue the authenticated seller company-switch scenario.
+  await page.goto('/companies')
   await expect(page).toHaveURL('/companies')
   await page
     .getByRole('link', { name: 'E2E Sales Planning', exact: true })
@@ -805,4 +793,4 @@ test('daily original goal, calendar revisions, late return and company isolation
     await page.request.get(`/api/companies/${second}/sales-plans`),
   )
   expect(other.items).toEqual([])
-})
+}

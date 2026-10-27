@@ -30,6 +30,7 @@ final readonly class DashboardChanges
         public ?int $buyoutRatePointsBps,
         public ?int $buyoutQuantityBps,
         public ?int $buyoutOrderedQuantityBps,
+        public ?int $profitBps,
     ) {
     }
 }

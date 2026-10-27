@@ -22,6 +22,7 @@ final readonly class DashboardPeriodSummary
         public int $daysWithoutAccruals,
         public DashboardMetrics $metrics,
         public array $days,
+        public DashboardProfitDetails $profitDetails,
     ) {
     }
 }

@@ -652,3 +652,19 @@ pair5286ad9e3592 complete0/0, gpt-6.1-sol в разных sessions;0 новых 
 review.json receipts в A48; Claude пропущен по исключению владельца.
 Итого48/68: A01–A48 готовы. Общий локальный CI PASS; A49 ждёт публикацию,
 обязательный удалённый CI и сверку итогового diff. A50/B ещё не выполнены.
+
+## A49: локальные гейты и интеграция актуального master
+
+Ветка объединила 7b77412/8887d31 автоматически без конфликтов, сохранив
+виджет прибыли. После merge полный ci-local TEST_WORKERS=2 PASS:
+unit517/3617,int718/17280,func362/3048; seller493/admin38/extension71;
+static/type/lint/knip/build/audit0/Go/API и browser8+extension PASS.
+Root затем устранил собственное отступление CLAUDE §10: отдельный planning
+test перенесён в .flow.ts, вызываемый существующим company-switch сценарием.
+Снова seller type/lint/knip и полный browser7/27.2s+extension PASS; предметные
+assertions и raw-importer feed сохранены. Логи/подробный план — A49.md.
+Дополнительное review объединённых common файлов ef78cce37e87: отдельные
+Codex CLI gpt-6.1-sol complete0/0, новых уникальных принятых0/отклонённых0.
+Все review.json receipts и parent finding отражены в A49. Подготовлен план
+выпуска A50 до любых release действий. Общий счёт остаётся48/68: удалённый
+CI и выпуск ещё не выполнены, production не затрагивался.
