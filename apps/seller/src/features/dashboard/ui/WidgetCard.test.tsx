@@ -108,6 +108,71 @@ describe('виджет главной', () => {
     expect(html).toContain('к концу периода показатель вырос')
   })
 
+  it('не рисует недоступный ряд прибыли и сохраняет только сравнение', () => {
+    const spec = {
+      id: 'profit',
+      title: 'Прибыль',
+      primary: {
+        label: 'Прибыль',
+        metric: 'profitMinor',
+        format: 'money',
+        change: 'profitBps',
+        kind: 'relative',
+        good: 'up',
+        series: 'profitMinor',
+      },
+      rows: [],
+    } as const
+    const html = renderToStaticMarkup(
+      <WidgetCard
+        spec={spec}
+        currency="RUB"
+        current={{ ...METRICS, profitMinor: null }}
+        comparison={{ ...METRICS, profitMinor: 10000 }}
+        changes={{ profitBps: null }}
+        currentDays={DAYS.map((day) => ({ ...day, profitMinor: null }))}
+        comparisonDays={DAYS.map((day) => ({ ...day, profitMinor: 10000 }))}
+        hint={null}
+        onHide={() => undefined}
+      />,
+    )
+    expect(html.match(/<polyline/g)).toHaveLength(1)
+    expect(html).toContain('период сравнения')
+    expect(html).not.toContain('к концу периода показатель')
+  })
+
+  it('не рисует оба недоступных ряда прибыли', () => {
+    const spec = {
+      id: 'profit',
+      title: 'Прибыль',
+      primary: {
+        label: 'Прибыль',
+        metric: 'profitMinor',
+        format: 'money',
+        change: 'profitBps',
+        kind: 'relative',
+        good: 'up',
+        series: 'profitMinor',
+      },
+      rows: [],
+    } as const
+    const html = renderToStaticMarkup(
+      <WidgetCard
+        spec={spec}
+        currency="RUB"
+        current={{ ...METRICS, profitMinor: null }}
+        comparison={{ ...METRICS, profitMinor: null }}
+        changes={{}}
+        currentDays={DAYS.map((day) => ({ ...day, profitMinor: null }))}
+        comparisonDays={DAYS.map((day) => ({ ...day, profitMinor: null }))}
+        hint={null}
+        onHide={() => undefined}
+      />,
+    )
+    expect(html).not.toContain('role="img"')
+    expect(html).not.toContain('NaN')
+  })
+
   it('у выкупа спарклайна нет, а подсказка о созревании есть', () => {
     const html = render('buyout', 'Исход известен по 70% заказов')
 

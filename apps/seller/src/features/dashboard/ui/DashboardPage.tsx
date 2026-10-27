@@ -30,6 +30,7 @@ import {
 } from '../model/useDashboardSummary'
 import { PeriodBar } from './PeriodBar'
 import { WidgetCard } from './WidgetCard'
+import { ProfitHint } from './ProfitHint'
 
 interface StoredPreferences {
   key: string | null
@@ -235,7 +236,16 @@ export function DashboardPage() {
               currency={query.data.currency}
               current={query.data.current.metrics}
               currentDays={query.data.current.days}
-              hint={widget.id === 'buyout' ? buyoutHint(query.data) : null}
+              hint={
+                widget.id === 'buyout' ? (
+                  buyoutHint(query.data)
+                ) : widget.id === 'profit' ? (
+                  <ProfitHint
+                    companyId={companyId}
+                    period={query.data.current}
+                  />
+                ) : null
+              }
               key={widget.id}
               onHide={() => {
                 setHidden([...hidden, widget.id])
@@ -252,6 +262,7 @@ export function DashboardPage() {
       {query.status === 'success' &&
       query.data.current.metrics.ordersQuantity === 0 &&
       query.data.current.metrics.salesQuantity === 0 &&
+      !query.data.current.profitDetails.hasAccruals &&
       visible.length > 0 ? (
         <Card>
           <StatusPanel
@@ -284,7 +295,7 @@ function Notes({ summary }: { summary: DashboardSummaryResponse }) {
 
   if (current.daysWithoutAccruals > 0) {
     notes.push(
-      `За ${String(current.daysWithoutAccruals)} дн. периода начисления ещё не загружены — продажи, возвраты, реклама и логистика за них занижены.`,
+      `За ${String(current.daysWithoutAccruals)} дн. периода начисления ещё не загружены — продажи, возвраты, реклама и логистика за них занижены, прибыль недоступна.`,
     )
   }
   if (!current.dataComplete || !comparison.dataComplete) {
