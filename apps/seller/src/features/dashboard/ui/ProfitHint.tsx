@@ -19,9 +19,7 @@ export function ProfitHint({
         После расходов Ozon и себестоимости. Без налогов и внешних расходов.
       </span>
       {!period.dataComplete ? (
-        <span>
-          Начисления периода загружены не полностью — прибыль недоступна.
-        </span>
+        <span>Данные периода загружены не полностью — прибыль недоступна.</span>
       ) : null}
       {details.quantityWithoutCost > 0 ? (
         <span>
