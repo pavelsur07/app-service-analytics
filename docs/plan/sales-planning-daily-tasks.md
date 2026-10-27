@@ -505,3 +505,35 @@ Claude пропущен по явному исключению владельц�
 Артефакты var/review локальные; данный текст сохраняет выводы и хеш пакета.
 
 Чек-листы A01–A29 завершены: 29/68. A41–A43 в разработке, UI и выпуск впереди.
+
+
+## Приёмка календаря A41–A43: 2026-10-27
+
+Все критерии выполнены:5 enum,3 сохраняемых вида и2 вычисляемые границы;
+ORM command500, scoped/versioned PUT с точным аудитом, readonly approved,
+copy новыхUUID, removeSKU calendar+audit rollback; DBAL QueryBuilder и
+read-action с одним snapshot statement, GET default50/max200 keyset,
+строгая валидация и422 cursor вне набора. API сгенерирован штатно.
+Схема добавлена в единственную pending миграцию, down удаляет свою таблицу.
+Полный local fresh db-rebuild-check GREEN (a41-db-rebuild2.log), DDL с тех пор
+не менялась. Финальные проверки:unit517/3617,int686/17143,func362/3042;
+lint/stan/deptrac/structure/API types GREEN. Seller typecheck checkpoint exit0
+на новых типах подтверждён журналом команды implementer; полный UI прогон отдельно.
+
+Независимые Codex CLI, модель gpt-6.1-sol, отдельные сессии, Claude waived:
+первый SHA c148f57058250e8beda6bbc8be6df07645cd689d360d66aaef148b5497dce26e —
+conformity2 принято (QueryBuilder/default50), defects1 отклонено (Base58:
+установленный Symfony уже проверяет RFC, HTTP422 воспроизведён без правкиsource).
+Второй SHA af1420c91721a79d1eccc177679f406c7771767eb63e4d50754dc3130b212b7d —
+conformity1 новое принято (out-of-range cursor422), defects0 новых принятых.
+Оба прежних замечания исправлены; отклонение Base58 подтверждено обоими.
+Итого3 уникальных принятых,1 отклонённое; все принятые исправлены с RED/GREEN.
+Заключительный SHA e81451a4054283343dc2e656a49ae36ef5268226085a06f0342c15ad03f86a7f:
+- var/review/runs/20261027T164228.790524Z-e81451a40542-codex-a9boplr0/review.json
+- var/review/runs/20261027T164228.789146Z-e81451a40542-defects-zgwbslte/review.json
+Оба complete0/0, новых уникальных принятых0/0, rule_gaps/nitpicks0.
+ADR048 принят после заключительных проходов. Локальные var/review не являются
+постоянным архивом: данный текст сохраняет выводы и SHA. Production не менялась.
+
+Итого завершено32/68: A01–A29 и A41–A43. A30–A40 seller в разработке;
+A44–A48 подробная подготовка опубликована до кода, не выполнены.

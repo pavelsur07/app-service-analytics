@@ -6,6 +6,7 @@ namespace App\Tests\Integration\SalesPlanning;
 
 use App\SalesPlanning\Domain\SalesPlan;
 use App\SalesPlanning\Domain\SalesPlanLine;
+use App\SalesPlanning\Infrastructure\Persistence\DoctrineSalesPlanCalendarRepository;
 use App\SalesPlanning\Infrastructure\Persistence\DoctrineSalesPlanRepository;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\SalesPlanBuilder;
@@ -22,7 +23,7 @@ final class DoctrineSalesPlanRepositoryTest extends KernelTestCase
     public function testStoresPlanWithEveryDayOfEverySku(): void
     {
         self::bootKernel();
-        $repository = new DoctrineSalesPlanRepository($this->entityManager());
+        $repository = new DoctrineSalesPlanRepository($this->entityManager(), new DoctrineSalesPlanCalendarRepository($this->entityManager()));
         $plan = SalesPlanBuilder::aSalesPlan()->build();
         $lines = [
             ...SalesPlanLineBuilder::linesOf($plan)->withMarketplaceSku('111')->withTotalQuantity(100)->build(),
@@ -49,7 +50,7 @@ final class DoctrineSalesPlanRepositoryTest extends KernelTestCase
     public function testPlanIsNotReadableThroughAnotherCompany(): void
     {
         self::bootKernel();
-        $repository = new DoctrineSalesPlanRepository($this->entityManager());
+        $repository = new DoctrineSalesPlanRepository($this->entityManager(), new DoctrineSalesPlanCalendarRepository($this->entityManager()));
         $plan = SalesPlanBuilder::aSalesPlan()->persistWith($repository);
         $this->entityManager()->clear();
 
@@ -64,7 +65,7 @@ final class DoctrineSalesPlanRepositoryTest extends KernelTestCase
     {
         self::bootKernel();
         $entityManager = $this->entityManager();
-        $repository = new DoctrineSalesPlanRepository($entityManager);
+        $repository = new DoctrineSalesPlanRepository($entityManager, new DoctrineSalesPlanCalendarRepository($entityManager));
         $plan = SalesPlanBuilder::aSalesPlan()->build();
         $repository->add($plan, SalesPlanLineBuilder::linesOf($plan)->build());
         $entityManager->clear();
@@ -84,7 +85,7 @@ final class DoctrineSalesPlanRepositoryTest extends KernelTestCase
     {
         self::bootKernel();
         $entityManager = $this->entityManager();
-        $repository = new DoctrineSalesPlanRepository($entityManager);
+        $repository = new DoctrineSalesPlanRepository($entityManager, new DoctrineSalesPlanCalendarRepository($entityManager));
         $plan = SalesPlanBuilder::aSalesPlan()->build();
         $repository->add($plan, SalesPlanLineBuilder::linesOf($plan)->build());
         $entityManager->clear();
@@ -105,7 +106,7 @@ final class DoctrineSalesPlanRepositoryTest extends KernelTestCase
     public function testRefusesLinesOfAnotherPlan(): void
     {
         self::bootKernel();
-        $repository = new DoctrineSalesPlanRepository($this->entityManager());
+        $repository = new DoctrineSalesPlanRepository($this->entityManager(), new DoctrineSalesPlanCalendarRepository($this->entityManager()));
         $plan = SalesPlanBuilder::aSalesPlan()->build();
         $foreign = SalesPlanLineBuilder::linesOf(SalesPlanBuilder::aSalesPlan()->build())->build();
 
@@ -117,7 +118,7 @@ final class DoctrineSalesPlanRepositoryTest extends KernelTestCase
     public function testSecondDraftInOneLineageIsRefusedByDatabase(): void
     {
         self::bootKernel();
-        $plan = SalesPlanBuilder::aSalesPlan()->persistWith(new DoctrineSalesPlanRepository($this->entityManager()));
+        $plan = SalesPlanBuilder::aSalesPlan()->persistWith(new DoctrineSalesPlanRepository($this->entityManager(), new DoctrineSalesPlanCalendarRepository($this->entityManager())));
 
         $this->expectException(UniqueConstraintViolationException::class);
 
@@ -127,7 +128,7 @@ final class DoctrineSalesPlanRepositoryTest extends KernelTestCase
     public function testDatabaseRefusesNonPositivePrice(): void
     {
         self::bootKernel();
-        $plan = SalesPlanBuilder::aSalesPlan()->persistWith(new DoctrineSalesPlanRepository($this->entityManager()));
+        $plan = SalesPlanBuilder::aSalesPlan()->persistWith(new DoctrineSalesPlanRepository($this->entityManager(), new DoctrineSalesPlanCalendarRepository($this->entityManager())));
 
         $this->expectException(DriverException::class);
 

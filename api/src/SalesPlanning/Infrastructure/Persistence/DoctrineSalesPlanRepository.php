@@ -9,6 +9,7 @@ use App\SalesPlanning\Domain\EmptySalesPlan;
 use App\SalesPlanning\Domain\PlannedDay;
 use App\SalesPlanning\Domain\SalesPlan;
 use App\SalesPlanning\Domain\SalesPlanApprovalConflict;
+use App\SalesPlanning\Domain\SalesPlanCalendarRepository;
 use App\SalesPlanning\Domain\SalesPlanLine;
 use App\SalesPlanning\Domain\SalesPlanRepository;
 use App\SalesPlanning\Domain\SalesPlanStatus;
@@ -30,6 +31,7 @@ final readonly class DoctrineSalesPlanRepository implements SalesPlanRepository
 
     public function __construct(
         private EntityManagerInterface $entityManager,
+        private SalesPlanCalendarRepository $calendar,
     ) {
     }
 
@@ -103,6 +105,10 @@ final readonly class DoctrineSalesPlanRepository implements SalesPlanRepository
             throw new \DomainException('Число дней плана превышает предел.');
         }
         $this->entityManager->persist($revision);
+        $this->entityManager->flush();
+        foreach ($this->calendar->entriesForUpdate($companyId, $source->id()) as $entry) {
+            $this->calendar->add($entry->copyFor($revision));
+        }
         $this->entityManager->flush();
         $after = null;
         for ($remaining = $count; $remaining > 0; $remaining -= $batchSize) {

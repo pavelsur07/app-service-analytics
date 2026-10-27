@@ -247,6 +247,11 @@ class SalesPlan
         ++$this->lineEdits;
     }
 
+    public function recordCalendarChanged(\DateTimeImmutable $changedAt): void
+    {
+        $this->recordLinesChanged($changedAt);
+    }
+
     /** Сериализация copy/replacement на общей approved шапке, даже в один момент. */
     public function recordLifecycleChanged(\DateTimeImmutable $at): void
     {

@@ -304,6 +304,14 @@ Domain guard статуса и optimistic UPDATE ORM уточнены ADR-047.
 денежные отклонения и скорости из агрегированных компонентов. Публичный
 GET `…/performance` возвращает day/week/month/period с keyset по SKU,
 неизменным началом накопления и отдельными темпом цели/скоростью продаж.
+`SalesPlanCalendarEntry` — ORM-события конкретной версии, без дублирования
+границ сезона. `SetSalesPlanCalendarAction` сохраняет полный набор до500
+в общей транзакции шапки/аудита; revision-copy переносит ORM-события с новыми
+UUID, удаление SKU убирает его события с аудитом. `SalesPlanCalendarQuery`
+строит DBAL QueryBuilder; ReadSalesPlanCalendarAction выполняет statement и
+маппит шапку/страницу (50 по умолчанию, максимум200); cursor связан с
+компанией, планом, версией и лимитом. GET/PUT `…/calendar`, виртуальные
+season_start/season_end и командный ORM-предел описаны ADR-046/048.
 
 У `IngestionFacade` два потребителя: экран СПП (`listingSnapshotsAt`,
 ADR-016) и планирование продаж — поиск по каталогу подключения

@@ -932,6 +932,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/sales-plans/{planId}/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_sales_planning_calendar_show"];
+        put: operations["put_sales_planning_calendar_set"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/sales-plans/{planId}/metric": {
         parameters: {
             query?: never;
@@ -1912,6 +1928,34 @@ export interface components {
         };
         CatalogSkuListResponse: {
             items: components["schemas"]["CatalogSkuResponse"][];
+            nextCursor?: string | null;
+        };
+        SalesPlanSeasonBoundaryResponse: {
+            /** @enum {string} */
+            kind: "season_start" | "season_end";
+            /** Format: date */
+            date: string;
+        };
+        SalesPlanCalendarEntryResponse: {
+            /** Format: uuid */
+            id: string;
+            marketplaceSku?: string | null;
+            /** @enum {string} */
+            kind: "replenishment" | "sales" | "replenishment_stop";
+            /** Format: date */
+            dateFrom: string;
+            /** Format: date */
+            dateTo: string;
+        };
+        SalesPlanCalendarResponse: {
+            /** Format: uuid */
+            planId: string;
+            version: number;
+            /** @enum {string} */
+            status: "draft" | "approved" | "superseded" | "cancelled" | "discarded";
+            seasonStart: components["schemas"]["SalesPlanSeasonBoundaryResponse"];
+            seasonEnd: components["schemas"]["SalesPlanSeasonBoundaryResponse"];
+            entries: components["schemas"]["SalesPlanCalendarEntryResponse"][];
             nextCursor?: string | null;
         };
         SalesPlanMetricResponse: {
@@ -5710,6 +5754,148 @@ export interface operations {
                 };
             };
             /** @description Некорректные параметры */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sales_planning_calendar_show: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Страница календаря одной версии плана и вычисляемые границы сезона */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanCalendarResponse"];
+                };
+            };
+            /** @description Нет членства в компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description План не найден */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверный лимит или курсор, включая смену версии при чтении страниц */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    put_sales_planning_calendar_set: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    version: number;
+                    /** @description Полный набор ручных событий. Пустой массив удаляет все; границы сезона вычисляются отдельно. */
+                    entries: {
+                        /** Format: uuid */
+                        id?: string | null;
+                        marketplaceSku: string | null;
+                        /** @enum {string} */
+                        kind: "replenishment" | "sales" | "replenishment_stop";
+                        /** Format: date */
+                        dateFrom: string;
+                        /** Format: date */
+                        dateTo: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Календарь сохранён, новая версия шапки */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanVersionResponse"];
+                };
+            };
+            /** @description Нет членства в компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description План не найден */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Версия изменилась или план доступен только для чтения */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Недопустимые события, SKU или идентификаторы */
             422: {
                 headers: {
                     [name: string]: unknown;

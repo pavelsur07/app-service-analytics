@@ -227,3 +227,6 @@ ADR-041 закрывает решение, оставленное ADR-040 п. 13
 - [ADR-047: ORM-проверки статуса и версии плана](0047-sales-plan-orm-lifecycle-guards.md) —
   доменное предусловие статуса и optimistic UPDATE Doctrine, сериализация
   новой версии/replacement/отмены через утверждённую шапку.
+
+- [ADR-048: пределы чтения и записи календаря](0048-sales-plan-calendar-read-and-write-bounds.md) —
+  keyset GET по200, полный PUT до500, виртуальные границы и ORM-агрегат команды.
