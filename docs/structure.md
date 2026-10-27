@@ -325,6 +325,14 @@ ADR-016) и планирование продаж — поиск по катал
 (обучение SKU/кабинета, стадии передачи, кривая доставки, доля без оценки).
 Неокруглённые numeric-компоненты сохраняются строками для накопления;
 будущий нетто-прогноз пока null с причиной `net_forecast_not_available`.
+`IngestionFacade::salesCohortMetrics` публикует ограниченный пакет:
+`SalesCohortRequest`/`SalesCohortGrouping`, `SalesCohortBatch` →
+`SalesCohortSku` → `SalesCohortPoint` с nullable `SalesCohortComponents`.
+`SalesCohortSeriesQuery` и readonly `SalesCohortSeriesRow`/`PointRow` внутри
+Ingestion считают плотные периоды и накопление SQL до отсечения окна.
+Incomplete coverage скрывает полный объект компонентов, unknown и отсутствие
+обучения различаются; query count не зависит от SKU. Согласованный HTTP
+snapshot открывает вызывающий SalesPlanning по ADR046.
 
 ### Внутри модуля
 

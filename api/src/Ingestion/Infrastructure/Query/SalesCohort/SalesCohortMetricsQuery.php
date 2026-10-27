@@ -133,7 +133,7 @@ final readonly class SalesCohortMetricsQuery
         // use unqualified columns and sales_fact has its own quantity column.
         $scored = <<<SQL
             SELECT company_id, marketplace_account_id, marketplace_sku, source_row_id,
-                   business_date, quantity, outcome, is_in_flight, p95_seconds,
+                   business_date, quantity, outcome, is_in_flight, is_forecast_eligible, p95_seconds,
                    {$projectedUnit} AS projected_unit, {$eligibleUnit} AS eligible_unit,
                    {$unestimatedUnit} AS unestimated_unit
             FROM ({$source}) current_rows
@@ -150,6 +150,7 @@ final readonly class SalesCohortMetricsQuery
                 "COALESCE(SUM(o.quantity) FILTER (WHERE o.outcome IN ('D', 'T2', 'P')), 0)::bigint AS buyout_resolved_quantity",
                 'COALESCE(SUM(o.quantity) FILTER (WHERE o.is_in_flight), 0)::bigint AS in_flight_quantity',
                 'COALESCE(SUM(o.quantity) FILTER (WHERE o.unestimated_unit), 0)::bigint AS unestimated_quantity',
+                'COALESCE(SUM(o.quantity) FILTER (WHERE o.outcome IS NULL AND NOT o.is_forecast_eligible), 0)::bigint AS unknown_outcome_quantity',
                 'COALESCE(SUM(o.quantity * o.projected_unit), 0::numeric) AS projected_quantity',
                 'COALESCE(SUM(o.quantity * o.eligible_unit), 0::numeric) AS projected_eligible_quantity',
                 <<<SQL
@@ -201,6 +202,7 @@ final readonly class SalesCohortMetricsQuery
                         'current_projected_buyout_quantity', {$projectedQuantity},
                         'current_projected_buyout_rate_bps', {$projectedRate},
                         'unestimated_quantity', unestimated_quantity,
+                        'unknown_outcome_quantity', unknown_outcome_quantity,
                         'unestimated_rate_bps', {$unestimatedRate},
                         'known_projected_buyout_quantity', projected_quantity::text,
                         'known_projected_eligible_quantity', projected_eligible_quantity::text,
@@ -247,7 +249,7 @@ final readonly class SalesCohortMetricsQuery
     }
 
     /** @param array<array-key, mixed> $row */
-    private static function mapDay(string $sku, array $row): SalesCohortMetricsRow
+    public static function mapDay(string $sku, array $row): SalesCohortMetricsRow
     {
         $date = $row['cohort_date'] ?? null;
         $raw = $row['raw_ordered_quantity'] ?? null;
@@ -275,8 +277,9 @@ final readonly class SalesCohortMetricsQuery
             throw new \UnexpectedValueException('Invalid sales cohort maturity row.');
         }
         $unestimated = $row['unestimated_quantity'] ?? null;
+        $unknown = $row['unknown_outcome_quantity'] ?? null;
         $projected = $row['current_projected_buyout_quantity'] ?? null;
-        if (!\is_int($unestimated) || (null !== $projected && !\is_int($projected))) {
+        if (!\is_int($unestimated) || !\is_int($unknown) || (null !== $projected && !\is_int($projected))) {
             throw new \UnexpectedValueException('Invalid sales cohort forecast row.');
         }
 
@@ -286,6 +289,7 @@ final readonly class SalesCohortMetricsQuery
             $projected, self::nullableBps($row['current_projected_buyout_rate_bps'] ?? null),
             $unestimated, self::nullableBps($row['unestimated_rate_bps'] ?? null),
             self::decimal($row['known_projected_buyout_quantity'] ?? null), self::decimal($row['known_projected_eligible_quantity'] ?? null),
+            unknownOutcomeQuantity: $unknown,
         );
     }
 

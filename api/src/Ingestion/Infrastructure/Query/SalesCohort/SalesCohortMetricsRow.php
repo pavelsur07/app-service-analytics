@@ -38,6 +38,8 @@ final readonly class SalesCohortMetricsRow
         /** Этап A не моделирует будущие клиентские возвраты. */
         public ?string $expectedNetSalesQuantity = null,
         public string $netForecastUnavailableReason = 'net_forecast_not_available',
+        /** NULL outcome without forecast eligibility; not active units lacking a training rate. */
+        public int $unknownOutcomeQuantity = 0,
     ) {
     }
 }

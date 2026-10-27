@@ -461,3 +461,19 @@ SHA/артефакты — sales-planning-tasks/A10.md. Production/schema/API н
 Фундамент A01–A19 завершён (19/68); таблица/PerformanceAPI/календарь и этапB
 ещё не выпущены. A20–A23 начал отдельный implementer по before-code brief,
 parent готовит независимый календарный пакет A41–A43 в рамках ADR046.
+
+## A20–A23. Публичный пакетный Facade
+
+Выполнено: bounded Request/Grouping/Batch→SKU→Point/nullable Components,
+period и cumulative в SQL до clip/rounding; два SQL независимо от1/50SKU.
+Partial/missing не превращаются в полный итог; confirmedzero, Moneycurrency,
+unknown против отсутствия обучения, grouped maturity и hiddenmissing проверены.
+ClockInterface, netnullreason, returnsCoverage not_assessed явные; HTTP RR
+снимок открывает будущий caller, latency измеритA48. SourceQuery и facade
+не меняют старые отчёты; schema/API/deps неизменны.
+
+Final int667/16876, lint/stan/deptrac/structure GREEN; unit499/3566 и
+func358/2673 ранее GREEN (последние изменения только cohortfields, полная
+integration повторена). Оба Codex CLI0/0, новых принятых0/0, отклонённых0.
+SHA/артефакты — A20..23.md. Чек-листы A01–A23 завершены (23/68).
+Calendar A41–43 планы и ProposedADR048 опубликованы до кода; ещё не реализованы.
