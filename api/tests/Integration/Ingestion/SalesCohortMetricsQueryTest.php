@@ -94,6 +94,135 @@ final class SalesCohortMetricsQueryTest extends KernelTestCase
         ));
     }
 
+    /**
+     * @param list<string>                                 $history
+     * @param list<array{string, string, int}>             $returnEvidence
+     * @param list<array{outcome: ?string, quantity: int}> $expectedAllocations
+     */
+    #[DataProvider('orderOutcomes')]
+    public function testPreservesAllQuantitiesExceptConfirmedT1(
+        string $status,
+        array $history,
+        array $returnEvidence,
+        bool $deliveredSibling,
+        array $expectedAllocations,
+        int $expectedCancelled,
+    ): void {
+        self::bootKernel();
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $date = new \DateTimeImmutable('2026-08-01');
+        $sale = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)->withMarketplaceAccountId($accountId)
+            ->withMarketplaceSku('OUTCOME')->withBusinessDate($date)
+            ->withSourceRowId('SUBJECT|OUTCOME')->withPostingNumber('SUBJECT')
+            ->withOrderNumber('ORDER')->withStatus($status)->withQuantity(3);
+        /** @var SalesFactRepository $sales */
+        $sales = self::getContainer()->get(SalesFactRepository::class);
+        $facts = [$sale->build()];
+        if ($deliveredSibling) {
+            // P requires a delivered sibling; it is outside the requested SKU.
+            $facts[] = $sale->withMarketplaceSku('SIBLING')->withSourceRowId('SIBLING|SIBLING')
+                ->withPostingNumber('SIBLING')->withStatus('delivered')->withQuantity(1)->build();
+        }
+        $sales->upsertAll($facts);
+
+        $statusBuilder = MarketplacePostingStatusBuilder::aMarketplacePostingStatus()
+            ->withCompanyId($companyId)->withMarketplaceAccountId($accountId)
+            ->withPostingNumber('SUBJECT')->withOrderNumber('ORDER');
+        $observations = [];
+        foreach ($history as $index => $observedStatus) {
+            $observations[] = $statusBuilder->withStatus($observedStatus)
+                ->withObservedAt(new \DateTimeImmutable(\sprintf('2026-08-%02d 10:00:00', $index + 1)))
+                ->withRawDocumentId(Uuid::v7())->build();
+        }
+        if ($deliveredSibling) {
+            $observations[] = $statusBuilder->withPostingNumber('SIBLING')->withStatus('delivered')
+                ->withObservedAt(new \DateTimeImmutable('2026-08-03 11:00:00'))
+                ->withRawDocumentId(Uuid::v7())->build();
+        }
+        /** @var MarketplacePostingStatusRepository $statuses */
+        $statuses = self::getContainer()->get(MarketplacePostingStatusRepository::class);
+        $statuses->recordChanged($companyId->toRfc4122(), $observations);
+
+        $returns = [];
+        foreach ($returnEvidence as $index => [$type, $reason, $quantity]) {
+            $returns[] = MarketplaceReturnFactBuilder::aMarketplaceReturnFact()
+                ->withCompanyId($companyId)->withMarketplaceAccountId($accountId)
+                ->withSourceRowId('RETURN-'.$index)->withPostingNumber('SUBJECT')
+                ->withOrderNumber('ORDER')->withMarketplaceSku('OUTCOME')
+                ->withReturnType($type)->withReturnReasonName($reason)->withQuantity($quantity)->build();
+        }
+        /** @var MarketplaceReturnFactRepository $returnFacts */
+        $returnFacts = self::getContainer()->get(MarketplaceReturnFactRepository::class);
+        $returnFacts->upsertAll($returns);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        // Validate fixture evidence against the real allocator, including partial units.
+        self::assertSame($expectedAllocations, $connection->fetchAllAssociative(
+            'SELECT outcome, quantity FROM buyout_outcome WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ? ORDER BY outcome NULLS LAST',
+            [$companyId->toRfc4122(), $accountId->toRfc4122(), 'SUBJECT|OUTCOME'],
+        ));
+        $rows = (new SalesCohortMetricsQuery($connection))
+            ->build($companyId->toRfc4122(), $accountId->toRfc4122(), ['OUTCOME'], $date, $date)
+            ->executeQuery()->fetchAllAssociative();
+
+        self::assertCount(1, $rows);
+        $sku = SalesCohortMetricsQuery::mapRow($rows[0]);
+        self::assertSame('OUTCOME', $sku->marketplaceSku);
+        self::assertCount(1, $sku->days);
+        $day = $sku->days[0];
+        self::assertSame('2026-08-01', $day->date);
+        self::assertSame(3, $day->rawOrderedQuantity);
+        self::assertSame($expectedCancelled, $day->preHandoverCancelledQuantity);
+        self::assertSame(3 - $expectedCancelled, $day->effectiveOrderedQuantity);
+        self::assertSame($day->rawOrderedQuantity, $day->effectiveOrderedQuantity + $day->preHandoverCancelledQuantity);
+    }
+
+    /**
+     * @return iterable<string, array{string, list<string>, list<array{string, string, int}>, bool, list<array{outcome: ?string, quantity: int}>, int}>
+     */
+    public static function orderOutcomes(): iterable
+    {
+        yield 'active awaiting packaging' => [
+            'awaiting_packaging', ['awaiting_packaging'], [], false,
+            [['outcome' => null, 'quantity' => 3]], 0,
+        ];
+        yield 'active in delivery' => [
+            'delivering', ['awaiting_packaging', 'delivering'], [], false,
+            [['outcome' => null, 'quantity' => 3]], 0,
+        ];
+        yield 'delivered D' => [
+            'delivered', ['delivering', 'delivered'], [], false,
+            [['outcome' => 'D', 'quantity' => 3]], 0,
+        ];
+        yield 'post handover cancellation T2' => [
+            'cancelled', ['delivering', 'cancelled'], [], false,
+            [['outcome' => 'T2', 'quantity' => 3]], 0,
+        ];
+        yield 'partial pickup refusal T2' => [
+            'cancelled', ['cancelled'], [['Cancellation', 'Покупатель не забрал заказ', 1]], false,
+            [['outcome' => 'T2', 'quantity' => 1], ['outcome' => null, 'quantity' => 2]], 0,
+        ];
+        yield 'partial refusal P with delivered sibling' => [
+            'cancelled', ['cancelled'], [['Cancellation', 'Покупатель отказался при вручении: товар не подошел', 1]], true,
+            [['outcome' => 'P', 'quantity' => 1], ['outcome' => null, 'quantity' => 2]], 0,
+        ];
+        yield 'partial client return R preserves delivered remainder' => [
+            'delivered', ['delivering', 'delivered'], [['ClientReturn', 'Возврат одной штуки', 1]], false,
+            [['outcome' => 'D', 'quantity' => 2], ['outcome' => 'R', 'quantity' => 1]], 0,
+        ];
+        yield 'terminal unknown without previous history despite known cancellation reason' => [
+            'cancelled', ['cancelled'], [['Cancellation', 'Покупатель отменил заказ', 3]], false,
+            [['outcome' => null, 'quantity' => 3]], 0,
+        ];
+        yield 'partial confirmed T1 subtracts only allocated unit' => [
+            'cancelled', ['awaiting_packaging', 'cancelled'], [['Cancellation', 'Покупатель отменил заказ', 1]], false,
+            [['outcome' => 'T1', 'quantity' => 1], ['outcome' => null, 'quantity' => 2]], 1,
+        ];
+    }
+
     /** @param list<string> $skus */
     #[DataProvider('invalidRequests')]
     public function testRejectsInvalidOrUnboundedRequests(array $skus, string $from, string $to): void
