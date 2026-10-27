@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\SalesPlanning;
 
+use App\Identity\Application\Facade\IdentityFacade;
 use App\SalesPlanning\Application\ApproveSalesPlanAction;
 use App\SalesPlanning\Application\ApproveSalesPlanOutcome;
+use App\SalesPlanning\Application\CancelSalesPlanAction;
+use App\SalesPlanning\Application\CloseSalesPlanOutcome;
 use App\SalesPlanning\Application\CreateSalesPlanRevisionAction;
 use App\SalesPlanning\Application\CreateSalesPlanRevisionOutcome;
+use App\SalesPlanning\Application\DiscardSalesPlanAction;
 use App\SalesPlanning\Application\EditSalesPlanOutcome;
 use App\SalesPlanning\Application\RemoveSalesPlanSkuAction;
 use App\SalesPlanning\Application\SetSalesPlanMetricAction;
@@ -175,13 +179,12 @@ final class SalesPlanRevisionLifecycleTest extends KernelTestCase
         self::bootKernel();
         $source = $this->source();
         $draft = $this->revision($source);
-        // Cancellation command приходит в A09; precise fixture закрывает approved.
-        $this->connection()->executeStatement("UPDATE sales_plan SET status = 'cancelled' WHERE company_id = ? AND id = ?", [$source->companyId()->toRfc4122(), $source->id()->toRfc4122()]);
+        self::assertSame(CloseSalesPlanOutcome::Changed, $this->service(CancelSalesPlanAction::class)($source->companyId()->toRfc4122(), $source->id()->toRfc4122(), $source->version(), Uuid::v7()->toRfc4122())->outcome);
         $this->service(EntityManagerInterface::class)->clear();
         $draft = $this->repository()->get($draft->companyId()->toRfc4122(), $draft->id());
         self::assertNotNull($draft);
         $before = $this->header($draft);
-        self::assertSame(ApproveSalesPlanOutcome::ClosedLineage, $this->approve($draft));
+        self::assertSame(ApproveSalesPlanOutcome::NotDraft, $this->approve($draft));
         self::assertSame($before, $this->header($draft));
         self::assertSame(0, $this->auditCount($draft, 'sales_plan.approved'));
     }
@@ -230,8 +233,7 @@ final class SalesPlanRevisionLifecycleTest extends KernelTestCase
         self::assertSame(CreateSalesPlanRevisionOutcome::NotFound, $create(Uuid::v7()->toRfc4122(), $source->id()->toRfc4122(), $source->version(), Uuid::v7()->toRfc4122())->outcome);
         $discarded = $this->revision($source);
         self::assertSame(CreateSalesPlanRevisionOutcome::NotApproved, $create($discarded->companyId()->toRfc4122(), $discarded->id()->toRfc4122(), $discarded->version(), Uuid::v7()->toRfc4122())->outcome);
-        // Lifecycle discard — будущий A09. Здесь изменяем только fixture status, не номер.
-        $this->connection()->executeStatement("UPDATE sales_plan SET status = 'discarded' WHERE company_id = ? AND id = ?", [$discarded->companyId()->toRfc4122(), $discarded->id()->toRfc4122()]);
+        self::assertSame(CloseSalesPlanOutcome::Changed, $this->service(DiscardSalesPlanAction::class)($discarded->companyId()->toRfc4122(), $discarded->id()->toRfc4122(), $discarded->version(), Uuid::v7()->toRfc4122())->outcome);
         $this->service(EntityManagerInterface::class)->clear();
         $source = $this->repository()->get($source->companyId()->toRfc4122(), $source->id());
         self::assertNotNull($source);
@@ -239,6 +241,137 @@ final class SalesPlanRevisionLifecycleTest extends KernelTestCase
         self::assertSame(3, $next->versionNumber());
         self::assertSame(ApproveSalesPlanOutcome::Approved, $this->approve($next));
         self::assertSame(CreateSalesPlanRevisionOutcome::NotApproved, $create($source->companyId()->toRfc4122(), $source->id()->toRfc4122(), $source->version(), Uuid::v7()->toRfc4122())->outcome);
+    }
+
+    public function testCancelAtomicallyClosesRevisionKeepsHistoryAndFreesDays(): void
+    {
+        self::bootKernel();
+        $source = $this->source();
+        $draft = $this->revision($source);
+        $sourceLines = $this->lines($source);
+        $draftLines = $this->lines($draft);
+        $approvedAt = $source->approvedAt();
+        $approvedBy = $source->approvedByUserId();
+        $sourceVersion = $source->version();
+        $draftVersion = $draft->version();
+        $actor = Uuid::v7()->toRfc4122();
+        $result = $this->service(CancelSalesPlanAction::class)($source->companyId()->toRfc4122(), $source->id()->toRfc4122(), $sourceVersion, $actor);
+        self::assertSame(CloseSalesPlanOutcome::Changed, $result->outcome);
+        self::assertSame($sourceVersion + 1, $result->version);
+        self::assertSame(SalesPlanStatus::Cancelled, $source->status());
+        self::assertSame(SalesPlanStatus::Discarded, $draft->status());
+        self::assertSame($draftVersion + 1, $draft->version());
+        self::assertSame($approvedAt, $source->approvedAt());
+        self::assertSame($approvedBy, $source->approvedByUserId());
+        self::assertSame($sourceLines, $this->lines($source));
+        self::assertSame($draftLines, $this->lines($draft));
+        self::assertSame(0, $this->claimCount($source));
+        self::assertNull($this->repository()->openDraft($source->companyId()->toRfc4122(), $source->lineageId()));
+        foreach ([[$source, 'sales_plan.cancelled', 'approved', 'cancelled'], [$draft, 'sales_plan.discarded', 'draft', 'discarded']] as [$plan, $action, $before, $after]) {
+            $row = $this->connection()->fetchAssociative('SELECT actor_user_id, previous_value, new_value FROM audit_record WHERE company_id = ? AND subject_id = ? AND action = ?', [$plan->companyId()->toRfc4122(), $plan->id()->toRfc4122(), $action]);
+            self::assertIsArray($row);
+            self::assertSame($actor, $row['actor_user_id']);
+            self::assertSame(json_encode(['status' => $before], \JSON_THROW_ON_ERROR), $row['previous_value']);
+            self::assertIsString($row['new_value']);
+            $value = json_decode($row['new_value'], true, flags: \JSON_THROW_ON_ERROR);
+            self::assertIsArray($value);
+            self::assertSame($after, $value['status']);
+        }
+        self::assertSame(CreateSalesPlanRevisionOutcome::NotApproved, $this->service(CreateSalesPlanRevisionAction::class)($source->companyId()->toRfc4122(), $source->id()->toRfc4122(), $source->version(), $actor)->outcome);
+        self::assertSame(ApproveSalesPlanOutcome::NotDraft, $this->approve($draft));
+        self::assertSame(SalesPlanStatus::Approved, $this->source($source)->status());
+    }
+
+    public function testDiscardInitialDraftPreservesRowsAndBlocksEditingAndApproval(): void
+    {
+        self::bootKernel();
+        $draft = SalesPlanBuilder::aSalesPlan()->build();
+        $this->repository()->add($draft, SalesPlanLineBuilder::linesOf($draft)->build());
+        $before = $this->lines($draft);
+        $version = $draft->version();
+        $result = $this->service(DiscardSalesPlanAction::class)($draft->companyId()->toRfc4122(), $draft->id()->toRfc4122(), $version, Uuid::v7()->toRfc4122());
+        self::assertSame(CloseSalesPlanOutcome::Changed, $result->outcome);
+        self::assertSame($version + 1, $result->version);
+        self::assertSame($before, $this->lines($draft));
+        self::assertSame(1, $this->auditCount($draft, 'sales_plan.discarded'));
+        self::assertSame(ApproveSalesPlanOutcome::NotDraft, $this->approve($draft));
+        self::assertSame(EditSalesPlanOutcome::NotEditable, $this->service(RemoveSalesPlanSkuAction::class)($draft->companyId()->toRfc4122(), $draft->id()->toRfc4122(), $draft->version(), '1988146647', Uuid::v7()->toRfc4122())->outcome);
+    }
+
+    public function testDiscardRevisionLeavesSourceAndClaimsIntact(): void
+    {
+        self::bootKernel();
+        $source = $this->source();
+        $draft = $this->revision($source);
+        $before = $this->header($source);
+        $this->service(DiscardSalesPlanAction::class)($draft->companyId()->toRfc4122(), $draft->id()->toRfc4122(), $draft->version(), Uuid::v7()->toRfc4122());
+        self::assertSame($before, $this->header($source));
+        self::assertSame(6, $this->claimCount($source));
+        self::assertSame(3, $this->revision($source)->versionNumber());
+    }
+
+    public function testCloseGuardsDoNotWriteOrAudit(): void
+    {
+        self::bootKernel();
+        $source = $this->source();
+        $draft = $this->revision($source);
+        $actor = Uuid::v7()->toRfc4122();
+        foreach ([[$this->service(CancelSalesPlanAction::class), $source, $draft], [$this->service(DiscardSalesPlanAction::class), $draft, $source]] as [$action, $target, $wrongStatus]) {
+            $before = $this->header($target);
+            self::assertSame(CloseSalesPlanOutcome::NotFound, $action(Uuid::v7()->toRfc4122(), $target->id()->toRfc4122(), $target->version(), $actor)->outcome);
+            self::assertSame(CloseSalesPlanOutcome::VersionConflict, $action($target->companyId()->toRfc4122(), $target->id()->toRfc4122(), 999, $actor)->outcome);
+            self::assertSame(CloseSalesPlanOutcome::InvalidStatus, $action($wrongStatus->companyId()->toRfc4122(), $wrongStatus->id()->toRfc4122(), $wrongStatus->version(), $actor)->outcome);
+            self::assertSame($before, $this->header($target));
+        }
+        self::assertSame(0, $this->auditCount($source, 'sales_plan.cancelled'));
+        self::assertSame(0, $this->auditCount($draft, 'sales_plan.discarded'));
+        self::assertSame(6, $this->claimCount($source));
+    }
+
+    public function testCancelSourceRaceRollsBackAllChanges(): void
+    {
+        self::bootKernel();
+        $source = $this->source();
+        $draft = $this->revision($source);
+        $draftBefore = $this->header($draft);
+        $this->connection()->executeStatement('UPDATE sales_plan SET version = version + 1 WHERE company_id = ? AND id = ?', [$source->companyId()->toRfc4122(), $source->id()->toRfc4122()]);
+        self::assertSame(CloseSalesPlanOutcome::VersionConflict, $this->service(CancelSalesPlanAction::class)($source->companyId()->toRfc4122(), $source->id()->toRfc4122(), $source->version(), Uuid::v7()->toRfc4122())->outcome);
+        self::assertSame('approved', $this->header($source)['status']);
+        self::assertSame($draftBefore, $this->header($draft));
+        self::assertSame(6, $this->claimCount($source));
+        self::assertSame(0, $this->auditCount($source, 'sales_plan.cancelled'));
+    }
+
+    public function testCancelDraftRaceRollsBackAlreadyFlushedSourceAndAudit(): void
+    {
+        self::bootKernel();
+        $source = $this->source();
+        $draft = $this->revision($source);
+        $sourceBefore = $this->header($source);
+        $draftBefore = $this->header($draft);
+        $real = $this->repository();
+        // Test-only port proxy delegates real writes/transaction; гонка после sibling load.
+        $proxy = $this->createMock(SalesPlanRepository::class);
+        $proxy->method('get')->willReturnCallback($real->get(...));
+        $proxy->method('transactional')->willReturnCallback($real->transactional(...));
+        $proxy->method('saveMetadata')->willReturnCallback($real->saveMetadata(...));
+        $proxy->method('releaseClaims')->willReturnCallback($real->releaseClaims(...));
+        $proxy->expects(self::once())->method('openDraft')->willReturnCallback(function (string $companyId, Uuid $lineageId) use ($real, $source): SalesPlan {
+            self::assertSame('cancelled', $this->header($source)['status']);
+            self::assertSame(1, $this->auditCount($source, 'sales_plan.cancelled'));
+            $loaded = $real->openDraft($companyId, $lineageId);
+            self::assertNotNull($loaded);
+            $this->connection()->executeStatement('UPDATE sales_plan SET version = version + 1 WHERE company_id = ? AND id = ?', [$companyId, $loaded->id()->toRfc4122()]);
+
+            return $loaded;
+        });
+        $action = new CancelSalesPlanAction($proxy, $this->service(IdentityFacade::class));
+        self::assertSame(CloseSalesPlanOutcome::VersionConflict, $action($source->companyId()->toRfc4122(), $source->id()->toRfc4122(), $source->version(), Uuid::v7()->toRfc4122())->outcome);
+        self::assertSame($sourceBefore, $this->header($source));
+        self::assertSame($draftBefore, $this->header($draft));
+        self::assertSame(6, $this->claimCount($source));
+        self::assertSame(0, $this->auditCount($source, 'sales_plan.cancelled'));
+        self::assertSame(0, $this->auditCount($draft, 'sales_plan.discarded'));
     }
 
     /** @param list<string> $skus */

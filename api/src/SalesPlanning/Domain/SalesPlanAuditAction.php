@@ -13,6 +13,10 @@ namespace App\SalesPlanning\Domain;
  */
 final class SalesPlanAuditAction
 {
+    public const string Cancelled = 'sales_plan.cancelled';
+
+    public const string Discarded = 'sales_plan.discarded';
+
     public const string MetricSelected = 'sales_plan.metric_selected';
 
     public const string RevisionCreated = 'sales_plan.revision_created';

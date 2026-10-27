@@ -420,3 +420,14 @@ unit491/3556,func358/2673,lint/stan/deptrac/structure и API/seller gates OK.
 Оба Codex CLI complete0/0, уникальных новых принятых0/0, отклонённых0.
 Полный SHA256/артефакты — sales-planning-tasks/A18.md,A19.md.
 A09 код GREEN, ожидает отдельного Codex ревью; A06 план записан до кода.
+
+## A09. Отмена и отказ с аудитом
+
+Выполнено: cancel через approved source первым ORM flush; sibling draft
+discarded, claims освобождены в общей транзакции, аудит обоих переходов.
+Discard сохраняет строки и историю; исходная approved goal не меняется.
+Guards и rollback source/sibling optimistic races проверены. A08 бывшие
+status SQL fixtures заменены реальными командами. Схема не менялась.
+Unit491/3556,int652/15533,func358/2673 и backend/API/seller gates GREEN.
+Оба независимых Codex CLI complete0/0, уникальных новых принятых0/0,
+отклонённых0; SHA/артефакты — sales-planning-tasks/A09.md.

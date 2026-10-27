@@ -227,6 +227,41 @@ final class SalesPlanControllerTest extends WebTestCase
         self::assertSame('version_conflict', $this->json($client)['code']);
     }
 
+    public function testCancelAndDiscardRequireVersionAndUseSessionActor(): void
+    {
+        $client = static::createClient();
+        $company = $this->loginAsCompanyMember($client);
+        foreach (['cancel' => 'cancelled', 'discard' => 'discarded'] as $command => $status) {
+            $plan = SalesPlanBuilder::aSalesPlan()->withCompanyId($company->id())->withMetric(\App\SalesPlanning\Domain\SalesPlanMetric::RetainedSales)->build();
+            $this->plans()->add($plan, SalesPlanLineBuilder::linesOf($plan)->build());
+            $base = "/api/companies/{$company->id()->toRfc4122()}/sales-plans/{$plan->id()->toRfc4122()}";
+            $version = $plan->version();
+            if ('cancel' === $command) {
+                $client->request('POST', "{$base}/approve", server: ['CONTENT_TYPE' => 'application/json'], content: json_encode(['version' => $version], \JSON_THROW_ON_ERROR));
+                self::assertSame(200, $client->getResponse()->getStatusCode());
+                $version = $this->json($client)['version'];
+            }
+            foreach (['{}', '{"version":"1"}', '{"version":0}', '{"version":1.5}', '{', '[]'] as $body) {
+                $client->request('POST', "{$base}/{$command}", server: ['CONTENT_TYPE' => 'application/json'], content: $body);
+                self::assertSame(422, $client->getResponse()->getStatusCode());
+            }
+            $spoofed = Uuid::v7()->toRfc4122();
+            $client->request('POST', "{$base}/{$command}", server: ['CONTENT_TYPE' => 'application/json'], content: json_encode(['version' => $version, 'actorUserId' => $spoofed], \JSON_THROW_ON_ERROR));
+            self::assertSame(200, $client->getResponse()->getStatusCode());
+            $body = $this->json($client);
+            self::assertSame($status, $body['status']);
+            self::assertSame($plan->id()->toRfc4122(), $body['id']);
+            $connection = static::getContainer()->get(Connection::class);
+            \assert($connection instanceof Connection);
+            $actor = $connection->fetchOne('SELECT actor_user_id FROM audit_record WHERE company_id = ? AND subject_id = ? AND action = ?', [$company->id()->toRfc4122(), $plan->id()->toRfc4122(), 'sales_plan.'.$status]);
+            self::assertIsString($actor);
+            self::assertNotSame($spoofed, $actor);
+            self::assertSame(1, $connection->fetchOne('SELECT COUNT(*) FROM company_member WHERE company_id = ? AND user_id = ?', [$company->id()->toRfc4122(), $actor]));
+            $client->request('POST', "{$base}/{$command}", server: ['CONTENT_TYPE' => 'application/json'], content: json_encode(['version' => $version], \JSON_THROW_ON_ERROR));
+            self::assertSame(409, $client->getResponse()->getStatusCode());
+        }
+    }
+
     public function testApprovalCannotCrossCompanyBoundary(): void
     {
         $client = static::createClient();
@@ -234,7 +269,7 @@ final class SalesPlanControllerTest extends WebTestCase
         $foreign = CompanyBuilder::aCompany()->persistWith($this->companies());
         $plan = SalesPlanBuilder::aSalesPlan()->withCompanyId($foreign->id())->persistWith($this->plans());
         foreach ([[$company->id()->toRfc4122(), 404], [$foreign->id()->toRfc4122(), 403]] as [$companyId, $status]) {
-            foreach (['approve', 'revisions'] as $command) {
+            foreach (['approve', 'revisions', 'cancel', 'discard'] as $command) {
                 $client->request('POST', "/api/companies/{$companyId}/sales-plans/{$plan->id()->toRfc4122()}/{$command}", server: ['CONTENT_TYPE' => 'application/json'], content: '{"version":1}');
                 self::assertSame($status, $client->getResponse()->getStatusCode());
             }

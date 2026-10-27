@@ -262,6 +262,19 @@ class SalesPlan
         $this->status = SalesPlanStatus::Superseded;
     }
 
+    public function discard(\DateTimeImmutable $at): void
+    {
+        $this->assertEditable();
+        $this->status = SalesPlanStatus::Discarded;
+        $this->updatedAt = $at;
+    }
+
+    public function cancel(\DateTimeImmutable $at): void
+    {
+        $this->recordLifecycleChanged($at);
+        $this->status = SalesPlanStatus::Cancelled;
+    }
+
     public function metric(): ?SalesPlanMetric
     {
         return $this->metric;
