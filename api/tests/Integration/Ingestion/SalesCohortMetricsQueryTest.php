@@ -223,6 +223,149 @@ final class SalesCohortMetricsQueryTest extends KernelTestCase
         ];
     }
 
+    public function testOrdersBatchBySkuAndDayWithoutInventingMissingRows(): void
+    {
+        self::bootKernel();
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $sale = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)->withMarketplaceAccountId($accountId)
+            ->withStatus('awaiting_packaging');
+        $facts = [];
+        foreach ([
+            ['BATCH-B', '2026-08-03', 7],
+            ['BATCH-A', '2026-08-03', 3],
+            ['BATCH-B', '2026-08-01', 5],
+            ['BATCH-A', '2026-08-01', 2],
+            ['BATCH-A', '2026-08-01', 4],
+        ] as $index => [$sku, $date, $quantity]) {
+            $facts[] = $sale->withMarketplaceSku($sku)
+                ->withBusinessDate(new \DateTimeImmutable($date))->withQuantity($quantity)
+                ->withSourceRowId('BATCH-'.$index.'|'.$sku)
+                ->withPostingNumber('BATCH-'.$index)->withOrderNumber('BATCH-'.$index)->build();
+        }
+        /** @var SalesFactRepository $sales */
+        $sales = self::getContainer()->get(SalesFactRepository::class);
+        $sales->upsertAll($facts);
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $rows = (new SalesCohortMetricsQuery($connection))
+            ->build($companyId->toRfc4122(), $accountId->toRfc4122(), ['BATCH-B', 'MISSING', 'BATCH-A'],
+                new \DateTimeImmutable('2026-08-01'), new \DateTimeImmutable('2026-08-03'))
+            ->executeQuery()->fetchAllAssociative();
+
+        self::assertCount(2, $rows);
+        foreach ($rows as $index => $rawRow) {
+            $sku = SalesCohortMetricsQuery::mapRow($rawRow);
+            self::assertSame(['BATCH-A', 'BATCH-B'][$index], $sku->marketplaceSku);
+            self::assertSame(['2026-08-01', '2026-08-03'], array_column($sku->days, 'date'));
+            self::assertSame([[6, 3], [5, 7]][$index], array_column($sku->days, 'rawOrderedQuantity'));
+            foreach ($sku->days as $day) {
+                self::assertSame($sku->marketplaceSku, $day->marketplaceSku);
+                self::assertSame(0, $day->preHandoverCancelledQuantity);
+                self::assertSame($day->rawOrderedQuantity, $day->effectiveOrderedQuantity + $day->preHandoverCancelledQuantity);
+            }
+        }
+    }
+
+    public function testAcceptsFiftySkusAndOneHundredEightyFourCalendarDays(): void
+    {
+        self::bootKernel();
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $from = new \DateTimeImmutable('2026-01-01');
+        $to = new \DateTimeImmutable('2026-07-03');
+        $sale = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)->withMarketplaceAccountId($accountId)
+            ->withStatus('awaiting_packaging')->withQuantity(2);
+        $skus = [];
+        $facts = [];
+        for ($index = 49; $index >= 0; --$index) {
+            $sku = \sprintf('BOUNDARY-%02d', $index);
+            $skus[] = $sku;
+            $dayCount = 0 === $index ? 184 : 1;
+            for ($day = $dayCount - 1; $day >= 0; --$day) {
+                $posting = $sku.'-'.$day;
+                $facts[] = $sale->withMarketplaceSku($sku)
+                    ->withBusinessDate($from->modify('+'.$day.' days'))
+                    ->withSourceRowId($posting.'|'.$sku)
+                    ->withPostingNumber($posting)->withOrderNumber($posting)->build();
+            }
+        }
+        /** @var SalesFactRepository $sales */
+        $sales = self::getContainer()->get(SalesFactRepository::class);
+        $sales->upsertAll($facts);
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $rows = (new SalesCohortMetricsQuery($connection))
+            ->build($companyId->toRfc4122(), $accountId->toRfc4122(), $skus, $from, $to)
+            ->executeQuery()->fetchAllAssociative();
+
+        self::assertCount(50, $rows);
+        sort($skus);
+        self::assertSame($skus, array_column($rows, 'marketplace_sku'));
+        foreach ($rows as $index => $rawRow) {
+            $sku = SalesCohortMetricsQuery::mapRow($rawRow);
+            self::assertCount(0 === $index ? 184 : 1, $sku->days);
+            self::assertSame('2026-01-01', $sku->days[0]->date);
+            foreach ($sku->days as $dayIndex => $day) {
+                self::assertSame($from->modify('+'.$dayIndex.' days')->format('Y-m-d'), $day->date);
+                self::assertSame($sku->marketplaceSku, $day->marketplaceSku);
+                self::assertSame(2, $day->rawOrderedQuantity);
+                self::assertSame(0, $day->preHandoverCancelledQuantity);
+                self::assertSame(2, $day->effectiveOrderedQuantity);
+                self::assertSame($day->rawOrderedQuantity, $day->effectiveOrderedQuantity + $day->preHandoverCancelledQuantity);
+            }
+        }
+        self::assertSame('2026-07-03', SalesCohortMetricsQuery::mapRow($rows[0])->days[183]->date);
+    }
+
+    #[DataProvider('calendarRequests')]
+    public function testPreservesCalendarDatesDespiteTimeAndTimezone(string $from, string $to): void
+    {
+        self::bootKernel();
+        $companyId = Uuid::v7();
+        $accountId = Uuid::v7();
+        $sale = SalesFactBuilder::aSalesFact()
+            ->withCompanyId($companyId)->withMarketplaceAccountId($accountId)
+            ->withMarketplaceSku('CALENDAR')->withStatus('awaiting_packaging');
+        $facts = [];
+        foreach (['2026-07-31', '2026-08-01', '2026-08-02'] as $index => $date) {
+            $facts[] = $sale->withBusinessDate(new \DateTimeImmutable($date))
+                ->withSourceRowId('CALENDAR-'.$index.'|CALENDAR')
+                ->withPostingNumber('CALENDAR-'.$index)->withOrderNumber('CALENDAR-'.$index)->build();
+        }
+        /** @var SalesFactRepository $sales */
+        $sales = self::getContainer()->get(SalesFactRepository::class);
+        $sales->upsertAll($facts);
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $rows = (new SalesCohortMetricsQuery($connection))
+            ->build($companyId->toRfc4122(), $accountId->toRfc4122(), ['CALENDAR'],
+                new \DateTimeImmutable($from), new \DateTimeImmutable($to))
+            ->executeQuery()->fetchAllAssociative();
+
+        self::assertCount(1, $rows);
+        $sku = SalesCohortMetricsQuery::mapRow($rows[0]);
+        self::assertSame('CALENDAR', $sku->marketplaceSku);
+        self::assertCount(1, $sku->days);
+        self::assertSame('2026-08-01', $sku->days[0]->date);
+        self::assertSame(1, $sku->days[0]->rawOrderedQuantity);
+        self::assertSame(0, $sku->days[0]->preHandoverCancelledQuantity);
+        self::assertSame(1, $sku->days[0]->effectiveOrderedQuantity);
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function calendarRequests(): iterable
+    {
+        yield 'UTC conversion would widen both boundaries' => [
+            '2026-08-01 00:01:00 +14:00', '2026-08-01 23:59:00 -12:00',
+        ];
+        yield 'same calendar day despite reversed instants' => [
+            '2026-08-01 23:59:00 -12:00', '2026-08-01 00:01:00 +14:00',
+        ];
+    }
+
     /** @param list<string> $skus */
     #[DataProvider('invalidRequests')]
     public function testRejectsInvalidOrUnboundedRequests(array $skus, string $from, string $to): void
