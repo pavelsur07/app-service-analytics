@@ -590,6 +590,14 @@ tests/
 собранного фронтенда (`apps/*/tests/e2e`, конфиг в корне репозитория).
 Здесь остаётся один помеченный skipped тест-заглушка, чтобы набор PHPUnit
 был объявлен и зелёным сам по себе, не завися от фронтенда.
+`Support/SalesPlanning/e2e-cohort.php` — локальный guarded seed/feed для
+реального browserпозднего возврата: только dev/app, synthetic company/account,
+полный исходный raw→importer. `bin/e2e-planning-run.sh` запускает boundedfeed
+и существующий Playwright; общий seed также выполняется внутри его flock,
+чтобы конкурирующий запуск отказал до изменения sandbox. Marker handshake
+в api/var не является productAPI,
+а finallycleanup удаляет только synthetic scope. Make test-e2e сохраняет
+seller/admin и extensionstorage проверки.
 
 ---
 

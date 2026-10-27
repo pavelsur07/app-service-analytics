@@ -67,6 +67,10 @@ fi
 docker compose exec -T postgres psql -U app -d app -q \
     -c "CREATE TEMP TABLE e2e_target_companies AS SELECT DISTINCT company_id FROM marketplace_account WHERE marketplace = 'ozon' AND external_shop_id IN ('e2e-shop', 'e2e-shop-2')" \
     -c "CREATE TEMP TABLE e2e_target_users AS SELECT DISTINCT user_id FROM company_member WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM sales_plan_calendar_entry WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM sales_plan_day_claim WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM sales_plan_line WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
+    -c "DELETE FROM sales_plan WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM price_observation WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM tracked_sku WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \
     -c "DELETE FROM sales_fact WHERE company_id IN (SELECT company_id FROM e2e_target_companies)" \

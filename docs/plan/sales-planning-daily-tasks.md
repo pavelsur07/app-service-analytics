@@ -610,3 +610,24 @@ var/sales-planning-performance-browser.png. Полныйseller/admin/extensionE2
 reviewсамогоtestharness, SQLзамерыиобщийCI/выпускещёпредстоят. НеобъявлятьихGREEN.
 
 Итого45/68 complete: A01–A45. A46/A47 focusedbrowserGREEN, но testharness review/fullE2E pending.
+
+## Приёмка A46/A47: браузер, дневной возврат и штатный harness
+
+Планы/чек-листы и полный разбор — sales-planning-tasks/A46.md и A47.md.
+Реальные raw importers и HTTP/Chromium: исходная дневная цель не меняется
+при revision; поздний возврат D3→D2/30000→20000 RUB minor уточняет день
+заказа, день возврата остаётся D0/0, накопление D2/goal9. URL/history, 409
+dirty forms, calendar copy/500-event virtualization и company isolation PASS.
+Guarded write-ahead bootstrap выдержал настоящий SIGKILL/rollback/cleanup;
+flock автоматически освобождается и охватывает общий seed. Конкурирующий
+штатный make отказал до мутации sandbox.
+
+Полный make ci-local TEST_WORKERS=2 exit0 (var/sales-planning-a49-ci-local.log):
+backend517/689/362, seller488/admin38/extension71 tests; 8 browser25.4s +
+extension storage PASS; static/type/lint/knip/build/audit0/Go/API PASS.
+Финальный пакет a1d2fb4f8be5, два отдельных Codex CLI gpt-6.1-sol complete0/0.
+Первый pair принял2 уникальных замечания; дополнительные pair приняли1,1,0.
+Всего4 принято и исправлено,0 отклонено. Parent company predicate перенесён
+из A48 дополнительно. Claude пропущен по зафиксированному исключению владельца.
+Все реальные review.json paths/hash/session receipts в A46, локальные var
+артефакты постоянным архивом не являются. Итого47/68: A01–A47 готовы.
