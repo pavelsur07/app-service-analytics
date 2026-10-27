@@ -6,11 +6,16 @@ namespace App\Ingestion\Application\Dashboard;
 
 use App\Ingestion\Application\Buyout\BuildBuyoutRateReportAction;
 use App\Ingestion\Application\Buyout\BuyoutRateSummary;
+use App\Ingestion\Domain\MarketplaceListingCost;
 use App\Ingestion\Infrastructure\Query\Dashboard\DashboardDailyRow;
 use App\Ingestion\Infrastructure\Query\Dashboard\DashboardLoadsQuery;
 use App\Ingestion\Infrastructure\Query\Dashboard\DashboardMetricsQuery;
+use App\Ingestion\Infrastructure\Query\Dashboard\DashboardProfitDailyRow;
+use App\Ingestion\Infrastructure\Query\Dashboard\DashboardProfitQuery;
+use App\Ingestion\Infrastructure\Query\Dashboard\DashboardProfitTotalsRow;
 use App\Ingestion\Infrastructure\Query\Dashboard\DashboardTotalsRow;
 use App\Ingestion\Infrastructure\Query\UnitEconomics\ExpenseCoverageQuery;
+use App\Shared\Domain\ValueObject\Money;
 use Doctrine\DBAL\Connection;
 
 /**
@@ -31,6 +36,7 @@ final readonly class BuildDashboardSummaryAction
         private DashboardLoadsQuery $loads,
         private ExpenseCoverageQuery $coverage,
         private BuildBuyoutRateReportAction $buyout,
+        private DashboardProfitQuery $profitQuery,
     ) {
     }
 
@@ -79,10 +85,14 @@ final readonly class BuildDashboardSummaryAction
             DashboardMetricsQuery::mapDailyRow(...),
             $this->fetchAll($this->metrics->daily($companyId, $from, $to, $compareFrom, $compareTo), DashboardMetricsQuery::MAX_DAILY_ROWS),
         );
-        $currency = self::singleCurrency($totals, $daily);
+        $profitTotals = array_map(DashboardProfitQuery::mapTotalsRow(...),
+            $this->fetchAll($this->profitQuery->totals($companyId, $from, $to, $compareFrom, $compareTo), DashboardProfitQuery::MAX_TOTAL_ROWS));
+        $profitDaily = array_map(DashboardProfitQuery::mapDailyRow(...),
+            $this->fetchAll($this->profitQuery->daily($companyId, $from, $to, $compareFrom, $compareTo), DashboardProfitQuery::MAX_DAILY_ROWS));
+        $currency = self::singleCurrency($totals, $daily, $profitTotals, $profitDaily);
 
-        $current = $this->period($companyId, $from, $to, $asOf, self::totalsOf($totals, true), $daily);
-        $comparison = $this->period($companyId, $compareFrom, $compareTo, $asOf, self::totalsOf($totals, false), $daily);
+        $current = $this->period($companyId, $from, $to, $asOf, self::totalsOf($totals, true), $daily, self::profitTotalsOf($profitTotals, true), $profitDaily, $currency);
+        $comparison = $this->period($companyId, $compareFrom, $compareTo, $asOf, self::totalsOf($totals, false), $daily, self::profitTotalsOf($profitTotals, false), $profitDaily, $currency);
 
         return new DashboardSummary(
             currency: $currency,
@@ -95,7 +105,8 @@ final readonly class BuildDashboardSummaryAction
     }
 
     /**
-     * @param list<DashboardDailyRow> $daily
+     * @param list<DashboardDailyRow>       $daily
+     * @param list<DashboardProfitDailyRow> $profitDaily
      */
     private function period(
         string $companyId,
@@ -104,6 +115,9 @@ final readonly class BuildDashboardSummaryAction
         \DateTimeImmutable $asOf,
         ?DashboardTotalsRow $totals,
         array $daily,
+        ?DashboardProfitTotalsRow $profitTotals,
+        array $profitDaily,
+        string $currency,
     ): DashboardPeriodSummary {
         $coverage = $this->coverage->daysWithoutExpenses($companyId, $from, $to);
         $daysWithoutAccruals = self::int($this->connection->fetchOne($coverage->getSQL(), $coverage->getParameters(), $coverage->getParameterTypes()));
@@ -113,19 +127,33 @@ final readonly class BuildDashboardSummaryAction
         );
         $buyout = ($this->buyout)($companyId, $from, $to, $asOf, 1)->summary;
 
+        $complete = $loaded && 0 === $daysWithoutAccruals;
+        $details = new DashboardProfitDetails(
+            hasAccruals: null !== $profitTotals,
+            accrualsTotalMinor: $profitTotals->accrualsTotalMinor ?? 0,
+            costTotalMinor: $profitTotals->costTotalMinor ?? 0,
+            quantityWithoutCost: $profitTotals->quantityWithoutCost ?? 0,
+            costMethod: MarketplaceListingCost::MethodManual,
+            costCorrectedAt: $profitTotals?->costCorrectedAt,
+        );
+        $profitKnown = $complete && 0 === $details->quantityWithoutCost;
+        $profit = $profitKnown ? Money::ofMinor($details->accrualsTotalMinor, $currency)
+            ->plus(Money::ofMinor($details->costTotalMinor, $currency))->minorAmount() : null;
+
         return new DashboardPeriodSummary(
             from: $from->format('Y-m-d'),
             to: $to->format('Y-m-d'),
             // Полон — каждое подключение загрузило оба источника на всём
             // периоде, и ни одного дня с продажами без начислений.
-            dataComplete: $loaded && 0 === $daysWithoutAccruals,
+            dataComplete: $complete,
             daysWithoutAccruals: $daysWithoutAccruals,
-            metrics: self::metrics($totals, $buyout),
-            days: self::days($from, $to, $daily),
+            metrics: self::metrics($totals, $buyout, $profit),
+            days: self::days($from, $to, $daily, $profitDaily, $profitKnown, $currency),
+            profitDetails: $details,
         );
     }
 
-    private static function metrics(?DashboardTotalsRow $row, BuyoutRateSummary $buyout): DashboardMetrics
+    private static function metrics(?DashboardTotalsRow $row, BuyoutRateSummary $buyout, ?int $profit): DashboardMetrics
     {
         return new DashboardMetrics(
             ordersAmountMinor: $row->ordersAmountMinor ?? 0,
@@ -147,6 +175,7 @@ final readonly class BuildDashboardSummaryAction
             buyoutQuantity: $buyout->projectedBuyoutQuantity,
             buyoutOrderedQuantity: $buyout->orderedQuantity,
             buyoutResolutionRateBps: $buyout->resolutionRateBps,
+            profitMinor: $profit,
         );
     }
 
@@ -155,20 +184,26 @@ final readonly class BuildDashboardSummaryAction
      * соединил бы соседние точки через пропуск и нарисовал рост там,
      * где был ноль.
      *
-     * @param list<DashboardDailyRow> $daily
+     * @param list<DashboardDailyRow>       $daily
+     * @param list<DashboardProfitDailyRow> $profitDaily
      *
      * @return list<DashboardDay>
      */
-    private static function days(\DateTimeImmutable $from, \DateTimeImmutable $to, array $daily): array
+    private static function days(\DateTimeImmutable $from, \DateTimeImmutable $to, array $daily, array $profitDaily, bool $profitKnown, string $currency): array
     {
         $byDate = [];
         foreach ($daily as $row) {
             $byDate[$row->date] = $row;
         }
 
+        $profitByDate = [];
+        foreach ($profitDaily as $row) {
+            $profitByDate[$row->date] = $row;
+        }
         $days = [];
         for ($day = $from; $day <= $to; $day = $day->modify('+1 day')) {
             $row = $byDate[$day->format('Y-m-d')] ?? null;
+            $profitRow = $profitByDate[$day->format('Y-m-d')] ?? null;
             $days[] = new DashboardDay(
                 date: $day->format('Y-m-d'),
                 ordersAmountMinor: $row->ordersAmountMinor ?? 0,
@@ -177,6 +212,8 @@ final readonly class BuildDashboardSummaryAction
                 advertisingMinor: $row->advertisingMinor ?? 0,
                 deliveryLogisticsMinor: $row->deliveryLogisticsMinor ?? 0,
                 returnLogisticsMinor: $row->returnLogisticsMinor ?? 0,
+                profitMinor: $profitKnown ? Money::ofMinor($profitRow->accrualsTotalMinor ?? 0, $currency)
+                    ->plus(Money::ofMinor($profitRow->costTotalMinor ?? 0, $currency))->minorAmount() : null,
             );
         }
 
@@ -204,12 +241,13 @@ final readonly class BuildDashboardSummaryAction
             buyoutRatePointsBps: DashboardChange::pointsBps($current->buyoutRateBps, $previous->buyoutRateBps),
             buyoutQuantityBps: DashboardChange::relativeBps($current->buyoutQuantity, $previous->buyoutQuantity),
             buyoutOrderedQuantityBps: DashboardChange::relativeBps($current->buyoutOrderedQuantity, $previous->buyoutOrderedQuantity),
+            profitBps: DashboardChange::relativeBps($current->profitMinor, $previous->profitMinor),
         );
     }
 
     private static function noChanges(): DashboardChanges
     {
-        return new DashboardChanges(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        return new DashboardChanges(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     /**
@@ -227,14 +265,23 @@ final readonly class BuildDashboardSummaryAction
     }
 
     /**
-     * @param list<DashboardTotalsRow> $totals
-     * @param list<DashboardDailyRow>  $daily
+     * @param list<DashboardTotalsRow>       $totals
+     * @param list<DashboardDailyRow>        $daily
+     * @param list<DashboardProfitTotalsRow> $profitTotals
+     * @param list<DashboardProfitDailyRow>  $profitDaily
      */
-    private static function singleCurrency(array $totals, array $daily): string
+    private static function singleCurrency(array $totals, array $daily, array $profitTotals, array $profitDaily): string
     {
+        foreach (array_merge($profitTotals, $profitDaily) as $row) {
+            if ($row->costCurrencyMismatchQuantity > 0) {
+                throw new \RuntimeException('Валюта себестоимости не совпадает с валютой начисления (ADR-004).');
+            }
+        }
         $currencies = array_values(array_unique(array_merge(
             array_map(static fn (DashboardTotalsRow $row): string => $row->currency, $totals),
             array_map(static fn (DashboardDailyRow $row): string => $row->currency, $daily),
+            array_map(static fn (DashboardProfitTotalsRow $row): string => $row->currency, $profitTotals),
+            array_map(static fn (DashboardProfitDailyRow $row): string => $row->currency, $profitDaily),
         )));
 
         if (\count($currencies) > 1) {
@@ -245,6 +292,18 @@ final readonly class BuildDashboardSummaryAction
 
         // Пустая сводка — валюта коннектора Ozon, как у юнит-экономики.
         return $currencies[0] ?? 'RUB';
+    }
+
+    /** @param list<DashboardProfitTotalsRow> $totals */
+    private static function profitTotalsOf(array $totals, bool $current): ?DashboardProfitTotalsRow
+    {
+        foreach ($totals as $row) {
+            if ($row->current === $current) {
+                return $row;
+            }
+        }
+
+        return null;
     }
 
     /**
