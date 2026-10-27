@@ -444,3 +444,20 @@ GREEN: schema dev/test,unit491/3556,int655/15565,func358/2673,Go87.8%;
 var/sales-planning-a06-db-rebuild.log. Static/API check GREEN.
 Оба Codex CLI complete0/0, новых принятых0/0 и отклонённых0; SHA/артефакты
 в sales-planning-tasks/A06.md. A10 теперь проверяет настоящие отдельные процессы.
+
+## A10. Настоящая конкурентность
+
+Выполнено tests-only: отдельные kernel/PHP/DB процессы, пять interleavings
+(edit/approve оба порядка, пересекающиеся approvals, copy/cancel оба порядка),
+разные backendPID и реальный Lock с pg_blocking_pids до commit победителя.
+Проигравший не сохраняет неверные числа/header/claims/audit, закрытая линия
+не открывается. Worker защищён APP_ENV+exacttestDB+syntheticcompany, negative
+guard проверен; deadlines и finally cleanup с count0 собственных данных.
+Parent inspection добавил поддержку sequentialapp_test: focused4/229 GREEN.
+Unit491/3556,int659/15795,func358/2673 и backend gatesGREEN.
+Оба Codex CLI complete0/0, уникальных новых принятых0/0 и отклонённых0;
+SHA/артефакты — sales-planning-tasks/A10.md. Production/schema/API не менялись.
+
+Фундамент A01–A19 завершён (19/68); таблица/PerformanceAPI/календарь и этапB
+ещё не выпущены. A20–A23 начал отдельный implementer по before-code brief,
+parent готовит независимый календарный пакет A41–A43 в рамках ADR046.

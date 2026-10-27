@@ -532,6 +532,12 @@ Deptrac проверяет его механически: `Domain` не знае
 
 ## tests/
 
+`Integration/SalesPlanning/SalesPlanConcurrencyTest` использует тестовый
+`Support/SalesPlanning/concurrent-plan.php`: отдельные PHP/DB-процессы,
+реальные Application-сценарии и барьеры PostgreSQL для проверки гонок.
+Worker ограничен точной тестовой БД и собственными синтетическими компаниями;
+к production API он не относится.
+
 ```
 tests/
 ├── Unit/
