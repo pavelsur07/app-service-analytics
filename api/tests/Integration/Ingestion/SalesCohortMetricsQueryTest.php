@@ -8,6 +8,8 @@ use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortMetricsQuery;
+use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortMetricsRow;
+use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\MarketplacePostingStatusBuilder;
 use App\Tests\Support\Builder\MarketplaceReturnFactBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
@@ -366,6 +368,97 @@ final class SalesCohortMetricsQueryTest extends KernelTestCase
         yield 'same calendar day despite reversed instants' => [
             '2026-08-01 23:59:00 -12:00', '2026-08-01 00:01:00 +14:00',
         ];
+    }
+
+    public function testValuesRetainedSalesAtIndividualPricesWithoutSubtractingReturnsTwice(): void
+    {
+        self::bootKernel();
+        $company = Uuid::v7();
+        $account = Uuid::v7();
+        $this->seedPricedSales($company, $account, [['PRICE-A', 3, 100_000, 'RUB'], ['PRICE-B', 1, 150_000, 'RUB']]);
+        $returned = MarketplaceReturnFactBuilder::aMarketplaceReturnFact()
+            ->withCompanyId($company)->withMarketplaceAccountId($account)
+            ->withSourceRowId('PRICE-RETURN')->withPostingNumber('PRICE-A')
+            ->withOrderNumber('PRICE-A')->withMarketplaceSku('MONEY')
+            ->withReturnType('ClientReturn')->withReturnReasonName('Вернули одну штуку')
+            ->withQuantity(1)->build();
+        /** @var MarketplaceReturnFactRepository $returns */
+        $returns = self::getContainer()->get(MarketplaceReturnFactRepository::class);
+        $returns->upsertAll([$returned]);
+
+        $day = $this->pricedDay($company, $account, 'RUB');
+        self::assertSame(3, $day->observedNetSalesQuantity);
+        self::assertNotNull($day->observedRevenue);
+        self::assertSame(350_000, $day->observedRevenue->minorAmount());
+        self::assertSame('RUB', $day->observedRevenue->currency());
+
+        $returns->upsertAll([$returned]);
+        self::assertSame(350_000, $this->pricedDay($company, $account, 'RUB')->observedRevenue?->minorAmount());
+    }
+
+    #[DataProvider('unavailableValuations')]
+    public function testKeepsQuantitiesWhenMixedCurrenciesCannotBeValued(?string $currency): void
+    {
+        self::bootKernel();
+        $company = Uuid::v7();
+        $account = Uuid::v7();
+        $this->seedPricedSales($company, $account, [['RUB-SALE', 1, 100_000, 'RUB'], ['USD-SALE', 1, 100_000, 'USD']]);
+
+        $day = $this->pricedDay($company, $account, $currency);
+        self::assertSame(2, $day->rawOrderedQuantity);
+        self::assertSame(2, $day->observedNetSalesQuantity);
+        self::assertNull($day->observedRevenue);
+    }
+
+    /** @return iterable<string, array{?string}> */
+    public static function unavailableValuations(): iterable
+    {
+        yield 'no requested currency' => [null];
+        yield 'RUB does not include USD' => ['RUB'];
+        yield 'USD does not include RUB' => ['USD'];
+    }
+
+    /** @param list<array{string, int, int, string}> $rows */
+    private function seedPricedSales(Uuid $company, Uuid $account, array $rows): void
+    {
+        $facts = [];
+        $observations = [];
+        foreach ($rows as [$posting, $quantity, $minor, $currency]) {
+            $facts[] = SalesFactBuilder::aSalesFact()
+                ->withCompanyId($company)->withMarketplaceAccountId($account)
+                ->withMarketplaceSku('MONEY')->withBusinessDate(new \DateTimeImmutable('2026-08-01'))
+                ->withPostingNumber($posting)->withOrderNumber($posting)->withSourceRowId($posting.'|MONEY')
+                ->withStatus('delivered')->withQuantity($quantity)->withAmount(Money::ofMinor($minor, $currency))
+                ->withCommissionAmount(Money::ofMinor(0, $currency))->build();
+            $status = MarketplacePostingStatusBuilder::aMarketplacePostingStatus()
+                ->withCompanyId($company)->withMarketplaceAccountId($account)
+                ->withPostingNumber($posting)->withOrderNumber($posting);
+            $observations[] = $status->withStatus('delivering')
+                ->withObservedAt(new \DateTimeImmutable('2026-08-01 10:00:00'))->withRawDocumentId(Uuid::v7())->build();
+            $observations[] = $status->withStatus('delivered')
+                ->withObservedAt(new \DateTimeImmutable('2026-08-02 10:00:00'))->withRawDocumentId(Uuid::v7())->build();
+        }
+        /** @var SalesFactRepository $sales */
+        $sales = self::getContainer()->get(SalesFactRepository::class);
+        $sales->upsertAll($facts);
+        /** @var MarketplacePostingStatusRepository $statuses */
+        $statuses = self::getContainer()->get(MarketplacePostingStatusRepository::class);
+        $statuses->recordChanged($company->toRfc4122(), $observations);
+    }
+
+    private function pricedDay(Uuid $company, Uuid $account, ?string $currency): SalesCohortMetricsRow
+    {
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $date = new \DateTimeImmutable('2026-08-01');
+        $rows = (new SalesCohortMetricsQuery($connection))
+            ->build($company->toRfc4122(), $account->toRfc4122(), ['MONEY'], $date, $date, $currency)
+            ->executeQuery()->fetchAllAssociative();
+        self::assertCount(1, $rows);
+        $sku = SalesCohortMetricsQuery::mapRow($rows[0]);
+        self::assertCount(1, $sku->days);
+
+        return $sku->days[0];
     }
 
     /** @param list<string> $skus */

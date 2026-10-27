@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Query\SalesCohort;
 
+use App\Shared\Domain\ValueObject\Money;
+
 /** Количества одной SKU за бизнес-день заказа; исходные факты не изменяются. */
 final readonly class SalesCohortMetricsRow
 {
@@ -15,6 +17,8 @@ final readonly class SalesCohortMetricsRow
         public int $effectiveOrderedQuantity,
         /** D уже исключает количество клиентских возвратов R. */
         public int $observedNetSalesQuantity,
+        /** Оценка оставшихся продаж по исходным ценам, до расходов. */
+        public ?Money $observedRevenue,
     ) {
     }
 }
