@@ -804,6 +804,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/sales-plans/{planId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_sales_planning_plan_approve"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/sales-plans/{planId}/days": {
         parameters: {
             query?: never;
@@ -861,6 +877,22 @@ export interface paths {
         };
         get: operations["get_sales_planning_catalog_skus"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/sales-plans/{planId}/metric": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_sales_planning_plan_metric"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1752,9 +1784,27 @@ export interface components {
             items: string[];
             nextCursor?: string | null;
         };
+        SalesPlanApprovedResponse: {
+            id: string;
+            version: number;
+            /** @default approved */
+            status: string;
+        };
+        ClaimedSalesPlanDay: {
+            marketplaceSku: string;
+            date: string;
+        };
+        SalesPlanDayConflictResponse: {
+            status: number;
+            code: string;
+            message: string;
+            conflicts: components["schemas"]["ClaimedSalesPlanDay"][];
+        };
         SalesPlanVersionResponse: {
             version: number;
         };
+        /** @enum {string} */
+        SalesPlanMetric: "retained_sales" | "orders_excluding_pre_handover_cancellations";
         SalesPlanResponse: {
             id: string;
             marketplaceAccountId: string;
@@ -1771,6 +1821,7 @@ export interface components {
             skuCount: number;
             totalQuantity: number;
             revenueMinor: number;
+            metric?: components["schemas"]["SalesPlanMetric"] | null;
         };
         SalesPlanListResponse: {
             items: components["schemas"]["SalesPlanResponse"][];
@@ -1788,6 +1839,11 @@ export interface components {
         CatalogSkuListResponse: {
             items: components["schemas"]["CatalogSkuResponse"][];
             nextCursor?: string | null;
+        };
+        SalesPlanMetricResponse: {
+            id: string;
+            version: number;
+            metric: components["schemas"]["SalesPlanMetric"];
         };
         UnknownSkusResponse: {
             status: number;
@@ -4884,6 +4940,83 @@ export interface operations {
             };
         };
     };
+    post_sales_planning_plan_approve: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    version: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Первое утверждение плана */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanApprovedResponse"];
+                };
+            };
+            /** @description Нет членства в компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description План не найден у компании */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Конфликт версии, статуса либо занятости дней */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"] | components["schemas"]["SalesPlanDayConflictResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Пустой план, отсутствие метрики или неверное тело запроса */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     put_sales_planning_plan_day_change: {
         parameters: {
             query?: never;
@@ -5197,6 +5330,85 @@ export interface operations {
                 };
             };
             /** @description Некорректные параметры */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    put_sales_planning_plan_metric: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    version: number;
+                    /** @enum {string} */
+                    metric: "retained_sales" | "orders_excluding_pre_handover_cancellations";
+                };
+            };
+        };
+        responses: {
+            /** @description Метрика выбрана явно */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanMetricResponse"];
+                };
+            };
+            /** @description Нет членства в компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description План не найден у компании */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Конфликт версии, статуса либо неизменяемой метрики линии */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверное тело запроса или метрика */
             422: {
                 headers: {
                     [name: string]: unknown;

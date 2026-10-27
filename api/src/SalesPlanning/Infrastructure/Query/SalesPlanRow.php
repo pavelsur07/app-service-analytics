@@ -25,6 +25,7 @@ final readonly class SalesPlanRow
         public int $skuCount,
         public int $totalQuantity,
         public int $revenueMinor,
+        public ?string $metric,
     ) {
     }
 }

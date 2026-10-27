@@ -277,6 +277,15 @@ Inventory обсуждались, но решения по ним не прин�
 и `SalesPlanning → Identity → Shared`; грант на Facade выдаётся
 в `deptrac.php` вместе с первым вызовом, а не вперёд.
 
+Выбор смысла цели — `SalesPlanMetric` и `SetSalesPlanMetricAction`
+(`PUT /sales-plans/{planId}/metric`): legacy-черновики сохраняют NULL,
+изменение защищено версией и аудитом. Первое утверждение —
+`ApproveSalesPlanAction` (`POST /sales-plans/{planId}/approve`), с автором,
+временем и обязательной выбранной метрикой. `SalesPlanDayClaim` описывает
+схему занятых SKU × дней; DBAL INSERT SELECT с уникальным ключом занимает
+дни в одной транзакции с ORM-шапкой и аудитом. Копирование новых версий
+и отмена относятся к следующим задачам жизненного цикла.
+
 У `IngestionFacade` два потребителя: экран СПП (`listingSnapshotsAt`,
 ADR-016) и планирование продаж — поиск по каталогу подключения
 и проверка набора SKU одним запросом (ADR-040 п. 4).

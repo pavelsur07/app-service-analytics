@@ -17,11 +17,13 @@ use Symfony\Component\Uid\Uuid;
  */
 final class SalesPlanBuilder
 {
+    private ?SalesPlan $revisionSource = null;
     private Uuid $companyId;
     private Uuid $marketplaceAccountId;
     private string $name = 'План на июль';
     private \DateTimeImmutable $dateFrom;
     private \DateTimeImmutable $dateTo;
+    private ?\App\SalesPlanning\Domain\SalesPlanMetric $metric = null;
     private string $currency = 'RUB';
     private Uuid $createdByUserId;
     private \DateTimeImmutable $createdAt;
@@ -39,6 +41,14 @@ final class SalesPlanBuilder
     public static function aSalesPlan(): self
     {
         return new self();
+    }
+
+    public static function revisionOf(SalesPlan $source): self
+    {
+        $builder = new self();
+        $builder->revisionSource = $source;
+
+        return $builder;
     }
 
     public function withCompanyId(Uuid $companyId): self
@@ -98,18 +108,35 @@ final class SalesPlanBuilder
         return $clone;
     }
 
+    public function withMetric(\App\SalesPlanning\Domain\SalesPlanMetric $metric): self
+    {
+        $clone = clone $this;
+        $clone->metric = $metric;
+
+        return $clone;
+    }
+
     public function build(): SalesPlan
     {
-        return SalesPlan::draft(
-            $this->companyId,
-            $this->marketplaceAccountId,
-            $this->name,
-            $this->dateFrom,
-            $this->dateTo,
-            $this->currency,
-            $this->createdByUserId,
-            $this->createdAt,
-        );
+        if (null !== $this->revisionSource) {
+            $plan = $this->revisionSource->newRevision($this->createdByUserId, $this->createdAt);
+        } else {
+            $plan = SalesPlan::draft(
+                $this->companyId,
+                $this->marketplaceAccountId,
+                $this->name,
+                $this->dateFrom,
+                $this->dateTo,
+                $this->currency,
+                $this->createdByUserId,
+                $this->createdAt,
+            );
+        }
+        if (null !== $this->metric) {
+            $plan->selectMetric($this->metric, $this->createdAt);
+        }
+
+        return $plan;
     }
 
     /**

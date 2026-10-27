@@ -304,3 +304,71 @@ lint/stan/deptrac/structure-check успешны. Оба Codex CLI проход�
 замечаний 0/0, уникальных новых принятых 0/0.
 Ответы: var/review/runs/20261027T131205.977709Z-47762626728f-codex-2fcbsott/review.json;
 var/review/runs/20261027T131344.949687Z-47762626728f-defects-u5w0zcby/review.json.
+
+## A14. Наблюдаемые нетто-продажи
+
+Статус: выполнено. Подробный план/чек-лист — sales-planning-tasks/A14.md.
+Добавлена сумма D в SQL/readonly Row, без повторного вычитания R.
+RED отсутствующего показателя подтверждён; GREEN615/5085 и backend-гейты OK.
+Первые правки сигнатуры provider исправлены до фиксации RED поведения.
+Оба Codex CLI прохода complete, новых замечаний 0/0, принятых 0/0.
+Ответы: var/review/runs/20261027T132435.226940Z-26fcda50121a-codex-hk2pjwu_/review.json;
+var/review/runs/20261027T132638.700173Z-26fcda50121a-defects-stvbe65u/review.json.
+
+## Проверка pending миграции A05/A07 с пустой базы
+
+Локальность Compose подтверждена: проект app-service-analytics, postgres/s3
+имеют локальные named volumes, external volumes отсутствуют. Первый запуск
+остановился до миграций: новый php-cli имел UID1000, а private .env.local
+принадлежит UID1001. Исправлена ignored локальная .env через существующие
+CONTAINER_UID/GID=1001; права секретного файла не ослаблялись, содержимое не выводилось.
+Второй make db-rebuild-check TEST_WORKERS=2 — OK полностью: dev/test миграции,
+schema validate, PHP unit/integration/functional, Go migrate и race tests
+(coverage internal87.8%). Лог var/sales-planning-db-rebuild-owner.log.
+К production/живым кабинетам не обращались. Дальнейшая code-проверка A05
+добавляет только указатель baselinePlanId в аудит и assertion без новой схемы.
+
+A14 SHA256 пакета: 26fcda50121ab708349c4372b7d7362e7ae0e0ac1f366e53e7655d6b7fdb3446.
+
+## A15. Денежная оценка состоявшихся продаж
+
+Статус: выполнено. План/чек-лист — sales-planning-tasks/A15.md.
+SQL суммирует D × индивидуальная цена в numeric/bigint внутри Ingestion,
+связывая source_row_id с company/account/SKU/date. Row возвращает nullable Money.
+Частичный/повторный R не вычитается второй раз; отсутствие выбранной валюты
+или смесь валют D даёт отсутствие оценки при сохранении количеств.
+RED/GREEN: корректный RED отсутствующего показателя → integration623/5136;
+backend-гейты успешны. Исправление валюты комиссии synthetic USD fixture
+записано отдельно и не объявлялось отсутствующим production-поведением.
+Оба независимых Codex CLI прохода complete, новых/принятых замечаний 0/0.
+Ответы: var/review/runs/20261027T135321.692464Z-a76708fd8afb-codex-kq_oc2og/review.json;
+var/review/runs/20261027T135510.931881Z-a76708fd8afb-defects-d4g9jyzg/review.json.
+
+## A05/A07. Явная метрика и первое утверждение
+
+A07 выполнено; A05 foundation готов, end-to-end legacy revision остаётся A08.
+Nullable metric без backfill, команда выбора с optimistic version и аудитом,
+trusted actor утверждения, атомарное занятие company/account/SKU/day,
+запрет пустого плана и rollback конфликтов. API/OpenAPI/TS обновлены.
+Pure Domain factory A08 создаёт только новую шапку draft, копирование строк
+и replacement пока не реализованы. Чек-листы: sales-planning-tasks/A05.md,A07.md,A08.md.
+
+Разбор Codex CLI: первый conformity-проход — 2 уникальных принятых замечания:
+companyId первым параметром approve с guard до записи; Builder для claims Entity.
+Первый defects — 0. Второй conformity — ещё 1 уникальное принятое замечание:
+Reflection fixture нарушала Builder rule; заменена на настоящую newRevision
+и Builder, raw UPDATE version_number также удалён. Второй defects — 0.
+Третьи conformity/defects complete, новых замечаний 0/0, отклонённых 0.
+Все 3 принятых устранены; Claude пропущен по действующему указанию владельца.
+
+Итоговые проверки: unit486/3539, integration624/5140, functional356/2619;
+lint,stan,deptrac,structure-check,API/types и seller typecheck успешны.
+Схема ранее прошла полный db-rebuild-check, после него менялся только код.
+Логи /tmp/a05-review2-green2.log,/tmp/a05-review2-final.log.
+SHA256 финального пакета 5b3ab6ed60bc2ea98831e0220e26a947e5ee82122ae97049f6d6d3ea6786ec72.
+Ответы var/review/runs/20261027T140332.183928Z-5b3ab6ed60bc-codex-o4z4bkpu/review.json;
+var/review/runs/20261027T140434.861682Z-5b3ab6ed60bc-defects-lxa0qb7c/review.json.
+Фактическая модель обоих прогонов gpt-6.1-sol (stderr), отдельные CLI sessions.
+
+A16: подробный план и checklist созданы до тестов в sales-planning-tasks/A16.md;
+учёт покрытия заказов не утверждает полноту возвратов.

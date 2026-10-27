@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\SalesPlanning\Infrastructure\Persistence;
 
+use App\SalesPlanning\Domain\ClaimedSalesPlanDay;
+use App\SalesPlanning\Domain\EmptySalesPlan;
 use App\SalesPlanning\Domain\PlannedDay;
 use App\SalesPlanning\Domain\SalesPlan;
+use App\SalesPlanning\Domain\SalesPlanApprovalConflict;
 use App\SalesPlanning\Domain\SalesPlanLine;
 use App\SalesPlanning\Domain\SalesPlanRepository;
 use Doctrine\DBAL\ArrayParameterType;
@@ -37,6 +40,60 @@ final readonly class DoctrineSalesPlanRepository implements SalesPlanRepository
             $this->entityManager->persist($plan);
             $this->entityManager->flush();
             $this->persistInBatches($lines);
+        });
+    }
+
+    public function saveMetadata(SalesPlan $plan): void
+    {
+        $this->entityManager->wrapInTransaction(function (): void {
+            $this->entityManager->flush();
+        });
+    }
+
+    public function approve(string $companyId, SalesPlan $plan): void
+    {
+        if (!$plan->companyId()->equals(Uuid::fromString($companyId))) {
+            throw new \InvalidArgumentException('План принадлежит другой компании.');
+        }
+
+        $this->entityManager->wrapInTransaction(function () use ($companyId, $plan): void {
+            // UPDATE шапки сериализует утверждение с любыми правками строк.
+            // Версия и аудит сбрасываются до чтения/занятия дней.
+            $this->entityManager->flush();
+            $connection = $this->entityManager->getConnection();
+            $parameters = [
+                'companyId' => $companyId,
+                'planId' => $plan->id()->toRfc4122(),
+                'accountId' => $plan->marketplaceAccountId()->toRfc4122(),
+            ];
+            $sourceCount = $connection->fetchOne(
+                'SELECT COUNT(*) FROM sales_plan_line WHERE company_id = :companyId AND sales_plan_id = :planId',
+                ['companyId' => $parameters['companyId'], 'planId' => $parameters['planId']],
+            );
+            \assert(\is_int($sourceCount));
+            if (0 === $sourceCount) {
+                throw new EmptySalesPlan('Пустой план нельзя утвердить.');
+            }
+            $inserted = $connection->executeStatement(
+                'INSERT INTO sales_plan_day_claim (company_id, marketplace_account_id, marketplace_sku, plan_date, sales_plan_id)
+                 SELECT company_id, :accountId, marketplace_sku, plan_date, sales_plan_id
+                   FROM sales_plan_line WHERE company_id = :companyId AND sales_plan_id = :planId
+                  ORDER BY marketplace_sku, plan_date
+                 ON CONFLICT (company_id, marketplace_account_id, marketplace_sku, plan_date) DO NOTHING',
+                $parameters,
+            );
+            if ($inserted !== $sourceCount) {
+                /** @var list<array{marketplace_sku: string, plan_date: string}> $rows */
+                $rows = $connection->fetchAllAssociative(
+                    'SELECT l.marketplace_sku, l.plan_date FROM sales_plan_line l
+                     JOIN sales_plan_day_claim c ON c.company_id = l.company_id
+                      AND c.marketplace_account_id = :accountId AND c.marketplace_sku = l.marketplace_sku AND c.plan_date = l.plan_date
+                     WHERE l.company_id = :companyId AND l.sales_plan_id = :planId AND c.sales_plan_id <> :planId
+                     ORDER BY l.marketplace_sku, l.plan_date LIMIT 200',
+                    $parameters,
+                );
+                throw new SalesPlanApprovalConflict(array_map(static fn (array $row): ClaimedSalesPlanDay => new ClaimedSalesPlanDay($row['marketplace_sku'], $row['plan_date']), $rows));
+            }
         });
     }
 

@@ -28,6 +28,7 @@ final readonly class SalesPlanResponse
         public int $skuCount,
         public int $totalQuantity,
         public int $revenueMinor,
+        public ?\App\SalesPlanning\Domain\SalesPlanMetric $metric,
     ) {
     }
 
@@ -48,6 +49,7 @@ final readonly class SalesPlanResponse
             skuCount: $row->skuCount,
             totalQuantity: $row->totalQuantity,
             revenueMinor: $row->revenueMinor,
+            metric: null === $row->metric ? null : \App\SalesPlanning\Domain\SalesPlanMetric::from($row->metric),
         );
     }
 }

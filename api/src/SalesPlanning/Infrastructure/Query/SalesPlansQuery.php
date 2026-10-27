@@ -78,6 +78,7 @@ final readonly class SalesPlansQuery
             skuCount: self::int($row, 'sku_count'),
             totalQuantity: self::int($row, 'total_quantity'),
             revenueMinor: self::int($row, 'revenue_minor'),
+            metric: null === $row['metric'] ? null : self::string($row, 'metric'),
         );
     }
 
@@ -92,6 +93,7 @@ final readonly class SalesPlansQuery
                 'p.date_to',
                 'p.currency',
                 'p.status',
+                'p.metric',
                 'p.lineage_id',
                 'p.version_number',
                 'p.version',
