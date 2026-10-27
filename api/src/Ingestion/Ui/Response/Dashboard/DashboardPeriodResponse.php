@@ -29,6 +29,7 @@ final readonly class DashboardPeriodResponse
         public DashboardMetricsResponse $metrics,
         /** Каждый день периода по возрастанию, без пропусков. */
         public array $days,
+        public DashboardProfitDetailsResponse $profitDetails,
     ) {
     }
 
@@ -41,6 +42,7 @@ final readonly class DashboardPeriodResponse
             $period->daysWithoutAccruals,
             DashboardMetricsResponse::from($period->metrics),
             array_map(DashboardDayResponse::from(...), $period->days),
+            DashboardProfitDetailsResponse::from($period->profitDetails),
         );
     }
 }

@@ -34,6 +34,8 @@ final readonly class DashboardMetricsResponse
         public ?int $buyoutQuantity,
         public int $buyoutOrderedQuantity,
         public ?int $buyoutResolutionRateBps,
+        /** Прибыль по начислениям; null при неполной загрузке или неизвестной цене. */
+        public ?int $profitMinor,
     ) {
     }
 
@@ -59,6 +61,7 @@ final readonly class DashboardMetricsResponse
             $metrics->buyoutQuantity,
             $metrics->buyoutOrderedQuantity,
             $metrics->buyoutResolutionRateBps,
+            $metrics->profitMinor,
         );
     }
 }
