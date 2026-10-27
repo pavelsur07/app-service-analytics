@@ -107,6 +107,7 @@ final class SalesCohortMetricsQueryTest extends KernelTestCase
         bool $deliveredSibling,
         array $expectedAllocations,
         int $expectedCancelled,
+        int $expectedRetained,
     ): void {
         self::bootKernel();
         $companyId = Uuid::v7();
@@ -177,49 +178,50 @@ final class SalesCohortMetricsQueryTest extends KernelTestCase
         self::assertSame(3, $day->rawOrderedQuantity);
         self::assertSame($expectedCancelled, $day->preHandoverCancelledQuantity);
         self::assertSame(3 - $expectedCancelled, $day->effectiveOrderedQuantity);
+        self::assertSame($expectedRetained, $day->observedNetSalesQuantity);
         self::assertSame($day->rawOrderedQuantity, $day->effectiveOrderedQuantity + $day->preHandoverCancelledQuantity);
     }
 
     /**
-     * @return iterable<string, array{string, list<string>, list<array{string, string, int}>, bool, list<array{outcome: ?string, quantity: int}>, int}>
+     * @return iterable<string, array{string, list<string>, list<array{string, string, int}>, bool, list<array{outcome: ?string, quantity: int}>, int, int}>
      */
     public static function orderOutcomes(): iterable
     {
         yield 'active awaiting packaging' => [
             'awaiting_packaging', ['awaiting_packaging'], [], false,
-            [['outcome' => null, 'quantity' => 3]], 0,
+            [['outcome' => null, 'quantity' => 3]], 0, 0,
         ];
         yield 'active in delivery' => [
             'delivering', ['awaiting_packaging', 'delivering'], [], false,
-            [['outcome' => null, 'quantity' => 3]], 0,
+            [['outcome' => null, 'quantity' => 3]], 0, 0,
         ];
         yield 'delivered D' => [
             'delivered', ['delivering', 'delivered'], [], false,
-            [['outcome' => 'D', 'quantity' => 3]], 0,
+            [['outcome' => 'D', 'quantity' => 3]], 0, 3,
         ];
         yield 'post handover cancellation T2' => [
             'cancelled', ['delivering', 'cancelled'], [], false,
-            [['outcome' => 'T2', 'quantity' => 3]], 0,
+            [['outcome' => 'T2', 'quantity' => 3]], 0, 0,
         ];
         yield 'partial pickup refusal T2' => [
             'cancelled', ['cancelled'], [['Cancellation', 'Покупатель не забрал заказ', 1]], false,
-            [['outcome' => 'T2', 'quantity' => 1], ['outcome' => null, 'quantity' => 2]], 0,
+            [['outcome' => 'T2', 'quantity' => 1], ['outcome' => null, 'quantity' => 2]], 0, 0,
         ];
         yield 'partial refusal P with delivered sibling' => [
             'cancelled', ['cancelled'], [['Cancellation', 'Покупатель отказался при вручении: товар не подошел', 1]], true,
-            [['outcome' => 'P', 'quantity' => 1], ['outcome' => null, 'quantity' => 2]], 0,
+            [['outcome' => 'P', 'quantity' => 1], ['outcome' => null, 'quantity' => 2]], 0, 0,
         ];
         yield 'partial client return R preserves delivered remainder' => [
             'delivered', ['delivering', 'delivered'], [['ClientReturn', 'Возврат одной штуки', 1]], false,
-            [['outcome' => 'D', 'quantity' => 2], ['outcome' => 'R', 'quantity' => 1]], 0,
+            [['outcome' => 'D', 'quantity' => 2], ['outcome' => 'R', 'quantity' => 1]], 0, 2,
         ];
         yield 'terminal unknown without previous history despite known cancellation reason' => [
             'cancelled', ['cancelled'], [['Cancellation', 'Покупатель отменил заказ', 3]], false,
-            [['outcome' => null, 'quantity' => 3]], 0,
+            [['outcome' => null, 'quantity' => 3]], 0, 0,
         ];
         yield 'partial confirmed T1 subtracts only allocated unit' => [
             'cancelled', ['awaiting_packaging', 'cancelled'], [['Cancellation', 'Покупатель отменил заказ', 1]], false,
-            [['outcome' => 'T1', 'quantity' => 1], ['outcome' => null, 'quantity' => 2]], 1,
+            [['outcome' => 'T1', 'quantity' => 1], ['outcome' => null, 'quantity' => 2]], 1, 0,
         ];
     }
 

@@ -13,6 +13,8 @@ final readonly class SalesCohortMetricsRow
         public int $rawOrderedQuantity,
         public int $preHandoverCancelledQuantity,
         public int $effectiveOrderedQuantity,
+        /** D уже исключает количество клиентских возвратов R. */
+        public int $observedNetSalesQuantity,
     ) {
     }
 }

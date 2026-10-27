@@ -54,6 +54,7 @@ final readonly class SalesCohortMetricsQuery
                 'SUM(quantity)::bigint AS raw_ordered_quantity',
                 "COALESCE(SUM(quantity) FILTER (WHERE outcome = 'T1'), 0)::bigint AS pre_handover_cancelled_quantity",
                 "COALESCE(SUM(quantity) FILTER (WHERE outcome IS DISTINCT FROM 'T1'), 0)::bigint AS effective_ordered_quantity",
+                "COALESCE(SUM(quantity) FILTER (WHERE outcome = 'D'), 0)::bigint AS observed_net_sales_quantity",
             )
             ->from('buyout_outcome')
             ->where('company_id = :companyId')
@@ -73,7 +74,8 @@ final readonly class SalesCohortMetricsQuery
                         'cohort_date', to_char(business_date, 'YYYY-MM-DD'),
                         'raw_ordered_quantity', raw_ordered_quantity,
                         'pre_handover_cancelled_quantity', pre_handover_cancelled_quantity,
-                        'effective_ordered_quantity', effective_ordered_quantity
+                        'effective_ordered_quantity', effective_ordered_quantity,
+                        'observed_net_sales_quantity', observed_net_sales_quantity
                     ) ORDER BY business_date)::text AS days
                     SQL,
             )
@@ -118,10 +120,11 @@ final readonly class SalesCohortMetricsQuery
         $raw = $row['raw_ordered_quantity'] ?? null;
         $cancelled = $row['pre_handover_cancelled_quantity'] ?? null;
         $effective = $row['effective_ordered_quantity'] ?? null;
-        if (!\is_string($date) || !\is_int($raw) || !\is_int($cancelled) || !\is_int($effective)) {
+        $observed = $row['observed_net_sales_quantity'] ?? null;
+        if (!\is_string($date) || !\is_int($raw) || !\is_int($cancelled) || !\is_int($effective) || !\is_int($observed)) {
             throw new \UnexpectedValueException('Invalid sales cohort metrics row.');
         }
 
-        return new SalesCohortMetricsRow($sku, $date, $raw, $cancelled, $effective);
+        return new SalesCohortMetricsRow($sku, $date, $raw, $cancelled, $effective, $observed);
     }
 }
