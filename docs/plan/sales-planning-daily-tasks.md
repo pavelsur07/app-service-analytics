@@ -537,3 +537,37 @@ ADR048 принят после заключительных проходов. Л
 
 Итого завершено32/68: A01–A29 и A41–A43. A30–A40 seller в разработке;
 A44–A48 подробная подготовка опубликована до кода, не выполнены.
+
+
+## Итог source-пакета A30–A40: 2026-10-27
+
+UI/lifecycle/typed serverstate реализованы: оригинальная цель против дневного
+и накопленного факта; состав заказов, отдельные sales/revenue/salesSpeed,
+качество/maturity/свежесть, текущий выкуп отдельно от недоступного net forecast.
+Metric firstdraft явно меняется до утверждения, inherited revision readonly.
+URL хранит applied from/to/group/mode/page/view, cursor связан с trusted header;
+recovery повторяет comparison, причины409 различаются. Dirty формы сохранены.
+
+Final make front-typecheck front-lint front-knip front-test front-build APP=seller
+exit0,101files/475tests (в том числе4 отдельных rootCalendar tests вне пакета).
+Log var/sales-planning-a30-a40-fix1-front-gates.log; build с configured публичным
+SmartCaptcha key, guard не менялся, значения не печатались. SSR/typedMSW
+используют настоящие компоненты/клиент/QueryClient; Playwright пока не запускался.
+Browser acceptance URL/retry/lifecycle/409/company/keyboard закреплено в A46/A47.
+A35 остаётся открытой до keyboard/visual proof; source готовность позволяет
+продолжать A36–45 без ожидания полного end-to-end gate, не снимая его перед merge.
+
+Первый CLI SHA f48f587ef51ca7402f6b5e7d1a72863b828ae4f4feb7b0681d852c2e832e7134:
+conformity1 принято (URL), defects2 принято (retry/различение409), отклонённых0.
+Parent firstdraftchooser1 исправлен до CLI, не является дополнительным CLI finding.
+Все3 CLI замечания исправлены RED/GREEN и повторены все5seller gates.
+Итог SHA 1c323a23ae37c61a6db264a0fe5d5e5cd116503bf0676ae12723f43a05ef46b8:
+- var/review/runs/20261027T170741.969304Z-1c323a23ae37-codex-a4c0h9pu/review.json
+- var/review/runs/20261027T170741.970115Z-1c323a23ae37-defects-tdho5pvp/review.json
+Оба complete0/0, model gpt-6.1-sol, separateCLI sessions. Новых уникальных
+принятых дополнительных проходов0/0, rule_gaps/nitpicks0; Claude waived
+по явному решению владельца. var/review локален, выводы/SHA сохранены здесь.
+Production не менялась; полный CI/замеры/браузер/выпуск остаются отдельными gates.
+
+Итого42/68 complete; A35 source-ready, ждёт реального keyboard/visual proof A46.
+A44–45 data foundation ready, UI integration следующая.

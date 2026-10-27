@@ -32,6 +32,7 @@ function query(params: Record<string, string | null>): string {
 export function useSalesPlans(companyId: string, cursor: string | null) {
   return useQuery({
     queryKey: salesPlansQueryKey(companyId, cursor),
+    enabled: companyId !== '',
     queryFn: () =>
       createCompanyApiClient(companyId).get<SalesPlanListResponse>(
         `/sales-plans${query({ cursor })}`,
@@ -47,6 +48,7 @@ export function useSalesPlan(
 ) {
   return useQuery({
     queryKey: salesPlanQueryKey(companyId, planId, groupBy, cursor),
+    enabled: companyId !== '' && planId !== '',
     queryFn: () =>
       createCompanyApiClient(companyId).get<SalesPlanDetailResponse>(
         `/sales-plans/${encodeURIComponent(planId)}${query({ groupBy, cursor })}`,
@@ -61,6 +63,7 @@ export function useCatalogSkus(
 ) {
   return useQuery({
     queryKey: catalogSkusQueryKey(companyId, marketplaceAccountId, search),
+    enabled: companyId !== '' && marketplaceAccountId !== '',
     queryFn: () =>
       createCompanyApiClient(companyId).get<CatalogSkuListResponse>(
         `/sales-plans/catalog-skus${query({ marketplaceAccountId, search, limit: '20' })}`,

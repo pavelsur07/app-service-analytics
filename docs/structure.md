@@ -613,6 +613,12 @@ apps/seller/
 Экран процента выкупа расположен в
 `apps/seller/src/features/buyout-rate/`: `model` содержит API hooks, `lib` —
 форматирование и параметры периода, `ui` — таблицу и раскрываемую daily-серию.
+Дневное планирование — `apps/seller/src/features/sales-planning/`.
+`SalesPlanPage` сохраняет редактор текущей версии и показывает lifecycle и
+сравнение с исходной целью; `PerformanceGrid` выводит готовые period/cumulative
+компоненты без пересчёта денег и ставок. `model` содержит company-scoped
+performance/lifecycle Query и mutation; `lib` — date-only MSK окно и cursor
+scope, включая version шапки. Исторические закрытые планы остаются readonly.
 Экран «Прогноз и факт по SKU» расположен в
 `apps/seller/src/features/sku-forecast-fact/`: SKU и месяц хранятся в URL,
 `model` запрашивает поиск и дневной отчёт, `ui` показывает календарные дни.
