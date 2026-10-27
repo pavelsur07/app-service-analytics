@@ -571,3 +571,42 @@ Production не менялась; полный CI/замеры/браузер/в
 
 Итого42/68 complete; A35 source-ready, ждёт реального keyboard/visual proof A46.
 A44–45 data foundation ready, UI integration следующая.
+
+
+## Приёмка A44–A45 и browser proof A35: 2026-10-27
+
+Полный bounded snapshot≤500 через200страницы, derivedreadonlyboundaries,
+manual3kind, редактирование/fullsave/cancel, capturedversion+dirty409,
+user/company/plan scope и companyonlyinvalidation реализованы. Native feature-
+local DOM window>200 без новой зависимости/клиентскойпагинации; row64px,
+viewport384px, aria logicalrowcount/index и keyboardHome/End/Arrow/Page.
+Стабильная подписка существующего period/null TanStackQuery сохраняет metadata/
+Calendar instance при сменеSKUgroup/pending/error; serverstateне копируется
+в Reactstate. Новыйcaptureждётsuccess&&!fetch, existingdirtydraftне меняется.
+
+Frontendfinal make front-typecheck front-lint front-knip front-test front-build
+APP=seller exit0,105files488tests, logvar/sales-planning-a44-a45-readiness-gates.log.
+ПервыйCLI63cd5fbaacedfb7402fad62f0983129a40966b914d2d9c0660cf95b18b6a9dda:
+conformity1 принято(virtualization), defects1 принято(unmount), отклонённых0.
+Повторный67b187cf661fead417c27f514754936d5a383470befb8646457185b7b9950286
+оба0/0, дополнительныхуникальныхпринятых0/0. Parentactualbrowser отдельно
+нашёл1 readinessrace, подтверждёнheldGET RED и исправлен; это неCLI finding.
+ФинальныйSHA c7fcd8b056a39bd71325a1072af9a1071c2b36d33c7cd2923872c1430a367922:
+- var/review/runs/20261027T174452.837017Z-c7fcd8b056a3-codex-fimd_1_c/review.json
+- var/review/runs/20261027T174452.840523Z-c7fcd8b056a3-defects-_vv3cme0/review.json
+Оба complete0/0, gpt-6.1-sol, отдельныеCLIсессии; дополнительныхпринятых0/0,
+rule_gaps/nitpicks0. Claudewaivedпо решениювладельца; локальныеvarартефакты
+непостоянныйархив, выводы/SHAсохраненыэтимтекстом.
+
+НастоящийChromium focusedсценарий черезguardedlocalapp fixturefeed:
+var/sales-planning-a46-browser4.log, exit0,1passed11.1s. Доказаны goal9 после
+revisioncurrent19, rawimport D3→D2/R1 тойжекогорты, Money300→200р, URLreload/
+back/forward, realcalendar/day409 dirtyinputs, groupchangecalendardraftretention,
+performance transportfailure→realretry200 приsameheader; foreignplan404/cache.
+500events actualAPI→boundedDOM<200, End/Tabedit500/Tabdelete500→fullPUT499;
+31дневная performancegrid keyboardArrowRight actualscroll>0 и missingfactdash.
+A35keyboard/scrollproof теперьGREEN. Screenshot viewport просмотрен root:
+var/sales-planning-performance-browser.png. Полныйseller/admin/extensionE2E,
+reviewсамогоtestharness, SQLзамерыиобщийCI/выпускещёпредстоят. НеобъявлятьихGREEN.
+
+Итого45/68 complete: A01–A45. A46/A47 focusedbrowserGREEN, но testharness review/fullE2E pending.

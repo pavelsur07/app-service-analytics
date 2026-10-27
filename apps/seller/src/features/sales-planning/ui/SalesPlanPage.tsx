@@ -29,6 +29,7 @@ import {
 
 import { SalesPlanLifecycle } from './SalesPlanLifecycle'
 import { SalesPlanPerformance } from './SalesPlanPerformance'
+import { SalesPlanCalendar } from './SalesPlanCalendar'
 
 type SalesPlan = components['schemas']['SalesPlanResponse']
 type SalesPlanSku = components['schemas']['SalesPlanSkuResponse']
@@ -71,6 +72,9 @@ function SalesPlanScreen() {
   }
 
   const plan = useSalesPlan(companyId ?? '', planId ?? '', groupBy, cursor)
+  // Stable metadata subscription keeps the calendar mounted across SKU pages
+  // and failed header rereads; the trusted plan stays in TanStack Query.
+  const header = useSalesPlan(companyId ?? '', planId ?? '', 'period', null)
   const canCompare =
     plan.data !== undefined &&
     (plan.data.plan.status === 'approved' ||
@@ -82,10 +86,13 @@ function SalesPlanScreen() {
       'compare'
 
   useEffect(() => {
-    if (plan.error instanceof ApiError && plan.error.status === 403) {
+    if (
+      (plan.error instanceof ApiError && plan.error.status === 403) ||
+      (header.error instanceof ApiError && header.error.status === 403)
+    ) {
       void navigate('/companies', { replace: true })
     }
-  }, [plan.error, navigate])
+  }, [plan.error, header.error, navigate])
 
   if (companyId === undefined || planId === undefined) {
     return null
@@ -100,6 +107,20 @@ function SalesPlanScreen() {
         <ArrowLeft aria-hidden="true" size={16} />
         Все планы
       </Link>
+
+      {header.data !== undefined && (
+        <>
+          <PlanHeader plan={header.data.plan} />
+          <SalesPlanLifecycle
+            companyId={companyId}
+            plan={header.data.plan}
+            onRevision={(id) => {
+              void navigate(`/companies/${companyId}/sales-plans/${id}`)
+            }}
+          />
+          <SalesPlanCalendar companyId={companyId} plan={header.data.plan} />
+        </>
+      )}
 
       {plan.status === 'pending' && (
         <Card>
@@ -125,15 +146,6 @@ function SalesPlanScreen() {
 
       {plan.status === 'success' && (
         <>
-          <PlanHeader plan={plan.data.plan} />
-          <SalesPlanLifecycle
-            companyId={companyId}
-            plan={plan.data.plan}
-            onRevision={(id) => {
-              void navigate(`/companies/${companyId}/sales-plans/${id}`)
-            }}
-          />
-
           {canCompare ? (
             <div className="flex gap-2" role="group" aria-label="Раздел плана">
               <Button

@@ -619,6 +619,11 @@ apps/seller/
 компоненты без пересчёта денег и ставок. `model` содержит company-scoped
 performance/lifecycle Query и mutation; `lib` — date-only MSK окно и cursor
 scope, включая version шапки. Исторические закрытые планы остаются readonly.
+`SalesPlanCalendar` показывает readonly границы и редактируемые manual события.
+Calendar query дочитывает весь bounded snapshot (до500 через страницы200),
+локальный draft хранит captured version; перечитывание не подменяет его,
+409 блокирует blind retry. Явная отмена локальных правок принимает серверный
+набор; mutation инвалидирует только company prefix планирования.
 Экран «Прогноз и факт по SKU» расположен в
 `apps/seller/src/features/sku-forecast-fact/`: SKU и месяц хранятся в URL,
 `model` запрашивает поиск и дневной отчёт, `ui` показывает календарные дни.

@@ -1,7 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { createCompanyApiClient } from '../../../api/companyClient'
+import type { components } from '../../../api/schema'
+import { http, server } from '../../../../tests/msw/server'
+import { calendarQueryOptions } from '../model/useSalesPlanCalendar'
 import { salesPlanFixture } from '../../../../tests/fixtures/salesPlan'
 import { salesPlanQueryKey } from '../model/salesPlanningQueryKeys'
 import { SalesPlanPage } from './SalesPlanPage'
@@ -70,4 +74,65 @@ it('opens revision comparison when shared URL selects that view', () => {
     2,
   )
   expect(html).toContain('Сравнение с исходной целью сезона')
+})
+
+it('retains the calendar host when a trusted header reread fails', async () => {
+  vi.stubGlobal('location', new URL('http://localhost'))
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, retryOnMount: false } },
+  })
+  const key = salesPlanQueryKey('one', 'plan', 'period', null)
+  client.setQueryData(key, {
+    plan: salesPlanFixture,
+    groupBy: 'period',
+    skus: [],
+    nextCursor: null,
+  })
+  client.setQueryData(
+    calendarQueryOptions('one', 'plan', salesPlanFixture.version).queryKey,
+    {
+      planId: 'plan',
+      version: salesPlanFixture.version,
+      status: 'draft',
+      seasonStart: { kind: 'season_start', date: salesPlanFixture.dateFrom },
+      seasonEnd: { kind: 'season_end', date: salesPlanFixture.dateTo },
+      entries: [],
+    },
+  )
+  server.use(
+    http.get(
+      '/api/companies/{companyId}/sales-plans/{planId}',
+      ({ response }) =>
+        response(404).json({
+          status: 404,
+          code: 'temporarily_unavailable',
+          message: 'Перечитывание не удалось.',
+        }),
+    ),
+  )
+  await expect(
+    client.fetchQuery({
+      queryKey: key,
+      queryFn: () =>
+        createCompanyApiClient('one').get<
+          components['schemas']['SalesPlanDetailResponse']
+        >('/sales-plans/plan'),
+    }),
+  ).rejects.toThrow()
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={['/companies/one/sales-plans/plan']}>
+        <Routes>
+          <Route
+            path="/companies/:companyId/sales-plans/:planId"
+            element={<SalesPlanPage />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+  expect(html).toContain('Не удалось загрузить план')
+  expect(html).toContain('Календарь плана')
+  expect(html).toContain('Добавить событие')
+  client.clear()
 })
