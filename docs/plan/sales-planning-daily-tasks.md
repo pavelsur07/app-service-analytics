@@ -631,3 +631,24 @@ extension storage PASS; static/type/lint/knip/build/audit0/Go/API PASS.
 из A48 дополнительно. Claude пропущен по зафиксированному исключению владельца.
 Все реальные review.json paths/hash/session receipts в A46, локальные var
 артефакты постоянным архивом не являются. Итого47/68: A01–A47 готовы.
+
+## Приёмка A48: HTTP/SQL budget и минимальная оптимизация
+
+Отчёт: sales-planning-performance-measurements.md; подробный план, guards и
+receipts — sales-planning-tasks/A48.md. На неизменном dataset50SKU×184дня
+HTTP2029–2046ms RED→1711–1759ms PASS после удаления daily JSON roundtrip.
+Свежий seed с явным ANALYZE дал40/40 HTTP200/<2s, максимум1790.3ms.
+Все10 EXPLAIN cases имеют5 SELECT независимо от limit1/50; source scope,
+формулы, деньги/округление, обучение и hidden cumulative history сохранены.
+Нет новых индексов/DDL/API/deps. Dense join/temp sort остаётся указанным
+ограничением стенда; нагрузка production этим замером не обещается.
+
+53 scoped semantic tests и все проверки ci-local PASS. Test-only benchmark
+имеет exact local guards, write-ahead scope, одну bootstrap transaction,
+state0600, реальные SIGKILL/mismatch/cleanup proofs. Первый Codex pair принял1
+уникальное замечание company predicate helper, исправлено. Дополнительный
+pair5286ad9e3592 complete0/0, gpt-6.1-sol в разных sessions;0 новых принятых,
+0 отклонённых. Parent recovery finding устранён до первого CLI. Полные
+review.json receipts в A48; Claude пропущен по исключению владельца.
+Итого48/68: A01–A48 готовы. Общий локальный CI PASS; A49 ждёт публикацию,
+обязательный удалённый CI и сверку итогового diff. A50/B ещё не выполнены.

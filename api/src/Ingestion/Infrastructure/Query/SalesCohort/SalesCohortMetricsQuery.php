@@ -34,6 +34,67 @@ final readonly class SalesCohortMetricsQuery
         ?string $currency = null,
         ?\DateTimeImmutable $calculatedAt = null,
     ): QueryBuilder {
+        $daily = $this->dailyComponents($companyId, $marketplaceAccountId, $marketplaceSkus, $from, $to, $currency, $calculatedAt);
+        // Экранная строка — SKU, дни — её ограниченные колонки. Ни список
+        // SKU (≤50), ни вложенный ряд дней (≤184) не превышает лимит 200.
+        $projectedQuantity = BuyoutForecastQuery::projectedQuantitySql('projected_quantity', 'raw_ordered_quantity', 'unestimated_quantity');
+        $projectedRate = BuyoutForecastQuery::projectedRateSql('projected_quantity', 'projected_eligible_quantity', 'raw_ordered_quantity', 'unestimated_quantity');
+        $unestimatedRate = BuyoutForecastQuery::unestimatedRateSql('unestimated_quantity', 'raw_ordered_quantity');
+
+        $query = $this->connection->createQueryBuilder()
+            ->select(
+                'marketplace_sku',
+                <<<SQL
+                    jsonb_agg(jsonb_build_object(
+                        'cohort_date', to_char(business_date, 'YYYY-MM-DD'),
+                        'raw_ordered_quantity', raw_ordered_quantity,
+                        'pre_handover_cancelled_quantity', pre_handover_cancelled_quantity,
+                        'effective_ordered_quantity', effective_ordered_quantity,
+                        'observed_net_sales_quantity', observed_net_sales_quantity,
+                        'maturity_status', CASE WHEN mature THEN 'mature' ELSE 'preliminary' END,
+                        'in_flight_quantity', in_flight_quantity,
+                        'in_flight_rate_bps', ROUND(10000::numeric * in_flight_quantity / NULLIF(raw_ordered_quantity, 0))::int,
+                        'buyout_resolved_quantity', buyout_resolved_quantity,
+                        'known_buyout_rate_bps', ROUND(10000::numeric * observed_net_sales_quantity / NULLIF(buyout_resolved_quantity, 0))::int,
+                        'actual_buyout_rate_bps', CASE WHEN mature THEN ROUND(10000::numeric * observed_net_sales_quantity / NULLIF(buyout_resolved_quantity, 0))::int ELSE NULL END,
+                        'current_projected_buyout_quantity', {$projectedQuantity},
+                        'current_projected_buyout_rate_bps', {$projectedRate},
+                        'unestimated_quantity', unestimated_quantity,
+                        'unknown_outcome_quantity', unknown_outcome_quantity,
+                        'unestimated_rate_bps', {$unestimatedRate},
+                        'known_projected_buyout_quantity', projected_quantity::text,
+                        'known_projected_eligible_quantity', projected_eligible_quantity::text,
+                        'observed_revenue_minor', observed_revenue_minor,
+                        'valuation_currency', valuation_currency
+                    ) ORDER BY business_date)::text AS days
+                    SQL,
+            )
+            ->from('('.$daily->getSQL().')', 'daily')
+            ->groupBy('marketplace_sku')
+            ->orderBy('marketplace_sku', 'ASC')
+            ->setMaxResults(self::MAX_SKUS);
+        foreach ($daily->getParameters() as $name => $value) {
+            $query->setParameter($name, $value, $daily->getParameterType($name));
+        }
+
+        return $query;
+    }
+
+    /**
+     * @internal SQL component for bounded SKU/day series composition only;
+     *           screen reads use build(), never hydrate these daily rows
+     *
+     * @param list<string> $marketplaceSkus
+     */
+    public function dailyComponents(
+        string $companyId,
+        string $marketplaceAccountId,
+        array $marketplaceSkus,
+        \DateTimeImmutable $from,
+        \DateTimeImmutable $to,
+        ?string $currency = null,
+        ?\DateTimeImmutable $calculatedAt = null,
+    ): QueryBuilder {
         if ([] === $marketplaceSkus || \count($marketplaceSkus) > self::MAX_SKUS) {
             throw new \InvalidArgumentException('A cohort batch must contain between 1 and 50 SKUs.');
         }
@@ -176,42 +237,9 @@ final readonly class SalesCohortMetricsQuery
             );
         }
 
-        // Экранная строка — SKU, дни — её ограниченные колонки. Ни список
-        // SKU (≤50), ни вложенный ряд дней (≤184) не превышает лимит 200.
-        $projectedQuantity = BuyoutForecastQuery::projectedQuantitySql('projected_quantity', 'raw_ordered_quantity', 'unestimated_quantity');
-        $projectedRate = BuyoutForecastQuery::projectedRateSql('projected_quantity', 'projected_eligible_quantity', 'raw_ordered_quantity', 'unestimated_quantity');
-        $unestimatedRate = BuyoutForecastQuery::unestimatedRateSql('unestimated_quantity', 'raw_ordered_quantity');
         $calculatedAt ??= new \DateTimeImmutable();
 
-        return $this->connection->createQueryBuilder()
-            ->select(
-                'marketplace_sku',
-                <<<SQL
-                    jsonb_agg(jsonb_build_object(
-                        'cohort_date', to_char(business_date, 'YYYY-MM-DD'),
-                        'raw_ordered_quantity', raw_ordered_quantity,
-                        'pre_handover_cancelled_quantity', pre_handover_cancelled_quantity,
-                        'effective_ordered_quantity', effective_ordered_quantity,
-                        'observed_net_sales_quantity', observed_net_sales_quantity,
-                        'maturity_status', CASE WHEN mature THEN 'mature' ELSE 'preliminary' END,
-                        'in_flight_quantity', in_flight_quantity,
-                        'in_flight_rate_bps', ROUND(10000::numeric * in_flight_quantity / NULLIF(raw_ordered_quantity, 0))::int,
-                        'buyout_resolved_quantity', buyout_resolved_quantity,
-                        'known_buyout_rate_bps', ROUND(10000::numeric * observed_net_sales_quantity / NULLIF(buyout_resolved_quantity, 0))::int,
-                        'actual_buyout_rate_bps', CASE WHEN mature THEN ROUND(10000::numeric * observed_net_sales_quantity / NULLIF(buyout_resolved_quantity, 0))::int ELSE NULL END,
-                        'current_projected_buyout_quantity', {$projectedQuantity},
-                        'current_projected_buyout_rate_bps', {$projectedRate},
-                        'unestimated_quantity', unestimated_quantity,
-                        'unknown_outcome_quantity', unknown_outcome_quantity,
-                        'unestimated_rate_bps', {$unestimatedRate},
-                        'known_projected_buyout_quantity', projected_quantity::text,
-                        'known_projected_eligible_quantity', projected_eligible_quantity::text,
-                        'observed_revenue_minor', observed_revenue_minor,
-                        'valuation_currency', valuation_currency
-                    ) ORDER BY business_date)::text AS days
-                    SQL,
-            )
-            ->from('('.$daily->getSQL().')', 'daily')
+        return $daily
             ->setParameter('companyId', $companyId)
             ->setParameter('accountId', $marketplaceAccountId)
             ->setParameter('skus', $marketplaceSkus, ArrayParameterType::STRING)
@@ -219,10 +247,7 @@ final readonly class SalesCohortMetricsQuery
             ->setParameter('to', $toDay->format('Y-m-d'))
             ->setParameter('currency', $currency)
             ->setParameter('asOf', $calculatedAt->setTimezone($utc)->format('Y-m-d H:i:s'))
-            ->setParameter('asOfMoscow', $calculatedAt->setTimezone(new \DateTimeZone('Europe/Moscow'))->format('Y-m-d H:i:s'))
-            ->groupBy('marketplace_sku')
-            ->orderBy('marketplace_sku', 'ASC')
-            ->setMaxResults(self::MAX_SKUS);
+            ->setParameter('asOfMoscow', $calculatedAt->setTimezone(new \DateTimeZone('Europe/Moscow'))->format('Y-m-d H:i:s'));
     }
 
     /** @param array<string, mixed> $row */

@@ -35,23 +35,12 @@ final readonly class SalesCohortSeriesQuery
         if (!\in_array($groupBy, ['day', 'week', 'month', 'period'], true)) {
             throw new \InvalidArgumentException('Unknown cohort grouping.');
         }
-        $metrics = $this->metrics->build($companyId, $accountId, $skus, $accumulationFrom, $to, $currency, $calculatedAt);
+        $metrics = $this->metrics->dailyComponents($companyId, $accountId, $skus, $accumulationFrom, $to, $currency, $calculatedAt);
         $coverage = $this->coverage->build($companyId, $accountId, $accumulationFrom, $to);
-        // SKU/day JSON is bounded by the underlying query (50 × 184). Unwrap
-        // in PostgreSQL, never accumulate rounded daily projections in PHP.
+        // Compose raw exact components directly. Packaging daily JSON only
+        // to unwrap it here adds a second sort/serialization of up to 9200 days.
         $sql = <<<'SQL'
-            WITH metrics AS (%s), coverage AS (%s),
-            loaded AS (
-                SELECT marketplace_sku, d.*
-                FROM metrics CROSS JOIN LATERAL jsonb_to_recordset(days::jsonb) AS d(
-                    cohort_date date, raw_ordered_quantity bigint,
-                    pre_handover_cancelled_quantity bigint, effective_ordered_quantity bigint,
-                    observed_net_sales_quantity bigint, in_flight_quantity bigint,
-                    buyout_resolved_quantity bigint, unestimated_quantity bigint, unknown_outcome_quantity bigint,
-                    known_projected_buyout_quantity numeric, known_projected_eligible_quantity numeric,
-                    observed_revenue_minor bigint
-                )
-            ), dense AS (
+            WITH loaded AS (%s), coverage AS (%s), dense AS (
                 SELECT s.sku, c.cohort_date::date AS day, c.orders_coverage,
                        COALESCE(l.raw_ordered_quantity, 0) AS raw_ordered_quantity,
                        COALESCE(l.pre_handover_cancelled_quantity, 0) AS pre_handover_cancelled_quantity,
@@ -61,13 +50,13 @@ final readonly class SalesCohortSeriesQuery
                        COALESCE(l.buyout_resolved_quantity, 0) AS buyout_resolved_quantity,
                        COALESCE(l.unestimated_quantity, 0) AS unestimated_quantity,
                        COALESCE(l.unknown_outcome_quantity, 0) AS unknown_outcome_quantity,
-                       COALESCE(l.known_projected_buyout_quantity, 0::numeric) AS projected_quantity,
-                       COALESCE(l.known_projected_eligible_quantity, 0::numeric) AS projected_eligible_quantity,
+                       COALESCE(l.projected_quantity, 0::numeric) AS projected_quantity,
+                       COALESCE(l.projected_eligible_quantity, 0::numeric) AS projected_eligible_quantity,
                        CASE WHEN CAST(:currency AS text) IS NULL THEN NULL
                             WHEN l.marketplace_sku IS NULL THEN 0
                             ELSE l.observed_revenue_minor END AS observed_revenue_minor
                 FROM jsonb_array_elements_text(CAST(:denseSkus AS jsonb)) s(sku) CROSS JOIN coverage c
-                LEFT JOIN loaded l ON l.marketplace_sku = s.sku AND l.cohort_date = c.cohort_date::date
+                LEFT JOIN loaded l ON l.marketplace_sku = s.sku AND l.business_date = c.cohort_date::date
             ), buckets AS (
                 SELECT GREATEST(MIN(day), CAST(:visibleFrom AS date)) AS bucket_from,
                        MAX(day) AS bucket_to
