@@ -34,18 +34,36 @@ final readonly class ApproveSalesPlanAction
         if (null === $plan->metric()) {
             return new ApproveSalesPlanResult(ApproveSalesPlanOutcome::MissingMetric);
         }
-        $at = new \DateTimeImmutable();
-        $plan->approve(Uuid::fromString($actorUserId), $at);
-        $this->identity->recordAuditEntry(
-            companyId: $companyId,
-            actorUserId: $actorUserId,
-            action: SalesPlanAuditAction::Approved,
-            subjectId: $planId,
-            previousValue: json_encode(['status' => SalesPlanStatus::Draft->value], \JSON_THROW_ON_ERROR),
-            newValue: json_encode(['status' => SalesPlanStatus::Approved->value, 'approvedByUserId' => $actorUserId, 'approvedAt' => $at->format(\DATE_ATOM)], \JSON_THROW_ON_ERROR),
-        );
         try {
-            $this->plans->approve($companyId, $plan);
+            return $this->plans->transactional(function () use ($companyId, $planId, $actorUserId, $plan): ApproveSalesPlanResult {
+                $at = new \DateTimeImmutable();
+                if ($plan->versionNumber() > 1) {
+                    $source = $this->plans->activeApproved($companyId, $plan->lineageId());
+                    if (null === $source || $source->versionNumber() >= $plan->versionNumber()) {
+                        return new ApproveSalesPlanResult(ApproveSalesPlanOutcome::ClosedLineage);
+                    }
+                    // Тот же source UPDATE, что сериализует создание draft.
+                    // Старую approved сбрасываем до изменения target: частичный unique index.
+                    $source->supersede($at);
+                    $this->identity->recordAuditEntry($companyId, $actorUserId, SalesPlanAuditAction::Superseded, $source->id()->toRfc4122(),
+                        json_encode(['status' => SalesPlanStatus::Approved->value], \JSON_THROW_ON_ERROR),
+                        json_encode(['status' => SalesPlanStatus::Superseded->value, 'replacementPlanId' => $planId], \JSON_THROW_ON_ERROR));
+                    $this->plans->saveMetadata($source);
+                    $this->plans->releaseClaims($companyId, $source);
+                }
+                $plan->approve(Uuid::fromString($actorUserId), $at);
+                $this->identity->recordAuditEntry(
+                    companyId: $companyId,
+                    actorUserId: $actorUserId,
+                    action: SalesPlanAuditAction::Approved,
+                    subjectId: $planId,
+                    previousValue: json_encode(['status' => SalesPlanStatus::Draft->value], \JSON_THROW_ON_ERROR),
+                    newValue: json_encode(['status' => SalesPlanStatus::Approved->value, 'approvedByUserId' => $actorUserId, 'approvedAt' => $at->format(\DATE_ATOM)], \JSON_THROW_ON_ERROR),
+                );
+                $this->plans->approve($companyId, $plan);
+
+                return new ApproveSalesPlanResult(ApproveSalesPlanOutcome::Approved, $planId, $plan->version());
+            });
         } catch (OptimisticLockException) {
             return new ApproveSalesPlanResult(ApproveSalesPlanOutcome::VersionConflict);
         } catch (EmptySalesPlan) {
@@ -53,7 +71,5 @@ final readonly class ApproveSalesPlanAction
         } catch (SalesPlanApprovalConflict $conflict) {
             return new ApproveSalesPlanResult(ApproveSalesPlanOutcome::DayConflict, conflicts: $conflict->conflicts);
         }
-
-        return new ApproveSalesPlanResult(ApproveSalesPlanOutcome::Approved, $planId, $plan->version());
     }
 }

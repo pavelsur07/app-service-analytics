@@ -387,3 +387,24 @@ known и actual D/(D+T2+P) различаются, наблюдаемые про
 A16 Codex0/0, packagefcd0b0254ab4; A17 Codex0/0, package70f5347479ff.
 Уникальных новых принятых в каждом дополнительном проходе0, отклонённых0.
 Полные SHA256 и пути к review.json записаны в отдельных планах задач.
+
+## A08. Новая версия и replacement
+
+Выполнено, вместе с end-to-end acceptance A05. Новые UUIDv7 и точные значения
+копируются DBAL keyset-порциями<=10000 в одной транзакции с ORM/audit;
+исходный approved сохраняется во время редактирования draft. Replacement
+сначала flush superseded source, затем approved target, освобождая все старые
+claims; конфликты откатывают обе шапки и аудит. Реальный legacyNULL проходит
+выбор метрики через revision без изменения исходной цели.
+
+Нормативное расхождение literal statusSQL ADR040 разобрано явно в новом
+ADR047 (принят после Codex): Domain status + ORM expectedversion, все
+производственные status transitions версионированы. Старый ADR не правился.
+
+Первый conformity:1 уникальное принятое замечание о cap10000; defects0.
+Ресурсный regression trigger дал RED на едином INSERT10120 и GREEN после
+порционного исправления. Последующие conformity/defects0/0, новых принятых0/0,
+отклонённых0. Полный SHA/пути — sales-planning-tasks/A08.md.
+Backend unit487/3544,int643/15415,func357/2639; всеstatic/API/seller gates GREEN.
+Source/target optimistic races проверены; настоящая конкуренция остаётся A10.
+A09 план/checklist записан до кода; следующий lifecycle шаг — cancel/discard.

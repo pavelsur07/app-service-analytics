@@ -15,6 +15,10 @@ final class SalesPlanAuditAction
 {
     public const string MetricSelected = 'sales_plan.metric_selected';
 
+    public const string RevisionCreated = 'sales_plan.revision_created';
+
+    public const string Superseded = 'sales_plan.superseded';
+
     public const string Approved = 'sales_plan.approved';
 
     public const string Created = 'sales_plan.created';

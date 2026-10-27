@@ -852,6 +852,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/sales-plans/{planId}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_sales_planning_plan_revision_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/sales-plans/{planId}/skus/{marketplaceSku}": {
         parameters: {
             query?: never;
@@ -1830,6 +1846,11 @@ export interface components {
         SalesPlanCreatedResponse: {
             id: string;
             version: number;
+        };
+        SalesPlanRevisionResponse: {
+            id: string;
+            version: number;
+            versionNumber: number;
         };
         CatalogSkuResponse: {
             marketplaceSku: string;
@@ -4961,7 +4982,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Первое утверждение плана */
+            /** @description Утверждение первой версии либо замена активной версии */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5208,6 +5229,83 @@ export interface operations {
                 };
             };
             /** @description Тело некорректно, период или подключение не годятся */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_sales_planning_plan_revision_create: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    version: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Новый либо существующий открытый черновик линии */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesPlanRevisionResponse"];
+                };
+            };
+            /** @description Нет членства в компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description План не найден у компании */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Конфликт версии либо источник не утверждён/линия закрыта */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверное тело запроса */
             422: {
                 headers: {
                     [name: string]: unknown;

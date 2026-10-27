@@ -62,4 +62,22 @@ final class SalesPlanRevisionTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $source->newRevision(Uuid::v7(), new \DateTimeImmutable(), 1);
     }
+
+    public function testLifecycleSerializationChangesCounterEvenAtTheSameTime(): void
+    {
+        $plan = SalesPlanBuilder::aSalesPlan()->withMetric(SalesPlanMetric::RetainedSales)->build();
+        $at = new \DateTimeImmutable('2026-07-01');
+        $plan->approve(Uuid::v7(), $at);
+        $before = $plan->lineEdits();
+        $plan->recordLifecycleChanged($at);
+        $plan->recordLifecycleChanged($at);
+        self::assertSame($before + 2, $plan->lineEdits());
+        $actor = $plan->approvedByUserId();
+        $plan->supersede($at);
+        self::assertSame(SalesPlanStatus::Superseded, $plan->status());
+        self::assertSame($actor, $plan->approvedByUserId());
+        self::assertSame($at, $plan->approvedAt());
+        $this->expectException(\DomainException::class);
+        $plan->recordLifecycleChanged($at);
+    }
 }

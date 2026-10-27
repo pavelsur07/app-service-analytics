@@ -6,6 +6,7 @@ namespace App\SalesPlanning\Application;
 
 enum ApproveSalesPlanOutcome: string
 {
+    case ClosedLineage = 'sales_plan_lineage_closed';
     case Approved = 'approved';
     case NotFound = 'sales_plan_not_found';
     case NotDraft = 'sales_plan_not_draft';

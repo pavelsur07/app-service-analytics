@@ -27,7 +27,7 @@ final readonly class ApproveSalesPlanController
     }
 
     #[OA\RequestBody(required: true, content: new OA\JsonContent(required: ['version'], properties: [new OA\Property(property: 'version', type: 'integer', minimum: 1)]))]
-    #[OA\Response(response: 200, description: 'Первое утверждение плана', content: new Model(type: SalesPlanApprovedResponse::class))]
+    #[OA\Response(response: 200, description: 'Утверждение первой версии либо замена активной версии', content: new Model(type: SalesPlanApprovedResponse::class))]
     #[OA\Response(response: 404, description: 'План не найден у компании', content: new Model(type: ValidationErrorResponse::class))]
     #[OA\Response(response: 409, description: 'Конфликт версии, статуса либо занятости дней', content: new OA\JsonContent(oneOf: [new OA\Schema(ref: new Model(type: ValidationErrorResponse::class)), new OA\Schema(ref: new Model(type: SalesPlanDayConflictResponse::class))]))]
     #[OA\Response(response: 422, description: 'Пустой план, отсутствие метрики или неверное тело запроса', content: new Model(type: ValidationErrorResponse::class))]
@@ -44,6 +44,7 @@ final readonly class ApproveSalesPlanController
         $result = ($this->approve)($companyId, $planId, $version, $actor);
 
         return match ($result->outcome) {
+            ApproveSalesPlanOutcome::ClosedLineage => EditOutcomeResponse::error(409, $result->outcome->value, 'Линия плана закрыта либо исходная версия больше не активна.'),
             ApproveSalesPlanOutcome::Approved => new JsonResponse(new SalesPlanApprovedResponse((string) $result->id, (int) $result->version)),
             ApproveSalesPlanOutcome::NotFound => EditOutcomeResponse::error(404, $result->outcome->value, 'План не найден.'),
             ApproveSalesPlanOutcome::VersionConflict => EditOutcomeResponse::error(409, $result->outcome->value, 'План изменил кто-то ещё. Перечитайте план.'),

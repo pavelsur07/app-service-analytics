@@ -113,7 +113,8 @@ class SalesPlan
     #[ORM\Column(nullable: true)]
     private ?\DateTimeImmutable $approvedAt = null;
 
-    // Счётчик правок строк: растёт на каждой, и потому шапка меняется
+    // Счётчик правок строк и сериализации lifecycle: растёт на каждой операции,
+    // и потому шапка меняется
     // всегда — даже если время правки совпало с прошлым. На updatedAt
     // одном это держаться не может: то же значение ORM за изменение
     // не считает, и версия не выросла бы (ADR-040 п. 10).
@@ -243,6 +244,22 @@ class SalesPlan
         $this->assertEditable();
         $this->updatedAt = $changedAt;
         ++$this->lineEdits;
+    }
+
+    /** Сериализация copy/replacement на общей approved шапке, даже в один момент. */
+    public function recordLifecycleChanged(\DateTimeImmutable $at): void
+    {
+        if (SalesPlanStatus::Approved !== $this->status) {
+            throw new \DomainException('Линия больше не имеет этого активного утверждённого плана.');
+        }
+        $this->updatedAt = $at;
+        ++$this->lineEdits;
+    }
+
+    public function supersede(\DateTimeImmutable $at): void
+    {
+        $this->recordLifecycleChanged($at);
+        $this->status = SalesPlanStatus::Superseded;
     }
 
     public function metric(): ?SalesPlanMetric
