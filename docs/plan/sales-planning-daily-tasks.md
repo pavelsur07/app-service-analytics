@@ -408,3 +408,15 @@ ADR047 (принят после Codex): Domain status + ORM expectedversion, в�
 Backend unit487/3544,int643/15415,func357/2639; всеstatic/API/seller gates GREEN.
 Source/target optimistic races проверены; настоящая конкуренция остаётся A10.
 A09 план/checklist записан до кода; следующий lifecycle шаг — cancel/discard.
+
+## A18/A19. Текущий прогноз и будущий нетто-прогноз
+
+Выполнены: существующие ставки SKU/кабинет, pre/posthandover и кривая
+доставки, доля без оценки ADR031/033. Numeric компоненты сохраняются
+строками до суммирования/округления; forecast8 не становится нетто-прогнозом,
+тот покаnull с net_forecast_not_available до модели B. Старые Buyout не менялись.
+RED3 -> GREEN646/15436, затем RED1 причины -> общий GREEN652/15533;
+unit491/3556,func358/2673,lint/stan/deptrac/structure и API/seller gates OK.
+Оба Codex CLI complete0/0, уникальных новых принятых0/0, отклонённых0.
+Полный SHA256/артефакты — sales-planning-tasks/A18.md,A19.md.
+A09 код GREEN, ожидает отдельного Codex ревью; A06 план записан до кода.

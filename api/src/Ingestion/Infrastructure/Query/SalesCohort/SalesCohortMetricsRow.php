@@ -27,6 +27,17 @@ final readonly class SalesCohortMetricsRow
         public int $buyoutResolvedQuantity,
         public ?int $knownBuyoutRateBps,
         public ?int $actualBuyoutRateBps,
+        /** Текущая методика выкупа, без оценки будущих клиентских возвратов. */
+        public ?int $currentProjectedBuyoutQuantity,
+        public ?int $currentProjectedBuyoutRateBps,
+        public int $unestimatedQuantity,
+        public ?int $unestimatedRateBps,
+        /** SQL numeric строкой; сохраняется для сумм до конечного округления. */
+        public string $knownProjectedBuyoutQuantity,
+        public string $knownProjectedEligibleQuantity,
+        /** Этап A не моделирует будущие клиентские возвраты. */
+        public ?string $expectedNetSalesQuantity = null,
+        public string $netForecastUnavailableReason = 'net_forecast_not_available',
     ) {
     }
 }
