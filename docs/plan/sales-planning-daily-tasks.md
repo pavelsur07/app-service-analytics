@@ -431,3 +431,16 @@ status SQL fixtures заменены реальными командами. Сх
 Unit491/3556,int652/15533,func358/2673 и backend/API/seller gates GREEN.
 Оба независимых Codex CLI complete0/0, уникальных новых принятых0/0,
 отклонённых0; SHA/артефакты — sales-planning-tasks/A09.md.
+
+## A06. Исходная числовая база
+
+Выполнено: company/account/lineage-scoped LIMIT1 выбирает минимальный
+успешно утверждённый version_number, включая superseded/cancelled историю.
+Draft/discarded исключены, nullable approval metadata и metric старого
+плана не теряют числовую цель. Смена/отмена версии оставляет исходные числа.
+Company/lineage/version index добавлен в ORM и единственную pending миграцию
+с down, поддерживает baseline и исторический MAX. Полный local db-rebuild-check
+GREEN: schema dev/test,unit491/3556,int655/15565,func358/2673,Go87.8%;
+var/sales-planning-a06-db-rebuild.log. Static/API check GREEN.
+Оба Codex CLI complete0/0, новых принятых0/0 и отклонённых0; SHA/артефакты
+в sales-planning-tasks/A06.md. A10 теперь проверяет настоящие отдельные процессы.

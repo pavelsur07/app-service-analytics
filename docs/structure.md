@@ -294,6 +294,10 @@ Domain guard статуса и optimistic UPDATE ORM уточнены ADR-047.
 `POST …/discard`) сохраняют шапки и дневные строки. Отмена approved
 сначала обновляет его шапку, затем атомарно отбрасывает открытый draft
 и освобождает claims; оба перехода оставляют аудит.
+`SalesPlanBaselineQuery` выбирает первую успешно утверждённую версию линии,
+включая superseded/cancelled историю, с company/account/lineage scope и LIMIT1.
+Её id остаётся базой сравнения при новых версиях; индекс company/lineage/version
+поддерживает выбор базы и следующий исторический номер версии.
 
 У `IngestionFacade` два потребителя: экран СПП (`listingSnapshotsAt`,
 ADR-016) и планирование продаж — поиск по каталогу подключения

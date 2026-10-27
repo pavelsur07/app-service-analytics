@@ -31,6 +31,7 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Index(name: 'idx_sales_plan_company_account', columns: ['company_id', 'marketplace_account_id'])]
 #[ORM\Index(name: 'idx_sales_plan_company_created_by', columns: ['company_id', 'created_by_user_id'])]
 #[ORM\Index(name: 'idx_sales_plan_company_approved_by', columns: ['company_id', 'approved_by_user_id'])]
+#[ORM\Index(name: 'idx_sales_plan_company_lineage_version', columns: ['company_id', 'lineage_id', 'version_number'])]
 // Не больше одного черновика и одного утверждённого в линии (п. 8).
 // Штатный сценарий до индексов не доходит — они страховка: нарушение
 // на flush закрывает EntityManager. `where` — в форме, которую
