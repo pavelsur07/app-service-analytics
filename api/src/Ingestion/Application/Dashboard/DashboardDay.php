@@ -15,6 +15,7 @@ final readonly class DashboardDay
         public int $advertisingMinor,
         public int $deliveryLogisticsMinor,
         public int $returnLogisticsMinor,
+        public ?int $profitMinor,
     ) {
     }
 }

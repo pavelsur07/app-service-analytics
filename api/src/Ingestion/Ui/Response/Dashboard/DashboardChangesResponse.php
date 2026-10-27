@@ -33,6 +33,8 @@ final readonly class DashboardChangesResponse
         public ?int $buyoutRatePointsBps,
         public ?int $buyoutQuantityBps,
         public ?int $buyoutOrderedQuantityBps,
+        /** Изменение прибыли; null при нулевой базе или неизвестной прибыли. */
+        public ?int $profitBps,
     ) {
     }
 
@@ -57,6 +59,7 @@ final readonly class DashboardChangesResponse
             $changes->buyoutRatePointsBps,
             $changes->buyoutQuantityBps,
             $changes->buyoutOrderedQuantityBps,
+            $changes->profitBps,
         );
     }
 }

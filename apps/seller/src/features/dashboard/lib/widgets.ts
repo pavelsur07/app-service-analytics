@@ -90,6 +90,20 @@ export const WIDGETS = [
     ],
   },
   {
+    id: 'profit',
+    title: 'Прибыль',
+    primary: {
+      label: 'Прибыль по начислениям',
+      metric: 'profitMinor',
+      format: 'money',
+      change: 'profitBps',
+      kind: 'relative',
+      good: 'up',
+      series: 'profitMinor',
+    },
+    rows: [],
+  },
+  {
     // Спарклайна нет: доля выкупа когортная и не складывается по дням
     // (docs/plan/dashboard-widgets.md, «Не входит»).
     id: 'buyout',

@@ -33,6 +33,7 @@ final readonly class DashboardMetrics
         public int $buyoutOrderedQuantity,
         /** Доля заказов периода с известным исходом: остальные ещё созревают. */
         public ?int $buyoutResolutionRateBps,
+        public ?int $profitMinor,
     ) {
     }
 }

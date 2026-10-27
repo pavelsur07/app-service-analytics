@@ -67,10 +67,11 @@ describe('значение показателя', () => {
 })
 
 describe('набор виджетов', () => {
-  it('восемь виджетов из задачи, у каждого свой идентификатор', () => {
+  it('девять виджетов из задачи, у каждого свой идентификатор', () => {
     expect(WIDGETS.map((widget) => widget.title)).toEqual([
       'Заказы',
       'Продажи',
+      'Прибыль',
       '% выкупа по кабинету',
       'Возвраты',
       'ДРР · от заказов',
@@ -78,7 +79,7 @@ describe('набор виджетов', () => {
       'Логистика · доставка до клиента',
       'Логистика · возвраты от клиента',
     ])
-    expect(new Set(WIDGETS.map((widget) => widget.id)).size).toBe(8)
+    expect(new Set(WIDGETS.map((widget) => widget.id)).size).toBe(9)
     expect(isWidgetId('orders')).toBe(true)
     expect(isWidgetId('unknown')).toBe(false)
   })

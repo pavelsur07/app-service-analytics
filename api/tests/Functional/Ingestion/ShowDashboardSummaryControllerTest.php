@@ -41,6 +41,14 @@ final class ShowDashboardSummaryControllerTest extends WebTestCase
             $this->sale(Uuid::v7(), $yesterday, 9, 900_000),
         ]);
 
+        /** @var \App\Ingestion\Domain\MarketplaceExpenseFactRepository $expenses */
+        $expenses = self::getContainer()->get(\App\Ingestion\Domain\MarketplaceExpenseFactRepository::class);
+        foreach ([$companyId, Uuid::v7()] as $id) {
+            \App\Tests\Support\Builder\MarketplaceExpenseFactBuilder::aMarketplaceExpenseFact()
+                ->withCompanyId($id)->withBusinessDate($yesterday)->withoutSku()
+                ->withAmount(Money::ofMinor(-1_500, 'RUB'))->persistWith($expenses);
+        }
+
         $client->request('GET', $this->path($companyId, $from, $yesterday, $compareFrom, $compareTo));
 
         self::assertResponseIsSuccessful();
@@ -54,6 +62,12 @@ final class ShowDashboardSummaryControllerTest extends WebTestCase
         self::assertSame(20_000, ($payload['current']['days'][6] ?? null)['ordersAmountMinor'] ?? null);
         // Загрузок не было — сравнивать нельзя, хоть суммы и есть.
         self::assertNull($payload['changes']['ordersAmountBps']);
+        self::assertArrayHasKey('profitMinor', $payload['current']['metrics']);
+        self::assertNull($payload['current']['metrics']['profitMinor']);
+        self::assertSame(-1_500, $payload['current']['profitDetails']['accrualsTotalMinor']);
+        self::assertTrue($payload['current']['profitDetails']['hasAccruals']);
+        self::assertSame('manual', $payload['current']['profitDetails']['costMethod']);
+        self::assertNull($payload['current']['days'][0]['profitMinor']);
     }
 
     public function testForeignCompanyIsForbidden(): void
@@ -156,13 +170,13 @@ final class ShowDashboardSummaryControllerTest extends WebTestCase
     }
 
     /**
-     * @return array{currency?: string, code?: string, current: array{from: string, metrics: array{ordersAmountMinor: int, ordersQuantity: int}, days: list<array{ordersAmountMinor: int}>}, comparison: array{metrics: array{ordersAmountMinor: int}}, changes: array{ordersAmountBps: ?int}}
+     * @return array{currency?: string, code?: string, current: array{from: string, metrics: array{ordersAmountMinor: int, ordersQuantity: int, profitMinor: ?int}, profitDetails: array{accrualsTotalMinor: int, hasAccruals: bool, costMethod: string}, days: list<array{ordersAmountMinor: int, profitMinor: ?int}>}, comparison: array{metrics: array{ordersAmountMinor: int}}, changes: array{ordersAmountBps: ?int}}
      */
     private static function payload(KernelBrowser $client): array
     {
         $content = $client->getResponse()->getContent();
         self::assertIsString($content);
-        /** @var array{currency?: string, code?: string, current: array{from: string, metrics: array{ordersAmountMinor: int, ordersQuantity: int}, days: list<array{ordersAmountMinor: int}>}, comparison: array{metrics: array{ordersAmountMinor: int}}, changes: array{ordersAmountBps: ?int}} $payload */
+        /** @var array{currency?: string, code?: string, current: array{from: string, metrics: array{ordersAmountMinor: int, ordersQuantity: int, profitMinor: ?int}, profitDetails: array{accrualsTotalMinor: int, hasAccruals: bool, costMethod: string}, days: list<array{ordersAmountMinor: int, profitMinor: ?int}>}, comparison: array{metrics: array{ordersAmountMinor: int}}, changes: array{ordersAmountBps: ?int}} $payload */
         $payload = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
 
         return $payload;

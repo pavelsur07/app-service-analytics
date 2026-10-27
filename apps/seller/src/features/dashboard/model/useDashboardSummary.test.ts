@@ -41,6 +41,14 @@ function summary(ordersAmountMinor: number): DashboardSummaryResponse {
     dataComplete: true,
     daysWithoutAccruals: 0,
     metrics: { ...METRICS, ordersAmountMinor },
+    profitDetails: {
+      hasAccruals: false,
+      accrualsTotalMinor: 0,
+      costTotalMinor: 0,
+      quantityWithoutCost: 0,
+      costMethod: 'manual',
+      costCorrectedAt: null,
+    },
     days: [],
   }
 

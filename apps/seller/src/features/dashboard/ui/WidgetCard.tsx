@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 import type { components } from '../../../api/schema'
 import { sharedScale, sparklinePoints, sparklineTrend } from '../lib/sparkline'
@@ -26,19 +27,21 @@ function ChangeBadge({
   spec,
   changes,
   wide = false,
+  reason,
 }: {
   spec: MetricSpec
   changes: Changes
   wide?: boolean
+  reason?: string
 }) {
   const view = changeView(changes[spec.change], spec.kind, spec.good)
 
   return (
     <span
       className={`inline-flex items-center justify-center whitespace-nowrap rounded-md border px-1.5 py-0.5 text-xs font-semibold ${TONE[view.tone]} ${wide ? 'min-w-18' : ''}`}
-      title={view.title}
+      title={reason ?? view.title}
     >
-      {view.text}
+      {reason === undefined ? view.text : '— нет базы'}
     </span>
   )
 }
@@ -52,7 +55,7 @@ export interface WidgetCardProps {
   currentDays: readonly Day[]
   comparisonDays: readonly Day[]
   /** Пояснение под строками — например, что когорты выкупа ещё созревают. */
-  hint: string | null
+  hint: ReactNode
   onHide: () => void
 }
 
@@ -70,10 +73,18 @@ export function WidgetCard({
   const { primary } = spec
   const series = primary.series
   const currentSeries =
-    series === null ? [] : currentDays.map((day) => day[series])
+    series === null ? [] : availableSeries(currentDays, series)
   const comparisonSeries =
-    series === null ? [] : comparisonDays.map((day) => day[series])
+    series === null ? [] : availableSeries(comparisonDays, series)
   const scale = sharedScale(currentSeries, comparisonSeries)
+  const noBase =
+    spec.id === 'profit' &&
+    typeof current.profitMinor === 'number' &&
+    comparison.profitMinor === 0
+  const graphLabel =
+    currentSeries.length > 0
+      ? `Динамика: ${spec.title}, к концу периода показатель ${sparklineTrend(currentSeries)}${comparisonSeries.length > 0 ? ', пунктир — период сравнения' : ''}`
+      : `Динамика: ${spec.title}, только период сравнения (пунктир)`
 
   return (
     <section
@@ -101,7 +112,16 @@ export function WidgetCard({
           {formatValue(current[primary.metric], primary.format, currency)}
         </span>
         <div className="flex flex-wrap items-center gap-2">
-          <ChangeBadge changes={changes} spec={primary} />
+          <ChangeBadge
+            changes={changes}
+            spec={primary}
+            {...(noBase
+              ? {
+                  reason:
+                    'В периоде сравнения прибыль равна нулю — процент изменения не рассчитывается',
+                }
+              : {})}
+          />
           <span className="text-xs text-text-muted tabular-nums">
             было{' '}
             {formatValue(comparison[primary.metric], primary.format, currency)}
@@ -109,59 +129,76 @@ export function WidgetCard({
         </div>
       </div>
 
-      {series === null ? null : (
+      {currentSeries.length === 0 && comparisonSeries.length === 0 ? null : (
         <svg
-          aria-label={`Динамика: ${spec.title}, к концу периода показатель ${sparklineTrend(currentSeries)}, пунктир — период сравнения`}
+          aria-label={graphLabel}
           className="block h-10 w-full overflow-visible"
           preserveAspectRatio="none"
           role="img"
           viewBox="0 0 100 32"
         >
-          <polyline
-            className="stroke-text-disabled"
-            fill="none"
-            points={sparklinePoints(comparisonSeries, scale)}
-            strokeDasharray="3 3"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            vectorEffect="non-scaling-stroke"
-          />
-          <polyline
-            className="stroke-accent-default"
-            fill="none"
-            points={sparklinePoints(currentSeries, scale)}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            vectorEffect="non-scaling-stroke"
-          />
+          {comparisonSeries.length === 0 ? null : (
+            <polyline
+              className="stroke-text-disabled"
+              fill="none"
+              points={sparklinePoints(comparisonSeries, scale)}
+              strokeDasharray="3 3"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+          {currentSeries.length === 0 ? null : (
+            <polyline
+              className="stroke-accent-default"
+              fill="none"
+              points={sparklinePoints(currentSeries, scale)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
         </svg>
       )}
 
-      <div className="flex flex-col border-t border-border-subtle">
-        {spec.rows.map((row) => (
-          <div
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-subtle py-2"
-            key={row.metric}
-          >
-            <span className="flex-auto text-xs text-text-muted">
-              {row.label}
-            </span>
-            {/* Значение и изменение переносятся вместе: в узкой карточке
-                бейдж, оторванный от своего числа, читался бы как чужой. */}
-            <span className="ml-auto flex items-center gap-2">
-              <span className="text-sm font-medium tabular-nums">
-                {formatValue(current[row.metric], row.format, currency)}
+      {spec.rows.length === 0 ? null : (
+        <div className="flex flex-col border-t border-border-subtle">
+          {spec.rows.map((row) => (
+            <div
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-subtle py-2"
+              key={row.metric}
+            >
+              <span className="flex-auto text-xs text-text-muted">
+                {row.label}
               </span>
-              <ChangeBadge changes={changes} spec={row} wide />
-            </span>
-          </div>
-        ))}
-      </div>
+              {/* Значение и изменение переносятся вместе: в узкой карточке
+                бейдж, оторванный от своего числа, читался бы как чужой. */}
+              <span className="ml-auto flex items-center gap-2">
+                <span className="text-sm font-medium tabular-nums">
+                  {formatValue(current[row.metric], row.format, currency)}
+                </span>
+                <ChangeBadge changes={changes} spec={row} wide />
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {hint === null ? null : (
         <span className="text-xs leading-snug text-text-muted">{hint}</span>
       )}
     </section>
   )
+}
+
+/** Не соединяем известные точки через неизвестный день и не превращаем null в ноль. */
+function availableSeries(
+  days: readonly Day[],
+  series: Exclude<keyof Day, 'date'>,
+): number[] {
+  const values = days.map((day) => day[series])
+  return values.every((value): value is number => typeof value === 'number')
+    ? values
+    : []
 }

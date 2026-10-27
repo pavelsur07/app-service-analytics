@@ -17,6 +17,8 @@ final readonly class DashboardDayResponse
         public int $advertisingMinor,
         public int $deliveryLogisticsMinor,
         public int $returnLogisticsMinor,
+        /** Прибыль дня; null, если прибыль всего периода недоступна. */
+        public ?int $profitMinor,
     ) {
     }
 
@@ -30,6 +32,7 @@ final readonly class DashboardDayResponse
             $day->advertisingMinor,
             $day->deliveryLogisticsMinor,
             $day->returnLogisticsMinor,
+            $day->profitMinor,
         );
     }
 }

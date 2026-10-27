@@ -195,6 +195,40 @@ docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-returns
     "$company_id" "$account_id" "$synthetic_date" \
     "$fixture_container_dir/returns.json"
 
+# Dashboard: полные вчера/позавчера и одна синтетическая карточка.
+# Цену создаёт и исправляет Playwright через штатный интерфейс.
+profit_yesterday=$(TZ=Europe/Moscow date -d yesterday +%F)
+profit_previous=$(TZ=Europe/Moscow date -d '2 days ago' +%F)
+printf '%s' '{"result":[]}' > "$fixture_dir/profit-empty-postings.json"
+for profit_day in "$profit_previous" "$profit_yesterday"; do
+    docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-fixture \
+        "$company_id" "$account_id" "$profit_day" "$fixture_container_dir/profit-empty-postings.json"
+done
+jq -n --arg day "$profit_previous" '{accruals:[{
+  accrual_id:900010001,date:$day,accrued_category:"POSTING",unit_number:"E2E-PROFIT-PREV",
+  total_amount:{amount:"450.00",currency:"RUB"},
+  posting:{products:[{sku:900000001,quantity:1,commission:{
+    sale_amount:{amount:"500.00",currency:"RUB"},commission:{amount:"-50.00",currency:"RUB"}
+  }}]}
+}],last_id:""}' > "$fixture_dir/profit-previous.json"
+jq -n --arg day "$profit_yesterday" '{accruals:[{
+  accrual_id:900010002,date:$day,accrued_category:"POSTING",unit_number:"E2E-PROFIT-CURRENT",
+  total_amount:{amount:"750.00",currency:"RUB"},
+  posting:{products:[{sku:900000001,quantity:1,
+    commission:{sale_amount:{amount:"1000.00",currency:"RUB"},commission:{amount:"-200.00",currency:"RUB"}},
+    delivery:{services:[{type_id:32,accrued:{amount:"-50.00",currency:"RUB"}}]}
+  }]}
+},{accrual_id:900010003,date:$day,accrued_category:"NON_ITEM",
+  total_amount:{amount:"-100.00",currency:"RUB"},
+  non_item_fee:{type_id:41,accrued:{amount:"-100.00",currency:"RUB"}}
+}],last_id:""}' > "$fixture_dir/profit-yesterday.json"
+docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-accrual-fixture \
+    "$company_id" "$account_id" "$profit_previous" "$fixture_container_dir/profit-previous.json"
+docker compose exec -T php-cli php bin/console app:ingestion:import-ozon-accrual-fixture \
+    "$company_id" "$account_id" "$profit_yesterday" "$fixture_container_dir/profit-yesterday.json"
+docker compose exec -T php-cli php bin/console app:ingestion:seed-dashboard-sandbox-catalog \
+    "$company_id" "$account_id"
+
 user_email="e2e-owner+${company_id}@example.com"
 user_password="e2e-password"
 

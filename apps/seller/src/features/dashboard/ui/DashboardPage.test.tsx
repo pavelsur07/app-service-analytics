@@ -67,13 +67,24 @@ function summary(ordersAmountMinor: number): Summary {
     dataComplete: true,
     daysWithoutAccruals: 0,
     metrics,
+    profitDetails: {
+      hasAccruals: true,
+      accrualsTotalMinor: 0,
+      costTotalMinor: 0,
+      quantityWithoutCost: 0,
+      costMethod: 'manual',
+      costCorrectedAt: null,
+    },
     days: [],
   }
 
   return { currency: 'RUB', current: period, comparison: period, changes: {} }
 }
 
-function render(companyId: string): string {
+function render(
+  companyId: string,
+  response: Summary = summary(1_234_500),
+): string {
   const client = new QueryClient()
   const today = todayAt()
   const selection = DEFAULT_PREFERENCES.selection
@@ -84,7 +95,7 @@ function render(companyId: string): string {
       current: range,
       comparison: comparisonFor(selection, range),
     }),
-    summary(1_234_500),
+    response,
   )
 
   return renderToStaticMarkup(
@@ -113,8 +124,10 @@ describe('главная', () => {
 
     expect(html).toContain('12 345 ₽')
     expect(html).toContain('aria-label="Продажи"')
+    expect(html).toContain('aria-label="Прибыль"')
+    expect(html).toContain('Без налогов и внешних расходов')
     expect(html).not.toContain('aria-label="Возвраты"')
-    expect(html).toContain('Виджеты · 7 из 8')
+    expect(html).toContain('Виджеты · 8 из 9')
   })
 
   it('настройки одной компании не переходят на другую, чужие цифры не показываются', () => {
@@ -129,7 +142,7 @@ describe('главная', () => {
     // У второй компании в кэше ничего нет — загрузка, а не цифры первой.
     expect(html).not.toContain('12 345 ₽')
     expect(html).toContain('aria-busy="true"')
-    expect(html).toContain('Виджеты · 8 из 8')
+    expect(html).toContain('Виджеты · 9 из 9')
   })
 
   it('все виджеты скрыты — пустое состояние с возвратом', () => {
@@ -139,6 +152,7 @@ describe('главная', () => {
       hidden: [
         'orders',
         'sales',
+        'profit',
         'buyout',
         'returns',
         'drrOrders',
@@ -153,5 +167,28 @@ describe('главная', () => {
     expect(html).toContain('Все виджеты скрыты')
     expect(html).toContain('Показать все виджеты')
     expect(html).not.toContain('aria-label="Заказы"')
+  })
+})
+
+describe('качество расчёта прибыли', () => {
+  it('называет отсутствующую цену, компанию ссылки и правку истории', () => {
+    vi.stubGlobal('localStorage', memoryStorage())
+    const response = summary(10000)
+    response.current.profitDetails.quantityWithoutCost = 2
+    response.current.profitDetails.costCorrectedAt = '2026-10-01T12:00:00Z'
+    const html = render(ONE, response)
+    expect(html).toContain('Не задана себестоимость для 2 шт.')
+    expect(html).toContain(`/companies/${ONE}/costs`)
+    expect(html).toContain('Себестоимость периода исправлялась')
+  })
+
+  it('не объявляет отсутствие начислений при взаимно погашенных расходах', () => {
+    vi.stubGlobal('localStorage', memoryStorage())
+    const response = summary(0)
+    response.current.metrics.ordersQuantity = 0
+    response.current.metrics.salesQuantity = 0
+    response.current.profitDetails.hasAccruals = true
+    response.current.profitDetails.accrualsTotalMinor = 0
+    expect(render(ONE, response)).not.toContain('Пока показывать нечего')
   })
 })

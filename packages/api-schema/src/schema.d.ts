@@ -1264,6 +1264,8 @@ export interface components {
             buyoutQuantity?: number | null;
             buyoutOrderedQuantity: number;
             buyoutResolutionRateBps?: number | null;
+            /** Прибыль по начислениям; null при неполной загрузке или неизвестной цене. */
+            profitMinor?: number | null;
         };
         DashboardDayResponse: {
             date: string;
@@ -1273,6 +1275,20 @@ export interface components {
             advertisingMinor: number;
             deliveryLogisticsMinor: number;
             returnLogisticsMinor: number;
+            /** Прибыль дня; null, если прибыль всего периода недоступна. */
+            profitMinor?: number | null;
+        };
+        DashboardProfitDetailsResponse: {
+            /** Есть строки начислений, в том числе с взаимно погашенным итогом. */
+            hasAccruals: boolean;
+            accrualsTotalMinor: number;
+            /** Со знаком: продажа отрицательна, восстановление при возврате положительно. */
+            costTotalMinor: number;
+            /** Сумма quantity продаж и возвратов без цены; не погашается между собой. */
+            quantityWithoutCost: number;
+            costMethod: string;
+            /** Format: date-time */
+            costCorrectedAt?: string | null;
         };
         DashboardPeriodResponse: {
             /** Format: date */
@@ -1291,6 +1307,7 @@ export interface components {
             metrics: components["schemas"]["DashboardMetricsResponse"];
             /** Каждый день периода по возрастанию, без пропусков. */
             days: components["schemas"]["DashboardDayResponse"][];
+            profitDetails: components["schemas"]["DashboardProfitDetailsResponse"];
         };
         DashboardChangesResponse: {
             ordersAmountBps?: number | null;
@@ -1311,6 +1328,8 @@ export interface components {
             buyoutRatePointsBps?: number | null;
             buyoutQuantityBps?: number | null;
             buyoutOrderedQuantityBps?: number | null;
+            /** Изменение прибыли; null при нулевой базе или неизвестной прибыли. */
+            profitBps?: number | null;
         };
         DashboardSummaryResponse: {
             currency: string;
