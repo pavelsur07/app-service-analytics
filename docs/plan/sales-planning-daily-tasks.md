@@ -803,3 +803,20 @@ attempt1/deploy success, production649-49a62a5. Root:12healthy/running,
 seller/admin version pings. Подробные receipts и review IDs — B05.md.
 B05 закрыта,55/68. B06 — следующий расчёт после передачи; B09 target producer
 и реальное качество/числовой допуск ещё не готовы.
+
+
+## Приёмка B06: исход после передачи в доставку, 2026-10-28
+
+Условная ставка G/(G+T2+P) использует100условныхunits/30dedicatedpostings,
+полная raw sample сохраняется; частичные T1/post в одномposting допустимы.
+Тот же200source=100G+100T1 даёт50gross до и100после для100open.
+Unit604/5545, static gates иCI40692403671 точного9be00b7 прошли.
+Два отдельных actual Codex CLI complete0/0;8/8code/testblobs покрыты;
+принятых/отклонённых0, второго прохода уникальных принятых0.
+
+[PR277](https://github.com/pavelsur07/app-service-analytics/pull/277), squash6281cfb.
+MasterCI40693051190/run651 attempt1/deploy success; production651-6281cfb
+проверен13:10:15UTC.12healthy/running,7PHP сохранили прежнюю epoch/config,
+8PASS purememory stage/count smoke, seller/adminversions совпадают.
+Подробные review IDs/receipts/ограничения — B06.md. B06 закрыта,56/68;
+B07 будущие возвраты открытых — следующая задача, numeric gate остаётся закрыт.
