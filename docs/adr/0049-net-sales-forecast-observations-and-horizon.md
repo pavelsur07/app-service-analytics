@@ -194,6 +194,21 @@ q в0..1; fallback целой выбранной оценки SKU→свой acc
 и знаменатели разных источников fallback не смешиваются; scope и samples
 сохраняются в diagnostics. Группа без нужной выборки не получает q=0.
 
+Количество alive postings после частичного R не всегда идентифицируемо:
+multi-posting order/SKU не имеет физической R-аллокации. Initial sample
+postings считается exact distinct; возрастной профиль явно называется
+`atRiskPostingsLowerBound`. Порог10 не ослаблен: lowerBound>=10 доказывает
+actual>=10. Для group remaining D=G−R_a bound — минимальное k, чьи k largest
+original posting capacities в сумме покрывают D. Дополнительно capacity_i>R_a
+даёт guaranteed posting ID. В order берётся max(distinct guaranteed ID union
+по SKU, max group bound); по orders bound суммируется только при доказанном
+posting→oneorder и согласованном origin. Без identity proof — unavailable.
+Не суммировать minima разных SKU одного order, не выдумывать аллокацию R,
+не исключать такие группы из quantity/CDF population ради min sample.
+Bound и его консервативность отражаются в diagnostics; недостаточный proof
+даёт nullable assessment/fallback. Метод и примеры —
+[B02-posting-risk](../plan/sales-planning-tasks/B02-posting-risk.md).
+
 ```text
 futureReturns = Σ currentD_i × q(age_i)
 openRetained = Σ eligibleOpen_i × pGross(stage_i) × (1−F(H))
