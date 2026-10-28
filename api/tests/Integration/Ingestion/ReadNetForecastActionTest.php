@@ -326,6 +326,173 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertNull($this->read($zeroDb, $zero)->quantities);
     }
 
+    public function testAllPreHandoverCancellationsGiveExactZeroWithoutTraining(): void
+    {
+        [$db, $f] = $this->fixture();
+        foreach (['A' => 7, 'B' => 13] as $source => $quantity) {
+            $f->sale($source, 'SKU', $quantity, 'awaiting_packaging', $f->readAt->modify('-3 hours'), 'ORDER');
+            $f->sale($source, 'SKU', $quantity, 'cancelled', $f->readAt->modify('-2 hours'), 'ORDER');
+        }
+        $f->returned('ORDER', 'SKU', 20, $f->readAt->modify('-1 hour'), 'T1', 'Cancellation', 'Покупатель отменил заказ');
+        $f->currentReturns();
+        $batch = $this->read($db, $f);
+        self::assertNull($batch->unavailableReason);
+        $group = $batch->skus[0]->days[0]->groups[0];
+        self::assertCount(2, $group->parts);
+        self::assertCount(1, $group->returns);
+        self::assertSame('Cancellation', $group->returns[0]->returnType);
+        foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group, ...$group->parts] as $node) {
+            self::assertSame('0', $node->quantities?->currentD);
+            self::assertSame('0', $node->quantities->eligibleOpenQuantity);
+            self::assertSame('0', $node->quantities->expectedNetNumerator);
+            self::assertSame('1', $node->quantities->expectedNetDenominator);
+        }
+        $f->currentReturns($f->readAt, false);
+        $failed = $this->read($db, $f);
+        self::assertSame('returns_coverage_missing', $failed->unavailableReason);
+        self::assertNull($failed->quantities);
+    }
+
+    public function testPartialReturnAcrossSameOriginPartsIsDeductedExactlyOnce(): void
+    {
+        [$db, $f] = $this->fixture(training: true);
+        $origin = $f->readAt->modify('-1 day');
+        $f->delivered('A', 'SKU', 7, $origin, 'ORDER');
+        $f->delivered('B', 'SKU', 13, $origin, 'ORDER');
+        $f->returned('ORDER', 'SKU', 6, $f->readAt->modify('-1 hour'), 'PARTIAL-R');
+        $f->daily($origin);
+        $f->currentReturns();
+        $batch = $this->read($db, $f);
+        self::assertNull($batch->unavailableReason);
+        $group = $batch->skus[0]->days[0]->groups[0];
+        self::assertCount(1, $group->returns);
+        self::assertSame('PARTIAL-R', $group->returns[0]->sourceRowId);
+        self::assertSame(6, $group->returns[0]->quantity);
+        foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group] as $node) {
+            self::assertSame('14', $node->quantities?->currentD);
+            self::assertSame('1', $node->quantities->futureReturnsNumerator);
+            self::assertSame('1', $node->quantities->futureReturnsDenominator);
+            self::assertSame('0', $node->quantities->eligibleOpenQuantity);
+            self::assertSame('13', $node->quantities->expectedNetNumerator);
+            self::assertSame('1', $node->quantities->expectedNetDenominator);
+        }
+        $parts = $this->parts($batch);
+        self::assertSame(['A', 'B'], array_keys($parts));
+        foreach (['A' => ['1', '1', '13'], 'B' => ['13', '13', '169']] as $source => [$d, $future, $net]) {
+            $part = $parts[$source];
+            self::assertSame($d, $part->quantities?->currentD);
+            self::assertSame($future, $part->quantities->futureReturnsNumerator);
+            self::assertSame('14', $part->quantities->futureReturnsDenominator);
+            self::assertSame($net, $part->quantities->expectedNetNumerator);
+            self::assertSame('14', $part->quantities->expectedNetDenominator);
+            self::assertSame('12345', $part->trace->amountMinor);
+            self::assertSame('RUB', $part->trace->currency);
+            self::assertSame($source, $part->trace->sourceRowId);
+            self::assertSame(2, $part->trace->latestFactRevision);
+            self::assertNotNull($part->trace->firstRevisionId);
+            self::assertNotNull($part->trace->latestRevisionId);
+        }
+    }
+
+    public function testEarlierDayConsumesReturnBeforeCurrentForecastAndSiblingSkuKeepsItsDelivery(): void
+    {
+        [$db, $f] = $this->fixture(training: true);
+        $origin = $f->readAt->modify('-1 day');
+        $f->delivered('EARLY', 'SKU', 3, $origin, 'ORDER', $this->request($f)->from->modify('-1 day'));
+        $f->delivered('CURRENT', 'SKU', 4, $origin, 'ORDER');
+        $f->delivered('SIBLING', 'OTHER', 1, $origin, 'ORDER');
+        $f->returned('ORDER', 'SKU', 5, $f->readAt->modify('-1 hour'), 'CROSS-DAY-R');
+        $f->daily($origin);
+        $f->currentReturns();
+        $batch = $this->read($db, $f);
+        self::assertNull($batch->unavailableReason);
+        self::assertSame(['CURRENT'], array_keys($this->parts($batch)));
+        $group = $batch->skus[0]->days[0]->groups[0];
+        self::assertCount(1, $group->returns);
+        self::assertSame('CROSS-DAY-R', $group->returns[0]->sourceRowId);
+        self::assertSame(5, $group->returns[0]->quantity);
+        foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group, $group->parts[0]] as $node) {
+            self::assertSame('2', $node->quantities?->currentD);
+            self::assertSame('1', $node->quantities->futureReturnsNumerator);
+            self::assertSame('7', $node->quantities->futureReturnsDenominator);
+            self::assertSame('13', $node->quantities->expectedNetNumerator);
+            self::assertSame('7', $node->quantities->expectedNetDenominator);
+        }
+        $sibling = ($this->action($db, $f, $this->clock($f)))($f->company->toRfc4122(), $f->account->toRfc4122(), $this->request($f, ['OTHER']));
+        self::assertNull($sibling->unavailableReason);
+        self::assertSame(['SIBLING'], array_keys($this->parts($sibling)));
+        self::assertSame([], $sibling->skus[0]->days[0]->groups[0]->returns);
+        self::assertSame('1', $sibling->quantities?->currentD);
+        self::assertSame('13', $sibling->quantities->expectedNetNumerator);
+        self::assertSame('14', $sibling->quantities->expectedNetDenominator);
+    }
+
+    public function testUnknownPartKeepsFullAncestorsUnavailableBesideKnownDelivery(): void
+    {
+        [$db, $f] = $this->fixture(training: true);
+        $origin = $f->readAt->modify('-1 day');
+        $f->delivered('KNOWN', 'SKU', 14, $origin);
+        $f->sale('UNKNOWN', 'SKU', 3, 'awaiting_packaging', $f->readAt->modify('-2 hours'), substatus: 'unsupported_substatus');
+        $f->daily($origin);
+        $f->currentReturns();
+        $batch = $this->read($db, $f);
+        $parts = $this->parts($batch);
+        self::assertSame(['KNOWN', 'UNKNOWN'], array_keys($parts));
+        self::assertNull($parts['KNOWN']->unavailableReason);
+        self::assertSame('13', $parts['KNOWN']->quantities?->expectedNetNumerator);
+        self::assertSame('1', $parts['KNOWN']->quantities->expectedNetDenominator);
+        $groups = array_column($batch->skus[0]->days[0]->groups, null, 'orderNumber');
+        self::assertSame('13', $groups['KNOWN']->quantities?->expectedNetNumerator);
+        foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $groups['UNKNOWN'], $parts['UNKNOWN']] as $node) {
+            self::assertSame('unknown_outcome', $node->unavailableReason);
+            self::assertNull($node->quantities, 'Full total cannot expose the known subset or substitute zero for unknown.');
+        }
+    }
+
+    public function testDifferentOriginsWithPositiveResidualStayUnavailableThroughReader(): void
+    {
+        [$db, $f] = $this->fixture(training: true);
+        $origin = $f->readAt->modify('-2 days');
+        $f->delivered('A', 'SKU', 7, $origin, 'ORDER');
+        $f->delivered('B', 'SKU', 13, $origin->modify('+1 day'), 'ORDER');
+        $f->returned('ORDER', 'SKU', 7, $f->readAt->modify('-1 hour'));
+        $f->daily($origin);
+        $f->currentReturns();
+        $batch = $this->read($db, $f);
+        $group = $batch->skus[0]->days[0]->groups[0];
+        foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group, ...$group->parts] as $node) {
+            self::assertSame('ambiguous_delivery_allocation', $node->unavailableReason);
+            self::assertNull($node->quantities);
+        }
+    }
+
+    public function testFullyReturnedDifferentOriginsGiveExactZeroWithoutTraining(): void
+    {
+        [$db, $f] = $this->fixture();
+        $f->delivered('A', 'SKU', 7, $f->readAt->modify('-2 days'), 'ORDER');
+        $f->delivered('B', 'SKU', 13, $f->readAt->modify('-1 day'), 'ORDER');
+        $f->returned('ORDER', 'SKU', 20, $f->readAt->modify('-1 hour'), 'ALL-R');
+        $f->currentReturns();
+        // Terminal zero needs current source closure, but no age, daily tail or model.
+        $batch = $this->read($db, $f);
+        self::assertNull($batch->unavailableReason);
+        $group = $batch->skus[0]->days[0]->groups[0];
+        self::assertCount(2, $group->parts);
+        self::assertCount(1, $group->returns);
+        self::assertSame('ALL-R', $group->returns[0]->sourceRowId);
+        self::assertSame(20, $group->returns[0]->quantity);
+        foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group, ...$group->parts] as $node) {
+            self::assertSame('0', $node->quantities?->currentD);
+            self::assertSame('0', $node->quantities->eligibleOpenQuantity);
+            self::assertSame('0', $node->quantities->expectedNetNumerator);
+            self::assertSame('1', $node->quantities->expectedNetDenominator);
+        }
+        self::assertSame(['A', 'B'], array_keys($this->parts($batch)));
+        $f->currentReturns($f->readAt, false);
+        self::assertSame('returns_coverage_missing', $this->read($db, $f)->unavailableReason);
+        self::assertNull($this->read($db, $f)->quantities);
+    }
+
     public function testMissingDailyProofOrEpochNeverBecomesZero(): void
     {
         [$db, $f] = $this->fixture(training: true);

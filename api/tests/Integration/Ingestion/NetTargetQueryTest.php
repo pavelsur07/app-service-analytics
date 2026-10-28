@@ -162,6 +162,28 @@ final class NetTargetQueryTest extends KernelTestCase
         self::assertSame('ambiguous_delivery_allocation', $this->read($db, $f)->unavailableReason);
     }
 
+    public function testDifferentOriginsOnlyPermitProvenTerminalZero(): void
+    {
+        foreach ([[20, '-1 hour', null], [1, '-1 hour', 'ambiguous_delivery_allocation'], [21, '-1 hour', 'contradictory_quantity'], [20, '-3 days', 'contradictory_quantity']] as [$returned, $when, $reason]) {
+            [$db, $f] = $this->fixture();
+            $f->delivered('A', 'SKU', 7, $f->readAt->modify('-2 days'), 'ORDER');
+            $f->delivered('B', 'SKU', 13, $f->readAt->modify('-1 day'), 'ORDER');
+            $f->returned('ORDER', 'SKU', $returned, $f->readAt->modify($when));
+            $f->currentReturns();
+            $batch = $this->read($db, $f);
+            self::assertSame($reason, $batch->unavailableReason, 'R='.$returned.' at '.$when);
+            $parts = $batch->skus[0]->days[0]->groups[0]->parts;
+            self::assertCount(2, $parts);
+            foreach ($parts as $part) {
+                self::assertSame($reason, $part->unavailableReason);
+                self::assertSame(null === $reason ? 0 : null, $part->currentD);
+            }
+            if (null === $reason) {
+                self::assertSame([7, 13], array_column($parts, 'knownR'));
+            }
+        }
+    }
+
     public function testNestedAndGlobalBudgetsRejectWholeBatchBeforeJson(): void
     {
         [$db, $f] = $this->fixture();
