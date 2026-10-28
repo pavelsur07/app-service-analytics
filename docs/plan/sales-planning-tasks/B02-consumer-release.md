@@ -126,3 +126,57 @@ GrossTrainingAggregateQuery SHA256
 выдержками с SHA256 полных источников; исторические журналы сверх20KB
 прикладываются дифом, ADR и код сохранены полностью. Это убирает дублируемую
 историю предыдущих релизов, scope итогового кода остаётся полным.
+
+## Третий и повторный проходы — 2026-10-28
+
+Пакет3 `0adad595b11d1957f2b9d33b769a785bdb32472c1d3905f8a30b88fcbf94aba0`:
+conformity `20261028T102435.848834Z-0adad595b11d-codex-qzpve8r0` complete0.
+Defects `20261028T102435.856999Z-0adad595b11d-defects-mnsrxk3x` вернул
+complete/findings0, но wrapper после ответа обнаружил изменение HEAD автором
+из-за преждевременного commit26118f5→3cdf024. Итог failed, review.json нет;
+этот ответ НЕ засчитан, source bytes не менялись. Это ошибка порядка работы
+автора. Новый пакет собран на стабильном committed HEAD, merge не выполнялся.
+
+Коммит `3cdf024ef6a8cdedd401be25b0ac7a34e3eb8cc9` опубликован в draft
+[PR273](https://github.com/pavelsur07/app-service-analytics/pull/273).
+[CI40672542070](https://github.com/pavelsur07/app-service-analytics/actions/runs/40672542070)
+полностью GREEN: backend/frontend/services/e2e/contract+audit/path filters;
+image/deploy пропущены на feature branch штатно. Чужой securety_chek.md
+не staged/не включён в commit.
+
+Пакет4 `f3ff2c0c63e8ddf5b733b605e9b111a44c334d42ebc15c5badb9fb7921a81367`,
+оба actual Codex v0.164.0 complete/exit0/совпавший hash; модель из stderr
+`gpt-6.1-sol`. Conformity
+`20261028T103103.345188Z-f3ff2c0c63e8-codex-uyxdyo24`, session
+`01a18210-3934-72e3-9219-83ae763fe66c`: 0 новых замечаний. Defects
+`20261028T103103.336002Z-f3ff2c0c63e8-defects-3x8v0vfs`, session
+`01a18210-3931-7d52-ba15-a9542bb0d3ec`: 1 новое уникальное принятое
+замечание — Cancellation quantity overflow при cancelledsale1/Cancellation2
+молча обрезался canonical allocation и допускал T1 в gross training.
+ClientReturn overflow guard уже есть, Cancellation capacity нужно доказать
+отдельно. Всего уникальных принятых4, отклонённых0.
+
+Scoped correction выполняется с RED/GREEN, static/fullintegration и новым
+current-source performance proof. После correction root сначала commit/push,
+затем package+2CLI на неизменном HEAD; прежний GREEN CI не подменяет новый.
+PR остаётся draft, merge/deploy pending.
+
+Finding4 исправлен shared typed current-state capacity proof. Отдельные
+ClientReturn/delivered и Cancellation/cancelled balances исключают bad
+order/SKU из gross-дня, p95 measurement и return population; diagnostics
+возвращает contradictory_quantity. Корректные multiple-posting mixed groups
+и known Cancellation→ClientReturn onset сохраняются при допустимых текущих
+quantities; исторического type-change запрета не добавлено.
+
+Real RED воспроизвёл cancellation clipping и mixed group41vs31. GREEN34/246
+покрывает оба независимых capacity axes, maturity minimum, diagnostics и
+положительные mixed/onset cases. Полный integration772/18184 и все static
+gates PASS. Strict noisy current-source proof COMPLETE: plain4068/4403ms,
+EXPLAIN TIMING OFF4174.584/4546.598ms, defaultplanner, typed counts/profile
+и все4SQLsourcehashes подтверждены. Immutable JSON:
+`api/var/net-training-b02-final-quantity-711b773b7c8b.json`, artifact SHA256
+`a94ea743ace26682b186a1ab3694f82474f1ad062a2aea200ddd2a5f637fd548`.
+Gross SHA256 `1f77766c53a55cd7f4d2a7fb9500064264b3d08b2bd7bf3af173f2abe4466c1f`,
+Source SQL SHA256 `6cd9fbcf1967241711a670a2a6a8dd7ab2d99b8d8559515d447c8008acd2ee07`.
+Следуют committed snapshot, новый CI и actual2CLI; старый GREEN CI не
+объявляется проверкой нового diff. Merge/deploy пока не выполнялись.

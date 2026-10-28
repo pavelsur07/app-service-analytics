@@ -17,6 +17,48 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 final class NetTrainingSelectionQueryTest extends KernelTestCase
 {
+    public function testClientReturnOverflowCannotBorrowCancelledCapacityOrSupplyMaturity(): void
+    {
+        self::bootKernel();
+        $db = self::getContainer()->get(Connection::class);
+        self::assertInstanceOf(Connection::class, $db);
+        $f = new NetTrainingFixture($db);
+        for ($i = 0; $i < 29; ++$i) {
+            $f->posting('KNOWN-'.$i, 'REQUESTED', 1);
+        }
+        $day = $f->initial->modify('-1 day');
+        $f->posting('D', 'OTHER', 1, order: 'MIXED', businessDay: $day);
+        $f->posting('C', 'OTHER', 10, 'cancelled', order: 'MIXED', businessDay: $day);
+        $context = new NetTrainingContext($f->company->toRfc4122(), $f->account->toRfc4122(), $f->readAt, $f->epoch);
+        $read = static fn (): array => array_map(GrossTrainingAggregateQuery::mapRow(...), (new GrossTrainingAggregateQuery($db))->build($context->companyId, $context->accountId, $context, new NetTrainingRequest(['REQUESTED']))->executeQuery()->fetchAllAssociative());
+        self::assertSame(40, $read()[0]->sampleQuantity);
+        $f->returned('MIXED', 'OTHER', 2, $f->terminal->modify('+5 days'));
+        $bad = $read()[0];
+        self::assertFalse($bad->inputComplete);
+        self::assertNull($bad->p95Seconds);
+        self::assertNull($bad->sampleQuantity);
+    }
+
+    public function testCancellationOverflowCannotBeClippedOrSupplyTheThirtiethMaturityPosting(): void
+    {
+        self::bootKernel();
+        $db = self::getContainer()->get(Connection::class);
+        self::assertInstanceOf(Connection::class, $db);
+        $f = new NetTrainingFixture($db);
+        for ($i = 0; $i < 29; ++$i) {
+            $f->posting('KNOWN-'.$i, 'REQUESTED', 1);
+        }
+        $f->posting('CANCEL', 'OTHER', 1, 'cancelled', businessDay: $f->initial->modify('-1 day'));
+        $context = new NetTrainingContext($f->company->toRfc4122(), $f->account->toRfc4122(), $f->readAt, $f->epoch);
+        $read = static fn (): array => array_map(GrossTrainingAggregateQuery::mapRow(...), (new GrossTrainingAggregateQuery($db))->build($context->companyId, $context->accountId, $context, new NetTrainingRequest(['REQUESTED']))->executeQuery()->fetchAllAssociative());
+        self::assertSame(30, $read()[0]->sampleQuantity);
+        $f->returned('CANCEL', 'OTHER', 2, $f->terminal->modify('+2 hours'), 'Cancellation', 'Покупатель отменил заказ');
+        $bad = $read()[0];
+        self::assertFalse($bad->inputComplete);
+        self::assertNull($bad->p95Seconds);
+        self::assertNull($bad->sampleQuantity);
+    }
+
     public function testAnUnknownCancellationCannotSupplyTheThirtiethMaturityObservation(): void
     {
         self::bootKernel();

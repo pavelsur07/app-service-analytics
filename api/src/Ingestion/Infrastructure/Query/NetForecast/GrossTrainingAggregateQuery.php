@@ -51,27 +51,24 @@ final readonly class GrossTrainingAggregateQuery
                 FROM posting_proof p JOIN training_sales r ON r.posting_number = p.posting_number
                 JOIN source_proof sp ON sp.source_row_id = r.source_row_id
                 WHERE p.valid AND p.terminal_observed AND sp.history_valid AND sp.postings_complete
-                  AND p.posting_number IN (SELECT c.posting_number FROM canonical_outcomes c WHERE c.outcome IS NOT NULL)
+                  AND p.posting_number IN (
+                      SELECT c.posting_number FROM canonical_outcomes c WHERE c.outcome IS NOT NULL
+                        AND NOT EXISTS(SELECT 1 FROM contradictory_quantity_groups bad WHERE bad.order_number = c.order_number AND bad.marketplace_sku = c.marketplace_sku)
+                  )
                   AND r.business_date >= CAST(:grossFrom AS date) AND r.business_date < CAST(:grossTo AS date)
                 GROUP BY p.posting_number, p.first_terminal
             ), gross_maturity AS MATERIALIZED (
                 SELECT CASE WHEN COUNT(posting_number) >= 30 THEN PERCENTILE_DISC(0.95) WITHIN GROUP (ORDER BY seconds) ELSE NULL END AS p95_seconds
                 FROM maturity_postings
-            ), gross_return_balances AS MATERIALIZED (
-                SELECT s.order_number, s.marketplace_sku, SUM(s.quantity::bigint) AS quantity
-                FROM training_sales s JOIN latest_status l ON l.company_id = s.company_id AND l.marketplace_account_id = s.marketplace_account_id AND l.posting_number = s.posting_number
-                WHERE l.status = 'delivered' AND l.substatus IN ('posting_delivered', 'posting_received') GROUP BY s.order_number, s.marketplace_sku
-                UNION ALL
-                SELECT r.order_number, r.marketplace_sku, -SUM(r.quantity::bigint) AS quantity FROM training_returns r
-                WHERE r.return_type = 'ClientReturn' GROUP BY r.order_number, r.marketplace_sku
-            ), over_returns AS MATERIALIZED (
-                SELECT order_number, marketplace_sku FROM gross_return_balances
-                GROUP BY order_number, marketplace_sku HAVING SUM(quantity) < 0
+            ), gross_quantity_days AS MATERIALIZED (
+                SELECT DISTINCT a.business_date FROM source_alias_proof a
+                JOIN contradictory_quantity_groups bad ON bad.order_number = a.order_number AND bad.marketplace_sku = a.marketplace_sku
             ), gross_source_days AS MATERIALIZED (
                 SELECT sp.business_date,
-                       BOOL_AND(sp.valid)
-                         AND NOT EXISTS(SELECT 1 FROM source_alias_proof bad JOIN over_returns o ON o.order_number = bad.order_number AND o.marketplace_sku = bad.marketplace_sku WHERE bad.business_date = sp.business_date) AS valid
-                FROM source_alias_proof sp
+                       BOOL_AND(sp.valid) AS history_valid,
+                       NOT BOOL_OR(q.business_date IS NOT NULL) AS quantity_valid,
+                       BOOL_AND(sp.valid) AND NOT BOOL_OR(q.business_date IS NOT NULL) AS valid
+                FROM source_alias_proof sp LEFT JOIN gross_quantity_days q USING (business_date)
                 WHERE sp.business_date >= CAST(:grossFrom AS date) AND sp.business_date < CAST(:grossTo AS date)
                 GROUP BY sp.business_date
             ), gross_outcome_days AS MATERIALIZED (

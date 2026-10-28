@@ -622,3 +622,61 @@ Own33files снова frozen; `/tmp/b02-training-freeze.json` обновлён. 
 отклонённых findings0; принято3уникальных всего: firstconformity1,
 firstdefects1, seconddefects1. Текущий root round3 pending. Fixture37816
 idlehold до решения root по review/cleanup, ни Git ни prod не тронуты.
+
+## Finding4 f3ff2c0c63e8 — подробный план до кода
+
+Root VERIFIED/ACCEPTED: Cancellation превышает cancelled capacity, но старый
+ClientReturn-only guard пропускает canonical LEAST clipping. HEAD3cdf024
+не меняется; previous round3 invalidated root и не считается review.
+
+1. Shared current-state typed signed balances: ClientReturn↔recognized
+   delivered qty, Cancellation↔recognized cancelled qty, отдельно по полному
+   order/SKU. Нельзя складывать типы/статусы в одну capacity. Ledger/current
+   latest validated inputs; historical Cancellation→Client onset не запрещать.
+2. RED realwriters: known cancelled1/Cancellation1→accepted2 исключает день;
+   29known +overflowcancel не получает фиктивный30-й p95 observation.
+3. Gross whole-day proof и p95 known-outcome membership исключают bad groups;
+   возвращать contradictory_quantity diagnostic, не arbitrary clipping.
+4. Shared proof используется return population: mixed delivered/cancelled
+   group с current Cancellation overflow не может обучать returnCDF.
+   Positive multiple-posting mixed capacities и restored current ClientReturn
+   после известной type correction остаются valid, если новые capacities fit.
+5. Affected/static/fullintegration, затем strict5s noisy held37816 recheck,
+   immutable JSON с новыми4SQLhashes. После freezerootcommit/push ДОpackage;
+   HEAD/source/context неизменны до обоих CLI completions.
+
+Readiness: [ ] correctionRED; [ ] maturity29guard; [ ] mixedtypedaxes;
+[ ] diagnostics; [ ] validmixed/onsetpreserved; [ ] gates; [ ] 5s/freeze.
+
+## Re-freeze finding4 — current typed quantity proof
+
+Shared bounded signed balances считают независимо ClientReturn↔recognized
+Delivered и Cancellation↔recognized Cancelled capacities полного order/SKU.
+Gross whole-day и p95 known-membership не используют contradictory groups;
+return population также исключает их. Diagnostics обоих population дают
+contradictory_quantity. Исторического capacity/type-change запрета нет:
+проверяется latest current return state, existing monotone ClientReturn
+history guards сохраняются.
+
+Real-writer RED reproduced clipped Cancellation1→2 и contaminated30th
+maturity; mixed capacity RED дал41вместо31. GREEN34/246 покрывает эти случаи,
+ClientReturn не занимает canceled capacity, positive mixed D3+D4/C1+C2,
+обе diagnostics и restored current Cancellation→Client с G7/RH5.
+Full integration772/18184 exit0; lint/Stan/Deptrac/structure exit0.
+Logs `/tmp/b02-training-{cancellation-red,cancellation-mixed-red,
+current-quantity-green,current-quantity-int-full,current-quantity-lint,
+current-quantity-stan,current-quantity-deptrac,current-quantity-structure}.log`.
+
+Final current-source strict5s noisy recheck COMPLETE/defaultplanner:
+plain4068/4403ms, EXPLAIN ANALYZE BUFFERS TIMING OFF4174.584/4546.598ms;
+51scopes/account200000/20000/everySKU4000/400/RH8000 assertions PASS.
+Root immutable artifact `api/var/net-training-b02-final-quantity-711b773b7c8b.json`,
+SHA256 a94ea743ace26682b186a1ab3694f82474f1ad062a2aea200ddd2a5f637fd548.
+Current4SQLhashes verified. No source writer/schema/queue/GUC/cap changes.
+
+Own33paths re-frozen at HEAD3cdf024ef6a8cdedd401be25b0ac7a34e3eb8cc9;
+source/context больше не меняются без root GO. Root теперь commit/push ДО
+package prepare и держит HEAD неизменным до обоих CLI completions.
+Всего принято4уникальных findings, отклонённых0; invalidated round3 не
+считается успешным review. Новый valid2CLI/CI pending root. Fixture37816
+idlehold и runtime передаются root, mandatory finalcleanup остаётся pending.

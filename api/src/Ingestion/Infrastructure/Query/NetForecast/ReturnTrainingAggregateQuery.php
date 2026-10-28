@@ -71,8 +71,10 @@ final readonly class ReturnTrainingAggregateQuery
             ), return_base_groups AS MATERIALIZED (
                 SELECT m.order_number, m.marketplace_sku, MIN(m.delivery_origin) AS origin,
                        COALESCE(SUM(m.gross_quantity::bigint), 0) AS gross_quantity,
+                       BOOL_AND(bad.marketplace_sku IS NULL) AS quantity_valid,
                        BOOL_AND(m.valid AND COALESCE(aliases.valid, FALSE)) AND MIN(m.delivery_origin) = MAX(m.delivery_origin) AND SUM(m.gross_quantity::bigint) > 0 AS source_valid
                 FROM return_members m LEFT JOIN source_order_proof aliases USING (order_number, marketplace_sku)
+                LEFT JOIN contradictory_quantity_groups bad USING (order_number, marketplace_sku)
                 GROUP BY m.order_number, m.marketplace_sku
                 HAVING BOOL_OR(m.delivery_origin >= CAST(:originFrom AS timestamp) AND m.delivery_origin < CAST(:originTo AS timestamp))
             ), calendar_dates AS MATERIALIZED (
@@ -125,8 +127,8 @@ final readonly class ReturnTrainingAggregateQuery
                 GROUP BY g.order_number, g.marketplace_sku, g.gross_quantity
             ), return_groups AS MATERIALIZED (
                 SELECT g.order_number, g.marketplace_sku, g.origin, g.gross_quantity,
-                       g.source_valid AND COALESCE(daily.valid, FALSE) AND COALESCE(deep.valid, FALSE) AND COALESCE(delta.valid, FALSE) AS eligible,
-                       CASE WHEN NOT g.source_valid THEN 'source_history_unavailable' WHEN NOT COALESCE(daily.valid, FALSE) OR NOT COALESCE(deep.valid, FALSE) THEN 'returns_coverage_missing' WHEN NOT COALESCE(delta.valid, FALSE) THEN 'contradictory_quantity' ELSE NULL END AS exclusion_reason
+                       g.source_valid AND g.quantity_valid AND COALESCE(daily.valid, FALSE) AND COALESCE(deep.valid, FALSE) AND COALESCE(delta.valid, FALSE) AS eligible,
+                       CASE WHEN NOT g.source_valid THEN 'source_history_unavailable' WHEN NOT g.quantity_valid THEN 'contradictory_quantity' WHEN NOT COALESCE(daily.valid, FALSE) OR NOT COALESCE(deep.valid, FALSE) THEN 'returns_coverage_missing' WHEN NOT COALESCE(delta.valid, FALSE) THEN 'contradictory_quantity' ELSE NULL END AS exclusion_reason
                 FROM return_base_groups g LEFT JOIN daily_group_proof daily USING (order_number, marketplace_sku)
                 LEFT JOIN deep_group_proof deep USING (order_number, marketplace_sku)
                 LEFT JOIN delta_group_proof delta USING (order_number, marketplace_sku)

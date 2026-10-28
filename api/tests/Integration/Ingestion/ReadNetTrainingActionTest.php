@@ -26,6 +26,57 @@ use Symfony\Component\Uid\Uuid;
 #[SkipDatabaseRollback]
 final class ReadNetTrainingActionTest extends KernelTestCase
 {
+    public function testMixedPostingCapacitiesRejectCancellationOverflowAndKeepCurrentTypeOnset(): void
+    {
+        $db = $this->db();
+        $f = new NetTrainingFixture($db);
+        try {
+            for ($i = 0; $i < 31; ++$i) {
+                $f->posting('STABLE-'.$i, 'OTHER', 1);
+            }
+            $day = $f->initial->modify('-1 day');
+            $f->posting('D1', 'REQUESTED', 3, order: 'MIXED', businessDay: $day);
+            $f->posting('D2', 'REQUESTED', 4, order: 'MIXED', businessDay: $day);
+            $f->posting('C1', 'REQUESTED', 1, 'cancelled', order: 'MIXED', businessDay: $day);
+            $f->posting('C2', 'REQUESTED', 2, 'cancelled', order: 'MIXED', businessDay: $day);
+            $f->returned('MIXED', 'REQUESTED', 3, $f->terminal->modify('+2 hours'), 'Cancellation', 'Покупатель отменил заказ');
+            $f->returned('MIXED', 'REQUESTED', 2, $f->terminal->modify('+5 days'), sourceKey: 'CLIENT');
+            $f->returnCoverage();
+            $read = fn () => ($this->action($db, $f, new MockClock($f->readAt)))($f->company->toRfc4122(), $f->account->toRfc4122(), new NetTrainingRequest(['REQUESTED']));
+            $valid = $read();
+            self::assertSame(41, $valid->gross[0]->sampleQuantity);
+            self::assertSame(3, $valid->gross[0]->t1Quantity);
+            self::assertSame(7, $valid->returns[1]->sampleQuantity);
+            self::assertNotNull($valid->returns[1]->ageProfile);
+            self::assertSame(2, $valid->returns[1]->ageProfile[60]->returnedQuantity);
+            $f->returned('MIXED', 'REQUESTED', 4, $f->terminal->modify('+6 days'), 'Cancellation', 'Покупатель отменил заказ');
+            $bad = $read();
+            self::assertSame(31, $bad->gross[0]->sampleQuantity);
+            self::assertSame(1, $bad->gross[0]->excludedDays);
+            self::assertSame(0, $bad->returns[1]->sampleQuantity);
+            self::assertSame(1, $bad->returns[0]->excludedGroups);
+            $db->beginTransaction();
+            $db->executeStatement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+            $snapshot = $db->fetchOne('SELECT txid_current_snapshot()::text');
+            self::assertIsString($snapshot);
+            $context = new NetTrainingContext($f->company->toRfc4122(), $f->account->toRfc4122(), $f->readAt, $f->epoch, $snapshot);
+            foreach ([NetTrainingPopulation::Gross, NetTrainingPopulation::Returns] as $population) {
+                $rows = array_map(TrainingGroupDiagnosticsQuery::mapRow(...), (new TrainingGroupDiagnosticsQuery($db))->build($context->companyId, $context->accountId, $context, new NetTrainingRequest(['REQUESTED']), $population)->executeQuery()->fetchAllAssociative());
+                $mixed = array_values(array_filter($rows, static fn ($row): bool => 'MIXED' === $row->orderKey));
+                self::assertCount(1, $mixed);
+                self::assertSame('contradictory_quantity', $mixed[0]->exclusionReason);
+            }
+            $db->rollBack();
+            $f->returned('MIXED', 'REQUESTED', 3, $f->terminal->modify('+10 days'));
+            $corrected = $read();
+            self::assertSame(7, $corrected->returns[1]->sampleQuantity);
+            self::assertNotNull($corrected->returns[1]->ageProfile);
+            self::assertSame(5, $corrected->returns[1]->ageProfile[60]->returnedQuantity);
+        } finally {
+            $this->cleanup($db, $f);
+        }
+    }
+
     public function testOneReturnGroupAcrossSourceDaysHasOneDiagnosticCursorPosition(): void
     {
         $db = $this->db();

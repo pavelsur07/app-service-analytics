@@ -295,8 +295,28 @@ final class NetTrainingSourceSql
                 FROM status_inputs s CROSS JOIN input_budget budget WHERE budget.ok
             ),
             posting_current_status AS MATERIALIZED (
-                SELECT DISTINCT ON (s.posting_number) s.posting_number, s.order_number, s.status
+                SELECT DISTINCT ON (s.posting_number) s.posting_number, s.order_number, s.status, s.substatus
                 FROM training_status s ORDER BY s.posting_number, s.observed_at DESC
+            ),
+            training_quantity_balances AS MATERIALIZED (
+                SELECT s.order_number, s.marketplace_sku,
+                       CASE WHEN l.status = 'delivered' THEN 'ClientReturn' ELSE 'Cancellation' END AS return_type,
+                       SUM(s.quantity::bigint) AS quantity
+                FROM training_sales s JOIN posting_current_status l ON l.posting_number = s.posting_number
+                WHERE l.status = 'delivered' AND l.substatus IN ('posting_delivered', 'posting_received')
+                   OR l.status = 'cancelled' AND l.substatus = 'posting_canceled'
+                GROUP BY s.order_number, s.marketplace_sku, l.status
+                UNION ALL
+                SELECT r.order_number, r.marketplace_sku, r.return_type, -SUM(r.quantity::bigint) AS quantity
+                FROM training_returns r WHERE r.return_type IN ('ClientReturn', 'Cancellation')
+                GROUP BY r.order_number, r.marketplace_sku, r.return_type
+            ),
+            quantity_overflows AS MATERIALIZED (
+                SELECT order_number, marketplace_sku, return_type FROM training_quantity_balances
+                GROUP BY order_number, marketplace_sku, return_type HAVING SUM(quantity) < 0
+            ),
+            contradictory_quantity_groups AS MATERIALIZED (
+                SELECT DISTINCT order_number, marketplace_sku FROM quantity_overflows
             ),
             posting_sale_identity AS MATERIALIZED (
                 SELECT posting_number, COUNT(DISTINCT order_number) AS orders, BOOL_AND(order_number IS NOT NULL) AS complete

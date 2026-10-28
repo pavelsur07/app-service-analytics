@@ -38,7 +38,8 @@ final readonly class TrainingGroupDiagnosticsQuery
             SQL : <<<'SQL'
             SELECT g.business_date::text AS date_key, g.order_number, g.order_key, g.marketplace_sku,
                    (g.order_number IS NULL)::int AS order_missing, COALESCE(d.eligible, FALSE) AS eligible,
-                   CASE WHEN NOT COALESCE(source.valid, FALSE) THEN 'source_history_unavailable'
+                   CASE WHEN NOT COALESCE(source.history_valid, FALSE) THEN 'source_history_unavailable'
+                        WHEN NOT COALESCE(source.quantity_valid, FALSE) THEN 'contradictory_quantity'
                         WHEN COALESCE(outcome.unknown_quantity, 0) > 0 THEN 'unknown_outcome'
                         WHEN m.p95_seconds IS NULL THEN 'maturity_unavailable'
                         WHEN NOT COALESCE(d.eligible, FALSE) THEN 'cohort_not_mature' ELSE NULL END AS exclusion_reason
