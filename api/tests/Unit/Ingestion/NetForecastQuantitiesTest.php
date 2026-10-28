@@ -131,6 +131,26 @@ final class NetForecastQuantitiesTest extends TestCase
         self::assertSame('3', $a->plus($a)->expectedNetDenominator);
     }
 
+    public function testSumPrecisionProofCoversBothDenominatorsAndBasesAtBoundary(): void
+    {
+        self::assertTrue(NetForecastQuantities::canSumWithoutPrecisionOverflow([]));
+        $safe = NetForecastQuantities::fromComponents('1', '1', '1', '1'.str_repeat('0', 8189), '1', '1'.str_repeat('0', 8190));
+        // Denominator lengths 8190+8191, base length1, count length1, margin1 = 16384.
+        self::assertTrue(NetForecastQuantities::canSumWithoutPrecisionOverflow([$safe]));
+        $unproven = NetForecastQuantities::fromComponents('1', '1', '1', '1'.str_repeat('0', 8190), '1', '1'.str_repeat('0', 8190));
+        self::assertFalse(NetForecastQuantities::canSumWithoutPrecisionOverflow([$unproven]));
+        self::assertSame('2', $unproven->plus($unproven)->expectedNetNumerator);
+        $largeBase = NetForecastQuantities::fromComponents(str_repeat('9', 16382), str_repeat('9', 16382), '0', '1', '0', '1');
+        self::assertTrue(NetForecastQuantities::canSumWithoutPrecisionOverflow([$largeBase, $largeBase]));
+        foreach (get_object_vars($largeBase->plus($largeBase)) as $field) {
+            self::assertIsString($field);
+            self::assertLessThanOrEqual(16384, \strlen($field));
+        }
+        $largerBase = NetForecastQuantities::fromComponents(str_repeat('9', 16383), '0', '0', '1', '0', '1');
+        self::assertFalse(NetForecastQuantities::canSumWithoutPrecisionOverflow([$largerBase]));
+        self::assertSame($largerBase, $largerBase->plus(NetForecastQuantities::zero()));
+    }
+
     public function testPrecisionOverflowOfExactSumIsRefused(): void
     {
         $max = str_repeat('9', 16384);

@@ -65,6 +65,16 @@ final readonly class ProjectNetForecastSeriesAction
         if (!array_is_list($sku->days) || array_column($sku->days, 'businessDate') !== $dates) {
             return null;
         }
+        $quantities = (static function () use ($sku, $guard): \Generator {
+            foreach ($sku->days as $day) {
+                $guard();
+                if (null !== $day->quantities) {
+                    yield $day->quantities;
+                }
+            }
+        })();
+        $foldQuantities = NetForecastQuantities::canSumWithoutPrecisionOverflow($quantities);
+        $guard();
         $emptyScope ??= new NetForecastScope(NetForecastQuantities::zero(), null, null, 'money_currency_missing', [], []);
         $zero = $emptyScope->quantities;
         $emptyRevenue ??= NetForecastRevenue::empty();
@@ -80,10 +90,13 @@ final readonly class ProjectNetForecastSeriesAction
         foreach ($sku->days as $day) {
             $guard();
             [$basis, $reasons] = $this->quality($day, $guard);
+            // Without a proof, preserve the original intermediate quantity precision checks.
+            if (!$foldQuantities || $day->businessDate < $bucketFrom) {
+                $cumulative = $this->add($cumulative, $day->quantities, $day->unavailableReason, $guard);
+            }
             // Monetary failure order includes arithmetic precision checks across bucket boundaries.
             $cumulativeRevenue = $this->addRevenue($cumulativeRevenue, $day->exactRevenue(), $guard);
             if ($day->businessDate < $bucketFrom) {
-                $cumulative = $this->add($cumulative, $day->quantities, $day->unavailableReason, $guard);
                 $cumulativeReason = self::reason($cumulativeReason, $day->unavailableReason ?? (null === $day->quantities ? 'quantity_unavailable' : null));
                 $cumulativeBasis += $basis;
                 $cumulativeReasons += $reasons;
@@ -95,8 +108,10 @@ final readonly class ProjectNetForecastSeriesAction
             $periodBasis += $basis;
             $periodReasons += $reasons;
             if ($day->businessDate === $bucketTo) {
-                // Quantity chunks remain exact; monetary prefix already follows daily chronology.
-                $cumulative = $this->add($cumulative, $period, $periodReason, $guard);
+                // Regroup only when every intermediate quantity is proved to fit the original cap.
+                if ($foldQuantities) {
+                    $cumulative = $this->add($cumulative, $period, $periodReason, $guard);
+                }
                 $cumulativeReason = self::reason($cumulativeReason, $periodReason);
                 $cumulativeBasis += $periodBasis;
                 $cumulativeReasons += $periodReasons;

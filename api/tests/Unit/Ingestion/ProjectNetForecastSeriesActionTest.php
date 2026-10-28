@@ -75,6 +75,68 @@ final class ProjectNetForecastSeriesActionTest extends TestCase
         }
     }
 
+    public function testQuantityChronologyCannotBypassPrecisionRefusalAcrossHiddenPrefix(): void
+    {
+        $a = '1'.str_repeat('0', 8192);
+        $b = '1'.str_repeat('0', 8191).'1';
+        $days = [self::day('2026-08-31', denominator: $a), self::day('2026-09-01', denominator: $b), self::day('2026-09-02', numerator: $a, denominator: $b, eligible: '1')];
+        self::assertNotNull($days[0]->quantities);
+        self::assertNotNull($days[1]->quantities);
+        self::assertNotNull($days[2]->quantities);
+        // Visible fractions cancel exactly to one, hiding the earlier A*B denominator overflow.
+        self::assertSame('1', $days[1]->quantities->plus($days[2]->quantities)->expectedNetNumerator);
+        try {
+            $days[0]->quantities->plus($days[1]->quantities);
+            self::fail('Original chronological quantity SUM must exceed 16384 digits.');
+        } catch (\OverflowException $exception) {
+            self::assertSame('Exact quantity precision budget exceeded.', $exception->getMessage());
+        }
+        foreach (['month', 'period', 'week', 'day'] as $groupBy) {
+            foreach (['2026-09-01', '2026-08-31'] as $from) {
+                try {
+                    (new ProjectNetForecastSeriesAction())(self::batch($days), self::request($from, '2026-09-02', $groupBy, '2026-08-31'), static function (): void {});
+                    self::fail('Grouping must not bypass the original chronological precision refusal.');
+                } catch (\OverflowException $exception) {
+                    self::assertSame('Exact quantity precision budget exceeded.', $exception->getMessage());
+                }
+            }
+        }
+    }
+
+    public function testInsufficientQuantityProofFallsBackWithoutRejectingValidLargeSums(): void
+    {
+        $denominator = '1'.str_repeat('0', 8192);
+        $days = [self::day('2026-08-31', denominator: $denominator), self::day('2026-09-01', denominator: $denominator), self::day('2026-09-02', denominator: $denominator)];
+        foreach (['day', 'week', 'month', 'period'] as $groupBy) {
+            $points = (new ProjectNetForecastSeriesAction())(self::batch($days), self::request('2026-09-01', '2026-09-02', $groupBy, '2026-08-31'), static function (): void {})->skus[0]->points;
+            $lastIndex = array_key_last($points);
+            self::assertNotNull($lastIndex);
+            $last = $points[$lastIndex];
+            self::assertNotNull($last->cumulative->quantities);
+            self::assertSame(get_object_vars(NetForecastQuantities::fromComponents('0', '3', '0', '1', '3', $denominator)), get_object_vars($last->cumulative->quantities));
+            self::assertNull($last->cumulative->expectedNetRevenue);
+            // Revenue's earlier product precheck is independently sticky after 2/A reduces.
+            self::assertSame('money_precision_exceeded', $last->cumulative->moneyUnavailableReason);
+        }
+        $unknown = [self::day('2026-08-31', denominator: $denominator), self::day('2026-09-01', reason: 'unknown_outcome'), self::day('2026-09-02', denominator: '1'.str_repeat('0', 8191).'1')];
+        $point = (new ProjectNetForecastSeriesAction())(self::batch($unknown), self::request('2026-09-01', '2026-09-02', 'month', '2026-08-31'), static function (): void {})->skus[0]->points[0];
+        self::assertNull($point->cumulative->quantities);
+        self::assertSame('unknown_outcome', $point->cumulative->unavailableReason);
+        self::assertNull($point->cumulative->expectedNetRevenue);
+        self::assertSame('unknown_outcome', $point->cumulative->moneyUnavailableReason);
+        // Reversing the cancellation order makes the original prefix valid: 1/B + A/B = 1.
+        $b = '1'.str_repeat('0', 8191).'1';
+        $reversed = [self::day('2026-08-31', denominator: $b), self::day('2026-09-01', numerator: $denominator, denominator: $b, eligible: '1'), self::day('2026-09-02', denominator: $denominator)];
+        foreach (['day', 'week', 'period'] as $groupBy) {
+            $points = (new ProjectNetForecastSeriesAction())(self::batch($reversed), self::request('2026-08-31', '2026-09-02', $groupBy), static function (): void {})->skus[0]->points;
+            $lastIndex = array_key_last($points);
+            self::assertNotNull($lastIndex);
+            $last = $points[$lastIndex];
+            self::assertNotNull($last->cumulative->quantities);
+            self::assertSame(get_object_vars(NetForecastQuantities::fromComponents('0', '3', '0', '1', $b, $denominator)), get_object_vars($last->cumulative->quantities));
+        }
+    }
+
     public function testHalfMinorChildrenAreNotAddedAfterRounding(): void
     {
         $days = [self::day('2026-08-01', denominator: '2'), self::day('2026-08-02', denominator: '2')];
@@ -305,9 +367,9 @@ final class ProjectNetForecastSeriesActionTest extends TestCase
         return new NetForecastBatch('company', 'account', null, null, [new NetForecastSku('SKU', $days, null, null, null, null)], null, null, null, null);
     }
 
-    private static function day(string $date, string $numerator = '1', string $denominator = '3', ?string $price = '1', string $currency = 'RUB', ?string $reason = null): NetForecastDay
+    private static function day(string $date, string $numerator = '1', string $denominator = '3', ?string $price = '1', string $currency = 'RUB', ?string $reason = null, ?string $eligible = null): NetForecastDay
     {
-        $q = null === $reason ? NetForecastQuantities::fromComponents('0', $numerator, '0', '1', $numerator, $denominator) : null;
+        $q = null === $reason ? NetForecastQuantities::fromComponents('0', $eligible ?? $numerator, '0', '1', $numerator, $denominator) : null;
         $revenue = null === $q ? NetForecastRevenue::unavailable($reason) : NetForecastRevenue::fromSource($price, $currency, $q);
         $moneyReason = $revenue->unavailableReason();
         try {
