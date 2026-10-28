@@ -32,7 +32,7 @@ final readonly class ReadNetForecastAction
             throw new \InvalidArgumentException('Forecast company and account must be UUID values.');
         }
         if ([] === $request->marketplaceSkus) {
-            return new NetForecastBatch($companyId, $accountId, null, null, [], NetForecastQuantities::zero(), null);
+            return new NetForecastBatch($companyId, $accountId, null, null, [], NetForecastQuantities::zero(), null, null, 'money_currency_missing');
         }
         $readAt = null;
         $context = null;
@@ -42,7 +42,7 @@ final readonly class ReadNetForecastAction
                 $readAt = $training->readAt;
                 $context = $training->context;
                 if (null === $context) {
-                    return new NetForecastBatch($companyId, $accountId, $readAt, null, [], null, $training->unavailableReason ?? 'training_context_missing');
+                    return new NetForecastBatch($companyId, $accountId, $readAt, null, [], null, $training->unavailableReason ?? 'training_context_missing', null, $training->unavailableReason ?? 'training_context_missing');
                 }
                 $context->assertScope($companyId, $accountId);
                 if ($context->snapshotId !== $snapshotId) {
@@ -87,6 +87,6 @@ final readonly class ReadNetForecastAction
 
     private function unavailable(string $companyId, string $accountId, ?\DateTimeImmutable $readAt, ?NetTrainingContext $context, string $reason): NetForecastBatch
     {
-        return new NetForecastBatch($companyId, $accountId, $readAt, $context, [], null, $reason);
+        return new NetForecastBatch($companyId, $accountId, $readAt, $context, [], null, $reason, null, $reason);
     }
 }

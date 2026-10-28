@@ -39,7 +39,7 @@ final class NetTargetFixture
         $this->epoch = new NetForecastCaptureEpoch(Uuid::v7()->toRfc4122(), 'accepted_state_v1', $today, null, 'synthetic-target-capture');
     }
 
-    public function sale(string $source, string $sku, int $quantity, string $status, \DateTimeImmutable $at, ?string $order = null, ?string $posting = null, ?\DateTimeImmutable $day = null, FactCaptureOrigin $origin = FactCaptureOrigin::LivePolling, bool $missingOrder = false, ?string $substatus = null, ?\DateTimeImmutable $observedAt = null): void
+    public function sale(string $source, string $sku, int $quantity, string $status, \DateTimeImmutable $at, ?string $order = null, ?string $posting = null, ?\DateTimeImmutable $day = null, FactCaptureOrigin $origin = FactCaptureOrigin::LivePolling, bool $missingOrder = false, ?string $substatus = null, ?\DateTimeImmutable $observedAt = null, ?Money $amount = null): void
     {
         $order ??= $source;
         $posting ??= $source;
@@ -48,7 +48,7 @@ final class NetTargetFixture
         $fact = SalesFactBuilder::aSalesFact()->withCompanyId($this->company)->withMarketplaceAccountId($this->account)
             ->withSourceRowId($source)->withMarketplaceSku($sku)->withQuantity($quantity)->withStatus($status)
             ->withOrderNumber($missingOrder ? null : $order)->withPostingNumber($posting)->withBusinessDate($day)
-            ->withOrderedAt($at)->withRawDocumentId($raw)->withAmount(Money::ofMinor(12345, 'RUB'))->build();
+            ->withOrderedAt($at)->withRawDocumentId($raw)->withAmount($amount ?? Money::ofMinor(12345, 'RUB'))->build();
         (new DoctrineSalesFactWriter($this->db, new MockClock($at)))->upsertAll([$fact], $origin);
         $statusBuilder = MarketplacePostingStatusBuilder::aMarketplacePostingStatus()->withCompanyId($this->company)->withMarketplaceAccountId($this->account)
             ->withPostingNumber($posting)->withOrderNumber($order)->withRawDocumentId($raw)->withObservedAt($observedAt ?? $at);
@@ -57,10 +57,10 @@ final class NetTargetFixture
         $this->receipt(MarketplaceReportType::OzonPostingFboList, $day, $day, $at->modify('+1 second'), origin: $origin);
     }
 
-    public function delivered(string $source, string $sku, int $quantity, \DateTimeImmutable $origin, ?string $order = null, ?\DateTimeImmutable $day = null): void
+    public function delivered(string $source, string $sku, int $quantity, \DateTimeImmutable $origin, ?string $order = null, ?\DateTimeImmutable $day = null, ?Money $amount = null): void
     {
-        $this->sale($source, $sku, $quantity, 'awaiting_packaging', $origin->modify('-2 hours'), $order, day: $day);
-        $this->sale($source, $sku, $quantity, 'delivered', $origin, $order, day: $day);
+        $this->sale($source, $sku, $quantity, 'awaiting_packaging', $origin->modify('-2 hours'), $order, day: $day, amount: $amount);
+        $this->sale($source, $sku, $quantity, 'delivered', $origin, $order, day: $day, amount: $amount);
     }
 
     public function returned(string $order, string $sku, int $quantity, \DateTimeImmutable $at, string $source = 'RETURN', string $type = 'ClientReturn', string $reason = 'synthetic client return'): void

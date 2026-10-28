@@ -96,6 +96,30 @@ final class NetForecastQuantitiesTest extends TestCase
         }
     }
 
+    public function testIntegerShiftRetainsAllCanonicalComponents(): void
+    {
+        foreach ([
+            [['2', '0', '1', '3', '0', '1'], ['2', '0', '1', '3', '0', '1', '5', '3']],
+            [['2', '3', '0', '7', '2', '5'], ['2', '3', '0', '1', '2', '5', '12', '5']],
+            [['2', '1', '1', '6', '1', '15'], ['2', '1', '1', '6', '1', '15', '19', '10']],
+            [['5', '9', '5', '1', '0', '1'], ['5', '9', '5', '1', '0', '1', '0', '1']],
+            [['0', '0', '0', '999', '0', '7'], ['0', '0', '0', '1', '0', '1', '0', '1']],
+            [['9223372036854775808', '0', '1', '2', '0', '1'], ['9223372036854775808', '0', '1', '2', '0', '1', '18446744073709551615', '2']],
+        ] as [$components, $expected]) {
+            $q = NetForecastQuantities::fromComponents(...$components);
+            self::assertSame($expected, [$q->currentD, $q->eligibleOpenQuantity, $q->futureReturnsNumerator, $q->futureReturnsDenominator,
+                $q->retainedOpenNumerator, $q->retainedOpenDenominator, $q->expectedNetNumerator, $q->expectedNetDenominator]);
+        }
+        $a = NetForecastQuantities::fromComponents('1', '0', '1', '6', '0', '1');
+        $b = NetForecastQuantities::fromComponents('1', '0', '1', '15', '0', '1');
+        $sum = $a->plus($b);
+        self::assertSame(['2', '0', '7', '30', '0', '1', '53', '30'], [$sum->currentD, $sum->eligibleOpenQuantity,
+            $sum->futureReturnsNumerator, $sum->futureReturnsDenominator, $sum->retainedOpenNumerator, $sum->retainedOpenDenominator,
+            $sum->expectedNetNumerator, $sum->expectedNetDenominator]);
+        self::assertSame('5', $a->plus($a)->expectedNetNumerator);
+        self::assertSame('3', $a->plus($a)->expectedNetDenominator);
+    }
+
     public function testPrecisionOverflowOfExactSumIsRefused(): void
     {
         $max = str_repeat('9', 16384);

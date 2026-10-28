@@ -23,6 +23,7 @@ use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetLimits;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetQuery;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetRequest;
 use App\Ingestion\Infrastructure\Query\NetForecast\ReturnTrainingAggregateQuery;
+use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Ingestion\NetTargetFixture;
 use App\Tests\Support\Ingestion\NetTrainingFixture;
 use DAMA\DoctrineTestBundle\PHPUnit\SkipDatabaseRollback;
@@ -75,6 +76,8 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertSame(0, $clock->calls);
         self::assertSame([], $result->skus);
         self::assertNull($result->context);
+        self::assertNull($result->expectedNetRevenue);
+        self::assertSame('money_currency_missing', $result->moneyUnavailableReason);
         self::assertNull($result->readAt);
         self::assertNull($result->unavailableReason);
         self::assertSame('0', $result->quantities?->expectedNetNumerator);
@@ -138,6 +141,7 @@ final class ReadNetForecastActionTest extends KernelTestCase
         $other->beginTransaction();
         // The accepted return changes both the mature training curve and current D.
         $writer->returned('TRAIN-D-0', 'SKU', 6, $f->readAt->modify('-50 days'), 'LATE-TRAIN');
+        $writer->sale('D', 'SKU', 70, 'delivered', $f->readAt->modify('-30 minutes'), amount: Money::ofMinor(24690, 'RUB'));
         $writer->returned('D', 'SKU', 7, $f->readAt->modify('-1 hour'), 'LATE-CURRENT');
         $writer->currentReturns($f->readAt->modify('-1 microsecond'));
         $pinned = null;
@@ -160,11 +164,17 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertSame($old->readAt, $old->context->readAt);
         self::assertSame($f->epoch->start->format('U.u'), $old->context->epoch->start->format('U.u'));
         self::assertSame('90', $old->quantities?->expectedNetNumerator);
+        self::assertSame(1111050, $old->expectedNetRevenue?->minorAmount());
+        self::assertSame('12345', $this->parts($old)['D']->trace->amountMinor);
+        self::assertSame(2, $this->parts($old)['D']->trace->latestFactRevision);
         self::assertSame('70', $old->quantities->currentD);
         self::assertFalse($db->isTransactionActive());
         $db->resetObservations();
         $fresh = $this->read($db, $f);
         self::assertSame(3, $db->populations);
+        self::assertSame('24690', $this->parts($fresh)['D']->trace->amountMinor);
+        self::assertSame(3, $this->parts($fresh)['D']->trace->latestFactRevision);
+        self::assertNotSame($old->expectedNetRevenue->minorAmount(), $fresh->expectedNetRevenue?->minorAmount());
         self::assertSame('63', $fresh->quantities?->currentD);
         self::assertSame('477', $fresh->quantities->futureReturnsNumerator);
         self::assertSame('100', $fresh->quantities->futureReturnsDenominator);
@@ -180,6 +190,7 @@ final class ReadNetForecastActionTest extends KernelTestCase
         $other = $this->other($db);
         $writer = new NetTargetFixture($other, $f->readAt, $f->company, $f->account);
         $other->beginTransaction();
+        $writer->sale('D', 'SKU', 70, 'delivered', $f->readAt->modify('-30 minutes'), amount: Money::ofMinor(24690, 'RUB'));
         $writer->returned('D', 'SKU', 7, $f->readAt->modify('-1 hour'), 'CONCURRENT-RETURN');
         $writer->currentReturns($f->readAt, false);
         $db->afterReturns = static function () use ($other): void { $other->commit(); };
@@ -188,9 +199,15 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertSame(3, $db->populations);
         self::assertNull($old->unavailableReason);
         self::assertSame('90', $old->quantities?->expectedNetNumerator);
+        self::assertSame(1111050, $old->expectedNetRevenue?->minorAmount());
+        self::assertSame('12345', $this->parts($old)['D']->trace->amountMinor);
+        self::assertSame(2, $this->parts($old)['D']->trace->latestFactRevision);
         $new = $this->read($db, $f);
         self::assertSame('returns_coverage_missing', $new->unavailableReason);
         self::assertNull($new->quantities);
+        self::assertNull($new->expectedNetRevenue);
+        self::assertSame('returns_coverage_missing', $new->moneyUnavailableReason);
+        self::assertSame('24690', $this->parts($new)['D']->trace->amountMinor);
         self::assertSame(7, $new->skus[0]->days[0]->groups[0]->returns[0]->quantity);
         // A later real completed observation repairs the failure; known R remains deducted once.
         $writer->currentReturns($f->readAt->modify('+1 second'));
@@ -309,6 +326,8 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertSame('1', $result->quantities->futureReturnsDenominator);
         self::assertSame('25', $result->quantities->retainedOpenNumerator);
         self::assertSame('90', $result->quantities->expectedNetNumerator);
+        self::assertSame(1111050, $result->expectedNetRevenue?->minorAmount());
+        self::assertNull($result->moneyUnavailableReason);
         self::assertSame('1', $result->quantities->expectedNetDenominator);
         $parts = $this->parts($result);
         self::assertSame('12345', $parts['D']->trace->amountMinor);
@@ -342,6 +361,9 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertCount(1, $group->returns);
         self::assertSame('Cancellation', $group->returns[0]->returnType);
         foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group, ...$group->parts] as $node) {
+            self::assertSame(0, $node->expectedNetRevenue?->minorAmount());
+            self::assertSame('RUB', $node->expectedNetRevenue->currency());
+            self::assertNull($node->moneyUnavailableReason);
             self::assertSame('0', $node->quantities?->currentD);
             self::assertSame('0', $node->quantities->eligibleOpenQuantity);
             self::assertSame('0', $node->quantities->expectedNetNumerator);
@@ -357,18 +379,21 @@ final class ReadNetForecastActionTest extends KernelTestCase
     {
         [$db, $f] = $this->fixture(training: true);
         $origin = $f->readAt->modify('-1 day');
-        $f->delivered('A', 'SKU', 7, $origin, 'ORDER');
-        $f->delivered('B', 'SKU', 13, $origin, 'ORDER');
+        $f->delivered('A', 'SKU', 7, $origin, 'ORDER', amount: Money::ofMinor(100, 'RUB'));
+        $f->delivered('B', 'SKU', 13, $origin, 'ORDER', amount: Money::ofMinor(200, 'RUB'));
         $f->returned('ORDER', 'SKU', 6, $f->readAt->modify('-1 hour'), 'PARTIAL-R');
         $f->daily($origin);
         $f->currentReturns();
         $batch = $this->read($db, $f);
         self::assertNull($batch->unavailableReason);
+        self::assertSame(2507, $batch->expectedNetRevenue?->minorAmount());
         $group = $batch->skus[0]->days[0]->groups[0];
         self::assertCount(1, $group->returns);
         self::assertSame('PARTIAL-R', $group->returns[0]->sourceRowId);
         self::assertSame(6, $group->returns[0]->quantity);
         foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group] as $node) {
+            self::assertSame(2507, $node->expectedNetRevenue?->minorAmount());
+            self::assertNull($node->moneyUnavailableReason);
             self::assertSame('14', $node->quantities?->currentD);
             self::assertSame('1', $node->quantities->futureReturnsNumerator);
             self::assertSame('1', $node->quantities->futureReturnsDenominator);
@@ -385,7 +410,9 @@ final class ReadNetForecastActionTest extends KernelTestCase
             self::assertSame('14', $part->quantities->futureReturnsDenominator);
             self::assertSame($net, $part->quantities->expectedNetNumerator);
             self::assertSame('14', $part->quantities->expectedNetDenominator);
-            self::assertSame('12345', $part->trace->amountMinor);
+            self::assertSame('A' === $source ? '100' : '200', $part->trace->amountMinor);
+            self::assertSame('A' === $source ? 93 : 2414, $part->expectedNetRevenue?->minorAmount());
+            self::assertNull($part->moneyUnavailableReason);
             self::assertSame('RUB', $part->trace->currency);
             self::assertSame($source, $part->trace->sourceRowId);
             self::assertSame(2, $part->trace->latestFactRevision);
@@ -445,6 +472,8 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertSame('13', $groups['KNOWN']->quantities?->expectedNetNumerator);
         foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $groups['UNKNOWN'], $parts['UNKNOWN']] as $node) {
             self::assertSame('unknown_outcome', $node->unavailableReason);
+            self::assertSame('unknown_outcome', $node->moneyUnavailableReason);
+            self::assertNull($node->expectedNetRevenue);
             self::assertNull($node->quantities, 'Full total cannot expose the known subset or substitute zero for unknown.');
         }
     }
@@ -462,6 +491,8 @@ final class ReadNetForecastActionTest extends KernelTestCase
         $group = $batch->skus[0]->days[0]->groups[0];
         foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group, ...$group->parts] as $node) {
             self::assertSame('ambiguous_delivery_allocation', $node->unavailableReason);
+            self::assertSame('ambiguous_delivery_allocation', $node->moneyUnavailableReason);
+            self::assertNull($node->expectedNetRevenue);
             self::assertNull($node->quantities);
         }
     }
@@ -482,6 +513,9 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertSame('ALL-R', $group->returns[0]->sourceRowId);
         self::assertSame(20, $group->returns[0]->quantity);
         foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group, ...$group->parts] as $node) {
+            self::assertSame(0, $node->expectedNetRevenue?->minorAmount());
+            self::assertSame('RUB', $node->expectedNetRevenue->currency());
+            self::assertNull($node->moneyUnavailableReason);
             self::assertSame('0', $node->quantities?->currentD);
             self::assertSame('0', $node->quantities->eligibleOpenQuantity);
             self::assertSame('0', $node->quantities->expectedNetNumerator);
@@ -511,6 +545,10 @@ final class ReadNetForecastActionTest extends KernelTestCase
             self::assertSame($revise ? 2 : 1, $group->returns[0]->latestFactRevision);
             foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group, ...$group->parts] as $node) {
                 self::assertSame($reason, $node->unavailableReason);
+                self::assertSame($reason, $node->moneyUnavailableReason);
+                if (null !== $reason) {
+                    self::assertNull($node->expectedNetRevenue);
+                }
                 if (null === $reason) {
                     self::assertSame('0', $node->quantities?->expectedNetNumerator);
                     self::assertSame('1', $node->quantities->expectedNetDenominator);
@@ -540,6 +578,10 @@ final class ReadNetForecastActionTest extends KernelTestCase
                 $group = $batch->skus[0]->days[0]->groups[0];
                 foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group, ...$group->parts] as $node) {
                     self::assertSame($reason, $node->unavailableReason);
+                    self::assertSame($reason, $node->moneyUnavailableReason);
+                    if (null !== $reason) {
+                        self::assertNull($node->expectedNetRevenue);
+                    }
                     if (null === $reason) {
                         self::assertSame('0', $node->quantities?->expectedNetNumerator);
                         self::assertSame('1', $node->quantities->expectedNetDenominator);
@@ -560,6 +602,8 @@ final class ReadNetForecastActionTest extends KernelTestCase
         $f->currentReturns();
         $result = $this->read($db, $f);
         self::assertSame('returns_coverage_missing', $result->unavailableReason);
+        self::assertNull($result->expectedNetRevenue);
+        self::assertSame('returns_coverage_missing', $result->moneyUnavailableReason);
         self::assertNull($result->quantities);
         $db->resetObservations();
         $clock = $this->clock($f);
@@ -585,6 +629,8 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertSame('0', $this->read($db, $f)->quantities?->expectedNetNumerator);
         $foreign = ($this->action($db, $f, $this->clock($f)))(Uuid::v7()->toRfc4122(), $f->account->toRfc4122(), $this->request($f));
         self::assertNull($foreign->quantities);
+        self::assertNull($foreign->expectedNetRevenue);
+        self::assertSame($foreign->unavailableReason, $foreign->moneyUnavailableReason);
         self::assertSame([], $this->parts($foreign));
     }
 

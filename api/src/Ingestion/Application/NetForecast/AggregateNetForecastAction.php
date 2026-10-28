@@ -7,6 +7,7 @@ namespace App\Ingestion\Application\NetForecast;
 use App\Ingestion\Domain\ValueObject\DeliveredRiskQuantities;
 use App\Ingestion\Domain\ValueObject\GrossProbability;
 use App\Ingestion\Domain\ValueObject\NetForecastQuantities;
+use App\Ingestion\Domain\ValueObject\NetForecastRevenue;
 use App\Ingestion\Domain\ValueObject\OpenRetainedQuantities;
 use App\Ingestion\Domain\ValueObject\ReturnProbability;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetBatch;
@@ -17,6 +18,7 @@ use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetPartRow;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetReadinessRow;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetSkuRow;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTrainingContext;
+use App\Shared\Domain\ValueObject\Money;
 
 /**
  * Pure current-RR composition. Memo values never retain targets or training graphs.
@@ -63,7 +65,7 @@ final readonly class AggregateNetForecastAction
             return $this->refuse($companyId, $accountId, $context, 'training_context_mismatch');
         }
         if ($empty) {
-            return new NetForecastBatch($companyId, $accountId, null, null, [], NetForecastQuantities::zero(), null);
+            return new NetForecastBatch($companyId, $accountId, null, null, [], NetForecastQuantities::zero(), null, null, 'money_currency_missing');
         }
         if (null !== $targets->budgetFailure || 'input_budget_exceeded' === $targets->unavailableReason) {
             return $this->refuse($companyId, $accountId, $context, 'input_budget_exceeded');
@@ -79,6 +81,7 @@ final readonly class AggregateNetForecastAction
             $peakLimit = min($this->limits->phpPeakBytes, $runtimeLimits->phpPeakBytes);
             $allocationLimit = min($this->limits->phpAllocationBytes, $runtimeLimits->phpAllocationBytes);
             $seconds = min($this->limits->computeSeconds, $runtimeLimits->computeSeconds);
+            $outputLimit = min($this->limits->outputBytes, $runtimeLimits->outputBytes);
             $guard = static function () use ($started, $baseline, $peakLimit, $allocationLimit, $seconds): void {
                 if (memory_get_peak_usage(true) > $peakLimit
                     || memory_get_usage(true) + 8388608 > $peakLimit
@@ -90,27 +93,32 @@ final readonly class AggregateNetForecastAction
             $guard();
             $this->checkShape($targets, $guard);
             $used = 0;
-            $this->charge([$companyId, $accountId, $context], $used, $guard);
+            $this->charge([$companyId, $accountId, $context], $used, $guard, $outputLimit);
             $skus = $targets->skus;
             usort($skus, static fn (NetTargetSkuRow $a, NetTargetSkuRow $b): int => strcmp($a->marketplaceSku, $b->marketplaceSku));
             $output = [];
             $total = NetForecastQuantities::zero();
+            $revenue = NetForecastRevenue::empty();
             $reason = null;
             $deliveredMemo = [];
             $openMemo = [];
             foreach ($skus as $sku) {
-                $result = $this->sku($sku, $context, $training, $deliveredMemo, $openMemo, $used, $guard);
+                $childRevenue = NetForecastRevenue::empty();
+                $result = $this->sku($sku, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit);
                 $output[] = $result;
                 $total = self::add($total, $result->quantities);
+                $revenue = $this->addRevenue($revenue, $childRevenue, $guard);
                 $reason = self::reason($reason, $result->unavailableReason);
             }
             $reason = self::reason($reason, $targets->unavailableReason);
             if (null !== $reason) {
                 $total = null;
             }
-            $this->charge([$total, $reason], $used, $guard);
+            $revenue = null === $total ? NetForecastRevenue::unavailable($reason ?? 'quantity_unavailable') : $revenue;
+            [$money, $moneyReason] = $this->guardedPublish($revenue, $total, $reason, $guard);
+            $this->charge([$total, $reason, 'expectedNetRevenue' => $money, 'moneyUnavailableReason' => $moneyReason], $used, $guard, $outputLimit);
 
-            return new NetForecastBatch($companyId, $accountId, $context->readAt, $context, $output, $total, $reason);
+            return new NetForecastBatch($companyId, $accountId, $context->readAt, $context, $output, $total, $reason, $money, $moneyReason);
         } catch (\OverflowException) {
             // Never expose a truncated hierarchy or a partial quantity under a full-total name.
             return $this->refuse($companyId, $accountId, $context, 'input_budget_exceeded');
@@ -126,7 +134,7 @@ final readonly class AggregateNetForecastAction
 
     private function refuse(string $companyId, string $accountId, NetTrainingContext $context, string $reason): NetForecastBatch
     {
-        return new NetForecastBatch($companyId, $accountId, $context->readAt, $context, [], null, $reason);
+        return new NetForecastBatch($companyId, $accountId, $context->readAt, $context, [], null, $reason, null, $reason);
     }
 
     /** @param \Closure(): void $guard */
@@ -178,26 +186,31 @@ final readonly class AggregateNetForecastAction
      * @param array<string, OpenCoefficient>      $openMemo
      * @param \Closure(): void                    $guard
      */
-    private function sku(NetTargetSkuRow $sku, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard): NetForecastSku
+    private function sku(NetTargetSkuRow $sku, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit): NetForecastSku
     {
         $days = $sku->days;
         usort($days, static fn (NetTargetDayRow $a, NetTargetDayRow $b): int => strcmp($a->businessDate, $b->businessDate));
         $output = [];
         $total = NetForecastQuantities::zero();
+        $revenue = NetForecastRevenue::empty();
         $reason = [] === $days ? 'source_history_unavailable' : null;
         foreach ($days as $day) {
             $guard();
-            $result = $this->day($sku->marketplaceSku, $day, $context, $training, $deliveredMemo, $openMemo, $used, $guard);
+            $childRevenue = NetForecastRevenue::empty();
+            $result = $this->day($sku->marketplaceSku, $day, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit);
             $output[] = $result;
             $total = self::add($total, $result->quantities);
+            $revenue = $this->addRevenue($revenue, $childRevenue, $guard);
             $reason = self::reason($reason, $result->unavailableReason);
         }
         if (null !== $reason) {
             $total = null;
         }
-        $this->charge([$sku->marketplaceSku, $total, $reason], $used, $guard);
+        $revenue = null === $total ? NetForecastRevenue::unavailable($reason ?? 'quantity_unavailable') : $revenue;
+        [$money, $moneyReason] = $this->guardedPublish($revenue, $total, $reason, $guard);
+        $this->charge([$sku->marketplaceSku, $total, $reason, 'expectedNetRevenue' => $money, 'moneyUnavailableReason' => $moneyReason], $used, $guard, $outputLimit);
 
-        return new NetForecastSku($sku->marketplaceSku, $output, $total, $reason);
+        return new NetForecastSku($sku->marketplaceSku, $output, $total, $reason, $money, $moneyReason);
     }
 
     /**
@@ -205,27 +218,32 @@ final readonly class AggregateNetForecastAction
      * @param array<string, OpenCoefficient>      $openMemo
      * @param \Closure(): void                    $guard
      */
-    private function day(string $sku, NetTargetDayRow $day, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard): NetForecastDay
+    private function day(string $sku, NetTargetDayRow $day, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit): NetForecastDay
     {
         $groups = $day->groups;
         usort($groups, static fn (NetTargetGroupRow $a, NetTargetGroupRow $b): int => strcmp($a->orderNumber ?? '', $b->orderNumber ?? ''));
         $output = [];
         $total = NetForecastQuantities::zero();
+        $revenue = NetForecastRevenue::empty();
         $reason = [] === $groups && !$day->emptyComplete ? 'source_history_unavailable' : null;
         foreach ($groups as $group) {
             $guard();
-            $result = $this->group($sku, $day->businessDate, $group, $context, $training, $deliveredMemo, $openMemo, $used, $guard);
+            $childRevenue = NetForecastRevenue::empty();
+            $result = $this->group($sku, $day->businessDate, $group, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit);
             $output[] = $result;
             $total = self::add($total, $result->quantities);
+            $revenue = $this->addRevenue($revenue, $childRevenue, $guard);
             $reason = self::reason($reason, $result->unavailableReason);
         }
         $reason = self::reason($reason, $day->unavailableReason);
         if (null !== $reason) {
             $total = null;
         }
-        $this->charge([$day->businessDate, $total, $reason], $used, $guard);
+        $revenue = null === $total ? NetForecastRevenue::unavailable($reason ?? 'quantity_unavailable') : $revenue;
+        [$money, $moneyReason] = $this->guardedPublish($revenue, $total, $reason, $guard);
+        $this->charge([$day->businessDate, $total, $reason, 'expectedNetRevenue' => $money, 'moneyUnavailableReason' => $moneyReason, 'revenue' => $revenue], $used, $guard, $outputLimit);
 
-        return new NetForecastDay($day->businessDate, $output, $total, $reason);
+        return new NetForecastDay($day->businessDate, $output, $total, $reason, $money, $moneyReason, $revenue);
     }
 
     /**
@@ -233,29 +251,34 @@ final readonly class AggregateNetForecastAction
      * @param array<string, OpenCoefficient>      $openMemo
      * @param \Closure(): void                    $guard
      */
-    private function group(string $sku, string $date, NetTargetGroupRow $group, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard): NetForecastGroup
+    private function group(string $sku, string $date, NetTargetGroupRow $group, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit): NetForecastGroup
     {
         $parts = $group->parts;
         usort($parts, static fn (NetTargetPartRow $a, NetTargetPartRow $b): int => strcmp($a->sourceRowId, $b->sourceRowId));
         $output = [];
         $total = NetForecastQuantities::zero();
+        $revenue = NetForecastRevenue::empty();
         $identityReason = null === $group->orderNumber || '' === trim($group->orderNumber) || '' === trim($sku)
             || $sku !== $group->marketplaceSku || $date !== $group->businessDate ? 'target_identity_mismatch' : null;
         $reason = [] === $parts ? 'source_history_unavailable' : $identityReason;
         foreach ($parts as $part) {
             $guard();
-            $result = $this->part($group, $part, $context, $training, $identityReason, $deliveredMemo, $openMemo, $used, $guard);
+            $childRevenue = NetForecastRevenue::empty();
+            $result = $this->part($group, $part, $context, $training, $identityReason, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit);
             $output[] = $result;
             $total = self::add($total, $result->quantities);
+            $revenue = $this->addRevenue($revenue, $childRevenue, $guard);
             $reason = self::reason($reason, $result->unavailableReason);
         }
         $reason = self::reason($reason, $group->unavailableReason ?? (!$group->inputComplete ? 'target_input_incomplete' : null));
         if (null !== $reason) {
             $total = null;
         }
-        $this->charge([$group->orderNumber, $group->marketplaceSku, $group->businessDate, $group->returns, $total, $reason], $used, $guard);
+        $revenue = null === $total ? NetForecastRevenue::unavailable($reason ?? 'quantity_unavailable') : $revenue;
+        [$money, $moneyReason] = $this->guardedPublish($revenue, $total, $reason, $guard);
+        $this->charge([$group->orderNumber, $group->marketplaceSku, $group->businessDate, $group->returns, $total, $reason, 'expectedNetRevenue' => $money, 'moneyUnavailableReason' => $moneyReason], $used, $guard, $outputLimit);
 
-        return new NetForecastGroup($group->orderNumber, $group->marketplaceSku, $group->businessDate, $output, $group->returns, $total, $reason);
+        return new NetForecastGroup($group->orderNumber, $group->marketplaceSku, $group->businessDate, $output, $group->returns, $total, $reason, $money, $moneyReason);
     }
 
     /**
@@ -263,7 +286,7 @@ final readonly class AggregateNetForecastAction
      * @param array<string, OpenCoefficient>      $openMemo
      * @param \Closure(): void                    $guard
      */
-    private function part(NetTargetGroupRow $group, NetTargetPartRow $part, NetTrainingContext $context, NetTrainingBatch $training, ?string $identityReason, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard): NetForecastPart
+    private function part(NetTargetGroupRow $group, NetTargetPartRow $part, NetTrainingContext $context, NetTrainingBatch $training, ?string $identityReason, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit): NetForecastPart
     {
         $reason = $identityReason ?? self::partReason($part);
         if (null !== $reason) {
@@ -288,9 +311,55 @@ final readonly class AggregateNetForecastAction
                     ->plus(NetForecastQuantities::fromComponents('0', (string) $part->eligibleOpenPost, '0', '1', $postQ->retainedOpenNumerator, $postQ->retainedOpenDenominator));
             }
         }
-        $this->charge([$part->sourceRowId, $quantity, $delivered, $pre, $post, $part->trace, $reason], $used, $guard);
+        $guard();
+        $revenue = null === $quantity ? NetForecastRevenue::unavailable($reason ?? 'quantity_unavailable')
+            : NetForecastRevenue::fromSource($part->trace->amountMinor, $part->trace->currency, $quantity);
+        $guard();
+        [$money, $moneyReason] = $this->guardedPublish($revenue, $quantity, $reason, $guard);
+        $this->charge([$part->sourceRowId, $quantity, $delivered, $pre, $post, $part->trace, $reason, 'expectedNetRevenue' => $money, 'moneyUnavailableReason' => $moneyReason], $used, $guard, $outputLimit);
 
-        return new NetForecastPart($part->sourceRowId, $quantity, $delivered, $pre, $post, $part->trace, $reason);
+        return new NetForecastPart($part->sourceRowId, $quantity, $delivered, $pre, $post, $part->trace, $reason, $money, $moneyReason);
+    }
+
+    /** @param \Closure(): void $guard */
+    private function addRevenue(NetForecastRevenue $a, NetForecastRevenue $b, \Closure $guard): NetForecastRevenue
+    {
+        $guard();
+        try {
+            $result = $a->plus($b);
+        } catch (\InvalidArgumentException) {
+            $result = NetForecastRevenue::unavailable('money_currency_mismatch');
+        }
+        $guard();
+
+        return $result;
+    }
+
+    /**
+     * @param \Closure(): void $guard
+     *
+     * @return array{0: ?Money, 1: ?string}
+     */
+    private function guardedPublish(NetForecastRevenue $revenue, ?NetForecastQuantities $quantities, ?string $unitReason, \Closure $guard): array
+    {
+        $guard();
+        $result = $this->publishRevenue($revenue, $quantities, $unitReason);
+        $guard();
+
+        return $result;
+    }
+
+    /** @return array{0: ?Money, 1: ?string} */
+    private function publishRevenue(NetForecastRevenue $revenue, ?NetForecastQuantities $quantities, ?string $unitReason): array
+    {
+        if (null === $quantities) {
+            return [null, $unitReason ?? 'quantity_unavailable'];
+        }
+        try {
+            return [$revenue->toMoney(), $revenue->unavailableReason()];
+        } catch (\OverflowException) {
+            return [null, 'money_overflow'];
+        }
     }
 
     private static function partReason(NetTargetPartRow $part): ?string
@@ -435,7 +504,7 @@ final readonly class AggregateNetForecastAction
      *
      * @param \Closure(): void $guard
      */
-    private function charge(mixed $value, int &$used, \Closure $guard, bool $propertyKey = false): void
+    private function charge(mixed $value, int &$used, \Closure $guard, int $outputLimit, bool $propertyKey = false): void
     {
         $guard();
         $size = match (true) {
@@ -446,27 +515,35 @@ final readonly class AggregateNetForecastAction
             default => 128,
         };
         if (\is_string($value)) {
-            $escape = $propertyKey && 1 === preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/D', $value) ? 1 : 6;
-            if (\strlen($value) > intdiv($this->limits->outputBytes - $used, $escape)) {
+            $escape = 1 === preg_match('/\A[A-Za-z0-9_.:+ -]*+\z/', $value) ? 1 : 6;
+            if (\strlen($value) > intdiv($outputLimit - $used, $escape)) {
                 throw new \OverflowException('Result byte budget exceeded.');
             }
             $size += $escape * \strlen($value);
         }
-        if ($size > $this->limits->outputBytes - $used) {
+        if ($size > $outputLimit - $used) {
             throw new \OverflowException('Result byte budget exceeded.');
         }
         $used += $size;
         if ($value instanceof \DateTimeImmutable) {
-            $this->charge($value->format('Y-m-d\TH:i:s.uP'), $used, $guard);
+            $this->charge($value->format('Y-m-d\TH:i:s.uP'), $used, $guard, $outputLimit);
+        } elseif ($value instanceof Money) {
+            $this->charge(['minor' => $value->minorAmount(), 'currency' => $value->currency()], $used, $guard, $outputLimit);
+        } elseif ($value instanceof NetForecastRevenue) {
+            $bytes = $value->storageBytes();
+            if ($bytes > $outputLimit - $used) {
+                throw new \OverflowException('Exact revenue byte budget exceeded.');
+            }
+            $used += $bytes;
         } elseif (\is_object($value)) {
             foreach (get_object_vars($value) as $key => $field) {
-                $this->charge($key, $used, $guard, true);
-                $this->charge($field, $used, $guard);
+                $this->charge($key, $used, $guard, $outputLimit, true);
+                $this->charge($field, $used, $guard, $outputLimit);
             }
         } elseif (\is_array($value)) {
             foreach ($value as $key => $field) {
-                $this->charge($key, $used, $guard, true);
-                $this->charge($field, $used, $guard);
+                $this->charge($key, $used, $guard, $outputLimit, true);
+                $this->charge($field, $used, $guard, $outputLimit);
             }
         }
     }

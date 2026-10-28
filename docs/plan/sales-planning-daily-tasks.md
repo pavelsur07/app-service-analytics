@@ -874,3 +874,22 @@ Production666-7962be1 rootverified20:01:14UTC:12running/healthy,
 seller/adminversions. Точность на реальных когортах и numericgate B16/B17
 не заявляются. B09.md и B09-mime-security.md сохраняют receipts/limitations.
 B09 закрыта59/68; следующий B10 — крайние исходы и частичные возвраты.
+
+
+## Приёмка B10: крайние исходы и хронология возвратов, 2026-10-28
+
+Полные T1/R дают доказанный zero, partialR/earlierday/sibling/unknown проходят
+реальный reader. Возврат не может использовать будущую/одновременную delivered
+capacity; initial capture — только capacity witness без выдуманного model age.
+57scoped/2326,671unit/7277,831integration/20537; static0. Fresh2000groups
+exactoracle, map+compute4856.664ms, SQL4869.395ms, peak56.03MiB, owncleanup.
+Noise×10 не повторён, запас5s мал; качество реального прогноза не заявляется.
+
+CodexCLI:5A/5B уникально принято0/1, затем0/1, итог0/0;2дефекта исправлены,
+отклонённых0. Финальные оба actual gpt-6.1-sol complete/exit0/hashvalid;
+coverage4/4. Пакет8f0079be60084f197147cdfee2c62a8e81342e39046dfb5cec60472c2cb593bf.
+PR281 merge2108ba8d5c214ac80ad1083bccd37b175648cd8f; sourceCI40768719761,
+masterCI40769212303/672/attempt1SUCCESS. Production672-2108ba8 rootverified
+21:12:51UTC,12running/healthy,7PHP sameepoch/config,13readonlysmokePASS,
+seller/admin versions correct. Capture epoch сохранён; numeric rollout закрыт.
+B10 закрыта60/68; следующий B11 — точные деньги с разными исходными ценами.
