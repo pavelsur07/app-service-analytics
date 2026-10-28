@@ -25,5 +25,5 @@ interface MarketplaceDayLoadRepository
      *
      * @param list<DayLoadMark> $marks
      */
-    public function mark(string $companyId, string $marketplaceAccountId, array $marks, \DateTimeImmutable $at): void;
+    public function mark(string $companyId, string $marketplaceAccountId, array $marks, \DateTimeImmutable $at, FactCaptureOrigin $origin = FactCaptureOrigin::Unknown): void;
 }

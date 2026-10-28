@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application;
 
+use App\Ingestion\Domain\FactCaptureOrigin;
+use Symfony\Component\Messenger\Stamp\SerializerStamp;
 use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 
 /**
@@ -24,10 +26,10 @@ final class IngestionBackfill
     }
 
     /**
-     * @return list<TransportNamesStamp>
+     * @return list<TransportNamesStamp|SerializerStamp>
      */
-    public static function stamps(): array
+    public static function stamps(?FactCaptureOrigin $origin = null): array
     {
-        return [new TransportNamesStamp([self::TRANSPORT])];
+        return [new TransportNamesStamp([self::TRANSPORT]), ...null === $origin ? [] : FactCaptureContext::stamps($origin)];
     }
 }

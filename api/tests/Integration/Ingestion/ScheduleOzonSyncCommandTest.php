@@ -12,6 +12,7 @@ use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Application\Message\FetchOzonStocksMessage;
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -62,12 +63,14 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
         foreach ($sent as $envelope) {
             $message = $envelope->getMessage();
             if ($message instanceof FetchOzonPostingsMessage) {
+                self::assertSame(FactCaptureOrigin::LivePolling, $message->captureOrigin());
                 $postingDates[$message->marketplaceAccountId][] = $message->businessDate;
             } elseif ($message instanceof FetchOzonCatalogMessage) {
                 $catalogTargets[$message->marketplaceAccountId][] = $message->marketplaceAccountId;
             } elseif ($message instanceof FetchOzonExpensesMessage) {
                 $expenseDates[$message->marketplaceAccountId][] = $message->accrualDate;
             } elseif ($message instanceof FetchOzonReturnsMessage) {
+                self::assertSame(FactCaptureOrigin::LivePolling, $message->captureOrigin());
                 $returnRanges[$message->marketplaceAccountId][] = [$message->from, $message->to];
             } elseif ($message instanceof FetchOzonStocksMessage) {
                 // Раз в сутки, в час рескана (ADR-034); расписание проверяет

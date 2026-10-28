@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Ingestion\Infrastructure\Persistence;
 
 use App\Ingestion\Domain\DayLoadMark;
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use Doctrine\DBAL\Connection;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * DBAL, не ORM (CLAUDE.md §6): upsert отметок по ключу с перехватом
@@ -29,14 +31,14 @@ final readonly class DoctrineMarketplaceDayLoadWriter implements MarketplaceDayL
     ) {
     }
 
-    public function mark(string $companyId, string $marketplaceAccountId, array $marks, \DateTimeImmutable $at): void
+    public function mark(string $companyId, string $marketplaceAccountId, array $marks, \DateTimeImmutable $at, FactCaptureOrigin $origin = FactCaptureOrigin::Unknown): void
     {
         if ([] === $marks) {
             return;
         }
 
         $values = [];
-        $params = ['companyId' => $companyId, 'marketplaceAccountId' => $marketplaceAccountId];
+        $params = ['companyId' => $companyId, 'marketplaceAccountId' => $marketplaceAccountId, 'markedAt' => $at->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s'), 'captureOrigin' => $origin->value];
         /** @var array<string, list<array{int, int}>> $ranges */
         $ranges = [];
         foreach ($marks as $i => $mark) {
@@ -48,7 +50,9 @@ final readonly class DoctrineMarketplaceDayLoadWriter implements MarketplaceDayL
             }
             $ranges[$mark->reportType][] = [$first, $last];
 
-            $values[] = "(:reportType{$i}, CAST(:from{$i} AS date), CAST(:to{$i} AS date), CAST(:completedAt{$i} AS timestamp), CAST(:failedAt{$i} AS timestamp), CAST(:failure{$i} AS varchar))";
+            $values[] = "(:reportType{$i}, CAST(:from{$i} AS date), CAST(:to{$i} AS date), CAST(:completedAt{$i} AS timestamp), CAST(:failedAt{$i} AS timestamp), CAST(:failure{$i} AS varchar), CAST(:receiptId{$i} AS uuid), CAST(:receiptStatus{$i} AS varchar))";
+            $params["receiptId{$i}"] = Uuid::v7()->toRfc4122();
+            $params["receiptStatus{$i}"] = null === $mark->failure ? 'completed' : 'failed';
             $params["reportType{$i}"] = $mark->reportType;
             $params["from{$i}"] = $mark->from->format('Y-m-d');
             $params["to{$i}"] = $mark->to->format('Y-m-d');
@@ -61,14 +65,27 @@ final readonly class DoctrineMarketplaceDayLoadWriter implements MarketplaceDayL
         // Успех: completed_at — новое время, отказ стёрт. Отказ:
         // completed_at прежний (COALESCE), failed_at и причина — новые.
         $this->connection->executeStatement(<<<SQL
+            WITH marks (report_type, first_day, last_day, completed_at, failed_at, failure, receipt_id, status) AS (
+                VALUES {$valuesSql}
+            ), current_marks AS (
             INSERT INTO marketplace_day_load (company_id, marketplace_account_id, report_type, period, completed_at, failed_at, failure)
             SELECT :companyId, :marketplaceAccountId, m.report_type, day::date, m.completed_at, m.failed_at, m.failure
-            FROM (VALUES {$valuesSql}) AS m (report_type, first_day, last_day, completed_at, failed_at, failure)
+            FROM marks m
             CROSS JOIN LATERAL generate_series(m.first_day, m.last_day, interval '1 day') AS day
             ON CONFLICT (company_id, marketplace_account_id, report_type, period)
             DO UPDATE SET completed_at = COALESCE(EXCLUDED.completed_at, marketplace_day_load.completed_at),
                           failed_at = EXCLUDED.failed_at,
                           failure = EXCLUDED.failure
+            RETURNING company_id
+            )
+            INSERT INTO marketplace_day_load_receipt
+                (company_id, marketplace_account_id, report_type, date_from, date_to, marked_at, status, id, capture_version, capture_origin)
+            SELECT CAST(:companyId AS uuid), CAST(:marketplaceAccountId AS uuid),
+                   m.report_type, m.first_day, m.last_day, CAST(:markedAt AS timestamp), m.status, m.receipt_id, 'accepted_state_v1', :captureOrigin
+            FROM marks m
+            WHERE true
+            ON CONFLICT (company_id, marketplace_account_id, report_type, date_from, date_to, marked_at, status)
+            DO NOTHING
             SQL, $params);
     }
 

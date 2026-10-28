@@ -1,5 +1,9 @@
 framework:
     messenger:
+        buses:
+            messenger.bus.default:
+                middleware:
+                    - App\Ingestion\Application\Messenger\FactCaptureOriginMiddleware
         # Куда девается сообщение, исчерпавшее ретраи. Без этой строки —
         # никуда: Symfony удаляет его молча.
         #

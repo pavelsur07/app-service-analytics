@@ -11,6 +11,7 @@ use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Application\Message\FetchOzonStocksMessage;
+use App\Ingestion\Domain\FactCaptureOrigin;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
@@ -133,7 +134,8 @@ final readonly class DispatchActiveOzonSyncsAction
                     companyId: $target->companyId,
                     marketplaceAccountId: $target->marketplaceAccountId,
                     businessDate: $today->modify("-{$daysAgo} day")->format('Y-m-d'),
-                ));
+                    origin: FactCaptureOrigin::LivePolling,
+                ), FactCaptureContext::stamps(FactCaptureOrigin::LivePolling));
             }
             $this->bus->dispatch(new FetchOzonCatalogMessage(
                 companyId: $target->companyId,
@@ -167,7 +169,8 @@ final readonly class DispatchActiveOzonSyncsAction
                 marketplaceAccountId: $target->marketplaceAccountId,
                 from: $today->modify('-'.($returnDays - 1).' day')->format('Y-m-d'),
                 to: $today->format('Y-m-d'),
-            ));
+                origin: FactCaptureOrigin::LivePolling,
+            ), FactCaptureContext::stamps(FactCaptureOrigin::LivePolling));
         }
 
         // Подключения, а не сообщения: тик меряется тем, сколько кабинетов

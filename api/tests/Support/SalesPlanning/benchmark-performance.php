@@ -317,7 +317,7 @@ try {
             if ($state['bootstrapPresent']) {
                 $db->transactional(static function () use ($db, $state): void {
                     foreach ([$state['companyId'], $state['foreignCompanyId']] as $companyId) {
-                        foreach (['sales_plan_calendar_entry', 'sales_plan_day_claim', 'sales_plan_line', 'sales_plan', 'marketplace_listing', 'sales_fact', 'marketplace_return_fact', 'marketplace_posting_status', 'marketplace_day_load', 'audit_record', 'company_member', 'marketplace_account'] as $table) {
+                        foreach (['sales_plan_calendar_entry', 'sales_plan_day_claim', 'sales_plan_line', 'sales_plan', 'marketplace_listing', 'sales_fact_revision', 'marketplace_return_fact_revision', 'marketplace_day_load_receipt', 'sales_fact', 'marketplace_return_fact', 'marketplace_posting_status', 'marketplace_day_load', 'audit_record', 'company_member', 'marketplace_account'] as $table) {
                             $db->executeStatement('DELETE FROM '.$table.' WHERE company_id = ?', [$companyId]);
                         }
                         $db->executeStatement('DELETE FROM company WHERE id = ?', [$companyId]);

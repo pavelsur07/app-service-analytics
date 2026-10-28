@@ -80,6 +80,19 @@ Legacy или первая захваченная поздняя revision не �
 epoch закрывается, продолжение открывает новый непрерывный отрезок.
 Подробный SQL/схема и порядок cutover фиксируются планом B02 до правки.
 
+Уточнение wire в B02: происхождение задаёт доверенный producer явно
+(live polling/backfill/raw replay), неизвестное остаётся unknown. В message
+сохраняется прежний serialized набор string полей. Scalar origin передаётся
+в уже существующем Symfony SerializerStamp context; принимающий middleware
+для этих двух сообщений преобразует его в non-sendable handler argument.
+Некорректный/отсутствующий context даёт unknown. Старый consumer декодирует
+прежние поля и известный vendor stamp, не загружая новый enum/message field;
+новый consumer старой задачи также получает unknown. Retry не переносит
+HandlerArgumentsStamp на wire. Transport/queue/routing сохраняются, bus
+middleware регистрируется явно. Обязательны реальные old→new/new→old Native
+PhpSerializer roundtrips, retry и non-ingestion no-op: optional promoted поле
+само по себе ломает старый readonly message при rolling deploy.
+
 Receipts сохраняют tenant/account/report/window/status/capture time,
 атомарно с текущей отметкой. Они доказывают и успешную пустую загрузку.
 Полнота postings не заменяет полноту returns по их оси visual-change.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Command;
 
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
@@ -113,7 +114,7 @@ final class ImportOzonFixtureCommand extends Command
         );
         $facts = $this->parser->parse($rawBody, $companyId, $marketplaceAccountId, $rawDocumentId);
         $this->postingStatuses->recordChanged($companyIdArgument, $statuses);
-        $this->salesFacts->upsertAll($facts);
+        $this->salesFacts->upsertAll($facts, FactCaptureOrigin::RawReplay);
 
         $io->success(\sprintf(
             'Импортировано %d наблюдений статуса и %d строк факта из %s.',

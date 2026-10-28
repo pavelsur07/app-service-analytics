@@ -14,7 +14,7 @@ interface SalesFactRepository
      *
      * @param list<SalesFact> $facts
      */
-    public function upsertAll(array $facts): void;
+    public function upsertAll(array $facts, FactCaptureOrigin $origin = FactCaptureOrigin::Unknown): void;
 
     /**
      * Восстанавливает отсутствующие posting/order links и атрибуты доставки

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Support\Builder;
 
 use App\Ingestion\Domain\DayLoadMark;
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use Symfony\Component\Uid\Uuid;
@@ -94,18 +95,18 @@ final class MarketplaceDayLoadBuilder
         return $clone;
     }
 
-    public function persistWith(MarketplaceDayLoadRepository $repository): void
+    public function persistWith(MarketplaceDayLoadRepository $repository, FactCaptureOrigin $origin = FactCaptureOrigin::Unknown): void
     {
         $companyId = $this->companyId->toRfc4122();
         $accountId = $this->marketplaceAccountId->toRfc4122();
         $at = $this->at ?? new \DateTimeImmutable();
 
         if (null === $this->failure) {
-            $repository->mark($companyId, $accountId, [DayLoadMark::completed($this->reportType, $this->period, $this->period)], $at);
+            $repository->mark($companyId, $accountId, [DayLoadMark::completed($this->reportType, $this->period, $this->period)], $at, $origin);
 
             return;
         }
 
-        $repository->mark($companyId, $accountId, [DayLoadMark::failed($this->reportType, $this->period, $this->period, $this->failure)], $at);
+        $repository->mark($companyId, $accountId, [DayLoadMark::failed($this->reportType, $this->period, $this->period, $this->failure)], $at, $origin);
     }
 }

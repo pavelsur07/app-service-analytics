@@ -16,6 +16,7 @@ use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Application\Message\FetchOzonStocksMessage;
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Domain\OzonExpensesFetcher;
 use App\Ingestion\Domain\OzonPostingsFetcher;
@@ -93,6 +94,10 @@ final class ConnectOzonAccountActionTest extends KernelTestCase
 
         $businessDates = InitialBackfillWindow::businessDates(new \DateTimeImmutable());
         $returns = $returnsMessages[0];
+        self::assertSame(FactCaptureOrigin::HistoricalBackfill, $returns->captureOrigin());
+        foreach ($this->dispatchedMessagesOf(FetchOzonPostingsMessage::class) as $postingMessage) {
+            self::assertSame(FactCaptureOrigin::HistoricalBackfill, $postingMessage->captureOrigin());
+        }
         self::assertSame($businessDates[0], $returns->from);
         self::assertSame($businessDates[\count($businessDates) - 1], $returns->to);
     }

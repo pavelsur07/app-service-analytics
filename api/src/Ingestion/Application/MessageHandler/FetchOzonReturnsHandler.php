@@ -9,6 +9,7 @@ use App\Identity\Application\Facade\OzonSyncTarget;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Domain\DayLoadMark;
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
@@ -52,7 +53,7 @@ final readonly class FetchOzonReturnsHandler
     ) {
     }
 
-    public function __invoke(FetchOzonReturnsMessage $message): void
+    public function __invoke(FetchOzonReturnsMessage $message, ?string $captureOrigin = null): void
     {
         $lock = $this->lockFactory->createLock(
             'ozon-returns-'.$message->marketplaceAccountId,
@@ -63,13 +64,14 @@ final readonly class FetchOzonReturnsHandler
         }
 
         try {
-            $this->sync($message, $lock);
+            $origin = null === $captureOrigin ? $message->captureOrigin() : (FactCaptureOrigin::tryFrom($captureOrigin) ?? FactCaptureOrigin::Unknown);
+            $this->sync($message, $lock, $origin);
         } finally {
             $lock->release();
         }
     }
 
-    private function sync(FetchOzonReturnsMessage $message, SharedLockInterface $lock): void
+    private function sync(FetchOzonReturnsMessage $message, SharedLockInterface $lock, FactCaptureOrigin $origin): void
     {
         $target = $this->identityFacade->findOzonSyncTarget($message->companyId, $message->marketplaceAccountId);
         if (null === $target) {
@@ -84,15 +86,15 @@ final readonly class FetchOzonReturnsHandler
         }
 
         try {
-            $this->load($message, $target, $fromDay, $toDay, $lock);
+            $this->load($message, $target, $fromDay, $toDay, $lock, $origin);
         } catch (\Throwable $failure) {
-            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, $failure->getMessage())], new \DateTimeImmutable());
+            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, $failure->getMessage())], new \DateTimeImmutable(), $origin);
 
             throw $failure;
         }
     }
 
-    private function load(FetchOzonReturnsMessage $message, OzonSyncTarget $target, \DateTimeImmutable $fromDay, \DateTimeImmutable $toDay, SharedLockInterface $lock): void
+    private function load(FetchOzonReturnsMessage $message, OzonSyncTarget $target, \DateTimeImmutable $fromDay, \DateTimeImmutable $toDay, SharedLockInterface $lock, FactCaptureOrigin $origin): void
     {
         $utc = new \DateTimeZone('UTC');
         $from = $fromDay->setTimezone($utc);
@@ -121,7 +123,7 @@ final readonly class FetchOzonReturnsHandler
 
                 $this->brokenLogger->log($message->companyId, $message->marketplaceAccountId, 'returns', $failure, $target->apiKey);
                 $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
-                $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, 'Подключение отозвано: '.$failure->getMessage())], new \DateTimeImmutable());
+                $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(MarketplaceReportType::OzonReturnsList, $fromDay, $toDay, 'Подключение отозвано: '.$failure->getMessage())], new \DateTimeImmutable(), $origin);
 
                 return;
             }
@@ -144,7 +146,7 @@ final readonly class FetchOzonReturnsHandler
                 // Raw pages remain available for diagnosing schema or cursor failures.
                 // Re-read and parse one raw page at a time so a maximum-size
                 // export does not retain tens of thousands of fact objects.
-                $this->connection->transactional(function () use ($pages, $companyId, $accountId, $target): void {
+                $this->connection->transactional(function () use ($pages, $companyId, $accountId, $target, $origin): void {
                     foreach ($pages as $page) {
                         $rawBody = $this->rawDocuments->body($target->companyId, $accountId, $page['rawDocumentId']);
                         $facts = $this->parser->parse(
@@ -154,10 +156,10 @@ final readonly class FetchOzonReturnsHandler
                             $page['rawDocumentId'],
                             $page['requestLastId'],
                         )->facts;
-                        $this->returns->upsertAll($facts);
+                        $this->returns->upsertAll($facts, $origin);
                     }
                 });
-                $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::completed(MarketplaceReportType::OzonReturnsList, $fromDay, $toDay)], new \DateTimeImmutable());
+                $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::completed(MarketplaceReportType::OzonReturnsList, $fromDay, $toDay)], new \DateTimeImmutable(), $origin);
 
                 return;
             }

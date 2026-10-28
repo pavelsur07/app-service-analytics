@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Persistence;
 
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\MarketplaceReturnFact;
 use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use Doctrine\DBAL\Connection;
+use Psr\Clock\ClockInterface;
+use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * DBAL bulk upsert факт-таблицы (CLAUDE.md §6, ADR-019).
@@ -15,26 +19,29 @@ final readonly class DoctrineMarketplaceReturnFactWriter implements MarketplaceR
 {
     private const int CHUNK_SIZE = 500;
 
-    public function __construct(private Connection $connection)
-    {
+    public function __construct(
+        private Connection $connection,
+        private ClockInterface $clock = new NativeClock(),
+    ) {
     }
 
-    public function upsertAll(array $facts): void
+    public function upsertAll(array $facts, FactCaptureOrigin $origin = FactCaptureOrigin::Unknown): void
     {
         foreach (array_chunk($facts, self::CHUNK_SIZE) as $chunk) {
-            $this->upsertChunk($chunk);
+            $this->upsertChunk($chunk, $origin);
         }
     }
 
     /**
      * @param list<MarketplaceReturnFact> $facts
      */
-    private function upsertChunk(array $facts): void
+    private function upsertChunk(array $facts, FactCaptureOrigin $origin): void
     {
         if ([] === $facts) {
             return;
         }
 
+        $initial = FactCaptureOrigin::LivePolling === $origin ? 'true' : 'false';
         $values = [];
         $parameters = [];
         foreach ($facts as $index => $fact) {
@@ -42,7 +49,7 @@ final readonly class DoctrineMarketplaceReturnFactWriter implements MarketplaceR
                 .":marketplaceSku{$index}, :returnType{$index}, :returnReasonName{$index}, :postingNumber{$index}, "
                 .":sourceId{$index}, :quantity{$index}, :visualStatusId{$index}, :visualStatus{$index}, "
                 .":visualStatusChangedAt{$index}, :rawDocumentId{$index}, :rowHash{$index}, "
-                .":firstLoadedAt{$index}, :lastUpdatedAt{$index})";
+                .":firstLoadedAt{$index}, :lastUpdatedAt{$index}, 1, {$initial})";
 
             $parameters["companyId{$index}"] = $fact->companyId()->toRfc4122();
             $parameters["accountId{$index}"] = $fact->marketplaceAccountId()->toRfc4122();
@@ -68,10 +75,12 @@ final readonly class DoctrineMarketplaceReturnFactWriter implements MarketplaceR
                 (company_id, marketplace_account_id, source_row_id, order_number, marketplace_sku,
                  return_type, return_reason_name, posting_number, source_id, quantity,
                  visual_status_id, visual_status, visual_status_changed_at, raw_document_id,
-                 row_hash, first_loaded_at, last_updated_at)
+                 row_hash, first_loaded_at, last_updated_at, fact_revision, capture_initial)
             VALUES {$this->joinValues($values)}
             ON CONFLICT (company_id, marketplace_account_id, source_row_id)
             DO UPDATE SET
+                fact_revision = marketplace_return_fact.fact_revision + 1,
+                capture_initial = false,
                 order_number = EXCLUDED.order_number,
                 marketplace_sku = EXCLUDED.marketplace_sku,
                 return_type = EXCLUDED.return_type,
@@ -93,7 +102,7 @@ final readonly class DoctrineMarketplaceReturnFactWriter implements MarketplaceR
               )
             SQL;
 
-        $this->connection->executeStatement($sql, $parameters);
+        $this->connection->executeStatement($this->captureSql($sql, $facts, $parameters, $origin), $parameters);
     }
 
     /**
@@ -102,5 +111,39 @@ final readonly class DoctrineMarketplaceReturnFactWriter implements MarketplaceR
     private function joinValues(array $values): string
     {
         return implode(', ', $values);
+    }
+
+    /**
+     * Only accepted RETURNING states enter history; ledger error aborts the UPSERT.
+     *
+     * @param list<MarketplaceReturnFact>    $facts
+     * @param array<string, int|string|null> $parameters
+     */
+    private function captureSql(string $upsert, array $facts, array &$parameters, FactCaptureOrigin $origin): string
+    {
+        $keys = [];
+        foreach ($facts as $i => $fact) {
+            $keys[] = "(CAST(:companyId{$i} AS uuid), CAST(:accountId{$i} AS uuid), CAST(:sourceRowId{$i} AS text), CAST(:revisionId{$i} AS uuid))";
+            $parameters["revisionId{$i}"] = Uuid::v7()->toRfc4122();
+        }
+        $parameters['capturedAt'] = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+        $parameters['captureOrigin'] = $origin->value;
+        $parameters['capturePath'] = 'upsert';
+        $ids = implode(', ', $keys);
+
+        return <<<SQL
+            WITH accepted AS (
+                {$upsert}
+                RETURNING company_id, marketplace_account_id, source_row_id, order_number, marketplace_sku, return_type, return_reason_name, posting_number, source_id, quantity, visual_status_id, visual_status, visual_status_changed_at, raw_document_id, row_hash, first_loaded_at, last_updated_at, fact_revision, capture_initial
+            )
+            INSERT INTO marketplace_return_fact_revision (company_id, marketplace_account_id, source_row_id, order_number, marketplace_sku, return_type, return_reason_name, posting_number, source_id, quantity, visual_status_id, visual_status, visual_status_changed_at, raw_document_id, row_hash, first_loaded_at, last_updated_at, fact_revision, id, captured_at, capture_version, capture_origin, capture_path, capture_is_initial)
+            SELECT accepted.company_id, accepted.marketplace_account_id, accepted.source_row_id, accepted.order_number, accepted.marketplace_sku, accepted.return_type, accepted.return_reason_name, accepted.posting_number, accepted.source_id, accepted.quantity, accepted.visual_status_id, accepted.visual_status, accepted.visual_status_changed_at, accepted.raw_document_id, accepted.row_hash, accepted.first_loaded_at, accepted.last_updated_at, accepted.fact_revision, keys.id,
+                   CAST(:capturedAt AS timestamp), 'accepted_state_v1', :captureOrigin, :capturePath, accepted.capture_initial
+            FROM accepted
+            JOIN (VALUES {$ids}) AS keys (company_id, marketplace_account_id, source_row_id, id)
+              ON keys.company_id = accepted.company_id
+             AND keys.marketplace_account_id = accepted.marketplace_account_id
+             AND keys.source_row_id = accepted.source_row_id
+            SQL;
     }
 }

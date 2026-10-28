@@ -113,6 +113,18 @@ class SalesFact
     #[ORM\Column]
     private \DateTimeImmutable $lastUpdatedAt;
 
+    #[ORM\Column(type: 'bigint', options: ['default' => 0])]
+    private int $factRevision = 0;
+
+    /** Technical marker последней принятой операции; не business clock. */
+    #[ORM\Column(options: ['default' => false])]
+    private bool $captureInitial = false;
+
+    public function factRevision(): int
+    {
+        return $this->factRevision;
+    }
+
     private function __construct(
         Uuid $companyId,
         Uuid $marketplaceAccountId,

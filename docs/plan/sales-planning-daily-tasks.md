@@ -711,3 +711,18 @@ component-relative truth), оба исправлены,0 отклонённых.
 реальные JSON/hash/session IDs. Полные receipts в B01.md; Claude пропущен
 по исключению владельца. Только MD/ADR, runtime/DDL ещё не менялись,
 предсказательная точность не заявлена. Итого51/68: A01–A50 и B01 готовы.
+
+## B02: source foundation готов к CI, 2026-10-28
+
+Реализованы accepted revisions sales/returns и immutable load receipts, включая
+пустые успешные загрузки; явный provenance и старый readonly queue wire совместимы.
+Одна pending миграция Version20261028120000 с legacy0 и отдельными postcommit
+VALIDATE для двух CHECK. Fresh db-rebuild-check, фактические local down/up,
+schema validate и E2E7+extension security прошли; точные receipts в B02.md.
+
+Два actual Codex CLI итогового пакета c23d63557848 complete0/0. Из первого
+набора принято1 замечание Builders, исправлено; отклонено0, дополнительных
+уникальных замечаний повторного набора0. Все48 конечных code blob покрыты
+обеими clean ролями. Дальше обязательный CI и capture-only выпуск, после него
+training selection/epoch consumer. **Итого остаётся51/68**: эта часть не закрывает
+B02 и не включает числовой нетто-прогноз.

@@ -10,8 +10,10 @@ use App\Identity\Domain\MarketplaceAccount;
 use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\UserRepository;
+use App\Ingestion\Application\FactCaptureContext;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonReturnsHandler;
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonReturnsListClient;
 use App\Tests\Support\Builder\CompanyBuilder;
@@ -35,6 +37,21 @@ use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 final class FetchOzonReturnsHandlerTest extends KernelTestCase
 {
     private const string FIXTURE = __DIR__.'/../../Fixtures/Marketplace/ozon/ozon-buyout-returns.json';
+
+    public function testReceivedScalarProvenanceReachesTheWriterThroughMessenger(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $container->set(OzonReturnsListClient::class, new FakeOzonReturnsFetcher([$this->fixturePage(0, 3, false)]));
+        $message = new FetchOzonReturnsMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-01', '2026-08-03');
+        $serializer = new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer();
+        $envelope = $serializer->decode($serializer->encode(new \Symfony\Component\Messenger\Envelope($message, FactCaptureContext::stamps(FactCaptureOrigin::LivePolling))));
+        $bus = $container->get(\Symfony\Component\Messenger\MessageBusInterface::class);
+        self::assertInstanceOf(\Symfony\Component\Messenger\MessageBusInterface::class, $bus);
+        $bus->dispatch($envelope->with(new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async_ingestion')));
+        self::assertSame(['live_polling'], $this->connection($container)->fetchFirstColumn('SELECT capture_origin FROM marketplace_day_load_receipt WHERE company_id = ?', [$account->companyId()->toRfc4122()]));
+        self::assertSame([['capture_origin' => 'live_polling', 'capture_is_initial' => true]], $this->connection($container)->fetchAllAssociative('SELECT DISTINCT capture_origin, capture_is_initial FROM marketplace_return_fact_revision WHERE company_id = ?', [$account->companyId()->toRfc4122()]));
+    }
 
     public function testReadsAllPagesPersistsEachRawPageAndUpsertsFacts(): void
     {
@@ -261,6 +278,8 @@ final class FetchOzonReturnsHandlerTest extends KernelTestCase
 
         self::assertSame(2, $this->rawCount($container, $account));
         self::assertSame(0, $this->returnCount($container, $account));
+        self::assertFalse($this->connection($container)->fetchOne('SELECT 1 FROM marketplace_return_fact_revision WHERE company_id = ? LIMIT 1', [$account->companyId()->toRfc4122()]));
+        self::assertSame(['failed'], $this->connection($container)->fetchFirstColumn('SELECT status FROM marketplace_day_load_receipt WHERE company_id = ?', [$account->companyId()->toRfc4122()]));
     }
 
     private function sync(ContainerInterface $container, MarketplaceAccount $account): void

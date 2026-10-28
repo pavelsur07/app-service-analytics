@@ -11,6 +11,7 @@ use App\Ingestion\Application\Message\FetchOzonExpensesMessage;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
 use App\Ingestion\Application\Message\FetchOzonStocksMessage;
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\OzonAuthorizationFailure;
 use App\Ingestion\Domain\OzonCatalogFetcher;
 use App\Ingestion\Domain\OzonExpensesFetcher;
@@ -269,7 +270,7 @@ final readonly class ConnectOzonAccountAction
 
         $businessDates = InitialBackfillWindow::businessDates(new \DateTimeImmutable());
         foreach ($businessDates as $businessDate) {
-            $this->bus->dispatch(new FetchOzonPostingsMessage($companyId, $accountId, $businessDate), IngestionBackfill::stamps());
+            $this->bus->dispatch(new FetchOzonPostingsMessage($companyId, $accountId, $businessDate, FactCaptureOrigin::HistoricalBackfill), IngestionBackfill::stamps(FactCaptureOrigin::HistoricalBackfill));
             $this->bus->dispatch(new FetchOzonExpensesMessage($companyId, $accountId, $businessDate), IngestionBackfill::stamps());
         }
 
@@ -280,7 +281,7 @@ final readonly class ConnectOzonAccountAction
         $first = $businessDates[0] ?? null;
         $last = $businessDates[\count($businessDates) - 1] ?? null;
         if (null !== $first && null !== $last) {
-            $this->bus->dispatch(new FetchOzonReturnsMessage($companyId, $accountId, $first, $last), IngestionBackfill::stamps());
+            $this->bus->dispatch(new FetchOzonReturnsMessage($companyId, $accountId, $first, $last, FactCaptureOrigin::HistoricalBackfill), IngestionBackfill::stamps(FactCaptureOrigin::HistoricalBackfill));
         }
     }
 }
