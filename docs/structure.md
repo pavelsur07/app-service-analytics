@@ -348,6 +348,17 @@ Incomplete coverage скрывает полный объект компонен�
 обучения различаются; query count не зависит от SKU. Согласованный HTTP
 snapshot открывает вызывающий SalesPlanning по ADR046.
 
+`Ingestion/Application/NetForecast` читает отдельные gross/return training
+aggregates в одном фактическом read-only RR snapshot (ADR-049).
+`Infrastructure/Query/NetForecast` содержит bounded source/coverage/canonical
+SQL, readonly aggregate rows и отдельную keyset diagnostics; диагностические
+страницы не накапливают account coefficients. `Infrastructure/Config` читает
+необязательный `NET_FORECAST_CAPTURE_EPOCHS_JSON` с default `[]`, а Domain
+ValueObject описывает проверенный непрерывный capture interval. Production
+передаёт config через общий PHP environment; явно подтверждённый cutover
+не равен включению численного прогноза. Private manifests и quality rollout
+остаются последующими B15/B16/B17 задачами.
+
 ### Внутри модуля
 
 ```
