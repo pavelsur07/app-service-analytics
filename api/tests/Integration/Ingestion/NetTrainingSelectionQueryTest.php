@@ -542,6 +542,42 @@ final class NetTrainingSelectionQueryTest extends KernelTestCase
         self::assertSame(20, $rows[1]->grossQuantity);
     }
 
+    public function testFractionalEpochRejectsEarlierRealFirstLoadedSecond(): void
+    {
+        self::bootKernel();
+        $db = self::getContainer()->get(Connection::class);
+        self::assertInstanceOf(Connection::class, $db);
+        $f = new NetTrainingFixture($db);
+        for ($i = 0; $i < 31; ++$i) {
+            $f->posting('EPOCH-'.$i, 'REQUESTED', 1);
+        }
+        $firstLoaded = $db->fetchOne('SELECT first_loaded_at FROM sales_fact WHERE company_id = ? AND marketplace_account_id = ? AND source_row_id = ?', [$f->company->toRfc4122(), $f->account->toRfc4122(), 'EPOCH-0']);
+        self::assertIsString($firstLoaded);
+        $epoch = new \App\Ingestion\Domain\ValueObject\NetForecastCaptureEpoch($f->epoch->id, $f->epoch->captureVersion, (new \DateTimeImmutable($firstLoaded, new \DateTimeZone('UTC')))->modify('+500000 microseconds'), null, $f->epoch->cutoverRelease);
+        $context = new NetTrainingContext($f->company->toRfc4122(), $f->account->toRfc4122(), $f->readAt, $epoch);
+        $rows = array_map(GrossTrainingAggregateQuery::mapRow(...), (new GrossTrainingAggregateQuery($db))->build($context->companyId, $context->accountId, $context, new NetTrainingRequest(['REQUESTED']))->executeQuery()->fetchAllAssociative());
+        self::assertNull($rows[0]->sampleQuantity, 'Real first_loaded_at is before the fractional epoch, so its provenance cannot supply gross maturity.');
+        self::assertFalse($rows[0]->inputComplete);
+    }
+
+    public function testFractionalReturnOriginWindowUsesExactHalfOpenMembership(): void
+    {
+        self::bootKernel();
+        $db = self::getContainer()->get(Connection::class);
+        self::assertInstanceOf(Connection::class, $db);
+        $f = new NetTrainingFixture($db);
+        $f->posting('ORIGIN', 'REQUESTED', 10);
+        $f->returnCoverage();
+        // Storage is TIMESTAMP(0): move readAt around a real observed whole second.
+        foreach ([[157, -1, 10, 0], [157, 0, 10, 0], [157, 1, 0, 0], [67, -1, 0, 0], [67, 0, 0, 0], [67, 1, 0, 1]] as [$days, $micros, $sample, $excluded]) {
+            $readAt = $f->terminal->modify('+'.$days.' days')->modify(($micros >= 0 ? '+' : '').$micros.' microseconds');
+            $context = new NetTrainingContext($f->company->toRfc4122(), $f->account->toRfc4122(), $readAt, $f->epoch);
+            $rows = array_map(ReturnTrainingAggregateQuery::mapRow(...), (new ReturnTrainingAggregateQuery($db))->build($context->companyId, $context->accountId, $context, new NetTrainingRequest(['REQUESTED']))->executeQuery()->fetchAllAssociative());
+            self::assertSame($sample, $rows[0]->sampleQuantity, 'Exact lower/upper half-open origin boundary.');
+            self::assertSame($excluded, $rows[0]->excludedGroups, 'A selected 67d+1us source is still censored by its real daily/deep proof.');
+        }
+    }
+
     /** @return list<ReturnTrainingAggregateRow> */
     private function returns(Connection $db, NetTrainingFixture $fixture): array
     {

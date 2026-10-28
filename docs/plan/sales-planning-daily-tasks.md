@@ -838,3 +838,19 @@ MasterCI40696673264/run653attempt1/deploysuccess; production653-65c33df
 проверен13:35:16UTC:12healthy/running,7PHPoriginalepoch/config,8PASSinmemorymath,
 seller/adminversions совпадают. Подробные review IDs иreceipts — B07.md.
 B07 закрыта,57/68. B08 wholefallback следующая; numeric/qualitygate закрыт.
+
+
+## Приёмка B08: целая оценка и unknown, 2026-10-28
+
+Whole SKU→свойaccount→null выбирает оба компонента заново и сохраняет
+все причины/metadata. Knownzero и genuinegross0 отличаются отunknown,
+company/context/epochmicros доzero. Финальныйunit639/6964+staticexit0,
+focused66/2426;actualtwoCodexCLIcomplete0/0,4/4code/testblobs covered,
+принятых/отклонённых0, второго прохода уникальных принятых0.
+[CI40699727487](https://github.com/pavelsur07/app-service-analytics/actions/runs/40699727487)
+точного98edd79success, [PR279](https://github.com/pavelsur07/app-service-analytics/pull/279)
+squash6264b75. MasterCI40700832217/run655attempt1/deploysuccess,
+production655-6264b75 rootverified14:02:37UTC:12healthy/running,
+7PHPoriginalepoch/config;8PASSpurememoryorchestrator иseller/adminversions.
+B08.md сохраняет полные review IDs/receipts/ограничения. B08 закрыта58/68;
+B09проектирует реальныйtargetproducer/итог, numeric/qualitygate закрыт.

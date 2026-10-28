@@ -16,7 +16,7 @@ final class NetTrainingSourceSql
     public static function bind(QueryBuilder $query, NetTrainingContext $context, NetTrainingRequest $request, NetTrainingLimits $limits): QueryBuilder
     {
         $msk = $context->readAt->setTimezone(new \DateTimeZone('Europe/Moscow'))->setTime(0, 0);
-        foreach (['companyId' => $context->companyId, 'accountId' => $context->accountId, 'asOf' => $context->readAt->format('Y-m-d H:i:s.u'), 'epochStart' => $context->epoch->start->format('Y-m-d H:i:s'), 'captureVersion' => $context->epoch->captureVersion, 'grossFrom' => $msk->modify('-90 days')->format('Y-m-d'), 'grossTo' => $msk->format('Y-m-d'), 'originFrom' => $context->readAt->modify('-157 days')->format('Y-m-d H:i:s'), 'originTo' => $context->readAt->modify('-67 days')->format('Y-m-d H:i:s'), 'maxGroups' => $limits->groups, 'groupSentinel' => $limits->groups + 1, 'maxSalesKeys' => $limits->salesKeys, 'saleSentinel' => $limits->salesKeys + 1, 'maxReturnKeys' => $limits->returnKeys, 'returnSentinel' => $limits->returnKeys + 1, 'maxRevisions' => $limits->revisions, 'revisionSentinel' => $limits->revisions + 1, 'maxStatuses' => $limits->statuses, 'statusSentinel' => $limits->statuses + 1, 'maxReceipts' => $limits->receipts, 'receiptSentinel' => $limits->receipts + 1, 'maxKeysPerGroup' => $limits->keysPerGroup, 'maxRevisionsPerSource' => $limits->revisionsPerSource, 'maxStatusesPerGroup' => $limits->statusesPerGroup] as $key => $value) {
+        foreach (['companyId' => $context->companyId, 'accountId' => $context->accountId, 'asOf' => $context->readAt->format('Y-m-d H:i:s.u'), 'epochStart' => $context->epoch->start->format('Y-m-d H:i:s.u'), 'captureVersion' => $context->epoch->captureVersion, 'grossFrom' => $msk->modify('-90 days')->format('Y-m-d'), 'grossTo' => $msk->format('Y-m-d'), 'originFrom' => $context->readAt->modify('-157 days')->format('Y-m-d H:i:s.u'), 'originTo' => $context->readAt->modify('-67 days')->format('Y-m-d H:i:s.u'), 'maxGroups' => $limits->groups, 'groupSentinel' => $limits->groups + 1, 'maxSalesKeys' => $limits->salesKeys, 'saleSentinel' => $limits->salesKeys + 1, 'maxReturnKeys' => $limits->returnKeys, 'returnSentinel' => $limits->returnKeys + 1, 'maxRevisions' => $limits->revisions, 'revisionSentinel' => $limits->revisions + 1, 'maxStatuses' => $limits->statuses, 'statusSentinel' => $limits->statuses + 1, 'maxReceipts' => $limits->receipts, 'receiptSentinel' => $limits->receipts + 1, 'maxKeysPerGroup' => $limits->keysPerGroup, 'maxRevisionsPerSource' => $limits->revisionsPerSource, 'maxStatusesPerGroup' => $limits->statusesPerGroup] as $key => $value) {
             $query->setParameter($key, $value);
         }
 
@@ -32,16 +32,18 @@ final class NetTrainingSourceSql
     public static function ctes(bool $returns): string
     {
         $seed = $returns ? <<<'SQL'
-            SELECT DISTINCT f.source_row_id
-            FROM sales_fact f
-            WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId
-              AND (f.posting_number IN (SELECT posting_number FROM candidate_deliveries)
-                   OR f.order_number IN (SELECT order_number FROM candidate_deliveries)
-                   OR f.source_row_id IN (
-                       SELECT r.source_row_id FROM sales_fact_revision r
-                       WHERE r.company_id = :companyId AND r.marketplace_account_id = :accountId
-                         AND r.order_number IN (SELECT order_number FROM candidate_deliveries)
-                   ))
+            (SELECT DISTINCT f.source_row_id FROM sales_fact f
+             JOIN (SELECT DISTINCT posting_number FROM candidate_deliveries WHERE posting_number IS NOT NULL) h ON h.posting_number = f.posting_number
+             WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId LIMIT :saleSentinel)
+            UNION
+            (SELECT DISTINCT f.source_row_id FROM sales_fact f
+             JOIN (SELECT DISTINCT order_number FROM candidate_deliveries WHERE order_number IS NOT NULL) h ON h.order_number = f.order_number
+             WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId LIMIT :saleSentinel)
+            UNION
+            (SELECT DISTINCT f.source_row_id FROM sales_fact f
+             JOIN sales_fact_revision r ON r.company_id = :companyId AND r.marketplace_account_id = :accountId AND r.source_row_id = f.source_row_id
+             JOIN (SELECT DISTINCT order_number FROM candidate_deliveries WHERE order_number IS NOT NULL) h ON h.order_number = r.order_number
+             WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId LIMIT :saleSentinel)
             LIMIT :saleSentinel
             SQL : <<<'SQL'
             SELECT f.source_row_id
@@ -136,14 +138,20 @@ final class NetTrainingSourceSql
             all_orders AS MATERIALIZED (
                 SELECT DISTINCT order_number FROM candidate_groups WHERE order_number IS NOT NULL
             ),
+            return_candidate_keys AS MATERIALIZED (
+                (SELECT DISTINCT f.source_row_id FROM marketplace_return_fact f JOIN all_orders o ON o.order_number = f.order_number
+                 WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId LIMIT :returnSentinel)
+                UNION
+                (SELECT DISTINCT f.source_row_id FROM marketplace_return_fact f
+                 JOIN marketplace_return_fact_revision r ON r.company_id = :companyId AND r.marketplace_account_id = :accountId AND r.source_row_id = f.source_row_id
+                 JOIN all_orders o ON o.order_number = r.order_number
+                 WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId LIMIT :returnSentinel)
+                LIMIT :returnSentinel
+            ),
             return_keys AS MATERIALIZED (
-                SELECT f.source_row_id, f.fact_revision, f.order_number, f.marketplace_sku FROM marketplace_return_fact f
+                SELECT f.source_row_id, f.fact_revision, f.order_number, f.marketplace_sku
+                FROM marketplace_return_fact f JOIN return_candidate_keys k USING (source_row_id)
                 WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId
-                  AND (f.order_number IN (SELECT order_number FROM all_orders) OR f.source_row_id IN (
-                      SELECT r.source_row_id FROM marketplace_return_fact_revision r
-                      WHERE r.company_id = :companyId AND r.marketplace_account_id = :accountId
-                        AND r.order_number IN (SELECT order_number FROM all_orders)
-                  ))
                 LIMIT :returnSentinel
             ),
             return_revisions AS MATERIALIZED (
