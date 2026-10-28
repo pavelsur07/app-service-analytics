@@ -854,3 +854,23 @@ production655-6264b75 rootverified14:02:37UTC:12healthy/running,
 7PHPoriginalepoch/config;8PASSpurememoryorchestrator иseller/adminversions.
 B08.md сохраняет полные review IDs/receipts/ограничения. B08 закрыта58/68;
 B09проектирует реальныйtargetproducer/итог, numeric/qualitygate закрыт.
+
+
+## Приёмка B09: реальные исходы и точный нетто-прогноз, 2026-10-28
+
+Реальный bounded producer, exact aggregate и единый readonly RR/readAt готовы.
+Нормальный и10×noise наборы20k групп/50k ключей/120k revisions возвращают
+2000групп с тем же точным эталоном; каждый SQL/compute≤5s, peakPHP56.03MiB.
+Oversized output/sentinels дают whole-result refusal;12 synthetic scopes очищены.
+Static0,unit671/7277,integration819/19632. ActualTask5двеCLI0/0 и security
+двеCLI0/0, итоговое code/lock coverage33/33. Новый Mime advisory устранён
+patch7.4.22, общий audit и40mail tests/691assertions прошли.
+
+[PR280](https://github.com/pavelsur07/app-service-analytics/pull/280), source d7c78be,
+[CI40757652794](https://github.com/pavelsur07/app-service-analytics/actions/runs/40757652794)
+SUCCESS; merge7962be1/masterCI40758483076/run666attempt1/deploySUCCESS.
+Production666-7962be1 rootverified20:01:14UTC:12running/healthy,
+7PHPoriginalepoch/config,13PASS synthetic+actualreadonlyabsentscope,
+seller/adminversions. Точность на реальных когортах и numericgate B16/B17
+не заявляются. B09.md и B09-mime-security.md сохраняют receipts/limitations.
+B09 закрыта59/68; следующий B10 — крайние исходы и частичные возвраты.
