@@ -6,6 +6,7 @@ namespace App\SalesPlanning\Application;
 
 use App\Identity\Application\Facade\IdentityFacade;
 use App\SalesPlanning\Domain\SalesPlanAuditAction;
+use App\SalesPlanning\Domain\SalesPlanCalendarRepository;
 use App\SalesPlanning\Domain\SalesPlanRepository;
 use App\SalesPlanning\Domain\SalesPlanStatus;
 use App\SalesPlanning\Domain\SkuPeriodPlan;
@@ -22,6 +23,7 @@ final readonly class RemoveSalesPlanSkuAction
     public function __construct(
         private SalesPlanRepository $plans,
         private IdentityFacade $identity,
+        private SalesPlanCalendarRepository $calendar,
     ) {
     }
 
@@ -48,6 +50,18 @@ final readonly class RemoveSalesPlanSkuAction
         $days = $this->plans->daysOfSkus($companyId, $plan->id(), [$marketplaceSku])[$marketplaceSku] ?? null;
         if (null === $days) {
             return EditSalesPlanResult::of(EditSalesPlanOutcome::SkuNotInPlan);
+        }
+
+        foreach ($this->calendar->entriesForUpdate($companyId, $plan->id(), $marketplaceSku) as $entry) {
+            $this->identity->recordAuditEntry(
+                companyId: $companyId,
+                actorUserId: $actorUserId,
+                action: SalesPlanAuditAction::CalendarRemoved,
+                subjectId: $entry->id()->toRfc4122(),
+                previousValue: SetSalesPlanCalendarAction::describe($planId, $entry),
+                newValue: null,
+            );
+            $this->calendar->remove($entry);
         }
 
         $this->identity->recordAuditEntry(

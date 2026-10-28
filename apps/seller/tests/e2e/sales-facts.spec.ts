@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test } from '@playwright/test'
+import { verifySalesPlanning } from './sales-planning-performance.flow'
 
 // Компании и учётные данные сеются make test-e2e перед прогоном
 // (bin/e2e-seed.sh). Компаний две и участник в обеих, поэтому
@@ -196,6 +197,7 @@ test.describe('sales facts', () => {
   test('переключение компании не показывает данные предыдущей', async ({
     page,
   }) => {
+    test.setTimeout(240_000)
     // Сквозной сценарий §10: вход, выбор компании, просмотр данных,
     // переключение компании. Последние два шага до этого теста
     // не проходились ни разу — сид создавал одну компанию, и приложение
@@ -227,6 +229,7 @@ test.describe('sales facts', () => {
     const profit = page.getByRole('region', { name: 'Прибыль', exact: true })
     await expect(profit).toBeVisible()
     await expect(profit).not.toContainText('250 ₽')
+    await verifySalesPlanning(page)
   })
 
   test('a foreign companyId is denied, not shown as an empty screen', async ({

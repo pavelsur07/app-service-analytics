@@ -342,6 +342,46 @@ final class BuyoutOutcomeQueryTest extends KernelTestCase
         );
     }
 
+    public function testPreservesFiveOrderedUnitsAcrossPartialReturnAndPendingPosting(): void
+    {
+        $this->sales()->upsertAll([
+            $this->sale('FIVE', 'FIVE-DELIVERED', 'FIVE-ORDER', 'delivered', 3),
+            $this->sale('FIVE', 'FIVE-PENDING', 'FIVE-PENDING-ORDER', 'awaiting_packaging', 2),
+        ]);
+        $this->postingStatuses()->recordChanged($this->companyId->toRfc4122(), [
+            $this->postingStatus('FIVE-DELIVERED', 'FIVE-ORDER', 'delivering', '2026-08-02 10:00:00'),
+            $this->postingStatus('FIVE-DELIVERED', 'FIVE-ORDER', 'delivered', '2026-08-03 10:00:00'),
+            $this->postingStatus('FIVE-PENDING', 'FIVE-PENDING-ORDER', 'awaiting_packaging', '2026-08-03 10:00:00'),
+        ]);
+        $returned = $this->returnFact('FIVE-RETURN', 'FIVE', 'FIVE-DELIVERED', 'FIVE-ORDER', 'ClientReturn', 'Возврат одной штуки');
+        $this->returns()->upsertAll([$returned]);
+
+        /** @var Connection $connection */
+        $connection = self::getContainer()->get(Connection::class);
+        $query = new BuyoutOutcomeQuery($connection);
+        $expected = ['D' => 2, 'R' => 1, 'pending' => 2];
+
+        $readQuantities = function () use ($query): array {
+            $quantities = [];
+            $rows = $query->build($this->companyId->toRfc4122(), $this->accountId->toRfc4122(), 10)
+                ->executeQuery()->fetchAllAssociative();
+            foreach ($rows as $raw) {
+                $row = BuyoutOutcomeQuery::mapRow($raw);
+                $quantities[$row->outcome ?? 'pending'] = $row->quantity;
+            }
+            ksort($quantities);
+
+            return $quantities;
+        };
+
+        self::assertSame($expected, $readQuantities());
+        self::assertSame(5, array_sum($readQuantities()));
+
+        // Повторная загрузка того же возврата не уменьшает D ещё на штуку.
+        $this->returns()->upsertAll([$returned]);
+        self::assertSame($expected, $readQuantities());
+    }
+
     public function testSplitsPartialReturnQuantitiesInsteadOfColoringTheWholeSaleLine(): void
     {
         $sales = [

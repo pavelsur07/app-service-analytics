@@ -19,6 +19,31 @@ use Symfony\Component\Uid\Uuid;
  */
 final class SalesPlanRequest
 {
+    /** @return array{version: int, metric: \App\SalesPlanning\Domain\SalesPlanMetric} */
+    public static function metricFromJson(string $body): array
+    {
+        $decoded = self::decode($body);
+        $version = self::approvalVersionFromJson($body);
+        $raw = $decoded['metric'] ?? null;
+        $metric = \is_string($raw) ? \App\SalesPlanning\Domain\SalesPlanMetric::tryFrom($raw) : null;
+        if (null === $metric) {
+            throw new \InvalidArgumentException('sales_plan_metric_invalid');
+        }
+
+        return ['version' => $version, 'metric' => $metric];
+    }
+
+    public static function approvalVersionFromJson(string $body): int
+    {
+        $decoded = self::decode($body);
+        $version = $decoded['version'] ?? null;
+        if (!\is_int($version) || $version < 1) {
+            throw new \InvalidArgumentException('version_required');
+        }
+
+        return $version;
+    }
+
     /**
      * @return array{marketplaceAccountId: string, name: string, dateFrom: \DateTimeImmutable, dateTo: \DateTimeImmutable, currency: string}
      *

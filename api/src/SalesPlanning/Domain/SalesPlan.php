@@ -30,6 +30,8 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Table(name: 'sales_plan')]
 #[ORM\Index(name: 'idx_sales_plan_company_account', columns: ['company_id', 'marketplace_account_id'])]
 #[ORM\Index(name: 'idx_sales_plan_company_created_by', columns: ['company_id', 'created_by_user_id'])]
+#[ORM\Index(name: 'idx_sales_plan_company_approved_by', columns: ['company_id', 'approved_by_user_id'])]
+#[ORM\Index(name: 'idx_sales_plan_company_lineage_version', columns: ['company_id', 'lineage_id', 'version_number'])]
 // Не больше одного черновика и одного утверждённого в линии (п. 8).
 // Штатный сценарий до индексов не доходит — они страховка: нарушение
 // на flush закрывает EntityManager. `where` — в форме, которую
@@ -87,6 +89,9 @@ class SalesPlan
     #[ORM\Column(length: 16, enumType: SalesPlanStatus::class)]
     private SalesPlanStatus $status;
 
+    #[ORM\Column(length: 48, nullable: true, enumType: SalesPlanMetric::class)]
+    private ?SalesPlanMetric $metric = null;
+
     // id первой версии линии; у первой версии совпадает с id.
     #[ORM\Column(type: 'uuid')]
     private readonly Uuid $lineageId;
@@ -103,7 +108,14 @@ class SalesPlan
     #[ORM\Column]
     private \DateTimeImmutable $updatedAt;
 
-    // Счётчик правок строк: растёт на каждой, и потому шапка меняется
+    #[ORM\Column(type: 'uuid', nullable: true)]
+    private ?Uuid $approvedByUserId = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $approvedAt = null;
+
+    // Счётчик правок строк и сериализации lifecycle: растёт на каждой операции,
+    // и потому шапка меняется
     // всегда — даже если время правки совпало с прошлым. На updatedAt
     // одном это держаться не может: то же значение ORM за изменение
     // не считает, и версия не выросла бы (ADR-040 п. 10).
@@ -189,6 +201,42 @@ class SalesPlan
     }
 
     /**
+     * Только шапка новой версии из утверждённого источника (ADR-040/046).
+     * Строки, сохранение и замена активной версии — отдельный сценарий.
+     */
+    public function newRevision(Uuid $actorUserId, \DateTimeImmutable $at, ?int $nextVersionNumber = null): self
+    {
+        if (SalesPlanStatus::Approved !== $this->status) {
+            throw new \DomainException('Новая версия создаётся только из утверждённого плана.');
+        }
+        if (null === $nextVersionNumber) {
+            if (\PHP_INT_MAX === $this->versionNumber) {
+                throw new \InvalidArgumentException('Номер версии плана исчерпан.');
+            }
+            $nextVersionNumber = $this->versionNumber + 1;
+        }
+        if ($nextVersionNumber <= $this->versionNumber) {
+            throw new \InvalidArgumentException('Номер новой версии должен быть больше номера источника.');
+        }
+        $revision = new self(
+            Uuid::v7(),
+            $this->companyId,
+            $this->marketplaceAccountId,
+            $this->name,
+            $this->dateFrom,
+            $this->dateTo,
+            $this->currency,
+            $this->lineageId,
+            $nextVersionNumber,
+            $actorUserId,
+            $at,
+        );
+        $revision->metric = $this->metric;
+
+        return $revision;
+    }
+
+    /**
      * Отметка правки строк: меняет поле шапки, и ORM повышает её версию
      * при flush (п. 10). Вызывается каждой операцией над строками.
      */
@@ -197,6 +245,85 @@ class SalesPlan
         $this->assertEditable();
         $this->updatedAt = $changedAt;
         ++$this->lineEdits;
+    }
+
+    public function recordCalendarChanged(\DateTimeImmutable $changedAt): void
+    {
+        $this->recordLinesChanged($changedAt);
+    }
+
+    /** Сериализация copy/replacement на общей approved шапке, даже в один момент. */
+    public function recordLifecycleChanged(\DateTimeImmutable $at): void
+    {
+        if (SalesPlanStatus::Approved !== $this->status) {
+            throw new \DomainException('Линия больше не имеет этого активного утверждённого плана.');
+        }
+        $this->updatedAt = $at;
+        ++$this->lineEdits;
+    }
+
+    public function supersede(\DateTimeImmutable $at): void
+    {
+        $this->recordLifecycleChanged($at);
+        $this->status = SalesPlanStatus::Superseded;
+    }
+
+    public function discard(\DateTimeImmutable $at): void
+    {
+        $this->assertEditable();
+        $this->status = SalesPlanStatus::Discarded;
+        $this->updatedAt = $at;
+    }
+
+    public function cancel(\DateTimeImmutable $at): void
+    {
+        $this->recordLifecycleChanged($at);
+        $this->status = SalesPlanStatus::Cancelled;
+    }
+
+    public function metric(): ?SalesPlanMetric
+    {
+        return $this->metric;
+    }
+
+    public function canSelectMetric(SalesPlanMetric $metric): bool
+    {
+        return 1 === $this->versionNumber || null === $this->metric || $this->metric === $metric;
+    }
+
+    public function selectMetric(SalesPlanMetric $metric, \DateTimeImmutable $at): void
+    {
+        $this->assertEditable();
+        if (!$this->canSelectMetric($metric)) {
+            throw new \DomainException('Метрика линии уже выбрана; другая метрика требует нового плана.');
+        }
+        if ($this->metric === $metric) {
+            return;
+        }
+        $this->metric = $metric;
+        $this->updatedAt = $at;
+    }
+
+    public function approve(Uuid $actorUserId, \DateTimeImmutable $at): void
+    {
+        $this->assertEditable();
+        if (null === $this->metric) {
+            throw new \DomainException('Перед утверждением нужно выбрать метрику цели.');
+        }
+        $this->status = SalesPlanStatus::Approved;
+        $this->approvedByUserId = $actorUserId;
+        $this->approvedAt = $at;
+        $this->updatedAt = $at;
+    }
+
+    public function approvedByUserId(): ?Uuid
+    {
+        return $this->approvedByUserId;
+    }
+
+    public function approvedAt(): ?\DateTimeImmutable
+    {
+        return $this->approvedAt;
     }
 
     public function assertEditable(): void

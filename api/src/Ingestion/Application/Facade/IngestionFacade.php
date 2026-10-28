@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application\Facade;
 
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutMaturityQuery;
 use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkuSearchQuery;
 use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkusPresentQuery;
 use App\Ingestion\Infrastructure\Query\Listings\ListingSnapshotCriteria;
 use App\Ingestion\Infrastructure\Query\Listings\ListingSnapshotsQuery;
+use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortMetricsRow;
+use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortSeriesQuery;
+use Psr\Clock\ClockInterface;
 
 /**
  * Единственный вход в Ingestion снаружи (CLAUDE.md, «Модули»).
@@ -32,6 +36,9 @@ final class IngestionFacade
         private readonly ListingSnapshotsQuery $snapshots,
         private readonly AccountCatalogSkuSearchQuery $catalogSearch,
         private readonly AccountCatalogSkusPresentQuery $catalogPresence,
+        private readonly SalesCohortSeriesQuery $cohortSeries,
+        private readonly BuyoutMaturityQuery $cohortMaturity,
+        private readonly ClockInterface $clock,
     ) {
     }
 
@@ -159,5 +166,60 @@ final class IngestionFacade
         }
 
         return $snapshots;
+    }
+
+    /** Current mutable order cohorts; no historical snapshot or return-tail promise. */
+    public function salesCohortMetrics(string $companyId, string $accountId, SalesCohortRequest $request): SalesCohortBatch
+    {
+        $calculatedAt = $this->clock->now();
+        if ([] === $request->marketplaceSkus) {
+            return new SalesCohortBatch([], $calculatedAt, $request);
+        }
+        $maturity = $this->cohortMaturity->build($companyId, $accountId, $calculatedAt)->executeQuery()->fetchAssociative();
+        if (false === $maturity) {
+            throw new \UnexpectedValueException('Missing sales cohort maturity aggregate.');
+        }
+        $p95 = BuyoutMaturityQuery::mapRow($maturity)->p95Seconds;
+        $rows = $this->cohortSeries->build(
+            $companyId, $accountId, $request->marketplaceSkus,
+            $request->from, $request->to, $request->accumulationFrom,
+            $request->groupBy->value, $request->valuationCurrency, $calculatedAt, $p95,
+        )->executeQuery()->fetchAllAssociative();
+        $skus = [];
+        foreach ($rows as $raw) {
+            $row = SalesCohortSeriesQuery::mapRow($raw);
+            $points = [];
+            foreach ($row->points as $point) {
+                $points[] = new SalesCohortPoint(
+                    $point->bucketFrom, $point->bucketTo, $point->periodCoverage, $point->cumulativeCoverage,
+                    self::cohortComponents($point->period), self::cohortComponents($point->cumulative),
+                );
+            }
+            $skus[] = new SalesCohortSku($row->marketplaceSku, $points);
+        }
+
+        // Account-wide coverage is identical for all requested SKU. The
+        // last cumulative point already contains the SQL range assessment.
+        $coveragePoints = $skus[0]->points ?? [];
+        $lastPoint = [] === $coveragePoints ? null : $coveragePoints[array_key_last($coveragePoints)];
+
+        return new SalesCohortBatch($skus, $calculatedAt, $request, ordersCoverage: null === $lastPoint ? 'not_assessed' : $lastPoint->cumulativeCoverage);
+    }
+
+    private static function cohortComponents(?SalesCohortMetricsRow $row): ?SalesCohortComponents
+    {
+        if (null === $row) {
+            return null;
+        }
+
+        return new SalesCohortComponents(
+            $row->rawOrderedQuantity, $row->preHandoverCancelledQuantity, $row->effectiveOrderedQuantity,
+            $row->observedNetSalesQuantity, $row->observedRevenue, $row->inFlightQuantity,
+            $row->buyoutResolvedQuantity, $row->unestimatedQuantity, $row->unknownOutcomeQuantity,
+            $row->knownProjectedBuyoutQuantity, $row->knownProjectedEligibleQuantity,
+            $row->maturityStatus, $row->inFlightRateBps, $row->knownBuyoutRateBps,
+            $row->actualBuyoutRateBps, $row->currentProjectedBuyoutQuantity,
+            $row->currentProjectedBuyoutRateBps, $row->unestimatedRateBps,
+        );
     }
 }

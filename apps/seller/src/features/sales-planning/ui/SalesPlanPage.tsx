@@ -1,6 +1,6 @@
 import { type ReactNode, useDeferredValue, useEffect, useState } from 'react'
 import { ArrowLeft, CircleX, PackagePlus, Trash2 } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { ApiError } from '../../../api/ApiError'
 import type { components } from '../../../api/schema'
 import {
@@ -26,6 +26,10 @@ import {
   useSalesPlan,
   useSetSalesPlanSkus,
 } from '../model/useSalesPlans'
+
+import { SalesPlanLifecycle } from './SalesPlanLifecycle'
+import { SalesPlanPerformance } from './SalesPlanPerformance'
+import { SalesPlanCalendar } from './SalesPlanCalendar'
 
 type SalesPlan = components['schemas']['SalesPlanResponse']
 type SalesPlanSku = components['schemas']['SalesPlanSkuResponse']
@@ -57,14 +61,38 @@ function SalesPlanScreen() {
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null])
   const cursor = cursorStack[cursorStack.length - 1] ?? null
   const [pickedDay, setPickedDay] = useState<PickedDay | null>(null)
+  const [search, setSearch] = useSearchParams()
+  const rawView = search.get('view')
+  const selectedView =
+    rawView === 'edit' || rawView === 'compare' ? rawView : null
+  const setSelectedView = (view: 'edit' | 'compare') => {
+    const next = new URLSearchParams(search)
+    next.set('view', view)
+    setSearch(next)
+  }
 
   const plan = useSalesPlan(companyId ?? '', planId ?? '', groupBy, cursor)
+  // Stable metadata subscription keeps the calendar mounted across SKU pages
+  // and failed header rereads; the trusted plan stays in TanStack Query.
+  const header = useSalesPlan(companyId ?? '', planId ?? '', 'period', null)
+  const canCompare =
+    plan.data !== undefined &&
+    (plan.data.plan.status === 'approved' ||
+      (plan.data.plan.status === 'draft' && plan.data.plan.versionNumber > 1))
+  const showComparison =
+    canCompare &&
+    (selectedView ??
+      (plan.data?.plan.status === 'approved' ? 'compare' : 'edit')) ===
+      'compare'
 
   useEffect(() => {
-    if (plan.error instanceof ApiError && plan.error.status === 403) {
+    if (
+      (plan.error instanceof ApiError && plan.error.status === 403) ||
+      (header.error instanceof ApiError && header.error.status === 403)
+    ) {
       void navigate('/companies', { replace: true })
     }
-  }, [plan.error, navigate])
+  }, [plan.error, header.error, navigate])
 
   if (companyId === undefined || planId === undefined) {
     return null
@@ -79,6 +107,20 @@ function SalesPlanScreen() {
         <ArrowLeft aria-hidden="true" size={16} />
         Все планы
       </Link>
+
+      {header.data !== undefined && (
+        <>
+          <PlanHeader plan={header.data.plan} />
+          <SalesPlanLifecycle
+            companyId={companyId}
+            plan={header.data.plan}
+            onRevision={(id) => {
+              void navigate(`/companies/${companyId}/sales-plans/${id}`)
+            }}
+          />
+          <SalesPlanCalendar companyId={companyId} plan={header.data.plan} />
+        </>
+      )}
 
       {plan.status === 'pending' && (
         <Card>
@@ -104,121 +146,161 @@ function SalesPlanScreen() {
 
       {plan.status === 'success' && (
         <>
-          <PlanHeader plan={plan.data.plan} />
-
-          {plan.data.plan.status === 'draft' && (
-            <SkuInputForm companyId={companyId} plan={plan.data.plan} />
+          {canCompare ? (
+            <div className="flex gap-2" role="group" aria-label="Раздел плана">
+              <Button
+                size="compact"
+                variant={!showComparison ? 'primary' : 'secondary'}
+                onClick={() => {
+                  setSelectedView('edit')
+                }}
+              >
+                Текущая версия
+              </Button>
+              <Button
+                size="compact"
+                variant={showComparison ? 'primary' : 'secondary'}
+                onClick={() => {
+                  setSelectedView('compare')
+                }}
+              >
+                Выполнение исходной цели
+              </Button>
+            </div>
+          ) : (
+            plan.data.plan.status !== 'draft' && (
+              <p className="text-sm text-text-muted">
+                Историческая версия: только просмотр. Сравнение закрытой версии
+                недоступно.
+              </p>
+            )
           )}
+          {showComparison && (
+            <SalesPlanPerformance
+              key={`${companyId}:${planId}`}
+              companyId={companyId}
+              plan={plan.data.plan}
+              onReread={() => plan.refetch()}
+            />
+          )}
+          <div
+            hidden={showComparison}
+            className={showComparison ? 'hidden' : 'flex flex-col gap-4'}
+          >
+            {plan.data.plan.status === 'draft' && (
+              <SkuInputForm companyId={companyId} plan={plan.data.plan} />
+            )}
 
-          <Card>
-            <div
-              className="mb-4 flex flex-wrap gap-2"
-              role="group"
-              aria-label="Группировка"
-            >
-              {GROUPINGS.map((option) => (
-                <Button
-                  key={option.value}
-                  type="button"
-                  size="compact"
-                  variant={groupBy === option.value ? 'primary' : 'secondary'}
-                  aria-pressed={groupBy === option.value}
-                  onClick={() => {
-                    setGroupBy(option.value)
-                    setCursorStack([null])
+            <Card>
+              <div
+                className="mb-4 flex flex-wrap gap-2"
+                role="group"
+                aria-label="Группировка"
+              >
+                {GROUPINGS.map((option) => (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    size="compact"
+                    variant={groupBy === option.value ? 'primary' : 'secondary'}
+                    aria-pressed={groupBy === option.value}
+                    onClick={() => {
+                      setGroupBy(option.value)
+                      setCursorStack([null])
+                      setPickedDay(null)
+                    }}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+
+              {plan.data.skus.length === 0 ? (
+                <StatusPanel
+                  description="Добавьте SKU: штуки за период разложатся по дням поровну."
+                  icon={<PackagePlus aria-hidden="true" size={20} />}
+                  title="В плане пока нет SKU"
+                  tone="neutral"
+                />
+              ) : (
+                <PlanGrid
+                  currency={plan.data.plan.currency}
+                  skus={plan.data.skus}
+                  // Правится день, а не неделя: ячейка кликабельна только
+                  // в группировке по дням и только у черновика.
+                  onPickDay={
+                    plan.data.plan.status === 'draft' && groupBy === 'day'
+                      ? (cell) => {
+                          setPickedDay({
+                            ...cell,
+                            version: plan.data.plan.version,
+                          })
+                        }
+                      : null
+                  }
+                  removeAction={
+                    plan.data.plan.status === 'draft'
+                      ? (sku) => (
+                          <RemoveSkuButton
+                            companyId={companyId}
+                            plan={plan.data.plan}
+                            marketplaceSku={sku}
+                          />
+                        )
+                      : null
+                  }
+                />
+              )}
+
+              {pickedDay !== null && plan.data.plan.status === 'draft' && (
+                <DayEditForm
+                  // Версия в ключе: повторный клик по тому же дню после чужой
+                  // правки пересоздаёт форму — со свежими штуками и версией,
+                  // а не со старыми полями при новой версии (ADR-008).
+                  key={`${pickedDay.marketplaceSku}:${pickedDay.date}:${pickedDay.version}`}
+                  companyId={companyId}
+                  plan={plan.data.plan}
+                  picked={pickedDay}
+                  onClose={() => {
                     setPickedDay(null)
                   }}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </div>
+                />
+              )}
 
-            {plan.data.skus.length === 0 ? (
-              <StatusPanel
-                description="Добавьте SKU: штуки за период разложатся по дням поровну."
-                icon={<PackagePlus aria-hidden="true" size={20} />}
-                title="В плане пока нет SKU"
-                tone="neutral"
-              />
-            ) : (
-              <PlanGrid
-                currency={plan.data.plan.currency}
-                skus={plan.data.skus}
-                // Правится день, а не неделя: ячейка кликабельна только
-                // в группировке по дням и только у черновика.
-                onPickDay={
-                  plan.data.plan.status === 'draft' && groupBy === 'day'
-                    ? (cell) => {
-                        setPickedDay({
-                          ...cell,
-                          version: plan.data.plan.version,
-                        })
-                      }
-                    : null
-                }
-                removeAction={
-                  plan.data.plan.status === 'draft'
-                    ? (sku) => (
-                        <RemoveSkuButton
-                          companyId={companyId}
-                          plan={plan.data.plan}
-                          marketplaceSku={sku}
-                        />
+              {((plan.data.nextCursor ?? null) !== null ||
+                cursorStack.length > 1) && (
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="compact"
+                    disabled={cursorStack.length <= 1}
+                    onClick={() => {
+                      setCursorStack((stack) =>
+                        stack.length > 1 ? stack.slice(0, -1) : stack,
                       )
-                    : null
-                }
-              />
-            )}
-
-            {pickedDay !== null && plan.data.plan.status === 'draft' && (
-              <DayEditForm
-                // Версия в ключе: повторный клик по тому же дню после чужой
-                // правки пересоздаёт форму — со свежими штуками и версией,
-                // а не со старыми полями при новой версии (ADR-008).
-                key={`${pickedDay.marketplaceSku}:${pickedDay.date}:${pickedDay.version}`}
-                companyId={companyId}
-                plan={plan.data.plan}
-                picked={pickedDay}
-                onClose={() => {
-                  setPickedDay(null)
-                }}
-              />
-            )}
-
-            {((plan.data.nextCursor ?? null) !== null ||
-              cursorStack.length > 1) && (
-              <div className="mt-4 flex items-center justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="compact"
-                  disabled={cursorStack.length <= 1}
-                  onClick={() => {
-                    setCursorStack((stack) =>
-                      stack.length > 1 ? stack.slice(0, -1) : stack,
-                    )
-                  }}
-                >
-                  Назад
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="compact"
-                  disabled={(plan.data.nextCursor ?? null) === null}
-                  onClick={() => {
-                    const next = plan.data.nextCursor ?? null
-                    if (next !== null) {
-                      setCursorStack((stack) => [...stack, next])
-                    }
-                  }}
-                >
-                  Дальше
-                </Button>
-              </div>
-            )}
-          </Card>
+                    }}
+                  >
+                    Назад
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="compact"
+                    disabled={(plan.data.nextCursor ?? null) === null}
+                    onClick={() => {
+                      const next = plan.data.nextCursor ?? null
+                      if (next !== null) {
+                        setCursorStack((stack) => [...stack, next])
+                      }
+                    }}
+                  >
+                    Дальше
+                  </Button>
+                </div>
+              )}
+            </Card>
+          </div>
         </>
       )}
     </div>
@@ -247,13 +329,13 @@ function PlanHeader({ plan }: { plan: SalesPlan }) {
           </dd>
         </div>
         <div>
-          <dt className="text-text-muted">Штуки</dt>
+          <dt className="text-text-muted">Штуки текущей версии</dt>
           <dd className="text-lg font-semibold tabular-nums">
             {plan.totalQuantity}
           </dd>
         </div>
         <div>
-          <dt className="text-text-muted">Выручка по РРЦ</dt>
+          <dt className="text-text-muted">Выручка по РРЦ текущей версии</dt>
           <dd className="text-lg font-semibold tabular-nums">
             {formatMinorAmount(plan.revenueMinor, plan.currency, {
               wholeUnits: true,

@@ -51,6 +51,7 @@ final class SalesPlanScenariosTest extends KernelTestCase
 
         self::assertNotNull($plan);
         self::assertSame(1, $plan->version());
+        self::assertNull($plan->metric());
         self::assertNull($this->create($company, $foreignAccount));
         self::assertNull($this->create($company, $revoked));
         self::assertSame(1, $this->auditCount($plan, SalesPlanAuditAction::Created));

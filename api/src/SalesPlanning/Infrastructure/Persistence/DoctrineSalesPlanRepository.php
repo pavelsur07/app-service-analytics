@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace App\SalesPlanning\Infrastructure\Persistence;
 
+use App\SalesPlanning\Domain\ClaimedSalesPlanDay;
+use App\SalesPlanning\Domain\EmptySalesPlan;
 use App\SalesPlanning\Domain\PlannedDay;
 use App\SalesPlanning\Domain\SalesPlan;
+use App\SalesPlanning\Domain\SalesPlanApprovalConflict;
+use App\SalesPlanning\Domain\SalesPlanCalendarRepository;
 use App\SalesPlanning\Domain\SalesPlanLine;
 use App\SalesPlanning\Domain\SalesPlanRepository;
+use App\SalesPlanning\Domain\SalesPlanStatus;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Uid\Uuid;
@@ -26,6 +31,7 @@ final readonly class DoctrineSalesPlanRepository implements SalesPlanRepository
 
     public function __construct(
         private EntityManagerInterface $entityManager,
+        private SalesPlanCalendarRepository $calendar,
     ) {
     }
 
@@ -37,6 +43,171 @@ final readonly class DoctrineSalesPlanRepository implements SalesPlanRepository
             $this->entityManager->persist($plan);
             $this->entityManager->flush();
             $this->persistInBatches($lines);
+        });
+    }
+
+    public function transactional(callable $operation): mixed
+    {
+        return $this->entityManager->wrapInTransaction($operation);
+    }
+
+    public function openDraft(string $companyId, Uuid $lineageId): ?SalesPlan
+    {
+        return $this->lineagePlan($companyId, $lineageId, SalesPlanStatus::Draft);
+    }
+
+    public function activeApproved(string $companyId, Uuid $lineageId): ?SalesPlan
+    {
+        return $this->lineagePlan($companyId, $lineageId, SalesPlanStatus::Approved);
+    }
+
+    private function lineagePlan(string $companyId, Uuid $lineageId, SalesPlanStatus $status): ?SalesPlan
+    {
+        $plan = $this->entityManager->createQuery('SELECT p FROM '.SalesPlan::class.' p WHERE p.companyId = :companyId AND p.lineageId = :lineageId AND p.status = :status')
+            ->setParameter('companyId', Uuid::fromString($companyId), 'uuid')
+            ->setParameter('lineageId', $lineageId, 'uuid')->setParameter('status', $status->value)->setMaxResults(1)->getOneOrNullResult();
+        \assert(null === $plan || $plan instanceof SalesPlan);
+
+        return $plan;
+    }
+
+    public function nextVersionNumber(string $companyId, Uuid $lineageId): int
+    {
+        $maximum = $this->entityManager->getConnection()->fetchOne('SELECT COALESCE(MAX(version_number), 0) FROM sales_plan WHERE company_id = :companyId AND lineage_id = :lineageId', ['companyId' => $companyId, 'lineageId' => $lineageId->toRfc4122()]);
+        \assert(\is_int($maximum));
+        if ($maximum >= 2147483647) {
+            throw new \DomainException('Номер версии плана исчерпан.');
+        }
+
+        return $maximum + 1;
+    }
+
+    public function copyRevision(string $companyId, SalesPlan $source, SalesPlan $revision): void
+    {
+        if (!$source->companyId()->equals(Uuid::fromString($companyId))
+            || !$revision->companyId()->equals($source->companyId())
+            || !$revision->lineageId()->equals($source->lineageId())
+            || !$revision->marketplaceAccountId()->equals($source->marketplaceAccountId())
+            || $revision->id()->equals($source->id()) || $revision->name() !== $source->name()
+            || $revision->dateFrom()->format('Y-m-d') !== $source->dateFrom()->format('Y-m-d')
+            || $revision->dateTo()->format('Y-m-d') !== $source->dateTo()->format('Y-m-d')
+            || $revision->currency() !== $source->currency() || $revision->metric() !== $source->metric()
+            || $revision->versionNumber() <= $source->versionNumber()
+            || SalesPlanStatus::Approved !== $source->status()
+            || SalesPlanStatus::Draft !== $revision->status()) {
+            throw new \InvalidArgumentException('Новая версия не соответствует утверждённому источнику.');
+        }
+        $parameters = ['companyId' => $companyId, 'sourceId' => $source->id()->toRfc4122(), 'targetId' => $revision->id()->toRfc4122()];
+        $connection = $this->entityManager->getConnection();
+        $count = $connection->fetchOne('SELECT COUNT(*) FROM sales_plan_line WHERE company_id = :companyId AND sales_plan_id = :sourceId', ['companyId' => $companyId, 'sourceId' => $parameters['sourceId']]);
+        \assert(\is_int($count));
+        if ($count > SalesPlan::MaxSkus * SalesPlan::MaxPeriodDays) {
+            throw new \DomainException('Число дней плана превышает предел.');
+        }
+        $this->entityManager->persist($revision);
+        $this->entityManager->flush();
+        foreach ($this->calendar->entriesForUpdate($companyId, $source->id()) as $entry) {
+            $this->calendar->add($entry->copyFor($revision));
+        }
+        $this->entityManager->flush();
+        $after = null;
+        for ($remaining = $count; $remaining > 0; $remaining -= $batchSize) {
+            $batchSize = min(self::UpsertBatchSize, $remaining);
+            $ids = [];
+            for ($i = 0; $i < $batchSize; ++$i) {
+                $ids[] = Uuid::v7()->toRfc4122();
+            }
+            $batchParameters = $parameters;
+            $batchParameters['ids'] = json_encode($ids, \JSON_THROW_ON_ERROR);
+            $afterCondition = '';
+            if (null !== $after) {
+                $afterCondition = ' AND (marketplace_sku, plan_date) > (:afterSku, CAST(:afterDate AS date))';
+                $batchParameters['afterSku'] = $after['marketplace_sku'];
+                $batchParameters['afterDate'] = $after['plan_date'];
+            }
+            // ADR-041: не более 10000 UUID/строк за statement, значения дней
+            // остаются в БД. Следующая порция начинается после возвращённого ключа.
+            /** @var array{marketplace_sku: string, plan_date: string}|false $after */
+            $after = $connection->fetchAssociative(
+                'WITH chunk AS MATERIALIZED (
+                    SELECT marketplace_sku, plan_date, quantity, price_minor FROM sales_plan_line
+                    WHERE company_id = :companyId AND sales_plan_id = :sourceId'.$afterCondition.'
+                    ORDER BY marketplace_sku, plan_date LIMIT '.self::UpsertBatchSize.'
+                 ), inserted AS (
+                    INSERT INTO sales_plan_line (id, company_id, sales_plan_id, marketplace_sku, plan_date, quantity, price_minor)
+                    SELECT CAST(ids.id AS uuid), :companyId, :targetId, s.marketplace_sku, s.plan_date, s.quantity, s.price_minor
+                    FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY marketplace_sku, plan_date) AS n FROM chunk) s
+                    JOIN jsonb_array_elements_text(CAST(:ids AS jsonb)) WITH ORDINALITY AS ids(id, n) ON ids.n = s.n
+                    RETURNING marketplace_sku, plan_date
+                 )
+                 SELECT marketplace_sku, plan_date FROM inserted ORDER BY marketplace_sku DESC, plan_date DESC LIMIT 1',
+                $batchParameters,
+            );
+            if (false === $after) {
+                throw new \DomainException('Строки утверждённого источника изменились во время копирования.');
+            }
+        }
+    }
+
+    public function releaseClaims(string $companyId, SalesPlan $source): void
+    {
+        if (!$source->companyId()->equals(Uuid::fromString($companyId))) {
+            throw new \InvalidArgumentException('План принадлежит другой компании.');
+        }
+        $this->entityManager->getConnection()->executeStatement('DELETE FROM sales_plan_day_claim WHERE company_id = :companyId AND sales_plan_id = :planId', ['companyId' => $companyId, 'planId' => $source->id()->toRfc4122()]);
+    }
+
+    public function saveMetadata(SalesPlan $plan): void
+    {
+        $this->entityManager->wrapInTransaction(function (): void {
+            $this->entityManager->flush();
+        });
+    }
+
+    public function approve(string $companyId, SalesPlan $plan): void
+    {
+        if (!$plan->companyId()->equals(Uuid::fromString($companyId))) {
+            throw new \InvalidArgumentException('План принадлежит другой компании.');
+        }
+
+        $this->entityManager->wrapInTransaction(function () use ($companyId, $plan): void {
+            // UPDATE шапки сериализует утверждение с любыми правками строк.
+            // Версия и аудит сбрасываются до чтения/занятия дней.
+            $this->entityManager->flush();
+            $connection = $this->entityManager->getConnection();
+            $parameters = [
+                'companyId' => $companyId,
+                'planId' => $plan->id()->toRfc4122(),
+                'accountId' => $plan->marketplaceAccountId()->toRfc4122(),
+            ];
+            $sourceCount = $connection->fetchOne(
+                'SELECT COUNT(*) FROM sales_plan_line WHERE company_id = :companyId AND sales_plan_id = :planId',
+                ['companyId' => $parameters['companyId'], 'planId' => $parameters['planId']],
+            );
+            \assert(\is_int($sourceCount));
+            if (0 === $sourceCount) {
+                throw new EmptySalesPlan('Пустой план нельзя утвердить.');
+            }
+            $inserted = $connection->executeStatement(
+                'INSERT INTO sales_plan_day_claim (company_id, marketplace_account_id, marketplace_sku, plan_date, sales_plan_id)
+                 SELECT company_id, :accountId, marketplace_sku, plan_date, sales_plan_id
+                   FROM sales_plan_line WHERE company_id = :companyId AND sales_plan_id = :planId
+                  ORDER BY marketplace_sku, plan_date
+                 ON CONFLICT (company_id, marketplace_account_id, marketplace_sku, plan_date) DO NOTHING',
+                $parameters,
+            );
+            if ($inserted !== $sourceCount) {
+                /** @var list<array{marketplace_sku: string, plan_date: string}> $rows */
+                $rows = $connection->fetchAllAssociative(
+                    'SELECT l.marketplace_sku, l.plan_date FROM sales_plan_line l
+                     JOIN sales_plan_day_claim c ON c.company_id = l.company_id
+                      AND c.marketplace_account_id = :accountId AND c.marketplace_sku = l.marketplace_sku AND c.plan_date = l.plan_date
+                     WHERE l.company_id = :companyId AND l.sales_plan_id = :planId AND c.sales_plan_id <> :planId
+                     ORDER BY l.marketplace_sku, l.plan_date LIMIT 200',
+                    $parameters,
+                );
+                throw new SalesPlanApprovalConflict(array_map(static fn (array $row): ClaimedSalesPlanDay => new ClaimedSalesPlanDay($row['marketplace_sku'], $row['plan_date']), $rows));
+            }
         });
     }
 

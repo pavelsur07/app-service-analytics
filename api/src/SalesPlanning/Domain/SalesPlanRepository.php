@@ -24,6 +24,39 @@ interface SalesPlanRepository
      */
     public function add(SalesPlan $plan, array $lines): void;
 
+    /**
+     * Шапка/аудит и занятость всех дней одной транзакцией.
+     *
+     * @throws \InvalidArgumentException             companyId не совпадает с владельцем плана
+     * @throws EmptySalesPlan
+     * @throws SalesPlanApprovalConflict
+     * @throws \Doctrine\ORM\OptimisticLockException
+     */
+    public function approve(string $companyId, SalesPlan $plan): void;
+
+    /**
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    public function transactional(callable $operation): mixed;
+
+    public function openDraft(string $companyId, Uuid $lineageId): ?SalesPlan;
+
+    public function activeApproved(string $companyId, Uuid $lineageId): ?SalesPlan;
+
+    public function nextVersionNumber(string $companyId, Uuid $lineageId): int;
+
+    /** Точная пакетная копия дней; source header должен быть сериализован первым. */
+    public function copyRevision(string $companyId, SalesPlan $source, SalesPlan $revision): void;
+
+    public function releaseClaims(string $companyId, SalesPlan $source): void;
+
+    /** Шапка с optimistic version и аудит одной ORM-транзакцией. */
+    public function saveMetadata(SalesPlan $plan): void;
+
     public function get(string $companyId, Uuid $id): ?SalesPlan;
 
     /**

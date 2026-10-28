@@ -191,15 +191,7 @@ test-func: test-workers-ready ## тесты через HTTP, параллель�
 	$(COMPOSE) exec php-cli composer test:functional -- --processes=$(TEST_WORKERS)
 
 test-e2e: ## сеет тестовые данные (dev-БД) и прогоняет Playwright — оба сценария (seller, admin)
-	sh bin/e2e-seed.sh
-	$(COMPOSE) exec \
-		-e E2E_COMPANY_ID=$$(cat var/e2e-company-id) \
-		-e E2E_SECOND_COMPANY_ID=$$(cat var/e2e-second-company-id) \
-		-e E2E_USER_EMAIL=$$(sed -n '1p' var/e2e-user-credentials) \
-		-e E2E_USER_PASSWORD=$$(sed -n '2p' var/e2e-user-credentials) \
-		-e E2E_ADMIN_EMAIL=$$(sed -n '1p' var/e2e-admin-credentials) \
-		-e E2E_ADMIN_PASSWORD=$$(sed -n '2p' var/e2e-admin-credentials) \
-		playwright npx playwright test
+	sh bin/e2e-planning-run.sh
 	$(COMPOSE) exec playwright node apps/extension/tests/browser/storage.mjs
 
 test-cov: ## покрытие (драйвер pcov в php-cli, docker/php/Dockerfile)

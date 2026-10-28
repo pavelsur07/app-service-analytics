@@ -277,9 +277,76 @@ Inventory обсуждались, но решения по ним не прин�
 и `SalesPlanning → Identity → Shared`; грант на Facade выдаётся
 в `deptrac.php` вместе с первым вызовом, а не вперёд.
 
+Выбор смысла цели — `SalesPlanMetric` и `SetSalesPlanMetricAction`
+(`PUT /sales-plans/{planId}/metric`): legacy-черновики сохраняют NULL,
+изменение защищено версией и аудитом. Первое утверждение —
+`ApproveSalesPlanAction` (`POST /sales-plans/{planId}/approve`), с автором,
+временем и обязательной выбранной метрикой. `SalesPlanDayClaim` описывает
+схему занятых SKU × дней; DBAL INSERT SELECT с уникальным ключом занимает
+дни в одной транзакции с ORM-шапкой и аудитом.
+`CreateSalesPlanRevisionAction` (`POST /sales-plans/{planId}/revisions`)
+сериализует создание через утверждённую шапку и копирует дневные строки
+порциями DBAL INSERT SELECT до 10 000 строк с keyset и новыми UUIDv7.
+При утверждении новой версии
+прежняя становится superseded; обе шапки, claims и аудит атомарны.
+Domain guard статуса и optimistic UPDATE ORM уточнены ADR-047.
+`CancelSalesPlanAction` и `DiscardSalesPlanAction` (`POST …/cancel`,
+`POST …/discard`) сохраняют шапки и дневные строки. Отмена approved
+сначала обновляет его шапку, затем атомарно отбрасывает открытый draft
+и освобождает claims; оба перехода оставляют аудит.
+`SalesPlanBaselineQuery` выбирает первую успешно утверждённую версию линии,
+включая superseded/cancelled историю, с company/account/lineage scope и LIMIT1.
+Её id остаётся базой сравнения при новых версиях; индекс company/lineage/version
+поддерживает выбор базы и следующий исторический номер версии.
+`ReadSalesPlanPerformanceAction` и `SalesPlanPerformanceQuery` соединяют
+исходный план с публичным cohort Facade в read-only REPEATABLE READ.
+`SalesPlanPerformanceCalculator` считает только конечные отношения,
+денежные отклонения и скорости из агрегированных компонентов. Публичный
+GET `…/performance` возвращает day/week/month/period с keyset по SKU,
+неизменным началом накопления и отдельными темпом цели/скоростью продаж.
+`SalesPlanCalendarEntry` — ORM-события конкретной версии, без дублирования
+границ сезона. `SetSalesPlanCalendarAction` сохраняет полный набор до500
+в общей транзакции шапки/аудита; revision-copy переносит ORM-события с новыми
+UUID, удаление SKU убирает его события с аудитом. `SalesPlanCalendarQuery`
+строит DBAL QueryBuilder; ReadSalesPlanCalendarAction выполняет statement и
+маппит шапку/страницу (50 по умолчанию, максимум200); cursor связан с
+компанией, планом, версией и лимитом. GET/PUT `…/calendar`, виртуальные
+season_start/season_end и командный ORM-предел описаны ADR-046/048.
+
 У `IngestionFacade` два потребителя: экран СПП (`listingSnapshotsAt`,
 ADR-016) и планирование продаж — поиск по каталогу подключения
 и проверка набора SKU одним запросом (ADR-040 п. 4).
+
+Базовые агрегаты заказов для дневного планирования находятся внутри
+`Ingestion/Infrastructure/Query/SalesCohort`: DBAL-запрос
+`SalesCohortMetricsQuery`, readonly `SalesCohortSkuMetricsRow` и дневные
+`SalesCohortMetricsRow`. Запрос возвращает до 50 SKU с вложенными рядами
+до 184 дней; каждый список ограничен числом меньше 200.
+Зерно измерения — SKU × бизнес-день; готовые аллокации `buyout_outcome` позволяют
+отдельно читать исходное количество, подтверждённые T1 и количество без T1.
+Этот запрос пока не опубликован через Facade или HTTP API.
+
+`SalesCohortCoverageQuery` и readonly `SalesCohortCoverageRow` рядом возвращают
+до 184 дней покрытия заказов для одного company/account. Полный день требует
+явного успешного завершения выгрузки; failed или raw без completed — partial,
+отсутствие свидетельств — missing. Нулевой полный день не выводится из фактов.
+Это не оценка полноты исходов или возвратного хвоста.
+
+Точка `SalesCohortMetricsRow` содержит зрелость условного выкупа и долю
+в доставке. Порог и p95 берутся из общих SQL-фрагментов `BuyoutMaturityQuery`
+по своему кабинету; наблюдаемые продажи сохраняются и у preliminary.
+Текущий прогноз выкупа переиспользует SQL-фрагменты `BuyoutForecastQuery`
+(обучение SKU/кабинета, стадии передачи, кривая доставки, доля без оценки).
+Неокруглённые numeric-компоненты сохраняются строками для накопления;
+будущий нетто-прогноз пока null с причиной `net_forecast_not_available`.
+`IngestionFacade::salesCohortMetrics` публикует ограниченный пакет:
+`SalesCohortRequest`/`SalesCohortGrouping`, `SalesCohortBatch` →
+`SalesCohortSku` → `SalesCohortPoint` с nullable `SalesCohortComponents`.
+`SalesCohortSeriesQuery` и readonly `SalesCohortSeriesRow`/`PointRow` внутри
+Ingestion считают плотные периоды и накопление SQL до отсечения окна.
+Incomplete coverage скрывает полный объект компонентов, unknown и отсутствие
+обучения различаются; query count не зависит от SKU. Согласованный HTTP
+snapshot открывает вызывающий SalesPlanning по ADR046.
 
 ### Внутри модуля
 
@@ -487,6 +554,12 @@ Deptrac проверяет его механически: `Domain` не знае
 
 ## tests/
 
+`Integration/SalesPlanning/SalesPlanConcurrencyTest` использует тестовый
+`Support/SalesPlanning/concurrent-plan.php`: отдельные PHP/DB-процессы,
+реальные Application-сценарии и барьеры PostgreSQL для проверки гонок.
+Worker ограничен точной тестовой БД и собственными синтетическими компаниями;
+к production API он не относится.
+
 ```
 tests/
 ├── Unit/
@@ -517,6 +590,14 @@ tests/
 собранного фронтенда (`apps/*/tests/e2e`, конфиг в корне репозитория).
 Здесь остаётся один помеченный skipped тест-заглушка, чтобы набор PHPUnit
 был объявлен и зелёным сам по себе, не завися от фронтенда.
+`Support/SalesPlanning/e2e-cohort.php` — локальный guarded seed/feed для
+реального browserпозднего возврата: только dev/app, synthetic company/account,
+полный исходный raw→importer. `bin/e2e-planning-run.sh` запускает boundedfeed
+и существующий Playwright; общий seed также выполняется внутри его flock,
+чтобы конкурирующий запуск отказал до изменения sandbox. Marker handshake
+в api/var не является productAPI,
+а finallycleanup удаляет только synthetic scope. Make test-e2e сохраняет
+seller/admin и extensionstorage проверки.
 
 ---
 
@@ -540,6 +621,17 @@ apps/seller/
 Экран процента выкупа расположен в
 `apps/seller/src/features/buyout-rate/`: `model` содержит API hooks, `lib` —
 форматирование и параметры периода, `ui` — таблицу и раскрываемую daily-серию.
+Дневное планирование — `apps/seller/src/features/sales-planning/`.
+`SalesPlanPage` сохраняет редактор текущей версии и показывает lifecycle и
+сравнение с исходной целью; `PerformanceGrid` выводит готовые period/cumulative
+компоненты без пересчёта денег и ставок. `model` содержит company-scoped
+performance/lifecycle Query и mutation; `lib` — date-only MSK окно и cursor
+scope, включая version шапки. Исторические закрытые планы остаются readonly.
+`SalesPlanCalendar` показывает readonly границы и редактируемые manual события.
+Calendar query дочитывает весь bounded snapshot (до500 через страницы200),
+локальный draft хранит captured version; перечитывание не подменяет его,
+409 блокирует blind retry. Явная отмена локальных правок принимает серверный
+набор; mutation инвалидирует только company prefix планирования.
 Экран «Прогноз и факт по SKU» расположен в
 `apps/seller/src/features/sku-forecast-fact/`: SKU и месяц хранятся в URL,
 `model` запрашивает поиск и дневной отчёт, `ui` показывает календарные дни.
