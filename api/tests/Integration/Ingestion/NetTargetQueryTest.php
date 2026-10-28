@@ -546,6 +546,41 @@ final class NetTargetQueryTest extends KernelTestCase
         self::assertSame('source_history_unavailable', $this->read($db, $f)->unavailableReason);
     }
 
+    public function testClientReturnCannotHideUnknownOriginDeliveredCapacity(): void
+    {
+        [$db, $f] = $this->fixture();
+        $origin = $f->readAt->modify('-1 day');
+        $f->sale('A-INITIAL', 'SKU', 5, 'delivered', $origin->modify('-1 hour'), 'MIXED');
+        $f->delivered('B-OBSERVED', 'SKU', 5, $origin, 'MIXED');
+        $f->returned('MIXED', 'SKU', 5, $f->readAt->modify('-2 hours'));
+        $f->daily($origin);
+        $f->currentReturns();
+        $batch = $this->read($db, $f);
+        self::assertSame('ambiguous_delivery_allocation', $batch->unavailableReason, json_encode(array_map(static fn ($part): array => ['source' => $part->sourceRowId, 'currentD' => $part->currentD, 'knownR' => $part->knownR, 'origin' => $part->deliveryOrigin?->format('U.u')], $batch->skus[0]->days[0]->groups[0]->parts), \JSON_THROW_ON_ERROR));
+        foreach ($batch->skus[0]->days[0]->groups[0]->parts as $part) {
+            self::assertFalse($part->inputComplete);
+            self::assertNull($part->currentD);
+            self::assertNull($part->knownR);
+        }
+    }
+
+    public function testUnknownOriginDeliveredOnEarlierDayStaysInGroupProof(): void
+    {
+        [$db, $f] = $this->fixture();
+        $origin = $f->readAt->modify('-1 day');
+        $f->sale('A-INITIAL', 'SKU', 5, 'delivered', $origin->modify('-1 hour'), 'MIXED', day: $f->readAt->modify('-1 day'));
+        $f->delivered('B-OBSERVED', 'SKU', 5, $origin, 'MIXED');
+        $f->returned('MIXED', 'SKU', 5, $f->readAt->modify('-2 hours'));
+        $f->daily($origin);
+        $f->currentReturns();
+        $batch = $this->read($db, $f);
+        self::assertSame('ambiguous_delivery_allocation', $batch->unavailableReason);
+        self::assertCount(1, $batch->skus[0]->days[0]->groups[0]->parts);
+        self::assertSame('B-OBSERVED', $batch->skus[0]->days[0]->groups[0]->parts[0]->sourceRowId);
+        self::assertFalse($batch->skus[0]->days[0]->groups[0]->parts[0]->inputComplete);
+        self::assertNull($batch->skus[0]->days[0]->groups[0]->parts[0]->currentD);
+    }
+
     /** @return array{NetTrainingContext, NetTargetRequest, list<array<string, mixed>>} */
     private function rows(Connection $db, NetTargetFixture $f): array
     {

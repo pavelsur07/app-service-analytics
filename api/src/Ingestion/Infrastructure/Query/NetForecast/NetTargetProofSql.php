@@ -60,8 +60,14 @@ final class NetTargetProofSql
                 SELECT s.company_id, s.marketplace_account_id, s.posting_number, s.order_number, s.status, s.substatus, s.cancel_reason_id, s.observed_at, s.raw_document_id
                 FROM status_inputs s CROSS JOIN input_budget budget WHERE budget.ok
             ),
-            training_sales AS MATERIALIZED (SELECT * FROM target_latest_sales),
-            training_returns AS MATERIALIZED (SELECT * FROM target_latest_returns),
+            training_sales AS MATERIALIZED (
+                SELECT company_id, marketplace_account_id, source_row_id, posting_number, order_number, marketplace_sku, quantity, business_date
+                FROM target_latest_sales
+            ),
+            training_returns AS MATERIALIZED (
+                SELECT company_id, marketplace_account_id, order_number, marketplace_sku, quantity, return_type, return_reason_name
+                FROM target_latest_returns
+            ),
             posting_current_status AS MATERIALIZED (
                 SELECT DISTINCT ON (s.posting_number) s.posting_number, s.order_number, s.status, s.substatus
                 FROM training_status s ORDER BY s.posting_number, s.observed_at DESC
@@ -292,7 +298,10 @@ final class NetTargetProofSql
                 FROM return_ordered r
             ),
             target_group_origins AS MATERIALIZED (
-                SELECT order_number, marketplace_sku, COUNT(DISTINCT origin) AS origins, MIN(origin) AS origin FROM target_origins GROUP BY order_number, marketplace_sku
+                SELECT s.order_number, s.marketplace_sku, COUNT(DISTINCT o.origin) AS origins, MIN(o.origin) AS origin,
+                       BOOL_OR(o.origin IS NULL) AS unknown_origin, SUM(s.quantity::bigint) AS delivered_quantity
+                FROM target_latest_sales s LEFT JOIN target_origins o USING (source_row_id)
+                WHERE s.status = 'delivered' GROUP BY s.order_number, s.marketplace_sku
             ),
             target_group_returns AS MATERIALIZED (
                 SELECT r.order_number, r.marketplace_sku,

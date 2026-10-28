@@ -38,7 +38,7 @@ final readonly class NetTargetQuery
             LEFT JOIN target_sku_hierarchy hierarchy USING (marketplace_sku)
             ORDER BY s.marketplace_sku LIMIT 50
             SQL;
-        $query = $this->connection->createQueryBuilder()->select('result.*')->from('('.$source.')', 'result');
+        $query = $this->connection->createQueryBuilder()->select('result.marketplace_sku', 'result.refusal_reason', 'result.budget_input', 'result.budget_observed', 'result.budget_limit', 'result.output_bytes', 'result.allocation_bytes', 'result.scalar_slots', 'result.container_nodes', 'result.dto_nodes', 'result.context_fingerprint', 'result.epoch_start', 'result.epoch_end', 'result.days')->from('('.$source.')', 'result');
         $query->setParameter('contextFingerprint', $context->fingerprint())->setParameter('epochStartExact', $context->epoch->start->format('U.u'))->setParameter('epochEndExact', $context->epoch->end?->format('U.u'));
 
         return NetTargetSourceSql::bind($query, $context, $request, $this->limits);
@@ -74,7 +74,7 @@ final readonly class NetTargetQuery
                             WHEN NOT COALESCE(proof.postings_complete, FALSE) OR NOT COALESCE(order_proof.postings_complete, FALSE) THEN 'postings_coverage_missing'
                             WHEN NOT COALESCE(refresh.completed_at > latest.at AND (refresh.failed_at IS NULL OR refresh.completed_at > refresh.failed_at), FALSE) THEN 'returns_coverage_missing'
                             WHEN q.current_d > 0 AND proof.delivery_origin IS NULL THEN 'delivery_observation_unknown'
-                            WHEN COALESCE(returns.client_quantity, 0) > 0 AND origins.origins > 1 THEN 'ambiguous_delivery_allocation'
+                            WHEN COALESCE(returns.client_quantity, 0) > 0 AND (origins.origins > 1 OR origins.unknown_origin AND origins.delivered_quantity > returns.client_quantity) THEN 'ambiguous_delivery_allocation'
                             WHEN q.current_d > 0 AND ready.age BETWEEN 60 AND 66 THEN 'target_horizon_not_ready'
                             WHEN q.current_d > 0 AND NOT COALESCE(ready.daily_complete, FALSE) THEN 'returns_coverage_missing'
                             WHEN q.current_d > 0 AND ready.age >= 67 AND (ready.deep_completed_at IS NULL OR ready.coverage_through < proof.delivery_origin + INTERVAL '67 days') THEN 'target_readiness_missing'
@@ -129,18 +129,18 @@ final readonly class NetTargetQuery
                          + 12::numeric * COALESCE((SELECT SUM(OCTET_LENGTH(marketplace_sku)) FROM target_skus), 0) * 184 AS text_bytes
             ),
             target_output_shape AS MATERIALIZED (
-                SELECT m.*, 4096::numeric * skus * days + 2048::numeric * groups + 8192::numeric * parts + 2048::numeric * returns + 1024::numeric * statuses + text_bytes AS bytes,
+                SELECT m.max_statuses, m.text_bytes, 4096::numeric * skus * days + 2048::numeric * groups + 8192::numeric * parts + 2048::numeric * returns + 1024::numeric * statuses + text_bytes AS bytes,
                        8::numeric * skus * days + 12::numeric * groups + 100::numeric * parts + 20::numeric * returns + 4::numeric * statuses AS scalar_slots,
                        3::numeric * skus * days + 6::numeric * groups + 20::numeric * parts + 2::numeric * returns + 3::numeric * statuses AS containers,
                        skus + skus * days + groups + 4::numeric * parts + returns AS dto_nodes
                 FROM target_output_metrics m
             ),
             target_output_estimate AS MATERIALIZED (
-                SELECT s.*, 2::numeric * bytes + 4::numeric * text_bytes + 128::numeric * scalar_slots + 1024::numeric * containers + 512::numeric * dto_nodes AS allocation
+                SELECT s.max_statuses, s.bytes, s.scalar_slots, s.containers, s.dto_nodes, 2::numeric * bytes + 4::numeric * text_bytes + 128::numeric * scalar_slots + 1024::numeric * containers + 512::numeric * dto_nodes AS allocation
                 FROM target_output_shape s
             ),
             target_output_budget AS MATERIALIZED (
-                SELECT e.*, exceeded.input IS NULL AS ok, exceeded.input, exceeded.observed, exceeded.maximum
+                SELECT e.bytes, e.allocation, e.scalar_slots, e.containers, e.dto_nodes, exceeded.input IS NULL AS ok, exceeded.input, exceeded.observed, exceeded.maximum
                 FROM target_output_estimate e LEFT JOIN LATERAL (
                     SELECT v.input, v.observed, v.maximum FROM (VALUES
                         ('trace_statuses', e.max_statuses::numeric, 128::numeric, 1),
