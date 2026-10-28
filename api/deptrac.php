@@ -354,6 +354,11 @@ return static function (DeptracConfig $config): void {
             $brickMoney = Layer::withName('BrickMoney')->collectors(
                 ClassLikeConfig::create('^Brick\\Money\\.*'),
             ),
+            // Уже установлен через brick/money: точные количества модели и
+            // существующий SalesPlanPerformanceCalculator без float.
+            $brickMath = Layer::withName('BrickMath')->collectors(
+                ClassLikeConfig::create('^Brick\\Math\\.*'),
+            ),
             // symfony/uid, ADR-003: UUIDv7 для всех сущностей проекта.
             // Идентификатор — часть Domain (тип поля Entity), поэтому
             // выделен отдельным, более узким слоем, чем SymfonyComponent
@@ -531,7 +536,7 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($ingestionFacade)->accesses($ingestionDomain, $ingestionApplication, $ingestionInfrastructure, $identityFacade, $sharedApplication, $sharedDomain),
             Ruleset::forLayer($ingestionInfrastructure)->accesses($ingestionDomain, $identityFacade, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($ingestionStorage)->accesses($ingestionDomain, $symfonyUid, $asyncAws),
-            Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid),
+            Ruleset::forLayer($ingestionDomain)->accesses($sharedDomain, $symfonyUid, $brickMath),
 
             // PriceMonitoring — ниже Ingestion и от него не зависит вовсе
             // (ADR-014): это самостоятельный источник данных, не коннектор.
@@ -561,7 +566,7 @@ return static function (DeptracConfig $config): void {
             // identityFacade — подключения компании и аудит-журнал;
             // ingestionFacade — каталог SKU подключения (ADR-040 п. 2, 4).
             // Только у Application: Ui границу модуля не пересекает.
-            Ruleset::forLayer($salesPlanningApplication)->accesses($salesPlanningDomain, $salesPlanningInfrastructure, $identityFacade, $ingestionFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid),
+            Ruleset::forLayer($salesPlanningApplication)->accesses($salesPlanningDomain, $salesPlanningInfrastructure, $identityFacade, $ingestionFacade, $sharedApplication, $sharedDomain, $symfonyComponent, $symfonyUid, $brickMath),
             Ruleset::forLayer($salesPlanningInfrastructure)->accesses($salesPlanningDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($salesPlanningDomain)->accesses($sharedDomain, $symfonyUid),
         )
