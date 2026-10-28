@@ -503,6 +503,40 @@ final class AggregateNetForecastActionTest extends TestCase
         self::assertStringNotContainsString('rawDocumentId', $json);
     }
 
+    public function testOptionalSeriesKeepsFirstMonetaryFailureBeforeLaterPeriodFailure(): void
+    {
+        foreach ([
+            [['RUB', '1'], ['USD', '1'], ['RUB', null], 'money_currency_mismatch', 'money_price_missing'],
+            [['RUB', '1'], ['USD', null], ['USD', '1'], 'money_price_missing', 'money_price_missing'],
+            [['RUB', null], ['USD', '1'], ['RUB', '1'], 'money_price_missing', 'money_currency_mismatch'],
+            [['RUB', '0'], ['USD', '0'], ['RUB', null], 'money_currency_mismatch', 'money_price_missing'],
+            [['RUB', (string) \PHP_INT_MAX], ['USD', '1'], ['RUB', null], 'money_currency_mismatch', 'money_price_missing'],
+            [['RUB', '1'], ['USD', '1'], [null, '1'], 'money_currency_mismatch', 'money_currency_missing'],
+            [['RUB', '1'], [null, '1'], ['USD', '1'], 'money_currency_missing', 'money_currency_missing'],
+            [['RUB', '1'], ['USD', '1'], ['USD', 'invalid'], 'money_currency_mismatch', 'money_input_invalid'],
+        ] as [$hidden, $firstVisible, $lastVisible, $cumulativeReason, $periodReason]) {
+            $days = [];
+            foreach (['2026-08-31' => $hidden, '2026-09-01' => $firstVisible, '2026-09-02' => $lastVisible] as $date => [$currency, $price]) {
+                $days[] = new NetTargetDayRow($date, [new NetTargetGroupRow('order-'.$date, self::SKU, $date, [self::part(id: $date, d: 14, currency: $currency, price: $price)], [], true, null)], true, null);
+            }
+            $targets = new NetTargetBatch(self::context(), [new NetTargetSkuRow(self::SKU, $days)]);
+            $original = self::aggregate($targets, self::training());
+            $request = new NetForecastSeriesRequest([self::SKU], new \DateTimeImmutable('2026-09-01'), new \DateTimeImmutable('2026-09-02'), new \DateTimeImmutable('2026-08-31'), 'month');
+            $series = (self::action())(self::COMPANY, self::ACCOUNT, $targets, self::training(), seriesRequest: $request);
+            self::assertSame($cumulativeReason, $original->moneyUnavailableReason);
+            self::assertSame($original->moneyUnavailableReason, $series->moneyUnavailableReason);
+            self::assertSame($original->skus[0]->moneyUnavailableReason, $series->skus[0]->moneyUnavailableReason);
+            self::assertNotNull($series->series);
+            $point = $series->series->skus[0]->points[0];
+            self::assertSame($cumulativeReason, $point->cumulative->moneyUnavailableReason);
+            self::assertSame($periodReason, $point->period->moneyUnavailableReason);
+            foreach (['quantities', 'expectedNetRevenue', 'unavailableReason'] as $field) {
+                self::assertEquals($original->$field, $series->$field);
+                self::assertEquals($original->skus[0]->$field, $point->cumulative->$field);
+            }
+        }
+    }
+
     public function testOptionalSeriesUsesTheSameFullResultAndOutputBudget(): void
     {
         $context = self::context();

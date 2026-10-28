@@ -109,6 +109,17 @@ final readonly class NetForecastRevenue
         return new self($numerator, $denominator, $this->currency, null);
     }
 
+    /**
+     * Ordered aggregation state, independent of local native Money publication.
+     * Empty is neutral; a missing input currency is a real failure.
+     *
+     * @return array{currency: ?string, failure: ?string}
+     */
+    public function aggregationState(): array
+    {
+        return ['currency' => $this->currency, 'failure' => $this->failure];
+    }
+
     public function unavailableReason(): ?string
     {
         return $this->failure ?? (null === $this->currency ? 'money_currency_missing' : null);

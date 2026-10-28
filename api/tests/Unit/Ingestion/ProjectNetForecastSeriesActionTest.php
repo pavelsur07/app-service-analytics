@@ -228,6 +228,29 @@ final class ProjectNetForecastSeriesActionTest extends TestCase
         (new ProjectNetForecastSeriesAction())(self::batch($days), self::request('2026-08-01', '2026-08-02'), $guard);
     }
 
+    public function testMonthlyFailureOrderMatchesChronologicalDaysAcrossHiddenPrefix(): void
+    {
+        $empty = static fn (string $date): NetForecastDay => new NetForecastDay($date, [], NetForecastQuantities::zero(), null, null, 'money_currency_missing', NetForecastRevenue::empty());
+        $cases = [
+            [[self::day('2026-08-31'), self::day('2026-09-01', currency: 'USD'), self::day('2026-09-02', price: null)], 'money_currency_mismatch', 'money_price_missing'],
+            [[self::day('2026-08-31'), self::day('2026-09-01', price: null), self::day('2026-09-02', currency: 'USD')], 'money_price_missing', 'money_price_missing'],
+            [[self::day('2026-08-31', price: null), self::day('2026-09-01', currency: 'USD'), self::day('2026-09-02')], 'money_price_missing', 'money_currency_mismatch'],
+            [[$empty('2026-08-31'), self::day('2026-09-01', currency: 'USD'), self::day('2026-09-02', price: null)], 'money_price_missing', 'money_price_missing'],
+            [[self::day('2026-08-31', numerator: '0'), self::day('2026-09-01', numerator: '0', currency: 'USD'), self::day('2026-09-02', price: null)], 'money_currency_mismatch', 'money_price_missing'],
+            [[self::day('2026-08-31', numerator: '2', denominator: '1', price: (string) \PHP_INT_MAX), self::day('2026-09-01', currency: 'USD'), self::day('2026-09-02', price: null)], 'money_currency_mismatch', 'money_price_missing'],
+            [[self::day('2026-08-31'), $empty('2026-09-01'), self::day('2026-09-02', currency: 'USD')], 'money_currency_mismatch', null],
+        ];
+        foreach ($cases as [$days, $cumulativeReason, $periodReason]) {
+            $point = (new ProjectNetForecastSeriesAction())(self::batch($days), self::request('2026-09-01', '2026-09-02', 'month', '2026-08-31'), static function (): void {})->skus[0]->points[0];
+            self::assertSame($cumulativeReason, $point->cumulative->moneyUnavailableReason);
+            self::assertSame($periodReason, $point->period->moneyUnavailableReason);
+            self::assertNotNull($point->period->quantities);
+            self::assertNotNull($point->cumulative->quantities);
+            self::assertNull($point->cumulative->expectedNetRevenue);
+            self::assertNull($point->cumulative->unavailableReason);
+        }
+    }
+
     public function testGuardRefusesProjectionInsteadOfPublishingPartialSeries(): void
     {
         $this->expectException(\OverflowException::class);
