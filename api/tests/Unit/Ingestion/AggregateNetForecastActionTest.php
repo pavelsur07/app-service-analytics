@@ -81,6 +81,8 @@ final class AggregateNetForecastActionTest extends TestCase
             $good = self::part(id: 'a', d: 0);
             $result = self::aggregate(self::targets([self::group([$good]), self::group([$bad], order: 'order-z')]), $training);
             self::assertSame($reason, $result->unavailableReason);
+            self::assertSame($reason, $result->moneyUnavailableReason);
+            self::assertNull($result->expectedNetRevenue);
             self::assertNull($result->quantities);
             self::assertNull($result->skus[0]->quantities);
             self::assertNull($result->skus[0]->days[0]->quantities);
@@ -146,6 +148,8 @@ final class AggregateNetForecastActionTest extends TestCase
         ] as [$bad, $reason]) {
             $result = self::aggregate(self::targets([self::group([$parts[0], $bad])]), self::training());
             self::assertSame($reason, $result->unavailableReason);
+            self::assertSame($reason, $result->moneyUnavailableReason);
+            self::assertNull($result->expectedNetRevenue);
             self::assertSame($reason, $result->skus[0]->days[0]->groups[0]->parts[1]->delivered->unavailableReason);
         }
     }
@@ -236,6 +240,10 @@ final class AggregateNetForecastActionTest extends TestCase
             $noTraining = new NetTrainingBatch(self::COMPANY, self::ACCOUNT, $context->readAt, null, [], []);
             $result = self::aggregate(self::targets([self::group([$part])]), $noTraining);
             self::assertSame($reason, $result->unavailableReason);
+            self::assertSame($reason, $result->moneyUnavailableReason);
+            if (null !== $reason) {
+                self::assertNull($result->expectedNetRevenue);
+            }
             if (null === $reason) {
                 self::assertSame('70', $result->quantities?->expectedNetNumerator);
                 self::assertSame('mature_target', self::first($result)->delivered->basis);
@@ -288,6 +296,8 @@ final class AggregateNetForecastActionTest extends TestCase
         foreach ([self::context(snapshot: 'other'), self::context(start: '2026-01-01T00:00:00.000001Z'), self::context(end: '2026-11-01T00:00:00.000001Z')] as $context) {
             $result = self::aggregate(self::targets([self::group([self::part(d: 0)])], reason: 'unknown_outcome'), self::training(context: $context));
             self::assertSame('training_context_mismatch', $result->unavailableReason);
+            self::assertSame('training_context_mismatch', $result->moneyUnavailableReason);
+            self::assertNull($result->expectedNetRevenue);
             self::assertSame([], $result->skus);
         }
         $context = self::context();
@@ -313,6 +323,8 @@ final class AggregateNetForecastActionTest extends TestCase
         self::assertSame('0', $empty->quantities?->expectedNetNumerator);
         self::assertNull($empty->readAt);
         self::assertNull($empty->context);
+        self::assertNull($empty->expectedNetRevenue);
+        self::assertSame('money_currency_missing', $empty->moneyUnavailableReason);
         $missing = self::aggregate(self::targets([], reason: 'source_history_unavailable'), $noTraining);
         self::assertNull($missing->quantities);
         self::assertSame('source_history_unavailable', $missing->unavailableReason);
@@ -325,6 +337,8 @@ final class AggregateNetForecastActionTest extends TestCase
             $target = 128 === $limits->outputBytes ? $targets : self::targets([self::group([self::part(id: 'a'), self::part(id: 'b')])]);
             $result = self::action($limits)(self::COMPANY, self::ACCOUNT, $target, self::training());
             self::assertSame('input_budget_exceeded', $result->unavailableReason);
+            self::assertSame('input_budget_exceeded', $result->moneyUnavailableReason);
+            self::assertNull($result->expectedNetRevenue);
             self::assertNull($result->quantities);
             self::assertSame([], $result->skus);
         }
@@ -340,6 +354,8 @@ final class AggregateNetForecastActionTest extends TestCase
         foreach ([new NetTargetLimits(phpPeakBytes: 1), new NetTargetLimits(phpAllocationBytes: 1), new NetTargetLimits(computeSeconds: 0.000000001)] as $limits) {
             $result = self::action($limits)(self::COMPANY, self::ACCOUNT, $targets, self::training());
             self::assertSame('input_budget_exceeded', $result->unavailableReason);
+            self::assertSame('input_budget_exceeded', $result->moneyUnavailableReason);
+            self::assertNull($result->expectedNetRevenue);
             self::assertNull($result->quantities);
             self::assertSame([], $result->skus);
         }
@@ -351,6 +367,8 @@ final class AggregateNetForecastActionTest extends TestCase
         $targets = self::targets([self::group([self::part()])]);
         $result = self::action()(self::COMPANY, self::ACCOUNT, $targets, self::training(), hrtime(true) - 6000000000, memory_get_usage(true));
         self::assertSame('input_budget_exceeded', $result->unavailableReason);
+        self::assertSame('input_budget_exceeded', $result->moneyUnavailableReason);
+        self::assertNull($result->expectedNetRevenue);
         self::assertNull($result->quantities);
         self::assertSame([], $result->skus);
     }
@@ -375,7 +393,18 @@ final class AggregateNetForecastActionTest extends TestCase
             }
             $skus[] = new NetTargetSkuRow($name, $days);
         }
-        $result = self::aggregate(new NetTargetBatch($context, $skus), self::training(gross: [self::gross(null)], returns: [self::returns(null)]));
+        $training = self::training(gross: [self::gross(null)], returns: [self::returns(null)]);
+        $baseline = memory_get_usage(true);
+        $started = hrtime(true);
+        $result = self::aggregate(new NetTargetBatch($context, $skus), $training);
+        $elapsed = hrtime(true) - $started;
+        $bytes = \strlen(json_encode($result, \JSON_THROW_ON_ERROR));
+        fwrite(\STDERR, \sprintf("B11 representative compute_ns=%d peak_bytes=%d allocation_bytes=%d compact_output_bytes=%d reason=%s\n", $elapsed, memory_get_peak_usage(true), memory_get_usage(true) - $baseline, $bytes, $result->unavailableReason ?? 'available'));
+        self::assertSame(22222080000, $result->expectedNetRevenue?->minorAmount());
+        self::assertNull($result->moneyUnavailableReason);
+        self::assertLessThanOrEqual(5000000000, $elapsed);
+        self::assertLessThanOrEqual(100663296, memory_get_peak_usage(true));
+        self::assertLessThanOrEqual(50331648, memory_get_usage(true) - $baseline);
         self::assertNull($result->unavailableReason);
         self::assertSame('180000', $result->quantities?->expectedNetNumerator);
         self::assertSame('1', $result->quantities->expectedNetDenominator);
@@ -414,6 +443,154 @@ final class AggregateNetForecastActionTest extends TestCase
         $result = self::aggregate(self::targets([self::group([$part, $other])]), self::training());
         self::assertSame('18446744073709551614', $result->quantities?->expectedNetNumerator);
         self::assertSame('1', $result->quantities->expectedNetDenominator);
+    }
+
+    public function testRuntimeOutputBudgetIncludesMoneyAndRefusesWholeResult(): void
+    {
+        $targets = self::targets([self::group([self::part(d: 0, price: '0')])]);
+        $result = self::action()(self::COMPANY, self::ACCOUNT, $targets, self::training(), null, null, new NetTargetLimits(outputBytes: 128));
+        self::assertSame('input_budget_exceeded', $result->unavailableReason);
+        self::assertSame('input_budget_exceeded', $result->moneyUnavailableReason);
+        self::assertNull($result->quantities);
+        self::assertNull($result->expectedNetRevenue);
+        self::assertSame([], $result->skus);
+    }
+
+    public function testTightOutputBudgetChargesMoneyAndPrivateDayCarry(): void
+    {
+        $context = self::context();
+        $empty = new NetTargetBatch($context, [new NetTargetSkuRow(self::SKU, [new NetTargetDayRow(self::DAY, [], true, null)])]);
+        $priced = self::targets([self::group([self::part(d: 0, price: '0')])]);
+        foreach ([[$empty, 0], [$priced, 0]] as [$targets, $minor]) {
+            $low = 1;
+            $high = 20000;
+            while ($low < $high) {
+                $middle = intdiv($low + $high, 2);
+                $probe = self::action(new NetTargetLimits(outputBytes: $middle))(self::COMPANY, self::ACCOUNT, $targets, self::training());
+                if ('input_budget_exceeded' === $probe->unavailableReason) {
+                    $low = $middle + 1;
+                } else {
+                    $high = $middle;
+                }
+            }
+            $result = self::action(new NetTargetLimits(outputBytes: $low))(self::COMPANY, self::ACCOUNT, $targets, self::training());
+            self::assertNull($result->unavailableReason);
+            self::assertSame($minor, (int) $result->quantities?->expectedNetNumerator);
+            $denied = self::action(new NetTargetLimits(outputBytes: $low - 1))(self::COMPANY, self::ACCOUNT, $targets, self::training());
+            self::assertSame('input_budget_exceeded', $denied->unavailableReason);
+            self::assertNull($denied->expectedNetRevenue);
+            self::assertSame([], $denied->skus);
+            // The private day value alone reserves at least 512 bytes beyond public JSON.
+            self::assertGreaterThan(512, $low - \strlen(json_encode($result, \JSON_THROW_ON_ERROR)));
+        }
+    }
+
+    public function testTightAsciiBudgetStillRefusesEscapedValuesWithoutPartialMoney(): void
+    {
+        $ascii = self::targets([self::group([self::part(id: str_repeat('a', 100), d: 0, price: '0')])]);
+        $low = 1;
+        $high = 30000;
+        while ($low < $high) {
+            $middle = intdiv($low + $high, 2);
+            $probe = self::action(new NetTargetLimits(outputBytes: $middle))(self::COMPANY, self::ACCOUNT, $ascii, self::training());
+            if ('input_budget_exceeded' === $probe->unavailableReason) {
+                $low = $middle + 1;
+            } else {
+                $high = $middle;
+            }
+        }
+        $limits = new NetTargetLimits(outputBytes: $low);
+        self::assertSame(0, self::action($limits)(self::COMPANY, self::ACCOUNT, $ascii, self::training())->expectedNetRevenue?->minorAmount());
+        foreach (['"', '\\', '/', "\n", '<', '>', '&', "'", 'Ж'] as $unsafe) {
+            $id = str_repeat('a', 98).$unsafe;
+            if (1 === \strlen($unsafe)) {
+                $id .= $unsafe;
+            }
+            self::assertSame(100, \strlen($id));
+            $targets = self::targets([self::group([self::part(id: $id, d: 0, price: '0')])]);
+            $result = self::action($limits)(self::COMPANY, self::ACCOUNT, $targets, self::training());
+            self::assertSame('input_budget_exceeded', $result->unavailableReason, 'Unsafe suffix must retain conservative JSON escaping.');
+            self::assertNull($result->quantities);
+            self::assertNull($result->expectedNetRevenue);
+            self::assertSame([], $result->skus);
+        }
+    }
+
+    public function testRevenueUsesSourcePricesAndRemainingUnitsAtEveryLevel(): void
+    {
+        $a = self::part(id: 'a', d: 14, knownR: 6, price: '100');
+        $b = self::part(id: 'b', d: 28, knownR: 2, price: '200');
+        $result = self::aggregate(self::targets([self::group([$b, $a])]), self::training());
+        self::assertSame('39', $result->quantities?->expectedNetNumerator);
+        $sku = $result->skus[0];
+        $day = $sku->days[0];
+        $group = $day->groups[0];
+        foreach ([$result, $sku, $day, $group] as $scope) {
+            self::assertSame(6500, $scope->expectedNetRevenue?->minorAmount());
+            self::assertSame('RUB', $scope->expectedNetRevenue->currency());
+            self::assertNull($scope->moneyUnavailableReason);
+        }
+        self::assertSame(1300, $group->parts[0]->expectedNetRevenue?->minorAmount());
+        self::assertSame(5200, $group->parts[1]->expectedNetRevenue?->minorAmount());
+    }
+
+    public function testMoneyFailuresPreserveUnitsAndAvailableSiblingsIncludingZero(): void
+    {
+        foreach ([[null, 'RUB', 'money_price_missing'], ['1', null, 'money_currency_missing'], ['bad', 'RUB', 'money_input_invalid'], ['0', 'USD', 'money_currency_mismatch']] as [$price, $currency, $reason]) {
+            foreach ([0, 14] as $d) {
+                $result = self::aggregate(self::targets([self::group([self::part(id: 'a', d: 14, price: '100')]), self::group([self::part(id: 'b', d: $d, price: $price, currency: $currency)], order: 'order-b')]), self::training());
+                foreach ([$result, $result->skus[0], $result->skus[0]->days[0]] as $scope) {
+                    self::assertNotNull($scope->quantities);
+                    self::assertNull($scope->unavailableReason);
+                    self::assertNull($scope->expectedNetRevenue);
+                    self::assertSame($reason, $scope->moneyUnavailableReason);
+                }
+                self::assertSame(1300, self::first($result)->expectedNetRevenue?->minorAmount());
+            }
+        }
+        $result = self::aggregate(self::targets([self::group([self::part(unknown: 1, price: null)])]), self::training());
+        self::assertNull($result->expectedNetRevenue);
+        self::assertSame('unknown_outcome', $result->moneyUnavailableReason);
+        self::assertSame('unknown_outcome', self::first($result)->moneyUnavailableReason);
+    }
+
+    public function testFractionalDaysAndSkusCarryExactRevenuePrivately(): void
+    {
+        $context = self::context();
+        $makeDay = static function (string $sku, string $date, string $id): NetTargetDayRow {
+            return new NetTargetDayRow($date, [new NetTargetGroupRow('order-'.$id, $sku, $date, [self::part(id: $id, d: 0, pre: 1, price: '1')], [], true, null)], true, null);
+        };
+        $result = self::aggregate(new NetTargetBatch($context, [
+            new NetTargetSkuRow(self::SKU, [$makeDay(self::SKU, self::DAY, 'a'), $makeDay(self::SKU, '2026-10-09', 'b')]),
+            new NetTargetSkuRow('sku-b', [$makeDay('sku-b', self::DAY, 'c')]),
+        ]), self::training(gross: [self::gross(null)], returns: [self::returns(null)]));
+        $a = $result->skus[0]->days[0];
+        $b = $result->skus[0]->days[1];
+        self::assertSame(1, $a->expectedNetRevenue?->minorAmount());
+        self::assertSame(1, $b->expectedNetRevenue?->minorAmount());
+        self::assertSame(1, $a->exactRevenue()->plus($b->exactRevenue())->toMoney()?->minorAmount());
+        self::assertSame(1, $result->skus[0]->expectedNetRevenue?->minorAmount());
+        self::assertSame(2, $result->expectedNetRevenue?->minorAmount());
+        self::assertArrayNotHasKey('revenue', get_object_vars($a));
+        self::assertStringNotContainsString('BigRational', json_encode($a, \JSON_THROW_ON_ERROR));
+        self::assertStringNotContainsString('exactRevenue', json_encode($a, \JSON_THROW_ON_ERROR));
+    }
+
+    public function testDayNativeOverflowKeepsExactCarryForParentCancellation(): void
+    {
+        $context = self::context();
+        $days = [];
+        foreach ([['2026-10-08', 'a', '9223372036854775807'], ['2026-10-09', 'b', '-9223372036854775807']] as [$date, $id, $price]) {
+            $days[] = new NetTargetDayRow($date, [new NetTargetGroupRow('order-'.$id, self::SKU, $date, [self::part(id: $id, d: 14, price: $price)], [], true, null)], true, null);
+        }
+        $result = self::aggregate(new NetTargetBatch($context, [new NetTargetSkuRow(self::SKU, $days)]), self::training());
+        self::assertSame(0, $result->expectedNetRevenue?->minorAmount());
+        self::assertNull($result->moneyUnavailableReason);
+        $a = $result->skus[0]->days[0];
+        $b = $result->skus[0]->days[1];
+        self::assertNull($a->expectedNetRevenue);
+        self::assertSame('money_overflow', $a->moneyUnavailableReason);
+        self::assertSame(0, $a->exactRevenue()->plus($b->exactRevenue())->toMoney()?->minorAmount());
     }
 
     private static function action(?NetTargetLimits $limits = null): AggregateNetForecastAction
@@ -456,11 +633,11 @@ final class AggregateNetForecastActionTest extends TestCase
         return new NetTargetGroupRow($order, self::SKU, self::DAY, $parts, [$return], true, null);
     }
 
-    private static function part(string $id = 'a', ?int $d = 70, int $pre = 0, int $post = 0, int $knownR = 0, int $unknown = 0, \DateTimeImmutable|false|null $origin = null, ?NetTargetReadinessRow $readiness = null, ?string $reason = null, bool $complete = true): NetTargetPartRow
+    private static function part(string $id = 'a', ?int $d = 70, int $pre = 0, int $post = 0, int $knownR = 0, int $unknown = 0, \DateTimeImmutable|false|null $origin = null, ?NetTargetReadinessRow $readiness = null, ?string $reason = null, bool $complete = true, ?string $price = '123456', ?string $currency = 'RUB'): NetTargetPartRow
     {
         $t1 = 0 === $d && 0 === $pre && 0 === $post && 0 === $knownR && 0 === $unknown ? 1 : 0;
         $raw = max(0, $d ?? 0) + $pre + $post + $knownR + $unknown + $t1;
-        $trace = new NetTargetSourceTrace($id, 'rev-first-'.$id, 'rev-last-'.$id, 2, self::context()->readAt->modify('-90 days'), self::context()->readAt, 'raw-'.$id, 'hash', '123456', 'RUB', [['postingNumber' => 'real-posting-'.$id, 'rawDocumentId' => 'raw-status-'.$id]], ['receipt-1'], 'digest');
+        $trace = new NetTargetSourceTrace($id, 'rev-first-'.$id, 'rev-last-'.$id, 2, self::context()->readAt->modify('-90 days'), self::context()->readAt, 'raw-'.$id, 'hash', $price, $currency, [['postingNumber' => 'real-posting-'.$id, 'rawDocumentId' => 'raw-status-'.$id]], ['receipt-1'], 'digest');
 
         return new NetTargetPartRow($id, 'real-posting-'.$id, $raw, $d, $knownR, $t1, 0, 0, $pre, $post, $unknown, false === $origin ? null : ($origin ?? self::context()->readAt->modify('-20 days')), $readiness, $trace, $complete, $reason);
     }

@@ -6,6 +6,7 @@ namespace App\Ingestion\Application\NetForecast;
 
 use App\Ingestion\Domain\ValueObject\NetForecastQuantities;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetReturnTrace;
+use App\Shared\Domain\ValueObject\Money;
 
 final readonly class NetForecastGroup
 {
@@ -19,6 +20,8 @@ final readonly class NetForecastGroup
         public array $returns,
         public ?NetForecastQuantities $quantities,
         public ?string $unavailableReason,
+        public ?Money $expectedNetRevenue,
+        public ?string $moneyUnavailableReason,
     ) {
     }
 }

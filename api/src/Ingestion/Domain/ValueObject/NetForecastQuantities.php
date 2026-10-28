@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Domain\ValueObject;
 
+use Brick\Math\BigInteger;
 use Brick\Math\BigRational;
 
 /** Exact full net quantities, without rounding or public arithmetic-library types. */
@@ -26,12 +27,13 @@ final readonly class NetForecastQuantities
             || $retained->isNegative() || $retained->isGreaterThan($eligibleOpenQuantity)) {
             throw new \InvalidArgumentException('Invalid full net components.');
         }
-        $net = BigRational::of($currentD)->minus($future)->plus($retained);
+        // Adding integer currentD preserves the reduced fractional denominator.
+        $net = self::sum($retained, $future->negated());
         $this->futureReturnsNumerator = (string) $future->getNumerator();
         $this->futureReturnsDenominator = (string) $future->getDenominator();
         $this->retainedOpenNumerator = (string) $retained->getNumerator();
         $this->retainedOpenDenominator = (string) $retained->getDenominator();
-        $this->expectedNetNumerator = (string) $net->getNumerator();
+        $this->expectedNetNumerator = (string) BigInteger::of($currentD)->multipliedBy($net->getDenominator())->plus($net->getNumerator());
         $this->expectedNetDenominator = (string) $net->getDenominator();
         foreach ([$this->currentD, $this->eligibleOpenQuantity, $this->futureReturnsNumerator, $this->futureReturnsDenominator,
             $this->retainedOpenNumerator, $this->retainedOpenDenominator, $this->expectedNetNumerator, $this->expectedNetDenominator] as $value) {
@@ -75,8 +77,28 @@ final readonly class NetForecastQuantities
         return new self(
             (string) BigRational::of($this->currentD)->plus($other->currentD)->getNumerator(),
             (string) BigRational::of($this->eligibleOpenQuantity)->plus($other->eligibleOpenQuantity)->getNumerator(),
-            $this->future->plus($other->future),
-            $this->retained->plus($other->retained),
+            self::sum($this->future, $other->future),
+            self::sum($this->retained, $other->retained),
         );
+    }
+
+    private static function sum(BigRational $a, BigRational $b): BigRational
+    {
+        if ($a->isZero()) {
+            return $b;
+        }
+        if ($b->isZero()) {
+            return $a;
+        }
+        $aDenominator = $a->getDenominator();
+        $bDenominator = $b->getDenominator();
+        if ((string) $aDenominator === (string) $bDenominator) {
+            return BigRational::ofFraction($a->getNumerator()->plus($b->getNumerator()), $aDenominator);
+        }
+        $gcd = $aDenominator->gcd($bDenominator);
+        $aFactor = $bDenominator->quotient($gcd);
+        $bFactor = $aDenominator->quotient($gcd);
+
+        return BigRational::ofFraction($a->getNumerator()->multipliedBy($aFactor)->plus($b->getNumerator()->multipliedBy($bFactor)), $aDenominator->multipliedBy($aFactor));
     }
 }
