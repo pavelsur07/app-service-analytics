@@ -691,3 +691,23 @@ attempt2 completed/success. Seller/admin HTTP и running api подтвержд�
 prod-аудит клиентского плана и prod load test не заявляются выполненными.
 Итого50/68: этап A реализован, проверен, отревьюен и выпущен. B01 подготовлен
 подробным планом и source audit; B01–B18 пока не завершены. Netforecast до B null.
+
+## Приёмка B01, 2026-10-28
+
+Принят ADR-049: отдельные gross G=D+R и return populations, H60/L7,
+Wgross/Wreturn90, sample100units/30postings, risk30/10, SKU→свойaccount→null.
+Known R не вычитаются повторно; fresh target не обязан дозреть до H+L,
+его training обязан. Truth open ждёт будущий deliveryOrigin+H+L, pending
+не превращается в scored0. Numeric rollout ждёт пригодного B16 holdout.
+Источники показали необходимость immutable accepted sales/returns revisions
+и load receipts: подготовка наблюдений из B15 перенесена в B02 и отражена
+в его подробном плане. Capture-only запуск не считается выпуском B18.
+План сохраняет68 контрольных задач; B02 внутри разбита на простые schema/
+writer/receipts/guards/training шаги, её оценка уточнена по исследованию.
+
+Первый Codex CLI pair принял2 уникальных замечания (gross population и
+component-relative truth), оба исправлены,0 отклонённых. Дополнительный
+7bab05e19c4e gpt-6.1-sol complete0/0, новых уникальных принятых0; root сверил
+реальные JSON/hash/session IDs. Полные receipts в B01.md; Claude пропущен
+по исключению владельца. Только MD/ADR, runtime/DDL ещё не менялись,
+предсказательная точность не заявлена. Итого51/68: A01–A50 и B01 готовы.
