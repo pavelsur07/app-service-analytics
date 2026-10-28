@@ -668,3 +668,26 @@ Codex CLI gpt-6.1-sol complete0/0, новых уникальных принят�
 Все review.json receipts и parent finding отражены в A49. Подготовлен план
 выпуска A50 до любых release действий. Общий счёт остаётся48/68: удалённый
 CI и выпуск ещё не выполнены, production не затрагивался.
+
+## Приёмка A49, 2026-10-28
+
+PR #270 создан, HEAD851b78a2139a5f708cef757202ed62d08dd4f55e; обязательный
+CI40562787280 success по всем шести проверочным jobs. Image/deploy для ветки
+штатно skipped. Review coverage192/192 конечных non-MD blob, missing0/errors0.
+Все независимые замечания разобраны, blocking review нет, PR mergeable.
+Подробные URLs/receipts в A49.md. Итого49/68: A01–A49 готовы; A50 до merge/
+deployment/migration/smoke не закрывается, B01–B18 не начинались.
+
+## Приёмка A50: production, 2026-10-28
+
+PR#270 merged после обязательного CI exactHEAD851b78a; masterad9e28a.
+Run40629823925 собрал635-ad9e28a и штатно отказал в deploy на одной pending
+migration. Preflight подтвердил exactimage+единственную Version20261027120000;
+она отдельно применена (45.7ms/9SQL), up-to-date PASS. Failed deploy повторён,
+attempt2 completed/success. Seller/admin HTTP и running api подтверждают
+635-ad9e28a, сервисы running/healthy. Read-only probe после переключения
+проверил schema/indexes, scoped empty header/calendar SQL, enum и routes PASS,
+не читая бизнес-значений. Полные URLs/логи/ограничения в A50.md. Числовой
+prod-аудит клиентского плана и prod load test не заявляются выполненными.
+Итого50/68: этап A реализован, проверен, отревьюен и выпущен. B01 подготовлен
+подробным планом и source audit; B01–B18 пока не завершены. Netforecast до B null.
