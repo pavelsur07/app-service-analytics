@@ -136,7 +136,7 @@ final class SalesPlanPerformanceControllerTest extends SessionWebTestCase
             $client->request('GET', '/api/companies/'.$company->id()->toRfc4122().'/sales-plans/'.$foreign->id()->toRfc4122().'/performance', $parameters);
             self::assertSame(404, $client->getResponse()->getStatusCode());
         } finally {
-            foreach (['sales_plan_day_claim', 'sales_plan_line', 'sales_plan', 'marketplace_day_load', 'company_member', 'company'] as $table) {
+            foreach (['sales_plan_day_claim', 'sales_plan_line', 'sales_plan', 'marketplace_day_load_receipt', 'marketplace_day_load', 'company_member', 'company'] as $table) {
                 $column = 'company' === $table ? 'id' : 'company_id';
                 foreach ([$company->id()->toRfc4122(), $foreignCompany->toRfc4122()] as $companyId) {
                     $connection->executeStatement('DELETE FROM '.$table.' WHERE '.$column.' = ?', [$companyId]);
