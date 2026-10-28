@@ -820,3 +820,21 @@ MasterCI40693051190/run651 attempt1/deploy success; production651-6281cfb
 8PASS purememory stage/count smoke, seller/adminversions совпадают.
 Подробные review IDs/receipts/ограничения — B06.md. B06 закрыта,56/68;
 B07 будущие возвраты открытых — следующая задача, numeric gate остаётся закрыт.
+
+
+## Приёмка B07: будущие возвраты открытых заказов, 2026-10-28
+
+Exact eligible×pGross×(1−F60), согласованная одна scopedпара, genuinezero/unknown,
+source/cachedconsistency иточный epochcontext реализованы.100open приp1/2,F1/5
+даютgross50/returns10/retained40. Localunit623/6459 затем listfixturefix иaffected
+19/914+staticexit0; исходный combinedexit2 не выдаётсязаexit0. Финальный
+CI40695981843 точногоca59e42 прошёл полныйunit/contractaudit/E2E.
+ActualtwoCodexCLI complete0/0,5/5code/testblobs покрыты; принятых/отклонённых0,
+второго прохода уникальных принятых0. Internal epochprecisionfinding исправлен
+локально перед CLI, не включён в их findings.
+
+[PR278](https://github.com/pavelsur07/app-service-analytics/pull/278), squash65c33df.
+MasterCI40696673264/run653attempt1/deploysuccess; production653-65c33df
+проверен13:35:16UTC:12healthy/running,7PHPoriginalepoch/config,8PASSinmemorymath,
+seller/adminversions совпадают. Подробные review IDs иreceipts — B07.md.
+B07 закрыта,57/68. B08 wholefallback следующая; numeric/qualitygate закрыт.
