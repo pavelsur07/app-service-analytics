@@ -228,7 +228,7 @@ final class NetTargetProofSql
                 FROM sale_keys k LEFT JOIN target_source_proof p USING (source_row_id) GROUP BY k.order_number
             ),
             target_delivery_sources AS MATERIALIZED (
-                SELECT DISTINCT ON (r.source_row_id) r.source_row_id, r.quantity, r.fact_revision
+                SELECT DISTINCT ON (r.source_row_id) r.source_row_id, r.order_number, r.marketplace_sku, r.quantity, r.fact_revision, r.captured_at
                 FROM sales_revisions r JOIN status_anchors s ON s.posting_number = r.posting_number AND s.raw_document_id = r.raw_document_id
                   AND s.status = 'delivered' AND s.known AND s.anchored
                 ORDER BY r.source_row_id, r.fact_revision
@@ -238,7 +238,7 @@ final class NetTargetProofSql
                 WHERE r.fact_revision > d.fact_revision AND r.quantity <> d.quantity
             ),
             target_origins AS MATERIALIZED (
-                SELECT r.source_row_id, r.order_number, r.marketplace_sku, p.delivery_origin AS origin,
+                SELECT r.source_row_id, r.order_number, r.marketplace_sku, r.quantity, p.delivery_origin AS origin,
                        FLOOR(EXTRACT(EPOCH FROM (CAST(:asOf AS timestamp) - p.delivery_origin)) / 86400)::int AS age
                 FROM target_latest_sales r JOIN target_source_proof p USING (source_row_id)
                 WHERE r.status = 'delivered' AND p.delivery_origin IS NOT NULL
@@ -317,11 +317,61 @@ final class NetTargetProofSql
                 LEFT JOIN ozon_return_reason_classification c ON c.return_type = r.return_type AND c.return_reason_name = r.return_reason_name
                 GROUP BY r.order_number, r.marketplace_sku
             ),
-            target_delta_proof AS MATERIALIZED (
+            target_terminal_candidates AS MATERIALIZED (
+                SELECT order_number, marketplace_sku
+                FROM (
+                    SELECT order_number, marketplace_sku, delivered_quantity AS balance, TRUE AS multiple_origins
+                    FROM target_group_origins WHERE origins > 1
+                    UNION ALL
+                    SELECT order_number, marketplace_sku, -client_quantity, FALSE FROM target_group_returns
+                ) balances GROUP BY order_number, marketplace_sku
+                HAVING BOOL_OR(multiple_origins) AND SUM(balance) = 0
+            ),
+            target_capacity_sources AS MATERIALIZED (
+                -- An initial-delivered capture is only a capacity witness, never a model origin.
+                SELECT source_row_id, order_number, marketplace_sku, MAX(quantity)::bigint AS quantity,
+                       COALESCE(MIN(origin), MIN(captured_at)) AS at
+                FROM (
+                    SELECT source_row_id, order_number, marketplace_sku, quantity, origin, NULL::timestamp AS captured_at FROM target_origins
+                    UNION ALL
+                    SELECT source_row_id, order_number, marketplace_sku, quantity, NULL::timestamp, captured_at FROM target_delivery_sources
+                ) witnesses GROUP BY source_row_id, order_number, marketplace_sku
+            ),
+            target_capacity_events AS MATERIALIZED (
+                SELECT order_number, marketplace_sku, at, event_rank, quantity,
+                       BOOL_OR(candidate) OVER (PARTITION BY order_number, marketplace_sku) AS candidate
+                FROM (
+                    SELECT order_number, marketplace_sku, at, 1 AS event_rank, quantity, FALSE AS candidate FROM target_capacity_sources
+                    UNION ALL
+                    SELECT order_number, marketplace_sku, captured_at, 0, -quantity, FALSE FROM target_client_deltas WHERE quantity > 0
+                    UNION ALL
+                    SELECT order_number, marketplace_sku, NULL::timestamp, 0, 0::bigint, TRUE FROM target_terminal_candidates
+                ) events
+            ),
+            target_capacity_prefix AS MATERIALIZED (
+                -- Return peers precede delivery peers; equal time supplies no ordering proof.
+                SELECT order_number, marketplace_sku,
+                       SUM(quantity) OVER (PARTITION BY order_number, marketplace_sku ORDER BY at, event_rank
+                           RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS available
+                FROM target_capacity_events WHERE candidate AND at IS NOT NULL
+            ),
+            target_capacity_proof AS MATERIALIZED (
+                SELECT order_number, marketplace_sku, BOOL_AND(available >= 0) AS valid
+                FROM target_capacity_prefix GROUP BY order_number, marketplace_sku
+            ),
+            target_origin_delta_proof AS MATERIALIZED (
                 SELECT d.order_number, d.marketplace_sku,
                        BOOL_AND(d.quantity >= 0 AND (d.quantity = 0 OR o.origin IS NULL OR d.captured_at > o.origin)) AS valid
                 FROM target_client_deltas d LEFT JOIN target_group_origins o USING (order_number, marketplace_sku)
                 GROUP BY d.order_number, d.marketplace_sku
+            ),
+            target_delta_proof AS MATERIALIZED (
+                SELECT order_number, marketplace_sku, BOOL_AND(valid) AS valid
+                FROM (
+                    SELECT order_number, marketplace_sku, valid FROM target_origin_delta_proof
+                    UNION ALL
+                    SELECT order_number, marketplace_sku, valid FROM target_capacity_proof
+                ) proofs GROUP BY order_number, marketplace_sku
             )
             SQL;
     }

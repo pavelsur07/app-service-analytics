@@ -493,6 +493,34 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertNull($this->read($db, $f)->quantities);
     }
 
+    public function testFullReturnRequiresDeliveredCapacityAtEveryPositiveDelta(): void
+    {
+        foreach ([[20, '-36 hours', false, 'contradictory_quantity'], [7, '-36 hours', true, null], [20, '-36 hours', true, 'contradictory_quantity'], [20, '-1 day', false, 'contradictory_quantity']] as [$first, $when, $revise, $reason]) {
+            [$db, $f] = $this->fixture();
+            $f->delivered('A', 'SKU', 7, $f->readAt->modify('-2 days'), 'ORDER');
+            $f->delivered('B', 'SKU', 13, $f->readAt->modify('-1 day'), 'ORDER');
+            $f->returned('ORDER', 'SKU', $first, $f->readAt->modify($when));
+            if ($revise) {
+                $f->returned('ORDER', 'SKU', 20, $f->readAt->modify('-1 hour'));
+            }
+            $f->currentReturns();
+            $batch = $this->read($db, $f);
+            self::assertSame($reason, $batch->unavailableReason, 'firstR='.$first.' at '.$when.' revise='.(int) $revise);
+            $group = $batch->skus[0]->days[0]->groups[0];
+            self::assertCount(1, $group->returns);
+            self::assertSame($revise ? 2 : 1, $group->returns[0]->latestFactRevision);
+            foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group, ...$group->parts] as $node) {
+                self::assertSame($reason, $node->unavailableReason);
+                if (null === $reason) {
+                    self::assertSame('0', $node->quantities?->expectedNetNumerator);
+                    self::assertSame('1', $node->quantities->expectedNetDenominator);
+                } else {
+                    self::assertNull($node->quantities);
+                }
+            }
+        }
+    }
+
     public function testMissingDailyProofOrEpochNeverBecomesZero(): void
     {
         [$db, $f] = $this->fixture(training: true);
