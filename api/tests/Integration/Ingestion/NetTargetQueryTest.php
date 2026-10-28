@@ -310,6 +310,40 @@ final class NetTargetQueryTest extends KernelTestCase
         self::assertSame('input_budget_exceeded', $batch->unavailableReason, 'Repeated escaped source identity must be budgeted before JSON.');
     }
 
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testFullCalendarSpineFitsSqlTransferBudgetBeforeAnyGroup(): void
+    {
+        [$db, $f] = $this->fixture();
+        $from = $f->readAt->modify('-184 days');
+        $to = $f->readAt->modify('-1 day');
+        $f->receipt(\App\Ingestion\Domain\MarketplaceReportType::OzonPostingFboList, $from, $to, $f->readAt->modify('-1 hour'));
+        $f->currentReturns();
+        $request = new NetTargetRequest(array_map(static fn (int $i): string => 'SKU-'.$i, range(0, 49)), $from, $to);
+        $db->beginTransaction();
+        try {
+            $db->executeStatement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+            $snapshot = $db->fetchOne('SELECT txid_current_snapshot()::text');
+            self::assertIsString($snapshot);
+            $context = new NetTrainingContext($f->company->toRfc4122(), $f->account->toRfc4122(), $f->readAt, $f->epoch, $snapshot);
+            $rows = (new NetTargetQuery($db))->build($context->companyId, $context->accountId, $context, $request)->executeQuery()->fetchAllAssociative();
+            self::assertCount(50, $rows);
+            foreach ($rows as $row) {
+                self::assertNull($row['refusal_reason']);
+                self::assertIsString($row['output_bytes']);
+                self::assertIsString($row['allocation_bytes']);
+                self::assertLessThanOrEqual(33554432, (int) $row['output_bytes']);
+                self::assertLessThanOrEqual(50331648, (int) $row['allocation_bytes']);
+                self::assertIsString($row['days']);
+                $days = json_decode($row['days'], true, 24, \JSON_THROW_ON_ERROR);
+                self::assertIsArray($days);
+                self::assertCount(184, $days);
+            }
+        } finally {
+            $db->rollBack();
+        }
+    }
+
     public function testMapperMemoryDeadlineAndScalarRefusalsRemainWholeBatch(): void
     {
         [$db, $f] = $this->fixture();

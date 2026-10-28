@@ -25,17 +25,19 @@ final class NetTargetSourceSql
         $returnsColumns = NetTrainingSourceSql::columns('r', [...NetTrainingSourceSql::RETURN_COLUMNS, 'id', 'row_hash']);
 
         return <<<SQL
+            target_requested_skus AS MATERIALIZED (
+                SELECT DISTINCT UNNEST(ARRAY[:requestedSkus]::text[]) AS marketplace_sku
+            ),
             target_current_seed AS MATERIALIZED (
-                SELECT f.source_row_id FROM sales_fact f
+                SELECT f.source_row_id FROM sales_fact f JOIN target_requested_skus requested ON requested.marketplace_sku = f.marketplace_sku
                 WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId
-                  AND f.marketplace_sku IN (:requestedSkus)
                   AND f.business_date BETWEEN CAST(:targetFrom AS date) AND CAST(:targetTo AS date)
                 LIMIT :saleSentinel
             ),
             target_historical_seed AS MATERIALIZED (
-                SELECT r.source_row_id FROM sales_fact_revision r
+                SELECT r.source_row_id FROM sales_fact_revision r JOIN target_requested_skus requested ON requested.marketplace_sku = r.marketplace_sku
                 WHERE r.company_id = :companyId AND r.marketplace_account_id = :accountId
-                  AND r.captured_at <= CAST(:asOf AS timestamp) AND r.marketplace_sku IN (:requestedSkus)
+                  AND r.captured_at <= CAST(:asOf AS timestamp)
                   AND r.business_date BETWEEN CAST(:targetFrom AS date) AND CAST(:targetTo AS date)
                 LIMIT :revisionSentinel
             ),
@@ -52,8 +54,11 @@ final class NetTargetSourceSql
                 LIMIT :revisionSentinel
             ),
             seed_orders AS MATERIALIZED (
-                SELECT f.order_number FROM sales_fact f JOIN seed_keys k ON k.source_row_id = f.source_row_id
-                WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId AND f.order_number IS NOT NULL
+                SELECT f.order_number FROM seed_keys k CROSS JOIN LATERAL (
+                    SELECT f.order_number FROM sales_fact f
+                    WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId AND f.source_row_id = k.source_row_id
+                    LIMIT 1
+                ) f WHERE f.order_number IS NOT NULL
                 UNION SELECT order_number FROM seed_history WHERE order_number IS NOT NULL
             ),
             historical_order_links AS MATERIALIZED (
@@ -79,9 +84,12 @@ final class NetTargetSourceSql
             ),
             sale_keys AS MATERIALIZED (
                 SELECT f.source_row_id, f.fact_revision, f.business_date, f.order_number, f.marketplace_sku, f.posting_number, f.quantity, f.status, f.raw_document_id, f.row_hash
-                FROM sales_fact f JOIN expanded_keys k ON k.source_row_id = f.source_row_id
-                WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId
-                LIMIT :saleSentinel
+                FROM expanded_keys k CROSS JOIN LATERAL (
+                    SELECT f.source_row_id, f.fact_revision, f.business_date, f.order_number, f.marketplace_sku, f.posting_number, f.quantity, f.status, f.raw_document_id, f.row_hash
+                    FROM sales_fact f
+                    WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId AND f.source_row_id = k.source_row_id
+                    LIMIT 1
+                ) f LIMIT :saleSentinel
             ),
             sales_revisions AS MATERIALIZED (
                 SELECT {$sales}
@@ -113,13 +121,20 @@ final class NetTargetSourceSql
                   AND r.order_number IN (SELECT order_number FROM seed_orders)
                 LIMIT :revisionSentinel
             ),
+            target_return_candidate_keys AS MATERIALIZED (
+                (SELECT f.source_row_id FROM marketplace_return_fact f JOIN seed_orders o ON o.order_number = f.order_number
+                 WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId LIMIT :returnSentinel)
+                UNION SELECT source_row_id FROM return_historical_links
+                LIMIT :returnSentinel
+            ),
             return_keys AS MATERIALIZED (
                 SELECT f.source_row_id, f.fact_revision, f.order_number, f.marketplace_sku, f.quantity, f.return_type, f.return_reason_name, f.raw_document_id, f.row_hash
-                FROM marketplace_return_fact f
-                WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId
-                  AND (f.order_number IN (SELECT order_number FROM seed_orders)
-                       OR f.source_row_id IN (SELECT source_row_id FROM return_historical_links))
-                LIMIT :returnSentinel
+                FROM target_return_candidate_keys k CROSS JOIN LATERAL (
+                    SELECT f.source_row_id, f.fact_revision, f.order_number, f.marketplace_sku, f.quantity, f.return_type, f.return_reason_name, f.raw_document_id, f.row_hash
+                    FROM marketplace_return_fact f
+                    WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId AND f.source_row_id = k.source_row_id
+                    LIMIT 1
+                ) f LIMIT :returnSentinel
             ),
             return_revisions AS MATERIALIZED (
                 SELECT {$returnsColumns}

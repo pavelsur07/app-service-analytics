@@ -32,16 +32,18 @@ final class NetTrainingSourceSql
     public static function ctes(bool $returns): string
     {
         $seed = $returns ? <<<'SQL'
-            SELECT DISTINCT f.source_row_id
-            FROM sales_fact f
-            WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId
-              AND (f.posting_number IN (SELECT posting_number FROM candidate_deliveries)
-                   OR f.order_number IN (SELECT order_number FROM candidate_deliveries)
-                   OR f.source_row_id IN (
-                       SELECT r.source_row_id FROM sales_fact_revision r
-                       WHERE r.company_id = :companyId AND r.marketplace_account_id = :accountId
-                         AND r.order_number IN (SELECT order_number FROM candidate_deliveries)
-                   ))
+            (SELECT DISTINCT f.source_row_id FROM sales_fact f
+             JOIN (SELECT DISTINCT posting_number FROM candidate_deliveries WHERE posting_number IS NOT NULL) h ON h.posting_number = f.posting_number
+             WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId LIMIT :saleSentinel)
+            UNION
+            (SELECT DISTINCT f.source_row_id FROM sales_fact f
+             JOIN (SELECT DISTINCT order_number FROM candidate_deliveries WHERE order_number IS NOT NULL) h ON h.order_number = f.order_number
+             WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId LIMIT :saleSentinel)
+            UNION
+            (SELECT DISTINCT f.source_row_id FROM sales_fact f
+             JOIN sales_fact_revision r ON r.company_id = :companyId AND r.marketplace_account_id = :accountId AND r.source_row_id = f.source_row_id
+             JOIN (SELECT DISTINCT order_number FROM candidate_deliveries WHERE order_number IS NOT NULL) h ON h.order_number = r.order_number
+             WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId LIMIT :saleSentinel)
             LIMIT :saleSentinel
             SQL : <<<'SQL'
             SELECT f.source_row_id
@@ -136,14 +138,20 @@ final class NetTrainingSourceSql
             all_orders AS MATERIALIZED (
                 SELECT DISTINCT order_number FROM candidate_groups WHERE order_number IS NOT NULL
             ),
+            return_candidate_keys AS MATERIALIZED (
+                (SELECT DISTINCT f.source_row_id FROM marketplace_return_fact f JOIN all_orders o ON o.order_number = f.order_number
+                 WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId LIMIT :returnSentinel)
+                UNION
+                (SELECT DISTINCT f.source_row_id FROM marketplace_return_fact f
+                 JOIN marketplace_return_fact_revision r ON r.company_id = :companyId AND r.marketplace_account_id = :accountId AND r.source_row_id = f.source_row_id
+                 JOIN all_orders o ON o.order_number = r.order_number
+                 WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId LIMIT :returnSentinel)
+                LIMIT :returnSentinel
+            ),
             return_keys AS MATERIALIZED (
-                SELECT f.source_row_id, f.fact_revision, f.order_number, f.marketplace_sku FROM marketplace_return_fact f
+                SELECT f.source_row_id, f.fact_revision, f.order_number, f.marketplace_sku
+                FROM marketplace_return_fact f JOIN return_candidate_keys k USING (source_row_id)
                 WHERE f.company_id = :companyId AND f.marketplace_account_id = :accountId
-                  AND (f.order_number IN (SELECT order_number FROM all_orders) OR f.source_row_id IN (
-                      SELECT r.source_row_id FROM marketplace_return_fact_revision r
-                      WHERE r.company_id = :companyId AND r.marketplace_account_id = :accountId
-                        AND r.order_number IN (SELECT order_number FROM all_orders)
-                  ))
                 LIMIT :returnSentinel
             ),
             return_revisions AS MATERIALIZED (

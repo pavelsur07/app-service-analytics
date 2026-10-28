@@ -70,10 +70,11 @@ final readonly class ReadNetForecastAction
                 if (memory_get_usage(true) - $allocation > $this->limits->phpAllocationBytes || memory_get_usage(true) > $this->limits->phpPeakBytes) {
                     return $this->unavailable($companyId, $accountId, $readAt, $context, 'input_budget_exceeded');
                 }
+                $computeStarted = hrtime(true);
                 $targets = $this->targets->mapRows($context, $request, $rows);
                 unset($rows);
 
-                return ($this->aggregate)($companyId, $accountId, $targets, $training);
+                return ($this->aggregate)($companyId, $accountId, $targets, $training, $computeStarted, $allocation, $this->limits);
             });
         } catch (DriverException $error) {
             if ('57014' !== $error->getSQLState()) {

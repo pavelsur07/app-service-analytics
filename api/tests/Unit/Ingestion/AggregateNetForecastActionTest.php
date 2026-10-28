@@ -334,6 +334,54 @@ final class AggregateNetForecastActionTest extends TestCase
         self::assertSame('query_budget_exceeded', self::aggregate($query, self::training())->unavailableReason);
     }
 
+    public function testRuntimeBudgetsRefuseEveryPartialHierarchy(): void
+    {
+        $targets = self::targets([self::group([self::part(d: 70, pre: 50)])]);
+        foreach ([new NetTargetLimits(phpPeakBytes: 1), new NetTargetLimits(phpAllocationBytes: 1), new NetTargetLimits(computeSeconds: 0.000000001)] as $limits) {
+            $result = self::action($limits)(self::COMPANY, self::ACCOUNT, $targets, self::training());
+            self::assertSame('input_budget_exceeded', $result->unavailableReason);
+            self::assertNull($result->quantities);
+            self::assertSame([], $result->skus);
+        }
+        self::assertSame('90', self::aggregate($targets, self::training())->quantities?->expectedNetNumerator);
+    }
+
+    public function testSharedComputeStartCannotResetAfterMapping(): void
+    {
+        $targets = self::targets([self::group([self::part()])]);
+        $result = self::action()(self::COMPANY, self::ACCOUNT, $targets, self::training(), hrtime(true) - 6000000000, memory_get_usage(true));
+        self::assertSame('input_budget_exceeded', $result->unavailableReason);
+        self::assertNull($result->quantities);
+        self::assertSame([], $result->skus);
+    }
+
+    public function testRepresentativeTwoThousandGroupsAndFullCalendarFitOutputBudget(): void
+    {
+        $context = self::context();
+        $skus = [];
+        for ($sku = 0; $sku < 50; ++$sku) {
+            $name = 'SKU-'.$sku;
+            $days = [];
+            for ($day = 0; $day < 184; ++$day) {
+                $date = $context->readAt->modify('-'.(183 - $day).' days')->format('Y-m-d');
+                $groups = [];
+                if (0 === $day) {
+                    for ($group = 0; $group < 40; ++$group) {
+                        $id = $name.'-'.$group;
+                        $groups[] = new NetTargetGroupRow('order-'.$id, $name, $date, [self::part(id: $id, d: 70, pre: 50)], [], true, null);
+                    }
+                }
+                $days[] = new NetTargetDayRow($date, $groups, true, null);
+            }
+            $skus[] = new NetTargetSkuRow($name, $days);
+        }
+        $result = self::aggregate(new NetTargetBatch($context, $skus), self::training(gross: [self::gross(null)], returns: [self::returns(null)]));
+        self::assertNull($result->unavailableReason);
+        self::assertSame('180000', $result->quantities?->expectedNetNumerator);
+        self::assertSame('1', $result->quantities->expectedNetDenominator);
+        self::assertLessThanOrEqual(33554432, \strlen(json_encode($result, \JSON_THROW_ON_ERROR)));
+    }
+
     public function testStableReasonOrderDoesNotDependOnInputOrder(): void
     {
         $a = self::group([self::part(id: 'a', reason: 'unknown_outcome')]);

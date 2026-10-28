@@ -94,7 +94,7 @@ final class NetTargetProofSql
             ),
             posting_sale_identity AS MATERIALIZED (
                 SELECT posting_number, COUNT(DISTINCT order_number) AS orders, BOOL_AND(order_number IS NOT NULL) AS complete
-                FROM (SELECT posting_number, order_number FROM sale_keys UNION SELECT posting_number, order_number FROM sales_revisions) identities
+                FROM (SELECT posting_number, order_number FROM sale_keys UNION ALL SELECT posting_number, order_number FROM sales_revisions) identities
                 GROUP BY posting_number
             ),
             status_anchors AS MATERIALIZED (
@@ -171,21 +171,23 @@ final class NetTargetProofSql
             ),
             target_closure_proof AS MATERIALIZED (
                 SELECT NOT EXISTS (
-                    SELECT 1 FROM target_alias_links l
-                    WHERE l.order_number IS NOT NULL AND l.order_number NOT IN (SELECT order_number FROM seed_orders)
+                    SELECT order_number FROM target_alias_links WHERE order_number IS NOT NULL
+                    EXCEPT SELECT order_number FROM seed_orders
                 ) AND NOT EXISTS (
-                    SELECT 1 FROM target_alias_links GROUP BY source_row_id
-                    HAVING COUNT(DISTINCT (business_date, order_number, marketplace_sku, posting_number)) <> 1
+                    SELECT 1 FROM (
+                        SELECT DISTINCT source_row_id, business_date, order_number, marketplace_sku, posting_number FROM target_alias_links
+                    ) identities GROUP BY source_row_id HAVING COUNT(source_row_id) <> 1
                 ) AND NOT EXISTS (
-                    SELECT 1 FROM return_revisions r
-                    WHERE r.order_number NOT IN (SELECT order_number FROM seed_orders)
+                    SELECT order_number FROM return_revisions WHERE order_number IS NOT NULL
+                    EXCEPT SELECT order_number FROM seed_orders
                 ) AND NOT EXISTS (
-                    SELECT 1 FROM return_revisions GROUP BY source_row_id
-                    HAVING COUNT(DISTINCT (order_number, marketplace_sku)) <> 1
+                    SELECT 1 FROM (
+                        SELECT DISTINCT source_row_id, order_number, marketplace_sku FROM return_revisions
+                    ) identities GROUP BY source_row_id HAVING COUNT(source_row_id) <> 1
                 ) AND (SELECT COUNT(source_row_id) FROM expanded_keys) = (SELECT COUNT(source_row_id) FROM sale_keys)
                   AND (SELECT COUNT(source_row_id) FROM sale_keys) = (SELECT COUNT(source_row_id) FROM target_latest_sales)
                   AND (SELECT COUNT(source_row_id) FROM return_keys) = (SELECT COUNT(source_row_id) FROM target_latest_returns) AND NOT EXISTS (
-                      SELECT 1 FROM return_historical_links h LEFT JOIN return_keys k USING (source_row_id) WHERE k.source_row_id IS NULL
+                      SELECT source_row_id FROM return_historical_links EXCEPT SELECT source_row_id FROM return_keys
                   ) AND NOT EXISTS (SELECT 1 FROM target_return_proof p WHERE NOT COALESCE(p.valid, FALSE)) AS valid
             ),
             target_current_returns AS MATERIALIZED (

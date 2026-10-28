@@ -117,6 +117,18 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertSame([$previous->format('Y-m-d'), $day->format('Y-m-d')], array_column($withAccumulation->skus[0]->days, 'businessDate'));
     }
 
+    public function testEntryComputeBudgetIncludesAggregateWithDefaultIndependentLimits(): void
+    {
+        [$db, $f] = $this->fixture();
+        $this->terminalZero($f);
+        $db->resetObservations();
+        $result = ($this->action($db, $f, $this->clock($f), limits: new NetTargetLimits(computeSeconds: 0.000000001)))($f->company->toRfc4122(), $f->account->toRfc4122(), $this->request($f));
+        self::assertSame(3, $db->populations);
+        self::assertSame('input_budget_exceeded', $result->unavailableReason);
+        self::assertNull($result->quantities);
+        self::assertSame([], $result->skus);
+    }
+
     public function testOnePinnedSnapshotPrecedesOnlyClockAndSeesOneCohort(): void
     {
         [$db, $f] = $this->fixture(training: true);

@@ -17,6 +17,8 @@ final readonly class NetForecastQuantities
     public string $retainedOpenDenominator;
     public string $expectedNetNumerator;
     public string $expectedNetDenominator;
+    private BigRational $future;
+    private BigRational $retained;
 
     private function __construct(public string $currentD, public string $eligibleOpenQuantity, BigRational $future, BigRational $retained)
     {
@@ -31,11 +33,14 @@ final readonly class NetForecastQuantities
         $this->retainedOpenDenominator = (string) $retained->getDenominator();
         $this->expectedNetNumerator = (string) $net->getNumerator();
         $this->expectedNetDenominator = (string) $net->getDenominator();
-        foreach ((array) $this as $value) {
+        foreach ([$this->currentD, $this->eligibleOpenQuantity, $this->futureReturnsNumerator, $this->futureReturnsDenominator,
+            $this->retainedOpenNumerator, $this->retainedOpenDenominator, $this->expectedNetNumerator, $this->expectedNetDenominator] as $value) {
             if (\strlen($value) > self::MAX_DIGITS) {
                 throw new \OverflowException('Exact quantity precision budget exceeded.');
             }
         }
+        $this->future = $future;
+        $this->retained = $retained;
     }
 
     public static function fromComponents(string $currentD, string $eligibleOpenQuantity, string $futureReturnsNumerator, string $futureReturnsDenominator, string $retainedOpenNumerator, string $retainedOpenDenominator): self
@@ -59,11 +64,19 @@ final readonly class NetForecastQuantities
 
     public function plus(self $other): self
     {
+        // Validated nonnegative components make zero bases an exact additive identity.
+        if ('0' === $other->currentD && '0' === $other->eligibleOpenQuantity) {
+            return $this;
+        }
+        if ('0' === $this->currentD && '0' === $this->eligibleOpenQuantity) {
+            return $other;
+        }
+
         return new self(
             (string) BigRational::of($this->currentD)->plus($other->currentD)->getNumerator(),
             (string) BigRational::of($this->eligibleOpenQuantity)->plus($other->eligibleOpenQuantity)->getNumerator(),
-            BigRational::ofFraction($this->futureReturnsNumerator, $this->futureReturnsDenominator)->plus(BigRational::ofFraction($other->futureReturnsNumerator, $other->futureReturnsDenominator)),
-            BigRational::ofFraction($this->retainedOpenNumerator, $this->retainedOpenDenominator)->plus(BigRational::ofFraction($other->retainedOpenNumerator, $other->retainedOpenDenominator)),
+            $this->future->plus($other->future),
+            $this->retained->plus($other->retained),
         );
     }
 }

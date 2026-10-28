@@ -30,8 +30,10 @@ final readonly class AggregateNetForecastAction
     {
     }
 
-    public function __invoke(string $companyId, string $accountId, NetTargetBatch $targets, NetTrainingBatch $training): NetForecastBatch
+    public function __invoke(string $companyId, string $accountId, NetTargetBatch $targets, NetTrainingBatch $training, ?int $computeStarted = null, ?int $allocationBaseline = null, ?NetTargetLimits $runtimeLimits = null): NetForecastBatch
     {
+        $started = min(hrtime(true), $computeStarted ?? hrtime(true));
+        $baseline = min(memory_get_usage(true), $allocationBaseline ?? memory_get_usage(true));
         // Traverse every proof before any metadata, refusal or zero shortcut.
         $targets->context->assertScope($companyId, $accountId);
         if ($training->companyId !== $companyId || $training->accountId !== $accountId) {
@@ -73,9 +75,22 @@ final readonly class AggregateNetForecastAction
             return $this->refuse($companyId, $accountId, $context, $targets->unavailableReason ?? 'source_history_unavailable');
         }
         try {
-            $this->checkShape($targets);
+            $runtimeLimits ??= $this->limits;
+            $peakLimit = min($this->limits->phpPeakBytes, $runtimeLimits->phpPeakBytes);
+            $allocationLimit = min($this->limits->phpAllocationBytes, $runtimeLimits->phpAllocationBytes);
+            $seconds = min($this->limits->computeSeconds, $runtimeLimits->computeSeconds);
+            $guard = static function () use ($started, $baseline, $peakLimit, $allocationLimit, $seconds): void {
+                if (memory_get_peak_usage(true) > $peakLimit
+                    || memory_get_usage(true) + 8388608 > $peakLimit
+                    || memory_get_usage(true) - $baseline + 8388608 > $allocationLimit
+                    || hrtime(true) - $started > $seconds * 1000000000) {
+                    throw new \OverflowException('Forecast compute budget exceeded.');
+                }
+            };
+            $guard();
+            $this->checkShape($targets, $guard);
             $used = 0;
-            $this->charge([$companyId, $accountId, $context], $used);
+            $this->charge([$companyId, $accountId, $context], $used, $guard);
             $skus = $targets->skus;
             usort($skus, static fn (NetTargetSkuRow $a, NetTargetSkuRow $b): int => strcmp($a->marketplaceSku, $b->marketplaceSku));
             $output = [];
@@ -84,7 +99,7 @@ final readonly class AggregateNetForecastAction
             $deliveredMemo = [];
             $openMemo = [];
             foreach ($skus as $sku) {
-                $result = $this->sku($sku, $context, $training, $deliveredMemo, $openMemo, $used);
+                $result = $this->sku($sku, $context, $training, $deliveredMemo, $openMemo, $used, $guard);
                 $output[] = $result;
                 $total = self::add($total, $result->quantities);
                 $reason = self::reason($reason, $result->unavailableReason);
@@ -93,7 +108,7 @@ final readonly class AggregateNetForecastAction
             if (null !== $reason) {
                 $total = null;
             }
-            $this->charge([$total, $reason], $used);
+            $this->charge([$total, $reason], $used, $guard);
 
             return new NetForecastBatch($companyId, $accountId, $context->readAt, $context, $output, $total, $reason);
         } catch (\OverflowException) {
@@ -114,7 +129,8 @@ final readonly class AggregateNetForecastAction
         return new NetForecastBatch($companyId, $accountId, $context->readAt, $context, [], null, $reason);
     }
 
-    private function checkShape(NetTargetBatch $targets): void
+    /** @param \Closure(): void $guard */
+    private function checkShape(NetTargetBatch $targets, \Closure $guard): void
     {
         if (!array_is_list($targets->skus) || \count($targets->skus) > 50) {
             throw new \OverflowException('Target SKU budget exceeded.');
@@ -122,10 +138,12 @@ final readonly class AggregateNetForecastAction
         $groups = 0;
         $sources = 0;
         foreach ($targets->skus as $sku) {
+            $guard();
             if (!array_is_list($sku->days) || \count($sku->days) > 184) {
                 throw new \OverflowException('Target day budget exceeded.');
             }
             foreach ($sku->days as $day) {
+                $guard();
                 if (!array_is_list($day->groups) || \count($day->groups) > $this->limits->groupsPerSkuDay) {
                     throw new \OverflowException('Target group budget exceeded.');
                 }
@@ -134,6 +152,7 @@ final readonly class AggregateNetForecastAction
                     throw new \OverflowException('Target groups budget exceeded.');
                 }
                 foreach ($day->groups as $group) {
+                    $guard();
                     $size = \count($group->parts) + \count($group->returns);
                     if (!array_is_list($group->parts) || !array_is_list($group->returns) || $size > $this->limits->sourcesPerGroup) {
                         throw new \OverflowException('Target sources budget exceeded.');
@@ -143,6 +162,7 @@ final readonly class AggregateNetForecastAction
                         throw new \OverflowException('Target source keys budget exceeded.');
                     }
                     foreach ($group->parts as $part) {
+                        $guard();
                         if (!array_is_list($part->trace->statusWitnessIds) || !array_is_list($part->trace->receiptWitnessIds)
                             || \count($part->trace->statusWitnessIds) > 128 || \count($part->trace->receiptWitnessIds) > 128) {
                             throw new \OverflowException('Target witness budget exceeded.');
@@ -156,8 +176,9 @@ final readonly class AggregateNetForecastAction
     /**
      * @param array<string, DeliveredCoefficient> $deliveredMemo
      * @param array<string, OpenCoefficient>      $openMemo
+     * @param \Closure(): void                    $guard
      */
-    private function sku(NetTargetSkuRow $sku, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used): NetForecastSku
+    private function sku(NetTargetSkuRow $sku, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard): NetForecastSku
     {
         $days = $sku->days;
         usort($days, static fn (NetTargetDayRow $a, NetTargetDayRow $b): int => strcmp($a->businessDate, $b->businessDate));
@@ -165,7 +186,8 @@ final readonly class AggregateNetForecastAction
         $total = NetForecastQuantities::zero();
         $reason = [] === $days ? 'source_history_unavailable' : null;
         foreach ($days as $day) {
-            $result = $this->day($sku->marketplaceSku, $day, $context, $training, $deliveredMemo, $openMemo, $used);
+            $guard();
+            $result = $this->day($sku->marketplaceSku, $day, $context, $training, $deliveredMemo, $openMemo, $used, $guard);
             $output[] = $result;
             $total = self::add($total, $result->quantities);
             $reason = self::reason($reason, $result->unavailableReason);
@@ -173,7 +195,7 @@ final readonly class AggregateNetForecastAction
         if (null !== $reason) {
             $total = null;
         }
-        $this->charge([$sku->marketplaceSku, $total, $reason], $used);
+        $this->charge([$sku->marketplaceSku, $total, $reason], $used, $guard);
 
         return new NetForecastSku($sku->marketplaceSku, $output, $total, $reason);
     }
@@ -181,8 +203,9 @@ final readonly class AggregateNetForecastAction
     /**
      * @param array<string, DeliveredCoefficient> $deliveredMemo
      * @param array<string, OpenCoefficient>      $openMemo
+     * @param \Closure(): void                    $guard
      */
-    private function day(string $sku, NetTargetDayRow $day, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used): NetForecastDay
+    private function day(string $sku, NetTargetDayRow $day, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard): NetForecastDay
     {
         $groups = $day->groups;
         usort($groups, static fn (NetTargetGroupRow $a, NetTargetGroupRow $b): int => strcmp($a->orderNumber ?? '', $b->orderNumber ?? ''));
@@ -190,7 +213,8 @@ final readonly class AggregateNetForecastAction
         $total = NetForecastQuantities::zero();
         $reason = [] === $groups && !$day->emptyComplete ? 'source_history_unavailable' : null;
         foreach ($groups as $group) {
-            $result = $this->group($sku, $day->businessDate, $group, $context, $training, $deliveredMemo, $openMemo, $used);
+            $guard();
+            $result = $this->group($sku, $day->businessDate, $group, $context, $training, $deliveredMemo, $openMemo, $used, $guard);
             $output[] = $result;
             $total = self::add($total, $result->quantities);
             $reason = self::reason($reason, $result->unavailableReason);
@@ -199,7 +223,7 @@ final readonly class AggregateNetForecastAction
         if (null !== $reason) {
             $total = null;
         }
-        $this->charge([$day->businessDate, $total, $reason], $used);
+        $this->charge([$day->businessDate, $total, $reason], $used, $guard);
 
         return new NetForecastDay($day->businessDate, $output, $total, $reason);
     }
@@ -207,8 +231,9 @@ final readonly class AggregateNetForecastAction
     /**
      * @param array<string, DeliveredCoefficient> $deliveredMemo
      * @param array<string, OpenCoefficient>      $openMemo
+     * @param \Closure(): void                    $guard
      */
-    private function group(string $sku, string $date, NetTargetGroupRow $group, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used): NetForecastGroup
+    private function group(string $sku, string $date, NetTargetGroupRow $group, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard): NetForecastGroup
     {
         $parts = $group->parts;
         usort($parts, static fn (NetTargetPartRow $a, NetTargetPartRow $b): int => strcmp($a->sourceRowId, $b->sourceRowId));
@@ -218,7 +243,8 @@ final readonly class AggregateNetForecastAction
             || $sku !== $group->marketplaceSku || $date !== $group->businessDate ? 'target_identity_mismatch' : null;
         $reason = [] === $parts ? 'source_history_unavailable' : $identityReason;
         foreach ($parts as $part) {
-            $result = $this->part($group, $part, $context, $training, $identityReason, $deliveredMemo, $openMemo, $used);
+            $guard();
+            $result = $this->part($group, $part, $context, $training, $identityReason, $deliveredMemo, $openMemo, $used, $guard);
             $output[] = $result;
             $total = self::add($total, $result->quantities);
             $reason = self::reason($reason, $result->unavailableReason);
@@ -227,7 +253,7 @@ final readonly class AggregateNetForecastAction
         if (null !== $reason) {
             $total = null;
         }
-        $this->charge([$group->orderNumber, $group->marketplaceSku, $group->businessDate, $group->returns, $total, $reason], $used);
+        $this->charge([$group->orderNumber, $group->marketplaceSku, $group->businessDate, $group->returns, $total, $reason], $used, $guard);
 
         return new NetForecastGroup($group->orderNumber, $group->marketplaceSku, $group->businessDate, $output, $group->returns, $total, $reason);
     }
@@ -235,8 +261,9 @@ final readonly class AggregateNetForecastAction
     /**
      * @param array<string, DeliveredCoefficient> $deliveredMemo
      * @param array<string, OpenCoefficient>      $openMemo
+     * @param \Closure(): void                    $guard
      */
-    private function part(NetTargetGroupRow $group, NetTargetPartRow $part, NetTrainingContext $context, NetTrainingBatch $training, ?string $identityReason, array &$deliveredMemo, array &$openMemo, int &$used): NetForecastPart
+    private function part(NetTargetGroupRow $group, NetTargetPartRow $part, NetTrainingContext $context, NetTrainingBatch $training, ?string $identityReason, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard): NetForecastPart
     {
         $reason = $identityReason ?? self::partReason($part);
         if (null !== $reason) {
@@ -261,7 +288,7 @@ final readonly class AggregateNetForecastAction
                     ->plus(NetForecastQuantities::fromComponents('0', (string) $part->eligibleOpenPost, '0', '1', $postQ->retainedOpenNumerator, $postQ->retainedOpenDenominator));
             }
         }
-        $this->charge([$part->sourceRowId, $quantity, $delivered, $pre, $post, $part->trace, $reason], $used);
+        $this->charge([$part->sourceRowId, $quantity, $delivered, $pre, $post, $part->trace, $reason], $used, $guard);
 
         return new NetForecastPart($part->sourceRowId, $quantity, $delivered, $pre, $post, $part->trace, $reason);
     }
@@ -405,31 +432,41 @@ final readonly class AggregateNetForecastAction
      * JSON upper bound: each string byte may become six escape bytes. Containers
      * reserve property names/punctuation; each quantity uses its reduced strings.
      * Charge only this node's fields (children were already charged), before its DTO.
+     *
+     * @param \Closure(): void $guard
      */
-    private function charge(mixed $value, int &$used): void
+    private function charge(mixed $value, int &$used, \Closure $guard, bool $propertyKey = false): void
     {
-        $size = 64;
+        $guard();
+        $size = match (true) {
+            \is_string($value) => 2,
+            null === $value => 4,
+            \is_bool($value) => 5,
+            \is_int($value) => 20,
+            default => 128,
+        };
         if (\is_string($value)) {
-            if (\strlen($value) > intdiv($this->limits->outputBytes - $used, 6)) {
+            $escape = $propertyKey && 1 === preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/D', $value) ? 1 : 6;
+            if (\strlen($value) > intdiv($this->limits->outputBytes - $used, $escape)) {
                 throw new \OverflowException('Result byte budget exceeded.');
             }
-            $size += 6 * \strlen($value);
+            $size += $escape * \strlen($value);
         }
         if ($size > $this->limits->outputBytes - $used) {
             throw new \OverflowException('Result byte budget exceeded.');
         }
         $used += $size;
         if ($value instanceof \DateTimeImmutable) {
-            $this->charge($value->format('Y-m-d\TH:i:s.uP'), $used);
+            $this->charge($value->format('Y-m-d\TH:i:s.uP'), $used, $guard);
         } elseif (\is_object($value)) {
             foreach (get_object_vars($value) as $key => $field) {
-                $this->charge($key, $used);
-                $this->charge($field, $used);
+                $this->charge($key, $used, $guard, true);
+                $this->charge($field, $used, $guard);
             }
         } elseif (\is_array($value)) {
             foreach ($value as $key => $field) {
-                $this->charge($key, $used);
-                $this->charge($field, $used);
+                $this->charge($key, $used, $guard, true);
+                $this->charge($field, $used, $guard);
             }
         }
     }

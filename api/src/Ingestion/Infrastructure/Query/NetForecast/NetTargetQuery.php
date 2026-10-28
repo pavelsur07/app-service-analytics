@@ -63,7 +63,7 @@ final readonly class NetTargetQuery
                        SUM(quantity::bigint) AS total
                 FROM canonical_outcomes GROUP BY source_row_id
             ),
-            target_proven_parts AS MATERIALIZED (
+            target_all_proven_parts AS MATERIALIZED (
                 SELECT s.source_row_id, s.posting_number, s.order_number, s.business_date, s.marketplace_sku, s.quantity,
                        q.current_d, q.known_r, q.t1, q.t2, q.p, q.open_pre, q.open_post, q.unknown,
                        proof.delivery_origin, ready.age, ready.coverage_from, ready.coverage_through, ready.deep_completed_at,
@@ -79,9 +79,8 @@ final readonly class NetTargetQuery
                             WHEN q.current_d > 0 AND NOT COALESCE(ready.daily_complete, FALSE) THEN 'returns_coverage_missing'
                             WHEN q.current_d > 0 AND ready.age >= 67 AND (ready.deep_completed_at IS NULL OR ready.coverage_through < proof.delivery_origin + INTERVAL '67 days') THEN 'target_readiness_missing'
                             ELSE NULL END AS reason,
-                       s.fact_revision, s.id AS latest_revision_id, first.id AS first_revision_id,
-                       first.captured_at AS initial_captured_at, s.captured_at AS latest_captured_at,
-                       s.raw_document_id, raw.body_hash, s.amount_minor::text AS amount_minor, s.currency
+                       s.fact_revision, s.id AS latest_revision_id, s.captured_at AS latest_captured_at,
+                       s.raw_document_id, s.amount_minor::text AS amount_minor, s.currency
                 FROM target_latest_sales s LEFT JOIN target_part_quantities q USING (source_row_id)
                 LEFT JOIN target_source_proof proof USING (source_row_id)
                 LEFT JOIN target_order_proof order_proof USING (order_number)
@@ -91,15 +90,24 @@ final readonly class NetTargetQuery
                 LEFT JOIN target_group_origins origins USING (order_number, marketplace_sku)
                 LEFT JOIN target_delta_proof delta USING (order_number, marketplace_sku)
                 LEFT JOIN contradictory_quantity_groups bad USING (order_number, marketplace_sku)
-                LEFT JOIN sales_revisions first ON first.source_row_id = s.source_row_id AND first.fact_revision = 1
-                LEFT JOIN marketplace_raw_document raw ON raw.company_id = :companyId AND raw.marketplace_account_id = :accountId AND raw.id = s.raw_document_id
                 CROSS JOIN target_current_returns refresh CROSS JOIN target_input_latest latest
+            ),
+            target_proven_parts AS MATERIALIZED (
+                SELECT s.source_row_id, s.posting_number, s.order_number, s.business_date, s.marketplace_sku, s.quantity,
+                       s.current_d, s.known_r, s.t1, s.t2, s.p, s.open_pre, s.open_post, s.unknown,
+                       s.delivery_origin, s.age, s.coverage_from, s.coverage_through, s.deep_completed_at,
+                       s.daily_complete, s.witness_digest, s.reason, s.fact_revision, s.latest_revision_id,
+                       s.latest_captured_at, s.raw_document_id, s.amount_minor, s.currency,
+                       first.id AS first_revision_id, first.captured_at AS initial_captured_at, raw.body_hash
+                FROM target_all_proven_parts s
+                LEFT JOIN sales_fact_revision first ON first.company_id = :companyId AND first.marketplace_account_id = :accountId AND first.source_row_id = s.source_row_id AND first.fact_revision = 1 AND first.captured_at <= CAST(:asOf AS timestamp) AND first.captured_at >= CAST(:epochStart AS timestamp) AND first.capture_version = :captureVersion AND first.capture_origin = 'live_polling' AND first.capture_path = 'upsert'
+                LEFT JOIN marketplace_raw_document raw ON raw.company_id = :companyId AND raw.marketplace_account_id = :accountId AND raw.id = s.raw_document_id
                 WHERE s.marketplace_sku IN (:requestedSkus) AND s.business_date BETWEEN CAST(:targetFrom AS date) AND CAST(:targetTo AS date)
             ),
             target_groups AS MATERIALIZED (
                 SELECT business_date, order_number, marketplace_sku, MIN(reason) AS reason,
                        COUNT(source_row_id) AS parts,
-                       COALESCE(SUM(6::numeric * (2 * OCTET_LENGTH(source_row_id) + COALESCE(OCTET_LENGTH(posting_number), 0) + COALESCE(OCTET_LENGTH(order_number), 0) + OCTET_LENGTH(marketplace_sku) + COALESCE(OCTET_LENGTH(body_hash), 0) + COALESCE(OCTET_LENGTH(currency), 0) + COALESCE(OCTET_LENGTH(reason), 0) + COALESCE(OCTET_LENGTH(witness_digest), 0))), 0) AS text_bytes
+                       COALESCE(SUM(6::numeric * (2 * OCTET_LENGTH(source_row_id) + COALESCE(OCTET_LENGTH(posting_number), 0) + 2 * COALESCE(OCTET_LENGTH(order_number), 0) + 2 * OCTET_LENGTH(marketplace_sku) + COALESCE(OCTET_LENGTH(body_hash), 0) + COALESCE(OCTET_LENGTH(currency), 0) + 2 * COALESCE(OCTET_LENGTH(reason), 0) + COALESCE(OCTET_LENGTH(witness_digest), 0))), 0) AS text_bytes
                 FROM target_proven_parts GROUP BY business_date, order_number, marketplace_sku
             ),
             target_return_traces AS MATERIALIZED (
@@ -107,7 +115,7 @@ final readonly class NetTargetQuery
                        r.id AS latest_revision_id, first.id AS first_revision_id, r.captured_at,
                        r.raw_document_id, raw.body_hash, r.return_type, r.quantity
                 FROM target_groups g JOIN target_latest_returns r USING (order_number, marketplace_sku)
-                LEFT JOIN return_revisions first ON first.source_row_id = r.source_row_id AND first.fact_revision = 1
+                LEFT JOIN marketplace_return_fact_revision first ON first.company_id = :companyId AND first.marketplace_account_id = :accountId AND first.source_row_id = r.source_row_id AND first.fact_revision = 1 AND first.captured_at <= CAST(:asOf AS timestamp) AND first.captured_at >= CAST(:epochStart AS timestamp) AND first.capture_version = :captureVersion AND first.capture_origin = 'live_polling' AND first.capture_path = 'upsert'
                 LEFT JOIN marketplace_raw_document raw ON raw.company_id = :companyId AND raw.marketplace_account_id = :accountId AND raw.id = r.raw_document_id
             ),
             target_witness_counts AS MATERIALIZED (
@@ -115,29 +123,38 @@ final readonly class NetTargetQuery
                        COALESCE(SUM(6::numeric * (OCTET_LENGTH(s.posting_number) + OCTET_LENGTH(s.raw_document_id::text))), 0) AS bytes
                 FROM target_proven_parts p LEFT JOIN status_inputs s ON s.posting_number = p.posting_number GROUP BY p.source_row_id
             ),
-            target_output_metrics AS MATERIALIZED (
-                SELECT (SELECT COUNT(marketplace_sku) FROM target_skus)::numeric AS skus,
-                       (SELECT COUNT(business_date) FROM target_days)::numeric AS days,
-                       (SELECT COUNT(marketplace_sku) FROM target_groups)::numeric AS groups,
-                       (SELECT COUNT(source_row_id) FROM target_proven_parts)::numeric AS parts,
-                       (SELECT COUNT(source_row_id) FROM target_return_traces)::numeric AS returns,
-                       COALESCE((SELECT SUM(statuses) FROM target_witness_counts), 0)::numeric AS statuses,
-                       COALESCE((SELECT MAX(statuses) FROM target_witness_counts), 0) AS max_statuses,
-                       COALESCE((SELECT SUM(text_bytes) FROM target_groups), 0)
-                         + COALESCE((SELECT SUM(6::numeric * (OCTET_LENGTH(source_row_id) + OCTET_LENGTH(return_type) + COALESCE(OCTET_LENGTH(body_hash), 0))) FROM target_return_traces), 0)
-                         + COALESCE((SELECT SUM(bytes) FROM target_witness_counts), 0)
-                         + 12::numeric * COALESCE((SELECT SUM(OCTET_LENGTH(marketplace_sku)) FROM target_skus), 0) * 184 AS text_bytes
+            target_sku_output_metrics AS MATERIALIZED (
+                SELECT s.marketplace_sku, (SELECT COUNT(business_date) FROM target_days)::numeric AS days,
+                       COALESCE(g.groups, 0)::numeric AS groups, COALESCE(p.parts, 0)::numeric AS parts,
+                       COALESCE(r.returns, 0)::numeric AS returns, COALESCE(w.statuses, 0)::numeric AS statuses,
+                       COALESCE(w.max_statuses, 0)::numeric AS max_statuses,
+                       COALESCE(g.text_bytes, 0) + COALESCE(r.text_bytes, 0) + COALESCE(w.text_bytes, 0)
+                         + 12::numeric * OCTET_LENGTH(s.marketplace_sku) * 184 AS text_bytes
+                FROM target_skus s
+                LEFT JOIN (SELECT marketplace_sku, COUNT(marketplace_sku) AS groups, SUM(text_bytes) AS text_bytes FROM target_groups GROUP BY marketplace_sku) g USING (marketplace_sku)
+                LEFT JOIN (SELECT marketplace_sku, COUNT(source_row_id) AS parts FROM target_proven_parts GROUP BY marketplace_sku) p USING (marketplace_sku)
+                LEFT JOIN (SELECT marketplace_sku, COUNT(source_row_id) AS returns,
+                    SUM(6::numeric * (OCTET_LENGTH(source_row_id) + OCTET_LENGTH(return_type) + COALESCE(OCTET_LENGTH(body_hash), 0))) AS text_bytes
+                    FROM target_return_traces GROUP BY marketplace_sku) r USING (marketplace_sku)
+                LEFT JOIN (SELECT p.marketplace_sku, SUM(w.statuses) AS statuses, MAX(w.statuses) AS max_statuses, SUM(w.bytes) AS text_bytes
+                    FROM target_witness_counts w JOIN target_proven_parts p USING (source_row_id) GROUP BY p.marketplace_sku) w USING (marketplace_sku)
             ),
-            target_output_shape AS MATERIALIZED (
-                SELECT m.max_statuses, m.text_bytes, 4096::numeric * skus * days + 2048::numeric * groups + 8192::numeric * parts + 2048::numeric * returns + 1024::numeric * statuses + text_bytes AS bytes,
-                       8::numeric * skus * days + 12::numeric * groups + 100::numeric * parts + 20::numeric * returns + 4::numeric * statuses AS scalar_slots,
-                       3::numeric * skus * days + 6::numeric * groups + 20::numeric * parts + 2::numeric * returns + 3::numeric * statuses AS containers,
-                       skus + skus * days + groups + 4::numeric * parts + returns AS dto_nodes
-                FROM target_output_metrics m
+            target_sku_output_shape AS MATERIALIZED (
+                SELECT m.marketplace_sku, m.days, m.groups, m.parts, m.returns, m.statuses, m.max_statuses, m.text_bytes,
+                       256::numeric * days + 256::numeric * groups + 4096::numeric * parts + 768::numeric * returns + 128::numeric * statuses + text_bytes AS bytes,
+                       8::numeric * days + 12::numeric * groups + 100::numeric * parts + 20::numeric * returns + 4::numeric * statuses AS scalar_slots,
+                       3::numeric * days + 6::numeric * groups + 20::numeric * parts + 2::numeric * returns + 3::numeric * statuses AS containers,
+                       1 + days + groups + 4::numeric * parts + returns AS dto_nodes
+                FROM target_sku_output_metrics m
             ),
             target_output_estimate AS MATERIALIZED (
-                SELECT s.max_statuses, s.bytes, s.scalar_slots, s.containers, s.dto_nodes, 2::numeric * bytes + 4::numeric * text_bytes + 128::numeric * scalar_slots + 1024::numeric * containers + 512::numeric * dto_nodes AS allocation
-                FROM target_output_shape s
+                -- All raw strings and retained DTOs coexist; only one SKU is decoded at a time.
+                SELECT MAX(max_statuses) AS max_statuses, SUM(bytes) AS bytes, SUM(scalar_slots) AS scalar_slots,
+                       SUM(containers) AS containers, SUM(dto_nodes) AS dto_nodes,
+                       SUM(bytes + 512::numeric * days + 768::numeric * groups + 4096::numeric * parts
+                           + 1024::numeric * returns + 512::numeric * statuses + text_bytes)
+                         + MAX(128::numeric * scalar_slots + 256::numeric * containers + 2::numeric * text_bytes) AS allocation
+                FROM target_sku_output_shape
             ),
             target_output_budget AS MATERIALIZED (
                 SELECT e.bytes, e.allocation, e.scalar_slots, e.containers, e.dto_nodes, exceeded.input IS NULL AS ok, exceeded.input, exceeded.observed, exceeded.maximum
@@ -155,9 +172,24 @@ final readonly class NetTargetQuery
                 CROSS JOIN input_budget input CROSS JOIN target_output_budget budget CROSS JOIN target_closure_proof closure
                 WHERE input.ok AND budget.ok AND closure.valid GROUP BY p.source_row_id
             ),
-            target_receipt_witnesses AS MATERIALIZED (
-                SELECT p.source_row_id, JSONB_AGG(DISTINCT r.id::text ORDER BY r.id::text) AS ids
-                FROM target_proven_parts p CROSS JOIN input_budget input CROSS JOIN target_output_budget budget CROSS JOIN target_closure_proof closure
+            target_timely_receipt_witnesses AS MATERIALIZED (
+                SELECT c.day, MIN(r.id::text COLLATE "C")::uuid AS id
+                FROM target_receipt_calendar c JOIN receipt_inputs r
+                  ON r.report_type = 'ozon_returns_list' AND c.day BETWEEN r.date_from AND r.date_to AND r.marked_at = c.timely_completed
+                GROUP BY c.day
+            ),
+            target_part_receipt_selectors AS MATERIALIZED (
+                SELECT source_row_id, business_date, initial_captured_at, delivery_origin, deep_completed_at, age,
+                       DENSE_RANK() OVER (ORDER BY business_date, initial_captured_at, delivery_origin, deep_completed_at, age) AS selector_id
+                FROM target_proven_parts
+            ),
+            target_receipt_selector_values AS MATERIALIZED (
+                SELECT DISTINCT selector_id, business_date, initial_captured_at, delivery_origin, deep_completed_at, age
+                FROM target_part_receipt_selectors
+            ),
+            target_selector_receipt_witnesses AS MATERIALIZED (
+                SELECT p.selector_id, JSONB_AGG(DISTINCT r.id::text ORDER BY r.id::text) AS ids
+                FROM target_receipt_selector_values p CROSS JOIN input_budget input CROSS JOIN target_output_budget budget CROSS JOIN target_closure_proof closure
                 CROSS JOIN LATERAL (
                     (SELECT r.id FROM receipt_inputs r WHERE r.report_type = 'ozon_posting_fbo_list' AND r.status = 'completed' AND r.capture_origin = 'live_polling' AND r.capture_version = :captureVersion AND p.business_date BETWEEN r.date_from AND r.date_to ORDER BY r.marked_at DESC, r.id LIMIT 1)
                     UNION
@@ -167,13 +199,16 @@ final readonly class NetTargetQuery
                     UNION
                     (SELECT r.id FROM receipt_inputs r WHERE r.report_type = 'ozon_returns_list' AND r.marked_at = p.deep_completed_at ORDER BY r.id LIMIT 1)
                     UNION
-                    (SELECT r.id FROM receipt_inputs r JOIN target_receipt_calendar c ON r.report_type = 'ozon_returns_list' AND c.day BETWEEN r.date_from AND r.date_to AND r.marked_at = c.timely_completed WHERE c.day = (p.delivery_origin AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date ORDER BY r.id LIMIT 1)
+                    (SELECT c.id FROM target_timely_receipt_witnesses c WHERE c.day = (p.delivery_origin AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date)
                     UNION
-                    (SELECT r.id FROM receipt_inputs r JOIN target_receipt_calendar c ON r.report_type = 'ozon_returns_list' AND c.day BETWEEN r.date_from AND r.date_to AND r.marked_at = c.timely_completed WHERE c.day = CASE WHEN p.age < 60 THEN (CAST(:asOf AS timestamp) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date - 1 ELSE ((p.delivery_origin + INTERVAL '67 days') AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date END ORDER BY r.id LIMIT 1)
-                ) r WHERE input.ok AND budget.ok AND closure.valid GROUP BY p.source_row_id
+                    (SELECT c.id FROM target_timely_receipt_witnesses c WHERE c.day = CASE WHEN p.age < 60 THEN (CAST(:asOf AS timestamp) AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date - 1 ELSE ((p.delivery_origin + INTERVAL '67 days') AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Moscow')::date END)
+                ) r WHERE input.ok AND budget.ok AND closure.valid GROUP BY p.selector_id
+            ),
+            target_receipt_witnesses AS MATERIALIZED (
+                SELECT p.source_row_id, r.ids FROM target_part_receipt_selectors p JOIN target_selector_receipt_witnesses r USING (selector_id)
             ),
             target_part_json AS MATERIALIZED (
-                SELECT p.business_date, p.order_number, p.marketplace_sku, p.source_row_id,
+                SELECT p.business_date, p.order_number, p.marketplace_sku, p.source_row_id, p.reason,
                        JSONB_BUILD_OBJECT('sourceRowId', p.source_row_id, 'postingNumber', p.posting_number, 'rawQuantity', p.quantity,
                          'currentD', CASE WHEN p.reason IS NULL THEN p.current_d END, 'knownR', CASE WHEN p.reason IS NULL THEN p.known_r END,
                          't1', CASE WHEN p.reason IS NULL THEN p.t1 END, 't2', CASE WHEN p.reason IS NULL THEN p.t2 END, 'p', CASE WHEN p.reason IS NULL THEN p.p END,
@@ -198,14 +233,20 @@ final readonly class NetTargetQuery
                 FROM target_return_traces CROSS JOIN input_budget input CROSS JOIN target_output_budget budget CROSS JOIN target_closure_proof closure
                 WHERE input.ok AND budget.ok AND closure.valid GROUP BY business_date, order_number, marketplace_sku
             ),
+            target_group_items AS MATERIALIZED (
+                SELECT business_date, order_number, marketplace_sku, source_row_id, reason, part, NULL::jsonb AS returns
+                FROM target_part_json
+                UNION ALL
+                SELECT business_date, order_number, marketplace_sku, NULL::text, NULL::text, NULL::jsonb, traces
+                FROM target_return_json
+            ),
             target_group_json AS MATERIALIZED (
-                SELECT g.business_date, g.order_number, g.marketplace_sku,
-                       JSONB_BUILD_OBJECT('orderNumber', g.order_number, 'marketplaceSku', g.marketplace_sku, 'businessDate', g.business_date,
-                         'parts', JSONB_AGG(p.part ORDER BY p.source_row_id), 'returns', COALESCE(r.traces, '[]'::jsonb),
-                         'inputComplete', g.reason IS NULL, 'unavailableReason', g.reason) AS value
-                FROM target_groups g JOIN target_part_json p ON p.business_date = g.business_date AND p.order_number IS NOT DISTINCT FROM g.order_number AND p.marketplace_sku = g.marketplace_sku
-                LEFT JOIN target_return_json r ON r.business_date = g.business_date AND r.order_number IS NOT DISTINCT FROM g.order_number AND r.marketplace_sku = g.marketplace_sku
-                GROUP BY g.business_date, g.order_number, g.marketplace_sku, g.reason, r.traces
+                SELECT business_date, order_number, marketplace_sku,
+                       JSONB_BUILD_OBJECT('orderNumber', order_number, 'marketplaceSku', marketplace_sku, 'businessDate', business_date,
+                         'parts', JSONB_AGG(part ORDER BY source_row_id) FILTER (WHERE part IS NOT NULL),
+                         'returns', COALESCE((JSONB_AGG(returns) FILTER (WHERE returns IS NOT NULL))->0, '[]'::jsonb),
+                         'inputComplete', MIN(reason) IS NULL, 'unavailableReason', MIN(reason)) AS value
+                FROM target_group_items GROUP BY business_date, order_number, marketplace_sku
             ),
             target_day_json AS MATERIALIZED (
                 SELECT s.marketplace_sku, d.business_date,
@@ -439,7 +480,10 @@ final readonly class NetTargetQuery
                     $reason ??= $dayReason;
                 }
                 $skus[] = new NetTargetSkuRow(self::string($row['marketplace_sku']), $days);
-                unset($decoded, $dayRows);
+                // Drop every decoded container before the next SKU's json_decode.
+                unset($decoded, $dayRows, $day, $d, $groupRows, $group, $g, $part, $v, $trace,
+                    $witness, $w, $return, $r, $quantities, $localKeys, $statusIds, $receiptIds,
+                    $parts, $returns, $groups, $days, $row);
             }
             $this->guard($started, 0);
 
