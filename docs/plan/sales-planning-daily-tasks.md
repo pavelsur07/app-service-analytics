@@ -759,3 +759,16 @@ accepted_state_v1, исходный cutover639-6ceaa3e сохранён. Readonl
 
 Полные receipts/идентификаторы/разбор в B02-consumer-release.md и
 B02-training.md. B02 закрыта,52/68; numeric forecast/accuracy ждут B03–B18.
+
+## Приёмка B03: exact return curve, 2026-10-28
+
+Чистые Domain fractions F/q с H60/61ages, sample100/30 иrisk30/10,
+scoped adapter без fallback реализованы. Unit555/4434 и static gates PASS;
+actual2Codex0/0, exact8/8source/testblobs покрыты, findings0.
+[PR274](https://github.com/pavelsur07/app-service-analytics/pull/274)
+exacte679CI40680237413 SUCCESS, squashd11a4ca. MasterCI40681313833/645
+attempt1/deploy SUCCESS, production645-d11a4ca,12serviceshealthy/7PHPepoch
+B02 сохранён. In-memory formula и readonly empty-source adapter smoke,
+seller/admin pings PASS. Подробности B03.md; numeric/accuracy gates остаются.
+B03 закрыта,53/68. NextB04: apply remaining risk to currentD, whole-scope
+fallback, target agedH+L readiness; B05 по globalplan — OPEN pre-handover.
