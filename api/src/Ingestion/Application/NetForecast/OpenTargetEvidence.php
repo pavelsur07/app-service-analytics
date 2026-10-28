@@ -15,6 +15,7 @@ use App\Ingestion\Infrastructure\Query\NetForecast\NetTrainingContext;
 final readonly class OpenTargetEvidence
 {
     public const string BEFORE_HANDOVER = 'before_handover';
+    public const string AFTER_HANDOVER = 'after_handover';
 
     public function __construct(
         public NetTrainingContext $context,

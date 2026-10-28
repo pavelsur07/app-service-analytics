@@ -785,3 +785,21 @@ PR275 exact39e9CI40685293252 SUCCESS, squash8b36fdf. MasterCI40685926691
 7PHPB02epochunchanged, publicseller/internaladminpings иpure runtime math
 smokePASS. Подробные receipts B04.md. B04 закрыта,54/68; actualtarget
 producerB09/quality/numericrollout не объявляютсяготовыми. NextB05 pre-handovergross.
+
+
+## Приёмка B05: исход до передачи в доставку, 2026-10-28
+
+Точная ставка G/(T1+G+T2+P), whole SKU→свой account fallback, scope/RR,
+knownzero/unknown и exact expected quantity реализованы. Исторические T1
+остаются в training:100G+100T1 дают p100/200 и gross50 для100open.
+Unit586/4961 и все static gates прошли. Два отдельных actual Codex CLI
+complete0/0, пробелов0; принятых/отклонённых0, второго прохода уникальных
+принятых0. Все11/11 code/test blobs покрыты обоими ответами.
+
+[PR276](https://github.com/pavelsur07/app-service-analytics/pull/276),
+точныйf775 CI40689227154 success; squash49a62a5. MasterCI40690372833/run649
+attempt1/deploy success, production649-49a62a5. Root:12healthy/running,
+7PHP с прежней непрерывной epoch,8PASS pure-memory math smoke,
+seller/admin version pings. Подробные receipts и review IDs — B05.md.
+B05 закрыта,55/68. B06 — следующий расчёт после передачи; B09 target producer
+и реальное качество/числовой допуск ещё не готовы.
