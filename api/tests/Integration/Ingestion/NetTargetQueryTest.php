@@ -162,6 +162,91 @@ final class NetTargetQueryTest extends KernelTestCase
         self::assertSame('ambiguous_delivery_allocation', $this->read($db, $f)->unavailableReason);
     }
 
+    public function testDifferentOriginsOnlyPermitProvenTerminalZero(): void
+    {
+        foreach ([[20, '-1 hour', null], [1, '-1 hour', 'ambiguous_delivery_allocation'], [21, '-1 hour', 'contradictory_quantity'], [20, '-3 days', 'contradictory_quantity']] as [$returned, $when, $reason]) {
+            [$db, $f] = $this->fixture();
+            $f->delivered('A', 'SKU', 7, $f->readAt->modify('-2 days'), 'ORDER');
+            $f->delivered('B', 'SKU', 13, $f->readAt->modify('-1 day'), 'ORDER');
+            $f->returned('ORDER', 'SKU', $returned, $f->readAt->modify($when));
+            $f->currentReturns();
+            $batch = $this->read($db, $f);
+            self::assertSame($reason, $batch->unavailableReason, 'R='.$returned.' at '.$when);
+            $parts = $batch->skus[0]->days[0]->groups[0]->parts;
+            self::assertCount(2, $parts);
+            foreach ($parts as $part) {
+                self::assertSame($reason, $part->unavailableReason);
+                self::assertSame(null === $reason ? 0 : null, $part->currentD);
+            }
+            if (null === $reason) {
+                self::assertSame([7, 13], array_column($parts, 'knownR'));
+            }
+        }
+    }
+
+    public function testFullReturnCapacityCannotBeBorrowedFromFutureDelivery(): void
+    {
+        foreach ([[20, '-36 hours', false, 'contradictory_quantity'], [7, '-36 hours', true, null], [20, '-36 hours', true, 'contradictory_quantity'], [20, '-1 day', false, 'contradictory_quantity']] as [$first, $when, $revise, $reason]) {
+            [$db, $f] = $this->fixture();
+            $f->delivered('A', 'SKU', 7, $f->readAt->modify('-2 days'), 'ORDER');
+            $f->delivered('B', 'SKU', 13, $f->readAt->modify('-1 day'), 'ORDER');
+            $f->returned('ORDER', 'SKU', $first, $f->readAt->modify($when));
+            if ($revise) {
+                $f->returned('ORDER', 'SKU', 20, $f->readAt->modify('-1 hour'));
+            }
+            $f->currentReturns();
+            $batch = $this->read($db, $f);
+            self::assertSame($reason, $batch->unavailableReason, 'firstR='.$first.' at '.$when.' revise='.(int) $revise);
+            $parts = $batch->skus[0]->days[0]->groups[0]->parts;
+            self::assertCount(2, $parts);
+            foreach ($parts as $part) {
+                self::assertSame($reason, $part->unavailableReason);
+                self::assertSame(null === $reason ? 0 : null, $part->currentD);
+            }
+        }
+    }
+
+    public function testInitialDeliveredCapacityNeedsItsAcceptedWitnessWithoutInventingAnOrigin(): void
+    {
+        foreach ([['-3 hours', null], ['-1 hour', 'contradictory_quantity']] as [$initialAt, $reason]) {
+            [$db, $f] = $this->fixture();
+            $f->delivered('A', 'SKU', 7, $f->readAt->modify('-2 days'), 'ORDER');
+            $f->delivered('B', 'SKU', 13, $f->readAt->modify('-1 day'), 'ORDER');
+            $f->sale('INITIAL', 'SKU', 5, 'delivered', $f->readAt->modify($initialAt), 'ORDER');
+            $f->returned('ORDER', 'SKU', 25, $f->readAt->modify('-2 hours'));
+            $f->currentReturns();
+            $batch = $this->read($db, $f);
+            self::assertSame($reason, $batch->unavailableReason);
+            $parts = array_column($batch->skus[0]->days[0]->groups[0]->parts, null, 'sourceRowId');
+            self::assertNull($parts['INITIAL']->deliveryOrigin, 'The accepted delivered witness supplies capacity, never a synthetic model age.');
+            self::assertSame(null === $reason ? 0 : null, $parts['INITIAL']->currentD);
+        }
+    }
+
+    public function testFullReturnChronologyIncludesZeroOneOrTwoKnownOriginsAndInitialCapacity(): void
+    {
+        foreach ([[1, 13], [0, 20], [2, 5]] as [$known, $initialQuantity]) {
+            foreach ([['-1 hour', 'contradictory_quantity'], ['-3 hours', null], ['-2 hours', 'contradictory_quantity']] as [$initialAt, $reason]) {
+                [$db, $f] = $this->fixture();
+                if ($known > 0) {
+                    $f->delivered('A', 'SKU', 7, $f->readAt->modify('-2 days'), 'ORDER');
+                }
+                if (2 === $known) {
+                    $f->delivered('B', 'SKU', 8, $f->readAt->modify('-1 day'), 'ORDER');
+                }
+                $f->sale('INITIAL', 'SKU', $initialQuantity, 'delivered', $f->readAt->modify($initialAt), 'ORDER');
+                $f->returned('ORDER', 'SKU', 20, $f->readAt->modify('-2 hours'));
+                $f->currentReturns();
+                $batch = $this->read($db, $f);
+                self::assertSame($reason, $batch->unavailableReason, 'knownOrigins='.$known.' initialAt='.$initialAt);
+                $parts = array_column($batch->skus[0]->days[0]->groups[0]->parts, null, 'sourceRowId');
+                self::assertNull($parts['INITIAL']->deliveryOrigin, 'An accepted capacity witness is never a model delivery origin.');
+                self::assertSame(null === $reason ? 0 : null, $parts['INITIAL']->currentD);
+                self::assertSame($reason, $parts['INITIAL']->unavailableReason);
+            }
+        }
+    }
+
     public function testNestedAndGlobalBudgetsRejectWholeBatchBeforeJson(): void
     {
         [$db, $f] = $this->fixture();

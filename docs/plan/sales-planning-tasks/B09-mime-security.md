@@ -37,8 +37,8 @@ CI для `e2fe704d3dd7729c844aa2fd6f32f80d6e49751e` обнаружил
 - [x] `composer.json`, схема, API и production-код B09 не менялись.
 - [x] Composer validate и security audit прошли; затронутые тесты зелёные.
 - [x] Полный отчёт и хэши переданы root; чужие файлы сохранены.
-- [ ] Оба независимых Codex CLI разобраны, актуальный CI зелёный.
-- [ ] Merge и фактическая выкладка проверены root вместе с B09.
+- [x] Оба независимых Codex CLI разобраны, актуальный CI зелёный.
+- [x] Merge и фактическая выкладка проверены root вместе с B09.
 
 До выполнения последних двух пунктов PR остаётся незавершённым;
 результаты локальных тестов не заменяют обязательные CI и ревью.
@@ -57,3 +57,14 @@ publish-only полей `name`/`description` и warning фиксированно
 Отчёт: `.superpowers/sdd/B09/mime-security-report.md`; сырые команды и exits:
 `.superpowers/sdd/B09/mime-security-logs/`. DEV передан root; два Codex CLI,
 итоговый CI, merge и production-проверка остаются за root.
+
+
+## Закрытие root
+
+Оба фактических Codex CLI пакета
+`db639b4c23c986e5e86d7f25b7a8be94991c076733aed39bca2d49773ee13794`
+завершены без замечаний (уникальных принятых0/0, отклонённых0).
+CI40757652794/source d7c78be зелёный; PR280/merge7962be1,
+masterCI40758483076/run666/attempt1 и production666-7962be1
+проверены root2026-10-28T20:01:14UTC. Runtime Composer metadata подтверждает
+7.4.22. Подробные session/run IDs и границы smoke — в B09.md.

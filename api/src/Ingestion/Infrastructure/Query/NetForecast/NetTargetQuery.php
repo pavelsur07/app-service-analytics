@@ -74,7 +74,7 @@ final readonly class NetTargetQuery
                             WHEN NOT COALESCE(proof.postings_complete, FALSE) OR NOT COALESCE(order_proof.postings_complete, FALSE) THEN 'postings_coverage_missing'
                             WHEN NOT COALESCE(refresh.completed_at > latest.at AND (refresh.failed_at IS NULL OR refresh.completed_at > refresh.failed_at), FALSE) THEN 'returns_coverage_missing'
                             WHEN q.current_d > 0 AND proof.delivery_origin IS NULL THEN 'delivery_observation_unknown'
-                            WHEN COALESCE(returns.client_quantity, 0) > 0 AND (origins.origins > 1 OR origins.unknown_origin AND origins.delivered_quantity > returns.client_quantity) THEN 'ambiguous_delivery_allocation'
+                            WHEN COALESCE(returns.client_quantity, 0) > 0 AND (origins.origins > 1 OR origins.unknown_origin) AND origins.delivered_quantity > returns.client_quantity THEN 'ambiguous_delivery_allocation'
                             WHEN q.current_d > 0 AND ready.age BETWEEN 60 AND 66 THEN 'target_horizon_not_ready'
                             WHEN q.current_d > 0 AND NOT COALESCE(ready.daily_complete, FALSE) THEN 'returns_coverage_missing'
                             WHEN q.current_d > 0 AND ready.age >= 67 AND (ready.deep_completed_at IS NULL OR ready.coverage_through < proof.delivery_origin + INTERVAL '67 days') THEN 'target_readiness_missing'
