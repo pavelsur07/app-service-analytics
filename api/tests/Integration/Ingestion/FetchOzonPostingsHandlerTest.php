@@ -12,8 +12,10 @@ use App\Identity\Domain\MarketplaceAccountRepository;
 use App\Identity\Domain\MarketplaceCredentialsEncryptor;
 use App\Identity\Domain\UserRepository;
 use App\Identity\Domain\ValueObject\MarketplaceAccountState;
+use App\Ingestion\Application\FactCaptureContext;
 use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\MessageHandler\FetchOzonPostingsHandler;
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonPostingsFetcher;
 use App\Ingestion\Infrastructure\Connector\Ozon\OzonPostingFboListClient;
@@ -47,6 +49,21 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
     private const string FULL_DAY_PAGE_2 = __DIR__.'/../../Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-10-20-page-002.json';
     private const string BUYOUT_BEFORE = __DIR__.'/../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-before.json';
     private const string BUYOUT_AFTER = __DIR__.'/../../Fixtures/Marketplace/ozon/ozon-buyout-posting-statuses-after.json';
+
+    public function testReceivedScalarProvenanceReachesTheWriterThroughMessenger(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->syncableAccount($container, 'shop-provenance');
+        $container->set(OzonPostingFboListClient::class, new FakeOzonPostingsFetcher($this->fixtureBody()));
+        $message = $this->messageFor($account, '2026-07-01');
+        $serializer = new \Symfony\Component\Messenger\Transport\Serialization\PhpSerializer();
+        $envelope = $serializer->decode($serializer->encode(new \Symfony\Component\Messenger\Envelope($message, FactCaptureContext::stamps(FactCaptureOrigin::LivePolling))));
+        $bus = $container->get(\Symfony\Component\Messenger\MessageBusInterface::class);
+        self::assertInstanceOf(\Symfony\Component\Messenger\MessageBusInterface::class, $bus);
+        $bus->dispatch($envelope->with(new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async_ingestion')));
+        self::assertSame(['live_polling'], $this->connection($container)->fetchFirstColumn('SELECT capture_origin FROM marketplace_day_load_receipt WHERE company_id = ?', [$account->companyId()->toRfc4122()]));
+        self::assertSame([['capture_origin' => 'live_polling', 'capture_is_initial' => true]], $this->connection($container)->fetchAllAssociative('SELECT DISTINCT capture_origin, capture_is_initial FROM sales_fact_revision WHERE company_id = ?', [$account->companyId()->toRfc4122()]));
+    }
 
     public function testHandlingTheSameMessageTwiceLeavesFactsAndRawDocumentUntouched(): void
     {
@@ -686,9 +703,40 @@ final class FetchOzonPostingsHandlerTest extends KernelTestCase
         $connection = $this->connection($container);
         self::assertSame(0, $this->factCount($connection, $account));
         self::assertSame(1, $this->rawCount($connection, $account));
+        self::assertFalse($connection->fetchOne('SELECT 1 FROM sales_fact_revision WHERE company_id = ? LIMIT 1', [$account->companyId()->toRfc4122()]));
         $mark = $this->dayLoad($connection, $account, '2026-10-19');
         self::assertNull($mark['completed_at']);
         self::assertNotNull($mark['failed_at']);
+    }
+
+    public function testLaterPagePublicationFailureRollsBackAcceptedSalesHistory(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->syncableAccount($container, 'shop-publication-rollback');
+        $invalid = json_decode($this->fixture(self::LONG_DAY_PAGE_2), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($invalid);
+        self::assertIsArray($invalid['postings']);
+        self::assertIsArray($invalid['postings'][0]);
+        self::assertIsArray($invalid['postings'][0]['products']);
+        self::assertIsArray($invalid['postings'][0]['products'][0]);
+        $invalid['postings'][0]['products'][0]['quantity'] = 0;
+        $container->set(OzonPostingFboListClient::class, new FakeSequentialOzonPostingsFetcher([
+            $this->fixture(self::LONG_DAY_PAGE_1), json_encode($invalid, \JSON_THROW_ON_ERROR),
+        ]));
+        $handler = $container->get(FetchOzonPostingsHandler::class);
+        self::assertInstanceOf(FetchOzonPostingsHandler::class, $handler);
+        try {
+            $handler(new FetchOzonPostingsMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-10-19', FactCaptureOrigin::LivePolling));
+            self::fail('Invalid second page must reject the full publication transaction.');
+        } catch (\InvalidArgumentException $failure) {
+            self::assertStringContainsString('quantity must be positive', $failure->getMessage());
+        }
+        $connection = $this->connection($container);
+        self::assertSame(2, $this->rawCount($connection, $account));
+        self::assertSame(0, $this->factCount($connection, $account));
+        self::assertSame(0, $this->statusCount($connection, $account));
+        self::assertFalse($connection->fetchOne('SELECT 1 FROM sales_fact_revision WHERE company_id = ? LIMIT 1', [$account->companyId()->toRfc4122()]));
+        self::assertSame([['status' => 'failed', 'capture_origin' => 'live_polling']], $connection->fetchAllAssociative('SELECT status, capture_origin FROM marketplace_day_load_receipt WHERE company_id = ?', [$account->companyId()->toRfc4122()]));
     }
 
     public function testRepeatedCursorFailsTheDayInsteadOfLoopingOverIt(): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support\Builder;
 
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\SalesFact;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Shared\Domain\ValueObject\Money;
@@ -208,10 +209,10 @@ final class SalesFactBuilder
         );
     }
 
-    public function persistWith(SalesFactRepository $repository): SalesFact
+    public function persistWith(SalesFactRepository $repository, FactCaptureOrigin $origin = FactCaptureOrigin::Unknown): SalesFact
     {
         $fact = $this->build();
-        $repository->upsertAll([$fact]);
+        $repository->upsertAll([$fact], $origin);
 
         return $fact;
     }

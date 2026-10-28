@@ -691,3 +691,38 @@ attempt2 completed/success. Seller/admin HTTP и running api подтвержд�
 prod-аудит клиентского плана и prod load test не заявляются выполненными.
 Итого50/68: этап A реализован, проверен, отревьюен и выпущен. B01 подготовлен
 подробным планом и source audit; B01–B18 пока не завершены. Netforecast до B null.
+
+## Приёмка B01, 2026-10-28
+
+Принят ADR-049: отдельные gross G=D+R и return populations, H60/L7,
+Wgross/Wreturn90, sample100units/30postings, risk30/10, SKU→свойaccount→null.
+Known R не вычитаются повторно; fresh target не обязан дозреть до H+L,
+его training обязан. Truth open ждёт будущий deliveryOrigin+H+L, pending
+не превращается в scored0. Numeric rollout ждёт пригодного B16 holdout.
+Источники показали необходимость immutable accepted sales/returns revisions
+и load receipts: подготовка наблюдений из B15 перенесена в B02 и отражена
+в его подробном плане. Capture-only запуск не считается выпуском B18.
+План сохраняет68 контрольных задач; B02 внутри разбита на простые schema/
+writer/receipts/guards/training шаги, её оценка уточнена по исследованию.
+
+Первый Codex CLI pair принял2 уникальных замечания (gross population и
+component-relative truth), оба исправлены,0 отклонённых. Дополнительный
+7bab05e19c4e gpt-6.1-sol complete0/0, новых уникальных принятых0; root сверил
+реальные JSON/hash/session IDs. Полные receipts в B01.md; Claude пропущен
+по исключению владельца. Только MD/ADR, runtime/DDL ещё не менялись,
+предсказательная точность не заявлена. Итого51/68: A01–A50 и B01 готовы.
+
+## B02: source foundation готов к CI, 2026-10-28
+
+Реализованы accepted revisions sales/returns и immutable load receipts, включая
+пустые успешные загрузки; явный provenance и старый readonly queue wire совместимы.
+Одна pending миграция Version20261028120000 с legacy0 и отдельными postcommit
+VALIDATE для двух CHECK. Fresh db-rebuild-check, фактические local down/up,
+schema validate и E2E7+extension security прошли; точные receipts в B02.md.
+
+Два actual Codex CLI итогового пакета c23d63557848 complete0/0. Из первого
+набора принято1 замечание Builders, исправлено; отклонено0, дополнительных
+уникальных замечаний повторного набора0. Все48 конечных code blob покрыты
+обеими clean ролями. Дальше обязательный CI и capture-only выпуск, после него
+training selection/epoch consumer. **Итого остаётся51/68**: эта часть не закрывает
+B02 и не включает числовой нетто-прогноз.

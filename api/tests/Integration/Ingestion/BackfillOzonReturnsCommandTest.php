@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Ingestion;
 
 use App\Ingestion\Application\Message\FetchOzonReturnsMessage;
+use App\Ingestion\Domain\FactCaptureOrigin;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -66,6 +67,7 @@ final class BackfillOzonReturnsCommandTest extends KernelTestCase
         foreach ($this->transport()->getSent() as $envelope) {
             $message = $envelope->getMessage();
             self::assertInstanceOf(FetchOzonReturnsMessage::class, $message);
+            self::assertSame(FactCaptureOrigin::HistoricalBackfill, $message->captureOrigin());
             self::assertSame(self::COMPANY_ID, $message->companyId);
             self::assertSame(self::ACCOUNT_ID, $message->marketplaceAccountId);
             $ranges[] = [$message->from, $message->to];

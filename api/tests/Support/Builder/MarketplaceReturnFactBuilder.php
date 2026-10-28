@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support\Builder;
 
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\MarketplaceReturnFact;
 use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use Symfony\Component\Uid\Uuid;
@@ -159,10 +160,10 @@ final class MarketplaceReturnFactBuilder
         );
     }
 
-    public function persistWith(MarketplaceReturnFactRepository $repository): MarketplaceReturnFact
+    public function persistWith(MarketplaceReturnFactRepository $repository, FactCaptureOrigin $origin = FactCaptureOrigin::Unknown): MarketplaceReturnFact
     {
         $fact = $this->build();
-        $repository->upsertAll([$fact]);
+        $repository->upsertAll([$fact], $origin);
 
         return $fact;
     }

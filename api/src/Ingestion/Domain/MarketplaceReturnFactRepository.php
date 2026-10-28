@@ -13,5 +13,5 @@ interface MarketplaceReturnFactRepository
      *
      * @param list<MarketplaceReturnFact> $facts
      */
-    public function upsertAll(array $facts): void;
+    public function upsertAll(array $facts, FactCaptureOrigin $origin = FactCaptureOrigin::Unknown): void;
 }

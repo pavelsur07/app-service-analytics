@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Ui\Command;
 
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\MarketplaceRawDocument;
 use App\Ingestion\Domain\MarketplaceRawDocumentRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
@@ -66,7 +67,7 @@ final class ImportOzonReturnsFixtureCommand extends Command
         if ($page->hasNext) {
             throw new \UnexpectedValueException('Returns fixture must contain the complete final page (has_next=false).');
         }
-        $this->returns->upsertAll($page->facts);
+        $this->returns->upsertAll($page->facts, FactCaptureOrigin::RawReplay);
 
         $io->success(\sprintf('Импортировано %d строк возвратов из %s.', \count($page->facts), $fixturePath));
 

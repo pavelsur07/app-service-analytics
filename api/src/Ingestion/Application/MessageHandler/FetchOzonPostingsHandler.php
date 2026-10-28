@@ -10,6 +10,7 @@ use App\Ingestion\Application\Message\FetchOzonPostingsMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonFailureReason;
 use App\Ingestion\Domain\DayLoadMark;
+use App\Ingestion\Domain\FactCaptureOrigin;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
@@ -78,7 +79,7 @@ final readonly class FetchOzonPostingsHandler
      * и в трекер: лимит запросов, неверный период, сбой площадки лечатся
      * повтором, а не переподключением кабинета.
      */
-    public function __invoke(FetchOzonPostingsMessage $message): void
+    public function __invoke(FetchOzonPostingsMessage $message, ?string $captureOrigin = null): void
     {
         $lock = $this->lockFactory->createLock(
             'ozon-postings-'.$message->marketplaceAccountId.'-'.$message->businessDate,
@@ -89,13 +90,14 @@ final readonly class FetchOzonPostingsHandler
         }
 
         try {
-            $this->sync($message, $lock);
+            $origin = null === $captureOrigin ? $message->captureOrigin() : (FactCaptureOrigin::tryFrom($captureOrigin) ?? FactCaptureOrigin::Unknown);
+            $this->sync($message, $lock, $origin);
         } finally {
             $lock->release();
         }
     }
 
-    private function sync(FetchOzonPostingsMessage $message, SharedLockInterface $lock): void
+    private function sync(FetchOzonPostingsMessage $message, SharedLockInterface $lock, FactCaptureOrigin $origin): void
     {
         $target = $this->identityFacade->findOzonSyncTarget($message->companyId, $message->marketplaceAccountId);
         if (null === $target) {
@@ -110,12 +112,12 @@ final readonly class FetchOzonPostingsHandler
         $to = $since->modify('+1 day');
 
         try {
-            $this->loadDay($message, $target, $since, $to, $lock);
+            $this->loadDay($message, $target, $since, $to, $lock, $origin);
         } catch (\Throwable $failure) {
             // Отметка загрузки (ADR-038): raw за день мог уже сохраниться,
             // а факты — нет, и без отметки день выглядел бы загруженным.
             // В причине — тело ответа: код без него не говорит, что не так.
-            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(self::REPORT_TYPE, $since, $since, OzonFailureReason::of($failure, $target->apiKey))], new \DateTimeImmutable());
+            $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(self::REPORT_TYPE, $since, $since, OzonFailureReason::of($failure, $target->apiKey))], new \DateTimeImmutable(), $origin);
 
             throw $failure;
         }
@@ -128,7 +130,7 @@ final readonly class FetchOzonPostingsHandler
      * прочитанных страниц для расследования, но не половину дня в фактах.
      * Порядок тот же, что у возвратов (FetchOzonReturnsHandler).
      */
-    private function loadDay(FetchOzonPostingsMessage $message, OzonSyncTarget $target, \DateTimeImmutable $since, \DateTimeImmutable $to, SharedLockInterface $lock): void
+    private function loadDay(FetchOzonPostingsMessage $message, OzonSyncTarget $target, \DateTimeImmutable $since, \DateTimeImmutable $to, SharedLockInterface $lock, FactCaptureOrigin $origin): void
     {
         $companyId = Uuid::fromString($target->companyId);
         $marketplaceAccountId = Uuid::fromString($target->marketplaceAccountId);
@@ -154,7 +156,7 @@ final readonly class FetchOzonPostingsHandler
 
                 $this->brokenLogger->log($message->companyId, $message->marketplaceAccountId, 'sales', $failure, $target->apiKey);
                 $this->identityFacade->markOzonAccountBroken($message->companyId, $message->marketplaceAccountId);
-                $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(self::REPORT_TYPE, $since, $since, 'Подключение отозвано: '.$failure->getMessage())], new \DateTimeImmutable());
+                $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::failed(self::REPORT_TYPE, $since, $since, 'Подключение отозвано: '.$failure->getMessage())], new \DateTimeImmutable(), $origin);
 
                 return;
             }
@@ -176,8 +178,8 @@ final readonly class FetchOzonPostingsHandler
 
             $page = OzonPostingPage::fromBody($rawBody);
             if (!$page->hasNext) {
-                $this->recordDay($target, $companyId, $marketplaceAccountId, $pages);
-                $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::completed(self::REPORT_TYPE, $since, $since)], new \DateTimeImmutable());
+                $this->recordDay($target, $companyId, $marketplaceAccountId, $pages, $origin);
+                $this->dayLoads->mark($message->companyId, $message->marketplaceAccountId, [DayLoadMark::completed(self::REPORT_TYPE, $since, $since)], new \DateTimeImmutable(), $origin);
 
                 return;
             }
@@ -200,16 +202,16 @@ final readonly class FetchOzonPostingsHandler
      *
      * @param list<array{rawDocumentId: Uuid, rawBody: string}> $pages
      */
-    private function recordDay(OzonSyncTarget $target, Uuid $companyId, Uuid $marketplaceAccountId, array $pages): void
+    private function recordDay(OzonSyncTarget $target, Uuid $companyId, Uuid $marketplaceAccountId, array $pages, FactCaptureOrigin $origin): void
     {
         $observedAt = new \DateTimeImmutable();
 
-        $this->connection->transactional(function () use ($target, $companyId, $marketplaceAccountId, $pages, $observedAt): void {
+        $this->connection->transactional(function () use ($target, $companyId, $marketplaceAccountId, $pages, $observedAt, $origin): void {
             foreach ($pages as ['rawDocumentId' => $rawDocumentId, 'rawBody' => $rawBody]) {
                 $statuses = $this->statusParser->parse($rawBody, $companyId, $marketplaceAccountId, $rawDocumentId, $observedAt);
                 $facts = $this->parser->parse($rawBody, $companyId, $marketplaceAccountId, $rawDocumentId);
                 $this->postingStatuses->recordChanged($target->companyId, $statuses);
-                $this->salesFacts->upsertAll($facts);
+                $this->salesFacts->upsertAll($facts, $origin);
             }
         });
     }
