@@ -772,3 +772,16 @@ B02 сохранён. In-memory formula и readonly empty-source adapter smoke,
 seller/admin pings PASS. Подробности B03.md; numeric/accuracy gates остаются.
 B03 закрыта,53/68. NextB04: apply remaining risk to currentD, whole-scope
 fallback, target agedH+L readiness; B05 по globalplan — OPEN pre-handover.
+
+## Приёмка B04: риск уже выкупленных штук, 2026-10-28
+
+Exact arbitrary-precision currentD×q иretainedD−futureR, wholeSKU→account
+fallback, scope/currentRR/readAt иbound H+Lreadiness реализованы. KnownR
+не вычитается повторно, unknown не становится0. Math теперь explicit в
+Deptrac длятекущихиспользований; новыхзависимостейнет. Unit572/4681+static
+PASS; actual2Codex0/0, exact9/9code/config/testblobsпокрыты.
+PR275 exact39e9CI40685293252 SUCCESS, squash8b36fdf. MasterCI40685926691
+647attempt1/deploy SUCCESS, production647-8b36fdf. All12serviceshealthy,
+7PHPB02epochunchanged, publicseller/internaladminpings иpure runtime math
+smokePASS. Подробные receipts B04.md. B04 закрыта,54/68; actualtarget
+producerB09/quality/numericrollout не объявляютсяготовыми. NextB05 pre-handovergross.
