@@ -726,3 +726,15 @@ schema validate и E2E7+extension security прошли; точные receipts �
 обеими clean ролями. Дальше обязательный CI и capture-only выпуск, после него
 training selection/epoch consumer. **Итого остаётся51/68**: эта часть не закрывает
 B02 и не включает числовой нетто-прогноз.
+
+## B02: source foundation в production, 2026-10-28
+
+[PR272](https://github.com/pavelsur07/app-service-analytics/pull/272) merged
+после6зелёных CI checks. Master6ceaa3ee86941cfa00aa2875dc71ad47c0423477,
+[run40639786803](https://github.com/pavelsur07/app-service-analytics/actions/runs/40639786803)
+attempt2 success, image639-6ceaa3e. Единственная pending migration V20261028120000
+отдельно применена75.4ms/20SQL; два postcommit VALIDATE и up-to-date PASS.
+Readonly production smoke, seller/admin versions и все PHP writers/health
+проверены. Cutover evidence **2026-10-28T05:54:45Z**, accepted_state_v1.
+Подробные receipts/ограничения в B02.md. Consumer epoch config/обучение ещё
+не реализованы; numeric gate закрыт, общий счётчик51/68 сохраняется.

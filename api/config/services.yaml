@@ -8,6 +8,7 @@
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
     app.version: '%env(APP_VERSION)%'
+    net_forecast.capture_epochs_default: '[]'
 
 services:
     # default configuration for services in *this* file
@@ -37,6 +38,10 @@ services:
     # this creates a service per class whose id is the fully-qualified class name
     App\:
         resource: '../src/'
+
+    App\Ingestion\Infrastructure\Config\NetForecastCaptureEpochs:
+        arguments:
+            $epochsJson: '%env(default:net_forecast.capture_epochs_default:NET_FORECAST_CAPTURE_EPOCHS_JSON)%'
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones

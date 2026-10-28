@@ -65,7 +65,7 @@ final class SalesPlanPerformanceSnapshotTest extends KernelTestCase
             self::assertSame('off', $connection->fetchOne('SHOW transaction_read_only'));
             self::assertSame('read committed', $connection->fetchOne('SHOW transaction_isolation'));
         } finally {
-            foreach (['marketplace_posting_status', 'marketplace_day_load', 'sales_fact'] as $table) {
+            foreach (['sales_fact_revision', 'marketplace_day_load_receipt', 'marketplace_posting_status', 'marketplace_day_load', 'sales_fact'] as $table) {
                 $connection->executeStatement('DELETE FROM '.$table.' WHERE company_id = ?', [$company->toRfc4122()]);
             }
             $other->close();

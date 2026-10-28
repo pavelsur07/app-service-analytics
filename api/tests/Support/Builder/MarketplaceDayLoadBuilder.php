@@ -21,6 +21,7 @@ final class MarketplaceDayLoadBuilder
     private Uuid $marketplaceAccountId;
     private string $reportType = MarketplaceReportType::OzonAccrualByDay;
     private \DateTimeImmutable $period;
+    private ?\DateTimeImmutable $endPeriod = null;
     private ?string $failure = null;
     private ?\DateTimeImmutable $at = null;
 
@@ -64,6 +65,16 @@ final class MarketplaceDayLoadBuilder
     {
         $clone = clone $this;
         $clone->period = $period;
+        $clone->endPeriod = null;
+
+        return $clone;
+    }
+
+    public function withRange(\DateTimeImmutable $from, \DateTimeImmutable $to): self
+    {
+        $clone = clone $this;
+        $clone->period = $from;
+        $clone->endPeriod = $to;
 
         return $clone;
     }
@@ -102,11 +113,11 @@ final class MarketplaceDayLoadBuilder
         $at = $this->at ?? new \DateTimeImmutable();
 
         if (null === $this->failure) {
-            $repository->mark($companyId, $accountId, [DayLoadMark::completed($this->reportType, $this->period, $this->period)], $at, $origin);
+            $repository->mark($companyId, $accountId, [DayLoadMark::completed($this->reportType, $this->period, $this->endPeriod ?? $this->period)], $at, $origin);
 
             return;
         }
 
-        $repository->mark($companyId, $accountId, [DayLoadMark::failed($this->reportType, $this->period, $this->period, $this->failure)], $at, $origin);
+        $repository->mark($companyId, $accountId, [DayLoadMark::failed($this->reportType, $this->period, $this->endPeriod ?? $this->period, $this->failure)], $at, $origin);
     }
 }

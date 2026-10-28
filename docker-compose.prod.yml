@@ -81,6 +81,9 @@ x-api-env: &api-env
   # а не данных, — управляемый сервис ради этого не нужен.
   REDIS_URL: redis://redis:6379
   MESSENGER_TRANSPORT_DSN: doctrine://default?auto_setup=0
+  # ADR-049: capture работает всегда, consumer принимает только явно
+  # подтверждённые интервалы. Пустой default не открывает numeric rollout.
+  NET_FORECAST_CAPTURE_EPOCHS_JSON: "${NET_FORECAST_CAPTURE_EPOCHS_JSON:-[]}"
   # Мастер-ключ шифрования credentials площадок (ADR-007). Значение —
   # только в /opt/conwix/.env на сервере, не в git. Его потеря делает
   # все зашифрованные учётные данные площадок невосстановимыми —

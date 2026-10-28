@@ -96,6 +96,19 @@ PhpSerializer roundtrips, retry и non-ingestion no-op: optional promoted пол
 Receipts сохраняют tenant/account/report/window/status/capture time,
 атомарно с текущей отметкой. Они доказывают и успешную пустую загрузку.
 Полнота postings не заменяет полноту returns по их оси visual-change.
+
+Consumer B02 конкретизирует operational coverage как
+`daily_complete_receipts_v1`: LivePolling completed witness полного MSK visual
+дня после его конца в пределах24h, без пропущенных daily observations;
+отдельный сохранённый deep completion закрывает visual дни origin..H
+не раньше origin+H+L и не позже T. Поздний catch-up не восстанавливает onset
+пропущенного дня. Failure требует более позднего однозначного success нужного
+диапазона; одинаковая секунда success/failure остаётся ambiguous, UUID не
+задаёт порядок. Postings требуют доказательств нужных initial/terminal states,
+а не несуществующего60-дневного ежедневного рескана закрытых заказов.
+Это наблюдённая operational полнота, не гарантия будущих событий площадки.
+Точные bounds, DTO/SQL, исключения и проверки —
+[B02-training](../plan/sales-planning-tasks/B02-training.md).
 История изменений сама по себе также не доказывает отсутствие пропущенных
 выгрузок. Все растущие чтения ограничены, companyId первый, SQL/DBAL,
 keyset и индексы; сырьё/очереди/транспорты и зависимости не меняются.
@@ -123,6 +136,13 @@ postings coverage и известными terminal исходами всего �
 и60-дневный возвратный хвост. До передачи знаменатель T1+G+T2+P, после G+T2+P.
 Пример100G+100T1 даёт pGrossPre0.5; отбор только delivered здесь запрещён.
 
+В новой версии account/day gross completeness проверяется до SKU/page filters.
+P95 measurement использует90полных MSK order days после epoch, distinct observed
+postings с known-nonterminal→first-terminal proof, до day-maturity filtering;
+min30 по ADR-029. Это собственный versioned bounded measurement scope модели,
+старый all-history provider и прежние отчёты не меняются. Отсутствие пригодных
+наблюдений не заменяется назначенным сроком доставки.
+
 **Return survival:** только доказанные deliveries с явным delivered observation
 и предыдущим известным статусом, origins в
 [T−H−L−Wreturn, T−H−L), полный H+L, receipts postings/returns и история
@@ -141,6 +161,15 @@ ClientReturn начинается в первой доказанной accepted 
 связи из истории. Изменение количества исходной продажи после origin также
 исключает группу. R>G, отрицательный возраст и противоречивые исходы не
 исправляются молчаливым clipping. Счёт исключений и coverage отражаются явно.
+
+Возраст ClientReturn delta берётся по времени принятого наблюдения, не
+visual-status timestamp. Horizon полуоткрытый `[origin,origin+60d)`:
+F(a) считает события строго до origin+a, bins0..59 и boundary60. Event ровноH
+не включается. Known non-ClientReturn→ClientReturn начинает R новым временем,
+если source quantities/outcomes непротиворечивы; не всякий type change
+автоматически нарушает monotone curve. Обратное из ClientReturn, decrease,
+перенос связи или противоречие исключают затронутые группы. Same-second
+события разных источников без ordering proof остаются ambiguous.
 
 Исторические срезы mutable таблиц не признаются таким dataset. Узкий
 retrospectively-stable subset имеет selection bias и маркируется отдельно;
@@ -164,6 +193,21 @@ H+L/coverage; до неё оценка недоступна. При a<H и пу�
 q в0..1; fallback целой выбранной оценки SKU→свой account→null. Числители
 и знаменатели разных источников fallback не смешиваются; scope и samples
 сохраняются в diagnostics. Группа без нужной выборки не получает q=0.
+
+Количество alive postings после частичного R не всегда идентифицируемо:
+multi-posting order/SKU не имеет физической R-аллокации. Initial sample
+postings считается exact distinct; возрастной профиль явно называется
+`atRiskPostingsLowerBound`. Порог10 не ослаблен: lowerBound>=10 доказывает
+actual>=10. Для group remaining D=G−R_a bound — минимальное k, чьи k largest
+original posting capacities в сумме покрывают D. Дополнительно capacity_i>R_a
+даёт guaranteed posting ID. В order берётся max(distinct guaranteed ID union
+по SKU, max group bound); по orders bound суммируется только при доказанном
+posting→oneorder и согласованном origin. Без identity proof — unavailable.
+Не суммировать minima разных SKU одного order, не выдумывать аллокацию R,
+не исключать такие группы из quantity/CDF population ради min sample.
+Bound и его консервативность отражаются в diagnostics; недостаточный proof
+даёт nullable assessment/fallback. Метод и примеры —
+[B02-posting-risk](../plan/sales-planning-tasks/B02-posting-risk.md).
 
 ```text
 futureReturns = Σ currentD_i × q(age_i)
