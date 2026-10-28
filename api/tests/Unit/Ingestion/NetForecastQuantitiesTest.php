@@ -14,6 +14,17 @@ final class NetForecastQuantitiesTest extends TestCase
         self::assertTrue(class_exists(NetForecastQuantities::class), 'Exact net quantities value must exist.');
     }
 
+    public function testDecimalPublicationRoundsOnlyTheExactScope(): void
+    {
+        $third = NetForecastQuantities::fromComponents('0', '1', '0', '1', '1', '3');
+        self::assertSame('0.333', $third->expectedNetDecimal());
+        self::assertSame('1.000', $third->plus($third)->plus($third)->expectedNetDecimal());
+        self::assertSame('0.001', NetForecastQuantities::fromComponents('0', '1', '0', '1', '1', '2000')->expectedNetDecimal());
+        self::assertSame('9223372036854775807.500', NetForecastQuantities::fromComponents('9223372036854775808', '0', '1', '2', '0', '1')->expectedNetDecimal());
+        self::assertSame('18446744073709551616.000', NetForecastQuantities::fromComponents('18446744073709551616', '0', '0', '1', '0', '1')->expectedNetDecimal());
+        self::assertSame('0.000', NetForecastQuantities::zero()->expectedNetDecimal());
+    }
+
     public function testSeventyMinusFivePlusTwentyFiveIsNinety(): void
     {
         $q = NetForecastQuantities::fromComponents('70', '50', '10', '2', '75', '3');

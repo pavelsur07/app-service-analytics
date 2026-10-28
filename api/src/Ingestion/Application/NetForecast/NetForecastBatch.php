@@ -21,6 +21,7 @@ final readonly class NetForecastBatch
         public ?string $unavailableReason,
         public ?Money $expectedNetRevenue,
         public ?string $moneyUnavailableReason,
+        public ?NetForecastSeries $series = null,
     ) {
     }
 }

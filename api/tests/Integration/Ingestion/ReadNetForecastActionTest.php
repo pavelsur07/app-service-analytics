@@ -13,6 +13,7 @@ use App\Ingestion\Application\NetForecast\BuildPreHandoverGrossRateAction;
 use App\Ingestion\Application\NetForecast\BuildReturnCurveAction;
 use App\Ingestion\Application\NetForecast\NetForecastBatch;
 use App\Ingestion\Application\NetForecast\NetForecastPart;
+use App\Ingestion\Application\NetForecast\NetForecastSeriesRequest;
 use App\Ingestion\Application\NetForecast\NetTrainingReadException;
 use App\Ingestion\Application\NetForecast\ReadNetForecastAction;
 use App\Ingestion\Application\NetForecast\ReadNetTrainingAction;
@@ -91,6 +92,29 @@ final class ReadNetForecastActionTest extends KernelTestCase
                 self::assertSame(0, $clock->calls);
             }
         }
+    }
+
+    public function testSeriesRequestMatchesTargetsBeforeEmptyShortcutAndSharesReadSnapshot(): void
+    {
+        [$db, $f] = $this->fixture();
+        $clock = $this->clock($f);
+        $empty = $this->request($f, []);
+        foreach ([new NetForecastSeriesRequest(['SKU'], $empty->from, $empty->to), new NetForecastSeriesRequest([], $empty->from->modify('-1 day'), $empty->to)] as $mismatch) {
+            $db->resetObservations();
+            try {
+                ($this->action($db, $f, $clock))($f->company->toRfc4122(), $f->account->toRfc4122(), $empty, seriesRequest: $mismatch);
+                self::fail('Mismatched series must be rejected before empty shortcut.');
+            } catch (\InvalidArgumentException) {
+                self::assertSame([], $db->sql);
+                self::assertSame(0, $clock->calls);
+            }
+        }
+        $this->terminalZero($f);
+        $target = $this->request($f);
+        $result = ($this->action($db, $f, $clock))($f->company->toRfc4122(), $f->account->toRfc4122(), $target, seriesRequest: new NetForecastSeriesRequest($target->marketplaceSkus, $target->from, $target->to));
+        self::assertNull($result->unavailableReason);
+        self::assertSame('0.000', $result->series?->skus[0]->points[0]->period->quantities?->expectedNetDecimal());
+        self::assertSame(1, $clock->calls);
     }
 
     public function testAccumulationCannotSilentlyExtendPast184CalendarDays(): void

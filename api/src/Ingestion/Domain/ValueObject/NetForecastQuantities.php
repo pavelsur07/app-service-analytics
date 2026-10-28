@@ -6,6 +6,7 @@ namespace App\Ingestion\Domain\ValueObject;
 
 use Brick\Math\BigInteger;
 use Brick\Math\BigRational;
+use Brick\Math\RoundingMode;
 
 /** Exact full net quantities, without rounding or public arithmetic-library types. */
 final readonly class NetForecastQuantities
@@ -80,6 +81,11 @@ final readonly class NetForecastQuantities
             self::sum($this->future, $other->future),
             self::sum($this->retained, $other->retained),
         );
+    }
+
+    public function expectedNetDecimal(): string
+    {
+        return (string) BigRational::ofFraction($this->expectedNetNumerator, $this->expectedNetDenominator)->toScale(3, RoundingMode::HalfUp);
     }
 
     private static function sum(BigRational $a, BigRational $b): BigRational
