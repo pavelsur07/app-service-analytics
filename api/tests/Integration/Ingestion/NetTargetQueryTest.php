@@ -223,6 +223,30 @@ final class NetTargetQueryTest extends KernelTestCase
         }
     }
 
+    public function testFullReturnChronologyIncludesZeroOneOrTwoKnownOriginsAndInitialCapacity(): void
+    {
+        foreach ([[1, 13], [0, 20], [2, 5]] as [$known, $initialQuantity]) {
+            foreach ([['-1 hour', 'contradictory_quantity'], ['-3 hours', null], ['-2 hours', 'contradictory_quantity']] as [$initialAt, $reason]) {
+                [$db, $f] = $this->fixture();
+                if ($known > 0) {
+                    $f->delivered('A', 'SKU', 7, $f->readAt->modify('-2 days'), 'ORDER');
+                }
+                if (2 === $known) {
+                    $f->delivered('B', 'SKU', 8, $f->readAt->modify('-1 day'), 'ORDER');
+                }
+                $f->sale('INITIAL', 'SKU', $initialQuantity, 'delivered', $f->readAt->modify($initialAt), 'ORDER');
+                $f->returned('ORDER', 'SKU', 20, $f->readAt->modify('-2 hours'));
+                $f->currentReturns();
+                $batch = $this->read($db, $f);
+                self::assertSame($reason, $batch->unavailableReason, 'knownOrigins='.$known.' initialAt='.$initialAt);
+                $parts = array_column($batch->skus[0]->days[0]->groups[0]->parts, null, 'sourceRowId');
+                self::assertNull($parts['INITIAL']->deliveryOrigin, 'An accepted capacity witness is never a model delivery origin.');
+                self::assertSame(null === $reason ? 0 : null, $parts['INITIAL']->currentD);
+                self::assertSame($reason, $parts['INITIAL']->unavailableReason);
+            }
+        }
+    }
+
     public function testNestedAndGlobalBudgetsRejectWholeBatchBeforeJson(): void
     {
         [$db, $f] = $this->fixture();

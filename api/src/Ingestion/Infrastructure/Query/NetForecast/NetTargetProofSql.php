@@ -321,7 +321,7 @@ final class NetTargetProofSql
                 SELECT order_number, marketplace_sku
                 FROM (
                     SELECT order_number, marketplace_sku, delivered_quantity AS balance, TRUE AS multiple_origins
-                    FROM target_group_origins WHERE origins > 1
+                    FROM target_group_origins WHERE origins > 1 OR unknown_origin
                     UNION ALL
                     SELECT order_number, marketplace_sku, -client_quantity, FALSE FROM target_group_returns
                 ) balances GROUP BY order_number, marketplace_sku

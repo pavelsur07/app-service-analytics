@@ -521,6 +521,36 @@ final class ReadNetForecastActionTest extends KernelTestCase
         }
     }
 
+    public function testInitialCapacityCannotFinanceFullReturnBeforeItsWitness(): void
+    {
+        foreach ([[1, 13], [0, 20], [2, 5]] as [$known, $initialQuantity]) {
+            foreach ([['-1 hour', 'contradictory_quantity'], ['-3 hours', null], ['-2 hours', 'contradictory_quantity']] as [$initialAt, $reason]) {
+                [$db, $f] = $this->fixture();
+                if ($known > 0) {
+                    $f->delivered('A', 'SKU', 7, $f->readAt->modify('-2 days'), 'ORDER');
+                }
+                if (2 === $known) {
+                    $f->delivered('B', 'SKU', 8, $f->readAt->modify('-1 day'), 'ORDER');
+                }
+                $f->sale('INITIAL', 'SKU', $initialQuantity, 'delivered', $f->readAt->modify($initialAt), 'ORDER');
+                $f->returned('ORDER', 'SKU', 20, $f->readAt->modify('-2 hours'));
+                $f->currentReturns();
+                $batch = $this->read($db, $f);
+                self::assertSame($reason, $batch->unavailableReason, 'knownOrigins='.$known.' initialAt='.$initialAt);
+                $group = $batch->skus[0]->days[0]->groups[0];
+                foreach ([$batch, $batch->skus[0], $batch->skus[0]->days[0], $group, ...$group->parts] as $node) {
+                    self::assertSame($reason, $node->unavailableReason);
+                    if (null === $reason) {
+                        self::assertSame('0', $node->quantities?->expectedNetNumerator);
+                        self::assertSame('1', $node->quantities->expectedNetDenominator);
+                    } else {
+                        self::assertNull($node->quantities);
+                    }
+                }
+            }
+        }
+    }
+
     public function testMissingDailyProofOrEpochNeverBecomesZero(): void
     {
         [$db, $f] = $this->fixture(training: true);
