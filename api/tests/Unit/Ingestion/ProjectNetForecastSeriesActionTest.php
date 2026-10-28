@@ -38,6 +38,43 @@ final class ProjectNetForecastSeriesActionTest extends TestCase
         self::assertSame(1, $period->period->expectedNetRevenue?->minorAmount());
     }
 
+    public function testCumulativePrecisionFailurePrecedesLaterMissingPriceAcrossHiddenPrefix(): void
+    {
+        $denominator = '1'.str_repeat('0', 8192);
+        $doubleDenominator = '2'.str_repeat('0', 8192);
+        foreach ([false, true] as $missingFirst) {
+            $days = [
+                self::day('2026-08-31', denominator: $denominator, price: $missingFirst ? null : '1'),
+                self::day('2026-09-01', denominator: $doubleDenominator),
+                self::day('2026-09-02', denominator: $denominator, price: $missingFirst ? '1' : null),
+            ];
+            self::assertNull($days[1]->exactRevenue()->unavailableReason());
+            $referenceRevenue = NetForecastRevenue::empty();
+            $referenceQuantity = NetForecastQuantities::zero();
+            foreach ($days as $day) {
+                self::assertNotNull($day->quantities);
+                $referenceRevenue = $referenceRevenue->plus($day->exactRevenue());
+                $referenceQuantity = $referenceQuantity->plus($day->quantities);
+            }
+            $expectedReason = $missingFirst ? 'money_price_missing' : 'money_precision_exceeded';
+            self::assertSame($expectedReason, $referenceRevenue->unavailableReason());
+            $expectedQuantity = NetForecastQuantities::fromComponents('0', '3', '0', '1', '1', '4'.str_repeat('0', 8191));
+            self::assertSame(get_object_vars($expectedQuantity), get_object_vars($referenceQuantity));
+            $batch = self::batch($days);
+            $carry = NetForecastRevenue::empty();
+            $series = (new ProjectNetForecastSeriesAction())->projectSku($batch->skus[0], self::request('2026-09-01', '2026-09-02', 'month', '2026-08-31'), static function (): void {}, $carry);
+            self::assertNotNull($series);
+            $point = $series->points[0];
+            self::assertSame($expectedReason, $point->cumulative->moneyUnavailableReason);
+            self::assertSame($expectedReason, $carry->unavailableReason(), 'Final carry feeds original raw SKU and batch publication.');
+            self::assertSame($missingFirst ? 'money_precision_exceeded' : 'money_price_missing', $point->period->moneyUnavailableReason);
+            self::assertNull($point->cumulative->expectedNetRevenue);
+            self::assertNull($point->cumulative->unavailableReason);
+            self::assertNotNull($point->cumulative->quantities);
+            self::assertSame(get_object_vars($referenceQuantity), get_object_vars($point->cumulative->quantities));
+        }
+    }
+
     public function testHalfMinorChildrenAreNotAddedAfterRounding(): void
     {
         $days = [self::day('2026-08-01', denominator: '2'), self::day('2026-08-02', denominator: '2')];

@@ -15,18 +15,6 @@ final class NetForecastRevenueTest extends TestCase
         self::assertTrue(class_exists(NetForecastRevenue::class), 'Exact revenue value must exist.');
     }
 
-    public function testAggregationStateDistinguishesNeutralFailureAndNativeOverflow(): void
-    {
-        self::assertSame(['currency' => null, 'failure' => null], NetForecastRevenue::empty()->aggregationState());
-        self::assertSame(['currency' => null, 'failure' => 'money_currency_missing'], NetForecastRevenue::fromSource('1', null, self::quantity())->aggregationState());
-        self::assertSame(['currency' => 'RUB', 'failure' => null], self::value('0')->aggregationState());
-        $overflow = self::value((string) \PHP_INT_MAX, '2');
-        self::assertSame(['currency' => 'RUB', 'failure' => null], $overflow->aggregationState());
-        self::assertSame('{}', json_encode($overflow, \JSON_THROW_ON_ERROR));
-        $this->expectException(\OverflowException::class);
-        $overflow->toMoney();
-    }
-
     public function testRoundingHappensOnlyAfterExactSum(): void
     {
         $half = self::value('1', '1', '2');

@@ -72,7 +72,6 @@ final readonly class ProjectNetForecastSeriesAction
         $publishedRevenue = null;
         $cumulative = $period = $zero;
         $cumulativeRevenue = $periodRevenue = $emptyRevenue;
-        $orderedCurrency = $orderedMoneyFailure = null;
         $cumulativeReason = $periodReason = null;
         $cumulativeBasis = $periodBasis = $cumulativeReasons = $periodReasons = [];
         $points = [];
@@ -81,21 +80,10 @@ final readonly class ProjectNetForecastSeriesAction
         foreach ($sku->days as $day) {
             $guard();
             [$basis, $reasons] = $this->quality($day, $guard);
-            // Exact numeric sums may be folded; first failure and currency order may not.
-            $state = $day->exactRevenue()->aggregationState();
-            if (null === $orderedMoneyFailure) {
-                $orderedMoneyFailure = $state['failure'];
-                if (null === $orderedMoneyFailure && null !== $state['currency']) {
-                    if (null !== $orderedCurrency && $orderedCurrency !== $state['currency']) {
-                        $orderedMoneyFailure = 'money_currency_mismatch';
-                    }
-                    $orderedCurrency = $state['currency'];
-                }
-            }
+            // Monetary failure order includes arithmetic precision checks across bucket boundaries.
+            $cumulativeRevenue = $this->addRevenue($cumulativeRevenue, $day->exactRevenue(), $guard);
             if ($day->businessDate < $bucketFrom) {
                 $cumulative = $this->add($cumulative, $day->quantities, $day->unavailableReason, $guard);
-                $cumulativeRevenue = $this->addRevenue($cumulativeRevenue, $day->exactRevenue(), $guard);
-                $orderedMoneyFailure ??= $cumulativeRevenue->aggregationState()['failure'];
                 $cumulativeReason = self::reason($cumulativeReason, $day->unavailableReason ?? (null === $day->quantities ? 'quantity_unavailable' : null));
                 $cumulativeBasis += $basis;
                 $cumulativeReasons += $reasons;
@@ -103,19 +91,12 @@ final readonly class ProjectNetForecastSeriesAction
             }
             $period = $this->add($period, $day->quantities, $day->unavailableReason, $guard);
             $periodRevenue = $this->addRevenue($periodRevenue, $day->exactRevenue(), $guard);
-            $orderedMoneyFailure ??= $periodRevenue->aggregationState()['failure'];
             $periodReason = self::reason($periodReason, $day->unavailableReason ?? (null === $day->quantities ? 'quantity_unavailable' : null));
             $periodBasis += $basis;
             $periodReasons += $reasons;
             if ($day->businessDate === $bucketTo) {
-                // Only exact transient accumulators feed the prefix, never published Money.
+                // Quantity chunks remain exact; monetary prefix already follows daily chronology.
                 $cumulative = $this->add($cumulative, $period, $periodReason, $guard);
-                if (null === $orderedMoneyFailure) {
-                    $cumulativeRevenue = $this->addRevenue($cumulativeRevenue, $periodRevenue, $guard);
-                    $orderedMoneyFailure = $cumulativeRevenue->aggregationState()['failure'];
-                } elseif ($cumulativeRevenue->aggregationState()['failure'] !== $orderedMoneyFailure) {
-                    $cumulativeRevenue = NetForecastRevenue::unavailable($orderedMoneyFailure);
-                }
                 $cumulativeReason = self::reason($cumulativeReason, $periodReason);
                 $cumulativeBasis += $periodBasis;
                 $cumulativeReasons += $periodReasons;
