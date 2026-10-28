@@ -738,3 +738,24 @@ Readonly production smoke, seller/admin versions и все PHP writers/health
 проверены. Cutover evidence **2026-10-28T05:54:45Z**, accepted_state_v1.
 Подробные receipts/ограничения в B02.md. Consumer epoch config/обучение ещё
 не реализованы; numeric gate закрыт, общий счётчик51/68 сохраняется.
+
+## Приёмка B02: training consumer в production, 2026-10-28
+
+Обе bounded account-wide populations с trusted accepted-state history,
+current read-only RR, полными coverage proofs и typed diagnostics реализованы.
+Четыре уникальных замечания независимых Codex CLI приняты/исправлены,
+отклонённых0; итоговые роли0/0,35/35 source/config/test blobs покрыты.
+Последние affected34/246, fullintegration772/18184, static gates PASS.
+Strict noisy plain4068/4403ms <5s, без ослабления caps/planner/выборок.
+
+[PR273](https://github.com/pavelsur07/app-service-analytics/pull/273), exact
+fc49 CI40675962337 SUCCESS, expected-head squash446126e. Master
+CI40676598749/run643 attempt1 и deploy SUCCESS; image643-446126e у всех
+PHPservices. Все12сервисов running/настроенные healthchecks healthy.
+Trusted epoch принят всеми7PHPservices: start2026-10-28T05:54:45Z,
+accepted_state_v1, исходный cutover639-6ceaa3e сохранён. Readonly smoke
+пустого и явного config, seller/admin version pings PASS. Собственная
+большая synthetic fixture очищена,14scoped EXISTS false.
+
+Полные receipts/идентификаторы/разбор в B02-consumer-release.md и
+B02-training.md. B02 закрыта,52/68; numeric forecast/accuracy ждут B03–B18.

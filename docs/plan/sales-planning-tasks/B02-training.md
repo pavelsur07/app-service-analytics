@@ -680,3 +680,15 @@ package prepare и держит HEAD неизменным до обоих CLI co
 Всего принято4уникальных findings, отклонённых0; invalidated round3 не
 считается успешным review. Новый valid2CLI/CI pending root. Fixture37816
 idlehold и runtime передаются root, mandatory finalcleanup остаётся pending.
+
+## Финальная приёмка root
+
+Actual final2Codex CLI packagec4b0198609ac complete/exit0/hashmatch0/0,
+all4accepted findings fixed, rejected0, exact35/35code/config/testcoverage.
+Exactfc49CI40675962337 и masterCI40676598749 GREEN; PR273 merged446126e,
+production643-446126e. Epoch start05:54:45UTC/cutover639 сохранён, parsed
+config одинаков у7PHPservices;12running/healthy, readonly consumer smoke и
+seller/admin pings PASS. Retainedfixture37816 cleanup finallyexit0,
+manifestcleaned,14scoped EXISTSfalse. Readiness rootreview/CI/finalcleanup
+завершён. Подробные permanent receipts в B02-consumer-release.md.
+B02 закрыта52/68; B15manifest/B16quality не подменялись synthetic validation.

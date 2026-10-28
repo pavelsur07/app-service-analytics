@@ -41,12 +41,12 @@
 
 ## Чек-лист готовности
 
-- [ ] Final source hashes и все required проверки сверены.
-- [ ] Два Codex CLI, triage и повторные проверки завершены.
-- [ ] PR/CI/merge/deploy точной версии завершены без обхода гейтов.
-- [ ] Trusted epoch config и все PHP services проверены.
-- [ ] Production readonly smoke/health и собственный fixture cleanup подтверждены.
-- [ ] Receipts сохранены; B02 закрыта без claim numeric/accuracy готовности.
+- [x] Final source hashes и все required проверки сверены.
+- [x] Два Codex CLI, triage и повторные проверки завершены.
+- [x] PR/CI/merge/deploy точной версии завершены без обхода гейтов.
+- [x] Trusted epoch config и все PHP services проверены.
+- [x] Production readonly smoke/health и собственный fixture cleanup подтверждены.
+- [x] Receipts сохранены; B02 закрыта без claim numeric/accuracy готовности.
 
 Подготовка: host compose config rendered с `/dev/null` вместо env-файла и
 dummy required values; default[]/explicit JSON сохранены как scalar у7PHP
@@ -180,3 +180,90 @@ Gross SHA256 `1f77766c53a55cd7f4d2a7fb9500064264b3d08b2bd7bf3af173f2abe4466c1f`,
 Source SQL SHA256 `6cd9fbcf1967241711a670a2a6a8dd7ab2d99b8d8559515d447c8008acd2ee07`.
 Следуют committed snapshot, новый CI и actual2CLI; старый GREEN CI не
 объявляется проверкой нового diff. Merge/deploy пока не выполнялись.
+
+## Итоговое независимое ревью — 2026-10-28
+
+Committed HEAD `fc49a9cb485aa52c1fff0b275dbc587ca9787e72` создан и опубликован
+ДО подготовки пакета; весь HEAD/source/context не менялся до обоих ответов.
+Пакет `c4b0198609acda9a025f4e8b982a6258ba00cd4d60c5ab75235c1100e01a4036`.
+Оба реальных Codex CLI v0.164.0 завершились complete/exit0 с совпавшим
+SHA256; фактическая модель из stderr `gpt-6.1-sol`.
+
+- Conformity `20261028T105604.457389Z-c4b0198609ac-codex-njrnixzf`,
+  session `01a18227-206f-7c63-8e90-c8b123ff3f7d`: 0 новых замечаний.
+- Defects `20261028T105604.447541Z-c4b0198609ac-defects-j94voth5`,
+  session `01a18227-2067-7c11-bc21-2ff1c728e298`: 0 новых замечаний.
+
+Все4 уникальных ранее принятых findings исправлены; отклонённых0.
+Additional unique accepted counts по последовательным валидным проходам:
+round1 conformity1/defects1, round2 conformity0/defects1, round3 conformity0
+и invalid defects не засчитан, round4 conformity0/defects1, final0/0.
+Нумерация и triage всех действительных предыдущих прогонов приложены.
+После завершения обоих CLI exact-blob audit подтвердил35/35 non-MD файлов
+всего branch diff относительно6ce; missing0/errors0. Рабочий артефакт
+`var/sales-planning-review-coverage.json`, постоянный результат сохранён здесь.
+
+Новый [CI40675962337](https://github.com/pavelsur07/app-service-analytics/actions/runs/40675962337)
+проверяет exact fc49a9c; его завершение, retained fixture cleanup и выпуск
+пока ожидаются. Root stdin37816 недоступен в собственной process namespace;
+cleanup поручен тому же child, которому принадлежит retained session.
+Это локальная тестовая очистка, production не затрагивается.
+
+## Приёмка исходников и merge — 2026-10-28
+
+Exact fc49a9c [CI40675962337](https://github.com/pavelsur07/app-service-analytics/actions/runs/40675962337)
+SUCCESS: все обязательные backend/frontend/services/e2e/contract+audit/filters.
+Сборка image/deploy на feature branch штатно skipped. Перед merge проверены
+ready PR, CLEAN/MERGEABLE, base6ce, exact headfc49 и0 review threads.
+Expected-head squash merge [PR273](https://github.com/pavelsur07/app-service-analytics/pull/273)
+выполнен `2026-10-28T11:00:40Z`, merge commit
+`446126efe3dc99fb87daec0a5e2ea40a8e6d4ec2`. Обходов CI/review/admin/force
+не использовали; master локально не checkout.
+
+Benchmark cleanup выполнен владельцем session37816: cleanup/finally exit0,
+manifest cleaned. Readonly scoped EXISTS по7таблицам×2ownscopes — все14false,
+данные fixture отсутствуют. Proof `/tmp/b02-training-cleanup-proof.json`,
+проверено root; production этим cleanup не затрагивался. Никаких reset
+базы/томов, globalfactCOUNT и чужих удалений не было.
+
+Штатный master image/deploy и physical epoch consumer activation ещё
+ожидаются; B02 и глобальный счётчик51/68 пока не закрыты. Эти фактические
+post-merge receipts пока локальные и будут сохранены с продолжением плана.
+
+## Production verification и закрытие B02 — 2026-10-28
+
+[Master CI40676598749](https://github.com/pavelsur07/app-service-analytics/actions/runs/40676598749),
+run643/attempt1, merge446126e — SUCCESS, включая image и штатный deploy.
+Новых миграций consumer не принёс; штатный up-to-date gate пройден.
+Все12сервисов running, все настроенные healthchecks healthy. API и все6PHP
+workers используют image `643-446126e`, ozon-fetcher также с этим тегом.
+
+До config readonly consumer smoke подтвердил empty-default failclosed:
+нет trusted epoch, source_history_unavailable, транзакция закрыта.
+Затем приложение в новом image сгенерировало UUIDv7
+`01a18233-77aa-78ea-bdce-9d5b273a286f`. Существующей epoch строки в.env не
+было. Атомарно добавлена только несекретная NET_FORECAST_CAPTURE_EPOCHS_JSON,
+остальное содержимое/права сохранены; после этого штатно обновлены7PHPservices.
+
+Epoch: accepted_state_v1, startUtc `2026-10-28T05:54:45Z`, endUtc null,
+cutoverRelease `639-6ceaa3e`. Сохранена исходная подтверждённая граница всех
+capture writers; совместимый consumer deploy не начал историю заново.
+Fingerprint конфигурации
+`d8c29f03bb72e6b886fbd05aed5d906afa05c83a688b35ddd0750020dcd70e5c`
+проверен одинаковым у всех7PHPservices вместе с parsedepoch/версией/start/release.
+
+Финальный bounded readonly RR smoke нового action прошёл для заведомо
+отсутствующих company/account: account/SKU scope rows, unavailable gross
+при отсутствии maturity, пустая return population без выдуманной вероятности,
+закрытая транзакция. Реальные бизнес-значения не читались/не выводились,
+marketplace API и synthetic production writes не выполнялись. После refresh
+nginx конфиг проверен/перечитан; public seller ping и internal admin ping
+`2026-10-28T11:11:39Z`/`11:11:40Z` подтвердили `643-446126e`.
+
+Readiness завершён, B02 закрыта; общий прогресс52/68. Числовой нетто-прогноз
+и predictive accuracy этим выпуском не объявляются готовыми. Следующая B03
+работает с проверенными count/profile inputs, B15 historical manifest и
+B16/B17 quality gate остаются отдельными задачами. Локальные receipts:
+`var/sales-planning-b02-consumer-{master-ci-final,services-epoch,release-receipt}.json`,
+smoke-preconfig/final.log, health-preconfig/final.txt, seller/admin-ping.json,
+epoch-config.log и config-refresh.log; основные результаты сохранены здесь.
