@@ -7,6 +7,7 @@ import { PerformanceAttainment } from './PerformanceAttainment'
 import { PerformanceQuality } from './PerformanceQuality'
 import { PerformanceBuyout } from './PerformanceBuyout'
 import { PerformanceForecast } from './PerformanceForecast'
+import { PerformanceNetForecast } from './PerformanceNetForecast'
 import { moscowToday } from '../lib/performanceWindow'
 
 export function PerformanceGrid({
@@ -28,7 +29,8 @@ export function PerformanceGrid({
     >
       <table className="w-full text-sm">
         <caption className="pb-3 text-left text-text-secondary">
-          Исходная цель и наблюдаемые результаты. Только эта страница SKU.
+          Исходная цель, наблюдаемые результаты и прогнозы. Только эта страница
+          SKU.
         </caption>
         <thead>
           <tr className="border-b border-border-default">
@@ -95,6 +97,7 @@ export function PerformanceGrid({
                       <PerformanceAttainment value={value} />
                       <PerformanceBuyout cohort={value.cohort} />
                       <PerformanceForecast cohort={value.cohort} />
+                      <PerformanceNetForecast cohort={value.cohort} />
                     </div>
                   </td>
                 )

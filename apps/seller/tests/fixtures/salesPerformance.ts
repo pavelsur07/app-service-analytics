@@ -106,3 +106,49 @@ export const performanceFixture = {
     },
   ],
 } satisfies components['schemas']['SalesPlanPerformanceResponse']
+
+const point = performanceFixture.skus[0]?.points[0]
+if (point === undefined) throw new Error('Missing performance fixture point')
+
+// Synthetic allowed response for presentation tests; not production quality evidence.
+export const netPerformanceFixture: components['schemas']['SalesPlanPerformanceResponse'] =
+  {
+    ...performanceFixture,
+    netForecast: {
+      ...performanceFixture.netForecast,
+      validationStatus: 'release_approved',
+      assessmentStatus: 'assessed',
+    },
+    skus: [
+      {
+        marketplaceSku: 'SKU-1',
+        points: [
+          {
+            ...point,
+            period: {
+              ...point.period,
+              cohort: {
+                ...point.period.cohort,
+                observedNetSalesQuantity: 70,
+                currentProjectedBuyoutQuantity: 95,
+                expectedNetSalesQuantity: '90.125',
+                expectedNetRevenue: {
+                  minor: '12345',
+                  currency: 'RUB',
+                  fractionDigits: 2,
+                },
+                netForecastUnavailableReason: null,
+                netForecastMoneyUnavailableReason: null,
+                netForecastQuality: {
+                  trainingScopes: ['sku', 'account'],
+                  componentReasons: [],
+                  validationStatus: 'release_approved',
+                  assessmentStatus: 'assessed',
+                },
+              },
+            },
+          },
+        ],
+      },
+    ],
+  }
