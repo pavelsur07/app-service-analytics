@@ -7,6 +7,32 @@ namespace App\Ingestion\Domain\ValueObject;
 /** Component truth is anchored to actual delivery/terminal observations, never request age. */
 final class NetForwardTruth
 {
+    /**
+     * Open input units may resolve into delivered, returned, or terminal outcomes.
+     * Rebuild the pre-ClientReturn delivered amount from the complete later frame.
+     */
+    public static function deliveredBaselineForOpenInput(int $rawQuantity, ?int $currentD, ?int $knownR, ?int $t1, ?int $t2, ?int $p, ?int $openPre, ?int $openPost, ?int $unknown): ?int
+    {
+        if ($rawQuantity < 0 || null === $currentD || null === $knownR || null === $t1 || null === $t2 || null === $p || null === $openPre || null === $openPost || null === $unknown
+            || $currentD < 0 || $knownR < 0 || $t1 < 0 || $t2 < 0 || $p < 0 || $openPre < 0 || $openPost < 0 || $unknown < 0
+            || 0 !== $openPre || 0 !== $openPost || 0 !== $unknown) {
+            return null;
+        }
+        $outcomes = [$currentD, $knownR, $t1, $t2, $p, $openPre, $openPost, $unknown];
+        $total = 0;
+        foreach ($outcomes as $quantity) {
+            if ($quantity > \PHP_INT_MAX - $total) {
+                return null;
+            }
+            $total += $quantity;
+        }
+        if ($total !== $rawQuantity || $currentD > \PHP_INT_MAX - $knownR) {
+            return null;
+        }
+
+        return $currentD + $knownR;
+    }
+
     /** @param list<NetForwardReturnDelta> $returns */
     public static function delivered(int $remainingAtInput, \DateTimeImmutable $origin, \DateTimeImmutable $inputAt, \DateTimeImmutable $truthAt, array $returns, bool $openAtInput, bool $coverage): NetForwardTruthResult
     {

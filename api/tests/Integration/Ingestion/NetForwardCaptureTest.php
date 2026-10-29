@@ -172,6 +172,37 @@ final class NetForwardCaptureTest extends KernelTestCase
             $result = $replay($company, $account, $request->requestId, $verified->publication->root->sha256);
             self::assertNotNull($result->quantities);
             self::assertSame($summary['quantities'], $codec->decode($codec->encode(['value' => $inputCodec->pack($result->quantities)]))['value']);
+            $slowStorage = new class($storage) implements NetForwardArtifactStorage {
+                public int $delayedChunkReads = 0;
+
+                public function __construct(private NetForwardArtifactStorage $inner)
+                {
+                }
+
+                public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body): void
+                {
+                    $this->inner->putContent($companyId, $accountId, $key, $body);
+                }
+
+                public function get(string $companyId, string $accountId, NetForwardArtifactKey $key, int $maxBytes): string
+                {
+                    if (0 === $key->ordinal && $this->delayedChunkReads < 2) {
+                        ++$this->delayedChunkReads;
+                        usleep(600_000);
+                    }
+
+                    return $this->inner->get($companyId, $accountId, $key, $maxBytes);
+                }
+            };
+            $slowReader = new AppNet\NetForwardArtifactReader($db, $repository, $slowStorage, $codec);
+            $boundedReplay = new AppNet\ReplayNetForecastArtifactAction($slowReader, $inputCodec, $aggregate, $codec, wallBudgetNanoseconds: 1_000_000_000);
+            try {
+                $boundedReplay($company, $account, $request->requestId, $verified->publication->root->sha256);
+                self::fail('The shared replay deadline must include the initial verification read.');
+            } catch (\OverflowException $error) {
+                self::assertSame('Replay wall budget exceeded.', $error->getMessage());
+            }
+            self::assertSame(2, $slowStorage->delayedChunkReads);
             $budgetRequest = new AppNet\NetForwardCaptureRequest(Uuid::v7()->toRfc4122(), $planId, $day, $day);
             $budgetDeadline = (int) (hrtime(true) + 30000000000);
             $budgetSpool = new AppNet\NetForwardSpool($codec, $budgetDeadline);

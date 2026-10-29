@@ -265,8 +265,26 @@ final readonly class CaptureNetForecastTruthAction
                 return new NetForwardTruthResult('ineligible', null, 'delivery_origin_ambiguous', null);
             }
             $coverage = $now->inputComplete && null === $now->unavailableReason && null !== $now->readiness && $now->readiness->returnsCoverageComplete && $now->readiness->coverageThrough >= $origin->modify('+67 days') && null !== $now->readiness->deepCompletedAt;
+            $baseline = $part->currentD ?? 0;
+            if ($open > 0) {
+                $resolvedBaseline = NetForwardTruth::deliveredBaselineForOpenInput(
+                    $now->rawQuantity,
+                    $now->currentD,
+                    $now->knownR,
+                    $now->t1,
+                    $now->t2,
+                    $now->p,
+                    $now->eligibleOpenPre,
+                    $now->eligibleOpenPost,
+                    $now->unknownQuantity,
+                );
+                if (null === $resolvedBaseline) {
+                    return new NetForwardTruthResult('pending', null, $now->unavailableReason ?? 'outcome_not_observed', $origin->modify('+67 days'));
+                }
+                $baseline = $resolvedBaseline;
+            }
 
-            return NetForwardTruth::delivered($open > 0 ? $open : ($part->currentD ?? 0), $origin, $inputAt, $readAt, $deltas, $open > 0, $coverage);
+            return NetForwardTruth::delivered($baseline, $origin, $inputAt, $readAt, $deltas, $open > 0, $coverage);
         }
         if ($now->inputComplete && null === $now->unavailableReason && (($now->t1 ?? 0) + ($now->t2 ?? 0) + ($now->p ?? 0)) > 0 && 0 === ($now->unknownQuantity ?? 1)) {
             $terminal = null;

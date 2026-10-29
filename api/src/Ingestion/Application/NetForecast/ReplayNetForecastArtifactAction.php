@@ -17,13 +17,20 @@ use App\Ingestion\Infrastructure\Query\NetForecast\NetTrainingContext;
 /** Pure arithmetic replay after verified artifact IO; no source query or current clock. */
 final readonly class ReplayNetForecastArtifactAction
 {
-    public function __construct(private NetForwardArtifactReader $reader, private NetForwardInputCodec $inputs, private AggregateNetForecastAction $aggregate, private NetForwardManifestCodec $codec)
+    private const int WALL_BUDGET_NANOSECONDS = 30000000000;
+
+    public function __construct(private NetForwardArtifactReader $reader, private NetForwardInputCodec $inputs, private AggregateNetForecastAction $aggregate, private NetForwardManifestCodec $codec, private int $wallBudgetNanoseconds = self::WALL_BUDGET_NANOSECONDS)
     {
+        if ($wallBudgetNanoseconds < 1 || $wallBudgetNanoseconds > self::WALL_BUDGET_NANOSECONDS) {
+            throw new \InvalidArgumentException('Invalid replay wall budget.');
+        }
     }
 
     public function __invoke(string $companyId, string $accountId, string $requestId, string $artifactHash): NetForecastBatch
     {
-        $artifact = $this->reader->read($companyId, $accountId, NetForwardArtifactKind::Input, $requestId, $artifactHash);
+        $deadline = hrtime(true) + $this->wallBudgetNanoseconds;
+        $artifact = $this->reader->read($companyId, $accountId, NetForwardArtifactKind::Input, $requestId, $artifactHash, deadline: $deadline);
+        $this->assertBeforeDeadline($deadline);
         $metadata = $artifact->manifest['metadata'];
         if (!\is_array($metadata) || ($metadata['model'] ?? null) !== ObservedReturnCurve::MODEL_VERSION || ($metadata['training'] ?? null) !== NetTrainingContext::MODEL_VERSION || ($metadata['coverage'] ?? null) !== NetTrainingContext::COVERAGE_POLICY || !\is_string($metadata['groupBy'] ?? null)) {
             throw new \UnexpectedValueException('Unsupported replay methodology.');
@@ -37,12 +44,13 @@ final readonly class ReplayNetForecastArtifactAction
         $baseline = 0;
         $forecastDays = 0;
         $allocation = memory_get_usage(true);
-        $started = hrtime(true);
-        foreach ($this->reader->segments($companyId, $accountId, $artifact) as $segment) {
+        foreach ($this->reader->segments($companyId, $accountId, $artifact, $deadline) as $segment) {
+            $this->assertBeforeDeadline($deadline);
             if (memory_get_usage(true) - $allocation + 8388608 > 50331648 || memory_get_usage(true) + 8388608 > 100663296) {
                 throw new \OverflowException('Replay input memory budget exceeded.');
             }
             foreach ($segment['rows'] as $row) {
+                $this->assertBeforeDeadline($deadline);
                 switch ($segment['type']) {
                     case 'training':
                         if (null !== $training) {
@@ -96,10 +104,13 @@ final readonly class ReplayNetForecastArtifactAction
                 }
             }
         }
+        $this->assertBeforeDeadline($deadline);
         if (null === $training || null === $request || null === $summary || 1 !== $baseline || $training->companyId !== $companyId || $training->accountId !== $accountId || $training->readAt->format('U.u') !== $artifact->readAt->format('U.u')) {
             throw new \UnexpectedValueException('Incomplete replay frame.');
         }
         if (null === $training->context) {
+            $this->assertBeforeDeadline($deadline);
+
             return new NetForecastBatch($companyId, $accountId, $training->readAt, null, [], null, $training->unavailableReason, null, $training->unavailableReason);
         }
         if (0 === $evidence || null === $targetMetadata || !\array_key_exists('unavailableReason', $targetMetadata) || (null !== $targetMetadata['unavailableReason'] && !\is_string($targetMetadata['unavailableReason']))) {
@@ -112,9 +123,7 @@ final readonly class ReplayNetForecastArtifactAction
                 || ('query_budget_exceeded' === $sealedRefusal && 'query_budget_exceeded' !== $targetMetadata['unavailableReason'])) {
                 throw new \UnexpectedValueException('Invalid sealed forecast refusal.');
             }
-            if (hrtime(true) - $started > 30000000000) {
-                throw new \OverflowException('Replay wall budget exceeded.');
-            }
+            $this->assertBeforeDeadline($deadline);
 
             // No numeric forecast exists to recompute. Preserve the capture's sealed refusal
             // instead of granting replay a fresh target query or compute budget.
@@ -133,15 +142,21 @@ final readonly class ReplayNetForecastArtifactAction
         $targets = new NetTargetBatch($training->context, $skus, $targetMetadata['unavailableReason'], $failure);
         // IO and decoding have their own bounded artifact budget; model starts here.
         // Original capture used its original frame budget and saved that outcome.
+        $this->assertBeforeDeadline($deadline);
         $result = ($this->aggregate)($companyId, $accountId, $targets, $training, hrtime(true), $allocation, new NetTargetLimits(), new NetForecastSeriesRequest($request->marketplaceSkus, $request->from, $request->to, $request->accumulationFrom, $metadata['groupBy']));
         $actual = ['quantities' => $this->inputs->pack($result->quantities), 'revenue' => $this->inputs->pack($result->expectedNetRevenue), 'reason' => $result->unavailableReason, 'moneyReason' => $result->moneyUnavailableReason, 'futureT1Policy' => 'pre_t1_gross_first_valid_v1', 'futureT1Provenance' => $result->futureT1Provenance(), 'series' => $this->inputs->pack($result->series)];
         if ($this->codec->encode($actual) !== $this->codec->encode($summary)) {
             throw new \UnexpectedValueException('Sealed forecast replay differs.');
         }
-        if (hrtime(true) - $started > 30000000000) {
-            throw new \OverflowException('Replay wall budget exceeded.');
-        }
+        $this->assertBeforeDeadline($deadline);
 
         return $result;
+    }
+
+    private function assertBeforeDeadline(int $deadline): void
+    {
+        if (hrtime(true) >= $deadline) {
+            throw new \OverflowException('Replay wall budget exceeded.');
+        }
     }
 }

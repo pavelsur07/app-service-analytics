@@ -55,6 +55,9 @@ final class NetForwardTruthTest extends TestCase
             $receipts[] = ['report_type' => 'ozon_returns_list', 'date_from' => $date, 'date_to' => $date, 'marked_at' => $day->modify('+1 day +1 hour')->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z'), 'status' => 'completed', 'capture_origin' => 'live_polling', 'capture_version' => 'accepted_state_v1'];
         }
         self::assertTrue(NetForwardTerminalCoverage::isComplete($terminal, $receipts));
+        $rangeFailure = $receipts;
+        $rangeFailure[] = ['report_type' => 'ozon_returns_list', 'date_from' => $from->format('Y-m-d'), 'date_to' => $from->modify('+7 days')->format('Y-m-d'), 'marked_at' => $from->modify('+9 days')->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z'), 'status' => 'failed', 'capture_origin' => 'live_polling', 'capture_version' => 'accepted_state_v1'];
+        self::assertFalse(NetForwardTerminalCoverage::isComplete($terminal, $rangeFailure));
         array_pop($receipts);
         $receipts[] = ['report_type' => 'ozon_returns_list', 'date_from' => $from->format('Y-m-d'), 'date_to' => $from->modify('+7 days')->format('Y-m-d'), 'marked_at' => $from->modify('+8 days +1 hour')->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z'), 'status' => 'completed', 'capture_origin' => 'live_polling', 'capture_version' => 'accepted_state_v1'];
         self::assertFalse(NetForwardTerminalCoverage::isComplete($terminal, $receipts));
@@ -82,5 +85,23 @@ final class NetForwardTruthTest extends TestCase
         $lateTruth = NetForwardTruth::delivered(10, $deliveryOrigin, $input, $input->modify('+90 days'), [$preDeliveryCancellation, $postDeliveryClientReturn], true, true);
         self::assertSame('ready', $lateTruth->state);
         self::assertSame(8, $lateTruth->quantity);
+    }
+
+    public function testOpenInputUsesResolvedDeliveredQuantityAndRejectsUnresolvedRemainder(): void
+    {
+        $baseline = NetForwardTruth::deliveredBaselineForOpenInput(10, 8, 0, 0, 2, 0, 0, 0, 0);
+        self::assertSame(8, $baseline);
+
+        $origin = new \DateTimeImmutable('2026-01-21T00:00:00Z');
+        $input = $origin->modify('-20 days');
+        $truth = NetForwardTruth::delivered($baseline, $origin, $input, $input->modify('+90 days'), [new NetForwardReturnDelta(0, $input->modify('+1 day'), false, true, 'Cancellation')], true, true);
+        self::assertSame('ready', $truth->state);
+        self::assertSame(8, $truth->quantity);
+        $returnedBaseline = NetForwardTruth::deliveredBaselineForOpenInput(10, 8, 2, 0, 0, 0, 0, 0, 0);
+        self::assertSame(10, $returnedBaseline);
+        $afterClientReturn = NetForwardTruth::delivered($returnedBaseline, $origin, $input, $input->modify('+90 days'), [new NetForwardReturnDelta(2, $input->modify('+30 days'), false, true, 'ClientReturn')], true, true);
+        self::assertSame('ready', $afterClientReturn->state);
+        self::assertSame(8, $afterClientReturn->quantity);
+        self::assertNull(NetForwardTruth::deliveredBaselineForOpenInput(10, 8, 0, 0, 0, 0, 2, 0, 0));
     }
 }

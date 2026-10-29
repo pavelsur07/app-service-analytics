@@ -20,8 +20,8 @@ final class NetForwardTerminalCoverage
                 if ('ozon_returns_list' !== ($receipt['report_type'] ?? null)
                     || !\is_string($receipt['date_from'] ?? null)
                     || !\is_string($receipt['date_to'] ?? null)
-                    || $receipt['date_from'] !== $date
-                    || $receipt['date_to'] !== $date
+                    || $receipt['date_from'] > $date
+                    || $receipt['date_to'] < $date
                     || !\is_string($receipt['marked_at'] ?? null)) {
                     continue;
                 }
@@ -31,7 +31,7 @@ final class NetForwardTerminalCoverage
                     if ($at <= $day->modify('+2 days')) {
                         $timelyFailure = null === $timelyFailure ? $at : max($timelyFailure, $at);
                     }
-                } elseif ('completed' === ($receipt['status'] ?? null) && 'live_polling' === ($receipt['capture_origin'] ?? null) && 'accepted_state_v1' === ($receipt['capture_version'] ?? null)) {
+                } elseif ('completed' === ($receipt['status'] ?? null) && $receipt['date_from'] === $date && $receipt['date_to'] === $date && 'live_polling' === ($receipt['capture_origin'] ?? null) && 'accepted_state_v1' === ($receipt['capture_version'] ?? null)) {
                     $success = null === $success ? $at : max($success, $at);
                     if ($at >= $day->modify('+1 day') && $at <= $day->modify('+2 days')) {
                         $timely = null === $timely ? $at : max($timely, $at);

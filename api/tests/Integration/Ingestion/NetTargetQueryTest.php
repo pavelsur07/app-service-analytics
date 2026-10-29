@@ -119,6 +119,8 @@ final class NetTargetQueryTest extends KernelTestCase
         $timely = $day->modify('+1 day +1 hour')->setTimezone(new \DateTimeZone('UTC'));
         $f->receipt(\App\Ingestion\Domain\MarketplaceReportType::OzonReturnsList, $day, $day, $timely);
         self::assertNull($this->read($db, $f)->unavailableReason);
+        $f->receipt(\App\Ingestion\Domain\MarketplaceReportType::OzonReturnsList, $day, $day->modify('+7 days'), $f->readAt->modify('-1 hour'), false);
+        self::assertSame('returns_coverage_missing', $this->read($db, $f)->unavailableReason, 'A later failed overlapping window invalidates the earlier daily witness.');
         $f->receipt(\App\Ingestion\Domain\MarketplaceReportType::OzonReturnsList, $day, $day, $timely, false);
         self::assertSame('returns_coverage_missing', $this->read($db, $f)->unavailableReason, 'Equal-time success/failure is ambiguous despite a later catch-up.');
     }
