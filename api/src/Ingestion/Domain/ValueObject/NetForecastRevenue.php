@@ -134,6 +134,16 @@ final readonly class NetForecastRevenue
         return Money::ofMinor((int) $minor, $this->currency);
     }
 
+    /** @return array{0: ?Money, 1: ?string} */
+    public function toMoneyOutcome(): array
+    {
+        try {
+            return [$this->toMoney(), $this->unavailableReason()];
+        } catch (\OverflowException) {
+            return [null, 'money_overflow'];
+        }
+    }
+
     private static function bounded(BigRational $amount, string $currency): self
     {
         if (\strlen(ltrim((string) $amount->getNumerator(), '-')) > self::MAX_DIGITS || \strlen((string) $amount->getDenominator()) > self::MAX_DIGITS) {

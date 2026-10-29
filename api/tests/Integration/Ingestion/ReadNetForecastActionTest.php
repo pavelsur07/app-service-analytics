@@ -218,6 +218,8 @@ final class ReadNetForecastActionTest extends KernelTestCase
             'SAVEPOINT net_training_read_guard' => 2,
             'ROLLBACK TO SAVEPOINT net_training_read_guard' => 2,
             'RELEASE SAVEPOINT net_training_read_guard' => 2,
+            'SAVEPOINT net_forecast_target_read' => 1,
+            'RELEASE SAVEPOINT net_forecast_target_read' => 1,
             'SET LOCAL jit = off' => 2,
             "SET LOCAL statement_timeout = '5s'" => 2,
         ] : [];

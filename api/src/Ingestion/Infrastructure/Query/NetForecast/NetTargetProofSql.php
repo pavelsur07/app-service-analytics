@@ -263,7 +263,7 @@ final class NetTargetProofSql
                          AND r.marked_at <= ((d.day + 2)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')) AS timely_completed,
                        MAX(r.marked_at) FILTER (WHERE r.status = 'failed' AND r.marked_at <= ((d.day + 2)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')) AS timely_failed,
                        MD5(COALESCE(STRING_AGG(r.id::text, ',' ORDER BY r.id) FILTER (WHERE r.id IS NOT NULL), '')) AS witness_digest
-                FROM target_calendar_dates d LEFT JOIN receipt_inputs r ON r.report_type = 'ozon_returns_list' AND d.day BETWEEN r.date_from AND r.date_to
+                FROM target_calendar_dates d LEFT JOIN receipt_inputs r ON r.report_type = 'ozon_returns_list' AND r.date_from = r.date_to AND d.day = r.date_from
                 GROUP BY d.day
             ),
             target_daily_proof AS MATERIALIZED (

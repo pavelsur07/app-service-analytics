@@ -72,6 +72,7 @@ final class NetForecastRevenueTest extends TestCase
         } catch (\OverflowException) {
             self::addToAssertionCount(1);
         }
+        self::assertSame([null, 'money_overflow'], $large->toMoneyOutcome());
         self::assertSame(\PHP_INT_MAX, $large->plus(self::value('-1'))->toMoney()?->minorAmount());
         self::assertSame(0, self::value((string) \PHP_INT_MAX, '2')->plus(self::value((string) -\PHP_INT_MAX, '2'))->toMoney()?->minorAmount());
     }
