@@ -1,11 +1,11 @@
 # B16 — чек-лист приёмки и готовности к B17
 
-**Состояние на 2026-10-29: PLAN_READY; B16 OPEN.**
+**Состояние на 2026-10-29: IMPLEMENTING; B16 OPEN.**
 План: [B16.md](B16.md). Методика и точные пороги — его §2–7 и
 [ADR-049 §5](../../adr/0049-net-sales-forecast-observations-and-horizon.md).
 Этот файл — форма приёмки: незаполненное поле или неотмеченный пункт не PASS.
 Сейчас не предъявлены реальные protocol/inventory/dataset/report refs,
-sample counts и predictive metrics. Новый evaluator ещё не реализован.
+sample counts и predictive metrics. Evaluator реализован в ветке задачи; ревью/выпуск ещё не подтверждены.
 
 ## 1. Статусы и смысл завершения
 
@@ -33,7 +33,7 @@ QUALITY_PASSED само по себе не открывает gate. В стро�
   нового production preflight записаны отдельно от старых receipts.
 - [ ] Документальное расхождение открытого B15 checkbox с его release receipt
   разобрано явно; основанием служат реальные проверки и выпуск B15.
-- [ ] Одним решением согласованы два пункта B16 §0: kind5→20 с прежним PK
+- [x] Одним решением согласованы два пункта B16 §0: kind5→20 с прежним PK
   и одна migration; optional protocol binding в существующем capture Facade.
 - [ ] Private scope установлен: одна компания/кабинет, plan/original baseline,
   полный набор<=50SKU,<=184 order days, целевые валюты и существующий epoch.
@@ -137,13 +137,14 @@ QUALITY_PASSED само по себе не открывает gate. В стро�
 
 ## 7. Проверки, независимое ревью и приёмка кода
 
-Команды ниже — будущий обязательный прогон реализации, **сейчас не запускались**.
+Результаты выполненных команд — в checkpoint плана. Финальные ревью/CI/release
+отмечаются только по собственным receipts.
 
-- [ ] `make lint stan deptrac structure-check` — PASS.
-- [ ] `make test-unit test-int test-func TEST_WORKERS=2` — PASS.
-- [ ] `make db-rebuild-check TEST_WORKERS=2` — PASS на подтверждённых LOCAL томах;
+- [x] `make lint stan deptrac structure-check` — PASS (final-gates2).
+- [x] `make test-unit test-int test-func TEST_WORKERS=2` — PASS (779/866/383 tests).
+- [x] `make db-rebuild-check TEST_WORKERS=2` — PASS на подтверждённых LOCAL томах;
   уничтожение локальных volumes не затронуло чужое окружение/данные.
-- [ ] `make api-types-check` — PASS, public API/OpenAPI/TS не изменены;
+- [x] `make api-types-check` — PASS, public API/OpenAPI/TS не изменены;
   при реальном изменении source contract — regeneration и проверки потребителей.
 - [ ] Финальный task diff полностью покрыт exact review package; два отдельных
   Codex CLI `review-codex` и `review-defects` complete/hash-valid. Claude не нужен

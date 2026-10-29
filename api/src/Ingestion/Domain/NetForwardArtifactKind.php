@@ -14,6 +14,18 @@ enum NetForwardArtifactKind: string
     case QualityDataset = 'quality-dataset';
     case QualityReport = 'quality-report';
 
+    public function schemaVersion(): ?string
+    {
+        return match ($this) {
+            self::Input, self::Truth => null,
+            self::QualityProtocol => 'net_quality_protocol_v1',
+            self::QualityInventory => 'net_quality_inventory_v1',
+            self::QualitySelection => 'net_quality_selection_v1',
+            self::QualityDataset => 'net_quality_dataset_v1',
+            self::QualityReport => 'net_quality_report_v1',
+        };
+    }
+
     public function parentKind(): ?self
     {
         return match ($this) {

@@ -17,6 +17,13 @@ final readonly class NetQualityProtocolReader
         return $this->load($companyId, $accountId, $ref, $budget)[0];
     }
 
+    public function context(string $companyId, string $accountId, NetQualityArtifactRef $ref, NetQualityBudget $budget): NetQualityCaptureContext
+    {
+        [$protocol, $frozenAt] = $this->load($companyId, $accountId, $ref, $budget);
+
+        return new NetQualityCaptureContext($ref, $protocol, $frozenAt);
+    }
+
     public function forCapture(string $companyId, string $accountId, NetForwardCaptureRequest $request, NetQualityArtifactRef $ref, NetQualityBudget $budget): NetQualityCaptureContext
     {
         [$protocol, $frozenAt] = $this->load($companyId, $accountId, $ref, $budget);

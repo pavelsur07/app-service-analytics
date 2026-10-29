@@ -28,7 +28,9 @@ final readonly class NetForwardArtifactReader
             throw new \OverflowException('Artifact read deadline exceeded.');
         }
         $deadline ??= (int) (hrtime(true) + 30000000000);
-        $publication = $this->repository->find($companyId, $accountId, $kind, $requestId) ?? throw new NetForwardArtifactMissing('Artifact publication missing.');
+        $publication = $budget?->artifacts->find($companyId, $accountId, $kind, $requestId) ?? $this->repository->find($companyId, $accountId, $kind, $requestId) ?? throw new NetForwardArtifactMissing('Artifact publication missing.');
+        $publication->root->assertScope($companyId, $accountId);
+        $budget?->artifacts->remember($publication);
         if ((null !== $expectedHash && $expectedHash !== $publication->root->sha256) || (null !== $requestHash && $requestHash !== $publication->requestHash)) {
             throw new \DomainException('Artifact reference or request conflicts.');
         }
@@ -42,6 +44,9 @@ final readonly class NetForwardArtifactReader
         $required = ['attemptId', 'chunks', 'companyId', 'kind', 'marketplaceAccountId', 'metadata', 'parent', 'readAtUtc', 'requestHash', 'requestId'];
         if (array_keys($root) !== $required || $root['companyId'] !== $companyId || $root['marketplaceAccountId'] !== $accountId || $root['kind'] !== $kind->value || $root['requestId'] !== $requestId || $root['requestHash'] !== $publication->requestHash || $root['attemptId'] !== $publication->root->attemptId || !\is_string($root['readAtUtc']) || !\is_array($root['metadata']) || !\is_array($root['chunks'])) {
             throw new \UnexpectedValueException('Artifact root identity mismatch.');
+        }
+        if (null !== $kind->schemaVersion() && ($root['metadata']['schema'] ?? null) !== $kind->schemaVersion()) {
+            throw new \UnexpectedValueException('Unsupported quality artifact schema version.');
         }
         $readAt = \DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:s.u\Z', $root['readAtUtc'], new \DateTimeZone('UTC'));
         if (false === $readAt || $readAt->format('Y-m-d\TH:i:s.u\Z') !== $root['readAtUtc']) {
@@ -116,6 +121,23 @@ final readonly class NetForwardArtifactReader
         $native = $this->connection->getNativeConnection();
         if ($this->connection->isTransactionActive() || ($native instanceof \PDO && $native->inTransaction())) {
             throw new \LogicException('Artifact IO requires no active DB transaction.');
+        }
+    }
+
+    /** @param list<string> $requestIds */
+    public function prefetch(string $companyId, string $accountId, NetForwardArtifactKind $kind, array $requestIds, NetQualityBudget $budget): void
+    {
+        $this->assertNoTransaction();
+        if (\count($requestIds) > 200) {
+            throw new \OverflowException('Too many explicit artifact references.');
+        }
+        foreach (array_chunk(array_values(array_unique($requestIds)), 50) as $page) {
+            $budget->guard();
+            $identities = array_map(static fn (string $id): array => ['kind' => $kind, 'requestId' => $id], $page);
+            foreach ($this->repository->findBatch($companyId, $accountId, $identities) as $publication) {
+                $publication->root->assertScope($companyId, $accountId);
+                $budget->artifacts->remember($publication);
+            }
         }
     }
 }

@@ -10,6 +10,15 @@ use PHPUnit\Framework\TestCase;
 
 final class NetQualitySelectionTest extends TestCase
 {
+    public function testAnOrderCannotMoveFromCalibrationIntoHoldoutByChangingItsBusinessDate(): void
+    {
+        $stats = new Net\NetQualitySelectionDiagnostics();
+        $cluster = hash('sha256', 'same-company-account-order');
+        $stats->observeOrder($cluster, '2027-01-01');
+        $this->expectException(\DomainException::class);
+        $stats->observeOrder($cluster, '2027-01-02');
+    }
+
     public function testEarliestNullIsNotReplacedByLaterNumericAndShuffleCannotChangeSelection(): void
     {
         $builder = NetQualityObservationBuilder::anObservation();

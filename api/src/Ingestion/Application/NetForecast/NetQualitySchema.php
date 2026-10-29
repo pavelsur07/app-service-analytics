@@ -9,6 +9,26 @@ use Symfony\Component\Uid\Uuid;
 /** Validation at the private JSON boundary; no coercion or ambient scope. */
 final class NetQualitySchema
 {
+    public static function nullableString(mixed $value): ?string
+    {
+        if (null === $value || (\is_string($value) && \strlen($value) <= 256)) {
+            return $value;
+        }
+
+        throw new \InvalidArgumentException('Invalid nullable quality string.');
+    }
+
+    /** @param array<array-key, mixed> $data */
+    public static function integer(array $data, string $key): int
+    {
+        $value = $data[$key] ?? null;
+        if (!\is_int($value) || $value < 0) {
+            throw new \InvalidArgumentException('Invalid quality integer: '.$key);
+        }
+
+        return $value;
+    }
+
     /** @param array<array-key, mixed> $data */
     public static function string(array $data, string $key, int $max = 256): string
     {
@@ -49,7 +69,7 @@ final class NetQualitySchema
         return $value;
     }
 
-    /** @return list<string> */
+    /** @return non-empty-list<string> */
     public static function strings(mixed $value, int $max): array
     {
         if (!\is_array($value) || !array_is_list($value) || [] === $value || \count($value) > $max) {

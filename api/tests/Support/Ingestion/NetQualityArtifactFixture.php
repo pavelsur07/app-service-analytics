@@ -18,11 +18,11 @@ final readonly class NetQualityArtifactFixture
     public MemoryNetForwardArtifactStorage $storage;
     public MockClock $clock;
 
-    public function __construct(public Connection $db)
+    public function __construct(public Connection $db, ?\DateTimeImmutable $frozenAt = null)
     {
         $this->codec = new Net\NetForwardManifestCodec();
         $this->storage = new MemoryNetForwardArtifactStorage();
-        $this->clock = new MockClock('2027-01-01T00:00:00Z');
+        $this->clock = new MockClock($frozenAt ?? '2027-01-01T00:00:00Z');
         $repository = new DbalNetForecastArtifactRepository($db);
         $this->reader = new Net\NetForwardArtifactReader($db, $repository, $this->storage, $this->codec);
         $this->publisher = new Net\PublishNetForecastCaptureAction($repository, $this->storage, $this->reader);

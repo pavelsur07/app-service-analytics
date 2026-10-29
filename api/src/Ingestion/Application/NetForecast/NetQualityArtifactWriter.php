@@ -29,6 +29,28 @@ final readonly class NetQualityArtifactWriter
             $budget->guard();
             $spool->append($segment['type'], $segment['row']);
         }
+
+        return $this->publishRoot($companyId, $accountId, $document, $spool, $budget);
+    }
+
+    public function publishStaged(string $companyId, string $accountId, NetQualityArtifactDocument $document, NetForwardSpool $spool, NetQualityBudget $budget): NetQualityArtifactRef
+    {
+        if ([] !== $document->segments) {
+            throw new \InvalidArgumentException('A staged document must use its existing sealed spool only.');
+        }
+        $this->reader->assertNoTransaction();
+        $budget->guard();
+        if (null !== $document->parent) {
+            $this->reader->read($companyId, $accountId, $document->parent->kind, $document->parent->requestId, $document->parent->sha256, deadline: $budget->deadline, budget: $budget);
+        }
+
+        return $this->publishRoot($companyId, $accountId, $document, $spool, $budget);
+    }
+
+    private function publishRoot(string $companyId, string $accountId, NetQualityArtifactDocument $document, NetForwardSpool $spool, NetQualityBudget $budget): NetQualityArtifactRef
+    {
+        $spool->guard();
+        $parent = $document->parent;
         $attempt = Uuid::v7()->toRfc4122();
         $root = $this->codec->encode(['companyId' => $companyId, 'marketplaceAccountId' => $accountId, 'kind' => $document->kind->value, 'requestId' => $document->requestId, 'requestHash' => $document->requestHash, 'attemptId' => $attempt, 'readAtUtc' => $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.u\Z'), 'parent' => $parent?->toArray(), 'chunks' => $spool->descriptors(), 'metadata' => $document->metadata]);
         $publication = new NetForecastArtifactPublication(new NetForwardArtifactKey($companyId, $accountId, $document->kind, $document->requestId, $attempt, hash('sha256', $root)), $document->requestHash, \strlen($root));

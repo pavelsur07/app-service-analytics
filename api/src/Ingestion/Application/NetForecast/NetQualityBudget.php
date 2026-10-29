@@ -8,11 +8,13 @@ namespace App\Ingestion\Application\NetForecast;
 final class NetQualityBudget
 {
     public readonly int $deadline;
+    public readonly NetQualityArtifactCache $artifacts;
     private readonly int $allocation;
     private int $reads = 0;
     private int $bytes = 0;
     private int $candidates = 0;
     private int $spool = 0;
+    private int $peakSpool = 0;
 
     public function __construct(?int $deadline = null, private readonly int $maxReadBytes = 536870912, private readonly int $maxCandidates = 20000, private readonly int $maxSpoolBytes = 136314880)
     {
@@ -21,6 +23,7 @@ final class NetQualityBudget
         }
         $this->deadline = min($deadline ?? \PHP_INT_MAX, (int) (hrtime(true) + 120000000000));
         $this->allocation = memory_get_usage(true);
+        $this->artifacts = new NetQualityArtifactCache();
     }
 
     public function guard(): void
@@ -54,11 +57,12 @@ final class NetQualityBudget
             throw new \OverflowException('Shared quality spool limit exceeded.');
         }
         $this->spool += $delta;
+        $this->peakSpool = max($this->peakSpool, $this->spool);
     }
 
-    /** @return array{reads: int, readBytes: int, candidates: int} */
+    /** @return array{reads: int, readBytes: int, candidates: int, peakSpoolBytes: int} */
     public function summary(): array
     {
-        return ['reads' => $this->reads, 'readBytes' => $this->bytes, 'candidates' => $this->candidates];
+        return ['reads' => $this->reads, 'readBytes' => $this->bytes, 'candidates' => $this->candidates, 'peakSpoolBytes' => $this->peakSpool];
     }
 }

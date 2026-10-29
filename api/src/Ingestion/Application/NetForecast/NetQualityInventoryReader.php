@@ -38,7 +38,7 @@ final readonly class NetQualityInventoryReader
         }
 
         return 'capture' === $request->subtype
-            ? new NetQualityCaptureInventory($ref, $request->protocol, $request->cutoff, $slots)
-            : new NetQualityTruthInventory($ref, $request->protocol, $request->cutoff, $slots);
+            ? new NetQualityCaptureInventory($ref, $request->protocol, $request->cutoff, $slots, $artifact->readAt)
+            : new NetQualityTruthInventory($ref, $request->protocol, $request->cutoff, $slots, $artifact->readAt);
     }
 }

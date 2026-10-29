@@ -7,7 +7,7 @@ namespace App\Ingestion\Application\NetForecast;
 final readonly class NetQualityTruthInventory
 {
     /** @param list<array<string, mixed>> $slots */
-    public function __construct(public NetQualityArtifactRef $reference, public NetQualityArtifactRef $protocolRef, public \DateTimeImmutable $cutoff, public array $slots)
+    public function __construct(public NetQualityArtifactRef $reference, public NetQualityArtifactRef $protocolRef, public \DateTimeImmutable $cutoff, public array $slots, public \DateTimeImmutable $sealedAt)
     {
     }
 }

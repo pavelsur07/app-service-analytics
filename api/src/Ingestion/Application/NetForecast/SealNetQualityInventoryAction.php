@@ -38,6 +38,7 @@ final readonly class SealNetQualityInventoryAction
         foreach (array_chunk($ids, 50) as $page) {
             $identities = array_map(static fn (string $id): array => ['kind' => $kind, 'requestId' => $id], $page);
             foreach ($this->repository->findBatch($companyId, $accountId, $identities) as $anchor) {
+                $budget->artifacts->remember($anchor);
                 $anchors[$anchor->root->requestId] = true;
             }
         }
@@ -50,6 +51,9 @@ final readonly class SealNetQualityInventoryAction
                 $ref = NetQualityArtifactRef::fromArray($slot['artifact']);
                 $artifact = $this->reader->read($companyId, $accountId, $ref->kind, $id, $ref->sha256, deadline: $budget->deadline, budget: $budget);
                 $at = $artifact->readAt;
+                if ($at < NetQualitySchema::utc($planned['scheduledAtUtc'])) {
+                    throw new \DomainException('An artifact cannot fill a future registered slot.');
+                }
                 if (('success' === $slot['status']) !== ($at <= $request->cutoff)) {
                     throw new \DomainException('Inventory success/late status conflicts with actual winning readAt.');
                 }

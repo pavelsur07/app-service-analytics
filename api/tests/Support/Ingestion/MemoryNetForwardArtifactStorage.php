@@ -12,10 +12,14 @@ final class MemoryNetForwardArtifactStorage implements NetForwardArtifactStorage
 {
     /** @var array<string, string> */
     public array $objects = [];
+    public bool $failReportWrites = false;
 
     public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body): void
     {
         $key->assertScope($companyId, $accountId);
+        if ($this->failReportWrites && \App\Ingestion\Domain\NetForwardArtifactKind::QualityReport === $key->kind) {
+            throw new \RuntimeException('Injected report write failure.');
+        }
         if (hash('sha256', $body) !== $key->sha256) {
             throw new \UnexpectedValueException('Test storage hash mismatch.');
         }
