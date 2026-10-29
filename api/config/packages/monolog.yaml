@@ -20,6 +20,7 @@ monolog:
         # сервиса за ключами подключений. Уровень info, поэтому в prod —
         # свой обработчик: общий порог warning их бы отбросил.
         - service_audit
+        - net_capture
 
 when@dev:
     monolog:
@@ -87,7 +88,7 @@ when@prod:
                 # fingers_crossed нет (см. выше), поэтому отсев по каналу.
                 # `service_audit` — своим обработчиком ниже, с порога info;
                 # без исключения отказ токена (warning) писался бы дважды.
-                channels: ["!deprecation", "!request", "!service_audit"]
+                channels: ["!deprecation", "!request", "!service_audit", "!net_capture"]
             # Настоящие отказы сервера из того же канала — отдельно
             # и с порога critical: 5xx Symfony пишет именно им
             # (4xx — error), так что порог сам отделяет наши поломки
@@ -117,3 +118,11 @@ when@prod:
                 level: info
                 formatter: monolog.formatter.json
                 channels: [service_audit]
+
+            # One bounded aggregate per explicit capture; no SQL/parameters/order payload.
+            net_capture:
+                type: stream
+                path: php://stderr
+                level: info
+                formatter: monolog.formatter.json
+                channels: [net_capture]

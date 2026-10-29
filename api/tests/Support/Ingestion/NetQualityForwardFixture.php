@@ -79,7 +79,7 @@ final readonly class NetQualityForwardFixture
         $epoch = $targets->epoch;
         $epochs = new NetForecastCaptureEpochs(json_encode([['epochId' => $epoch->id, 'captureVersion' => $epoch->captureVersion, 'startUtc' => $epoch->start->format('Y-m-d\TH:i:s\Z'), 'endUtc' => null, 'cutoverRelease' => $epoch->cutoverRelease]], \JSON_THROW_ON_ERROR));
         $readTraining = new Net\ReadNetTrainingAction($db, new Query\GrossTrainingAggregateQuery($db), new Query\ReturnTrainingAggregateQuery($db), $epochs, new MockClock($at));
-        $prepare = new Net\PrepareNetForecastCaptureAction($db, new Net\ReadNetForecastInputsAction($db, $readTraining, new Query\NetTargetQuery($db)), $aggregate, new Query\NetForwardEvidenceQuery($db), new Query\NetForwardBaselineQuery($db), new BuyoutMaturityQuery($db), new SalesCohortSeriesQuery($db, new SalesCohortMetricsQuery($db), new SalesCohortCoverageQuery($db)), $artifacts->codec, new Net\NetForwardInputCodec(), '123-aaaaaaa', str_repeat('a', 40));
+        $prepare = new Net\PrepareNetForecastCaptureAction($db, new Net\ReadNetForecastInputsAction($db, $readTraining, new Query\NetTargetQuery($db)), $aggregate, new Net\ReadNetForwardEvidenceAction($db, new Query\NetForwardEvidenceQuery($db)), new Query\NetForwardBaselineQuery($db), new BuyoutMaturityQuery($db), new SalesCohortSeriesQuery($db, new SalesCohortMetricsQuery($db), new SalesCohortCoverageQuery($db)), $artifacts->codec, new Net\NetForwardInputCodec(), '123-aaaaaaa', str_repeat('a', 40));
         $plan = new Net\NetForwardPlanContext($planId, 1, 1, $planId, 1, 'retained_sales', 'RUB', $from, ['SKU'], [['sku' => 'SKU', 'points' => []]]);
         $prepared = (new Net\NetTrainingSnapshot($db))->read(fn () => $prepare($company, $account, $request, $plan, (int) (hrtime(true) + 30000000000), $this->context));
         $verified = ($artifacts->publisher)($company, $account, $prepared);
@@ -110,7 +110,7 @@ final readonly class NetQualityForwardFixture
         $epoch = $this->targets->epoch;
         $epochs = new NetForecastCaptureEpochs(json_encode([['epochId' => $epoch->id, 'captureVersion' => $epoch->captureVersion, 'startUtc' => $epoch->start->format('Y-m-d\TH:i:s\Z'), 'endUtc' => null, 'cutoverRelease' => $epoch->cutoverRelease]], \JSON_THROW_ON_ERROR));
         $db = $this->artifacts->db;
-        $capture = new Net\CaptureNetForecastTruthAction($db, new DbalNetForecastArtifactRepository($db), $this->artifacts->reader, $this->artifacts->publisher, $this->artifacts->codec, new Net\NetForwardInputCodec(), $epochs, new Query\NetTargetQuery($db), new Query\NetForwardEvidenceQuery($db), new MockClock($at), softwareRelease: '123-aaaaaaa');
+        $capture = new Net\CaptureNetForecastTruthAction($db, new DbalNetForecastArtifactRepository($db), $this->artifacts->reader, $this->artifacts->publisher, $this->artifacts->codec, new Net\NetForwardInputCodec(), $epochs, new Query\NetTargetQuery($db), new Net\ReadNetForwardEvidenceAction($db, new Query\NetForwardEvidenceQuery($db)), new MockClock($at), softwareRelease: '123-aaaaaaa');
         $truth = $capture($this->protocol->companyId, $this->protocol->accountId, $this->input->requestId, $this->input->sha256, $requestId);
 
         return new Net\NetQualityArtifactRef(NetForwardArtifactKind::Truth, $requestId, $truth->publication->root->sha256);

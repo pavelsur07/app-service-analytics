@@ -242,6 +242,15 @@ revision IDs/значения и receipts одного read-only RR, модел�
 не заявляется. Snapshot capture выполняет отдельный bounded application
 сценарий с известным company/account, не меняя GET readonly транзакцию.
 
+Уточнение B15 от 2026-10-29: внутренний экспорт source evidence читает
+один серверный `NO SCROLL` cursor на population в том же pinned read-only RR.
+Это узкое исключение из keyset для растущих чтений: повтор CTE на каждой
+странице пересчитывал всю ограниченную population. Порядок и bytes evidence
+сохранены; `FETCH` ограничен 200 строками, SQL проверяет 1 MiB на страницу
+до передачи PHP. Общие row/byte/time/heap budgets остаются прежними;
+cursor закрывается при завершении/ошибке и транзакцией. Пользовательские
+списки и остальные чтения по-прежнему используют keyset.
+
 Публикация B15 использует собственный приватный prefix
 `conwix/monolith/net-forecast/v1/companies/{company}/accounts/{account}/`.
 Content-addressed chunks и root разделены по kind/request/attempt; новый RR

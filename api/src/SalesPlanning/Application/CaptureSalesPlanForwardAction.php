@@ -13,16 +13,22 @@ use App\Ingestion\Application\Facade\PreparedForwardCapture;
 use App\SalesPlanning\Infrastructure\Query\SalesPlanBaselineQuery;
 use App\SalesPlanning\Infrastructure\Query\SalesPlanPerformanceQuery;
 use App\SalesPlanning\Infrastructure\Query\SalesPlansQuery;
+use App\Shared\Application\QueryTelemetry;
 use Doctrine\DBAL\Connection;
 
 /** Explicit internal capture; all human plan values are read-only in the common pinned RR. */
 final readonly class CaptureSalesPlanForwardAction
 {
-    public function __construct(private Connection $connection, private SalesPlansQuery $headers, private SalesPlanBaselineQuery $baselines, private SalesPlanPerformanceQuery $plans, private IngestionFacade $ingestion)
+    public function __construct(private Connection $connection, private SalesPlansQuery $headers, private SalesPlanBaselineQuery $baselines, private SalesPlanPerformanceQuery $plans, private IngestionFacade $ingestion, private QueryTelemetry $telemetry = new QueryTelemetry())
     {
     }
 
     public function __invoke(string $companyId, string $accountId, string $planId, string $requestId, string $from, string $to, string $groupBy = 'day', ?string $qualityProtocolId = null, ?string $qualityProtocolHash = null): ForwardArtifactRef
+    {
+        return $this->telemetry->run('net_forecast.capture', $companyId, $accountId, $requestId, fn () => $this->capture($companyId, $accountId, $planId, $requestId, $from, $to, $groupBy, $qualityProtocolId, $qualityProtocolHash));
+    }
+
+    private function capture(string $companyId, string $accountId, string $planId, string $requestId, string $from, string $to, string $groupBy, ?string $qualityProtocolId, ?string $qualityProtocolHash): ForwardArtifactRef
     {
         if ((null === $qualityProtocolId) !== (null === $qualityProtocolHash)) {
             throw new \InvalidArgumentException('Quality protocol identity and hash are required together.');
@@ -43,8 +49,8 @@ final readonly class CaptureSalesPlanForwardAction
             $this->connection->executeStatement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
             $this->connection->fetchOne('SELECT txid_current_snapshot()::text');
             $this->connection->executeStatement("SET LOCAL statement_timeout = '5s'");
-            $header = $this->headers->withPlanId($companyId, $request->planId)->executeQuery()->fetchAssociative();
-            $rawBase = $this->baselines->build($companyId, $request->planId)->executeQuery()->fetchAssociative();
+            $header = $this->telemetry->stage('plan.header', fn () => $this->headers->withPlanId($companyId, $request->planId)->executeQuery()->fetchAssociative());
+            $rawBase = $this->telemetry->stage('plan.baseline', fn () => $this->baselines->build($companyId, $request->planId)->executeQuery()->fetchAssociative());
             if (false === $header || false === $rawBase) {
                 throw new SalesPlanPerformanceReadException('sales_plan_no_approved_baseline', 404);
             }
@@ -56,7 +62,7 @@ final readonly class CaptureSalesPlanForwardAction
             if ($request->from < $base->dateFrom || $request->to > $base->dateTo) {
                 throw new \InvalidArgumentException('Capture period outside original season.');
             }
-            $rows = $this->plans->build($companyId, $request->planId, $base->id, $request->from, $request->to, $base->dateFrom, $request->groupBy, null, 50)->executeQuery()->fetchAllAssociative();
+            $rows = $this->telemetry->stage('plan.rows', fn () => $this->plans->build($companyId, $request->planId, $base->id, $request->from, $request->to, $base->dateFrom, $request->groupBy, null, 50)->executeQuery()->fetchAllAssociative());
             if ([] === $rows || \count($rows) > 50) {
                 throw new \OverflowException('Capture requires a complete plan scope of 1..50 SKU.');
             }

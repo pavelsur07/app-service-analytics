@@ -16,7 +16,6 @@ use App\Ingestion\Domain\ValueObject\NetForwardTerminalCoverage;
 use App\Ingestion\Domain\ValueObject\NetForwardTruth;
 use App\Ingestion\Domain\ValueObject\NetForwardTruthResult;
 use App\Ingestion\Infrastructure\Config\NetForecastCaptureEpochs;
-use App\Ingestion\Infrastructure\Query\NetForecast\NetForwardEvidenceQuery;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetDayRow;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetGroupRow;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetPartRow;
@@ -24,6 +23,7 @@ use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetQuery;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetRequest;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTrainingContext;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTrainingValue;
+use App\Shared\Application\QueryTelemetry;
 use Doctrine\DBAL\Connection;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
@@ -33,11 +33,16 @@ use Symfony\Component\Uid\Uuid;
 /** New observation and new immutable artifact; input and previous truth never mutate. */
 final readonly class CaptureNetForecastTruthAction
 {
-    public function __construct(private Connection $connection, private NetForecastArtifactRepository $repository, private NetForwardArtifactReader $reader, private PublishNetForecastCaptureAction $publish, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputs, private NetForecastCaptureEpochs $epochs, private NetTargetQuery $targets, private NetForwardEvidenceQuery $evidence, private ClockInterface $clock = new NativeClock(), #[Autowire('%app.version%')] private string $softwareRelease = 'unversioned')
+    public function __construct(private Connection $connection, private NetForecastArtifactRepository $repository, private NetForwardArtifactReader $reader, private PublishNetForecastCaptureAction $publish, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputs, private NetForecastCaptureEpochs $epochs, private NetTargetQuery $targets, private ReadNetForwardEvidenceAction $evidence, private ClockInterface $clock = new NativeClock(), #[Autowire('%app.version%')] private string $softwareRelease = 'unversioned', private QueryTelemetry $telemetry = new QueryTelemetry())
     {
     }
 
     public function __invoke(string $companyId, string $accountId, string $inputId, string $inputHash, string $requestId): VerifiedNetForwardArtifact
+    {
+        return $this->telemetry->run('net_forecast.truth', $companyId, $accountId, $requestId, fn () => $this->capture($companyId, $accountId, $inputId, $inputHash, $requestId));
+    }
+
+    private function capture(string $companyId, string $accountId, string $inputId, string $inputHash, string $requestId): VerifiedNetForwardArtifact
     {
         $this->reader->assertNoTransaction();
         $deadline = (int) (hrtime(true) + 30000000000);
@@ -135,14 +140,12 @@ final readonly class CaptureNetForecastTruthAction
                     $date = $date->modify('+1 day');
                 }
                 unset($batch);
-                $after = null;
-                do {
+                foreach ($this->evidence->pages($companyId, $accountId, $context, $request, 'target', $spool->deadlineNs) as $page) {
                     $spool->guard();
                     if (memory_get_usage(true) - $allocation + 8388608 > 50331648) {
                         throw new \OverflowException('Truth working allocation budget exceeded.');
                     }
-                    $page = NetForwardEvidenceQuery::mapRows($this->evidence->build($companyId, $accountId, $context, $request, 'target', $after)->executeQuery());
-                    $more = NetForwardEvidenceQuery::PAGE_SIZE === \count($page);
+                    $this->telemetry->count('evidence.target.rows', \count($page));
                     foreach ($page as $row) {
                         $values = $row->values;
                         if ('input_budget' === $row->relation && true !== ($values['ok'] ?? null)) {
@@ -159,9 +162,8 @@ final readonly class CaptureNetForecastTruthAction
                             $posting = NetTrainingValue::nullableString($values['posting_number']) ?? '';
                             $statuses[$posting][] = $values;
                         }
-                        $after = $row->cursor;
                     }
-                } while ($more);
+                }
             }
             $knownByGroup = [];
             $knownOwners = [];

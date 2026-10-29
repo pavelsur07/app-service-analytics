@@ -88,7 +88,7 @@ final class NetForwardCaptureTest extends KernelTestCase
             $aggregate = self::getContainer()->get(AppNet\AggregateNetForecastAction::class);
             $codec = new AppNet\NetForwardManifestCodec();
             $inputCodec = new AppNet\NetForwardInputCodec();
-            $prepare = new AppNet\PrepareNetForecastCaptureAction($db, new AppNet\ReadNetForecastInputsAction($db, $training, new Query\NetTargetQuery($db)), $aggregate, new Query\NetForwardEvidenceQuery($db), new Query\NetForwardBaselineQuery($db), new BuyoutMaturityQuery($db), new SalesCohortSeriesQuery($db, new SalesCohortMetricsQuery($db), new SalesCohortCoverageQuery($db)), $codec, $inputCodec, 'test-only');
+            $prepare = new AppNet\PrepareNetForecastCaptureAction($db, new AppNet\ReadNetForecastInputsAction($db, $training, new Query\NetTargetQuery($db)), $aggregate, new AppNet\ReadNetForwardEvidenceAction($db, new Query\NetForwardEvidenceQuery($db)), new Query\NetForwardBaselineQuery($db), new BuyoutMaturityQuery($db), new SalesCohortSeriesQuery($db, new SalesCohortMetricsQuery($db), new SalesCohortCoverageQuery($db)), $codec, $inputCodec, 'test-only');
             $day = $f->readAt->setTimezone(new \DateTimeZone('Europe/Moscow'))->format('Y-m-d');
             $planId = Uuid::v7()->toRfc4122();
             $request = new AppNet\NetForwardCaptureRequest(Uuid::v7()->toRfc4122(), $planId, $day, $day);
@@ -269,7 +269,7 @@ final class NetForwardCaptureTest extends KernelTestCase
             self::assertSame('query_budget_exceeded', $timeoutReplay->unavailableReason);
             self::assertNull($timeoutReplay->quantities);
             $truthRequest = Uuid::v7()->toRfc4122();
-            $truthAction = new AppNet\CaptureNetForecastTruthAction($db, $repository, $reader, $publish, $codec, $inputCodec, $epochs, new Query\NetTargetQuery($db), new Query\NetForwardEvidenceQuery($db), new MockClock($f->readAt->modify('+90 days')));
+            $truthAction = new AppNet\CaptureNetForecastTruthAction($db, $repository, $reader, $publish, $codec, $inputCodec, $epochs, new Query\NetTargetQuery($db), new AppNet\ReadNetForwardEvidenceAction($db, new Query\NetForwardEvidenceQuery($db)), new MockClock($f->readAt->modify('+90 days')));
             $pending = $truthAction($company, $account, $request->requestId, $verified->publication->root->sha256, $truthRequest);
             self::assertSame(NetForwardArtifactKind::Truth, $pending->publication->root->kind);
             foreach ($reader->segments($company, $account, $pending) as $segment) {

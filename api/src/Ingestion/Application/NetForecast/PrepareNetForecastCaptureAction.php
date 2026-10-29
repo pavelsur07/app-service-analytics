@@ -16,13 +16,14 @@ use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetRequest;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTrainingContext;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTrainingRequest;
 use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortSeriesQuery;
+use App\Shared\Application\QueryTelemetry;
 use Doctrine\DBAL\Connection;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Uid\Uuid;
 
 final readonly class PrepareNetForecastCaptureAction
 {
-    public function __construct(private Connection $connection, private ReadNetForecastInputsAction $inputs, private AggregateNetForecastAction $aggregate, private NetForwardEvidenceQuery $evidence, private NetForwardBaselineQuery $baseline, private BuyoutMaturityQuery $maturity, private SalesCohortSeriesQuery $legacy, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputCodec, #[Autowire('%app.version%')] private string $softwareRelease, #[Autowire('%app.source_commit%')] private string $sourceCommit = '')
+    public function __construct(private Connection $connection, private ReadNetForecastInputsAction $inputs, private AggregateNetForecastAction $aggregate, private ReadNetForwardEvidenceAction $evidence, private NetForwardBaselineQuery $baseline, private BuyoutMaturityQuery $maturity, private SalesCohortSeriesQuery $legacy, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputCodec, #[Autowire('%app.version%')] private string $softwareRelease, #[Autowire('%app.source_commit%')] private string $sourceCommit = '', private QueryTelemetry $telemetry = new QueryTelemetry())
     {
     }
 
@@ -46,13 +47,13 @@ final readonly class PrepareNetForecastCaptureAction
             throw new \UnexpectedValueException('Snapshot identity unavailable.');
         }
         $targetRequest = new NetTargetRequest($plan->marketplaceSkus, new \DateTimeImmutable($request->from), new \DateTimeImmutable($request->to), new \DateTimeImmutable($plan->accumulationFrom));
-        $frame = ($this->inputs)($companyId, $accountId, $targetRequest, $snapshotId);
+        $frame = $this->telemetry->stage('inputs', fn () => ($this->inputs)($companyId, $accountId, $targetRequest, $snapshotId));
         $training = $frame->training;
         $readAt = $training->readAt;
         $quality?->assertPlan($companyId, $accountId, $request, $plan, $readAt);
         $context = $training->context;
-        $forecast = null === $frame->targets ? new NetForecastBatch($companyId, $accountId, $readAt, $context, [], null, $frame->unavailableReason, null, $frame->unavailableReason)
-            : ($this->aggregate)($companyId, $accountId, $frame->targets, $training, $frame->computeStartedNs, $frame->allocationBaselineBytes, $frame->limits, new NetForecastSeriesRequest($plan->marketplaceSkus, $targetRequest->from, $targetRequest->to, $targetRequest->accumulationFrom, $request->groupBy));
+        $forecast = $this->telemetry->stage('model', fn () => null === $frame->targets ? new NetForecastBatch($companyId, $accountId, $readAt, $context, [], null, $frame->unavailableReason, null, $frame->unavailableReason)
+            : ($this->aggregate)($companyId, $accountId, $frame->targets, $training, $frame->computeStartedNs, $frame->allocationBaselineBytes, $frame->limits, new NetForecastSeriesRequest($plan->marketplaceSkus, $targetRequest->from, $targetRequest->to, $targetRequest->accumulationFrom, $request->groupBy)));
         $spool->guard();
         $spool->append('training', ['value' => $this->inputCodec->pack($training)]);
         $spool->append('target_request', ['value' => $this->inputCodec->pack($targetRequest)]);
@@ -72,38 +73,37 @@ final readonly class PrepareNetForecastCaptureAction
         }
         $spool->append('forecast_summary', ['quantities' => $this->inputCodec->pack($forecast->quantities), 'revenue' => $this->inputCodec->pack($forecast->expectedNetRevenue), 'reason' => $forecast->unavailableReason, 'moneyReason' => $forecast->moneyUnavailableReason, 'futureT1Policy' => 'pre_t1_gross_first_valid_v1', 'futureT1Provenance' => $forecast->futureT1Provenance(), 'series' => $this->inputCodec->pack($forecast->series)]);
         if (null !== $context) {
-            $rates = NetForwardBaselineQuery::mapRows($this->baseline->build($companyId, $accountId, $context, new NetTrainingRequest($plan->marketplaceSkus))->executeQuery());
+            $rates = $this->telemetry->stage('baseline.simple', fn () => NetForwardBaselineQuery::mapRows($this->baseline->build($companyId, $accountId, $context, new NetTrainingRequest($plan->marketplaceSkus))->executeQuery()));
             if (null !== $frame->targets) {
                 (new CaptureSimpleNetBaselineAction($this->inputCodec))($frame->targets, $forecast, $rates, $spool);
             }
             unset($frame, $forecast);
             $spool->append('simple_baseline', ['version' => 'simple_mature_return_linear_h60_v1', 'from' => $readAt->modify('-157 days')->format('Y-m-d\TH:i:s.u\Z'), 'to' => $readAt->modify('-67 days')->format('Y-m-d\TH:i:s.u\Z'), 'rates' => array_map(static fn (NetForwardBaselineRate $rate): array => $rate->toArray(), $rates), 'minimumUnits' => 100, 'minimumPostings' => 30, 'fallback' => ['sku', 'account'], 'reason' => null]);
             foreach (['gross', 'returns', 'target'] as $population) {
-                $after = null;
-                do {
-                    $spool->guard();
-                    $rows = NetForwardEvidenceQuery::mapRows($this->evidence->build($companyId, $accountId, $context, $targetRequest, $population, $after)->executeQuery());
-                    $hasMore = NetForwardEvidenceQuery::PAGE_SIZE === \count($rows);
-                    foreach ($rows as $row) {
-                        if ('input_budget' === $row->relation && true !== ($row->values['ok'] ?? null)) {
-                            throw new \OverflowException('Evidence population budget exceeded.');
+                $this->telemetry->stage('evidence.'.$population, function () use ($companyId, $accountId, $context, $targetRequest, $population, $spool): void {
+                    foreach ($this->evidence->pages($companyId, $accountId, $context, $targetRequest, $population, $spool->deadlineNs) as $rows) {
+                        $spool->guard();
+                        $this->telemetry->count('evidence.'.$population.'.rows', \count($rows));
+                        foreach ($rows as $row) {
+                            if ('input_budget' === $row->relation && true !== ($row->values['ok'] ?? null)) {
+                                throw new \OverflowException('Evidence population budget exceeded.');
+                            }
+                            $spool->append('evidence', ['population' => $population, 'relation' => $row->relation, 'values' => $row->values]);
                         }
-                        $spool->append('evidence', ['population' => $population, 'relation' => $row->relation, 'values' => $row->values]);
-                        $after = $row->cursor;
                     }
-                } while ($hasMore);
+                });
             }
         } else {
             $spool->append('simple_baseline', ['version' => 'simple_mature_return_linear_h60_v1', 'reason' => $training->unavailableReason]);
         }
         // Preserve the old method and its own dense scope at the winning T.
         $spool->guard();
-        $maturity = $this->maturity->build($companyId, $accountId, $readAt)->executeQuery()->fetchAssociative();
+        $maturity = $this->telemetry->stage('baseline.maturity', fn () => $this->maturity->build($companyId, $accountId, $readAt)->executeQuery()->fetchAssociative());
         if (false === $maturity) {
             throw new \UnexpectedValueException('Legacy baseline maturity missing.');
         }
         $p95 = BuyoutMaturityQuery::mapRow($maturity)->p95Seconds;
-        $legacy = $this->legacy->build($companyId, $accountId, $plan->marketplaceSkus, $targetRequest->from, $targetRequest->to, $targetRequest->accumulationFrom ?? $targetRequest->from, $request->groupBy, $plan->currency, $readAt, $p95)->executeQuery()->fetchAllAssociative();
+        $legacy = $this->telemetry->stage('baseline.legacy', fn () => $this->legacy->build($companyId, $accountId, $plan->marketplaceSkus, $targetRequest->from, $targetRequest->to, $targetRequest->accumulationFrom ?? $targetRequest->from, $request->groupBy, $plan->currency, $readAt, $p95)->executeQuery()->fetchAllAssociative());
         foreach ($legacy as $row) {
             $spool->append('legacy_baseline', ['method' => 'adr030_projected_buyout', 'maturity' => $maturity, 'scope' => ['from' => $request->from, 'to' => $request->to, 'groupBy' => $request->groupBy, 'currency' => $plan->currency], 'value' => $this->inputCodec->pack(SalesCohortSeriesQuery::mapRow($row)), 'comparisonReason' => 'gross_buyout_not_retained_net']);
         }
