@@ -298,7 +298,7 @@ final class ReadNetForecastActionTest extends KernelTestCase
         $value = $calculator->calculate(100, Money::ofMinor(10000, 'RUB'), 1, \App\SalesPlanning\Domain\SalesPlanMetric::RetainedSales, $cohort, forecastGuard: static function (int $bytes = 0) use (&$goalBytes): void { $goalBytes += $bytes; });
         self::assertSame('0.000', $value->expectedGoalQuantity);
         self::assertGreaterThan(100, $goalBytes);
-        $limits = new NetTargetLimits(outputBytes: $used + $goalBytes + intdiv($goalBytes, 2));
+        $probeLimits = new NetTargetLimits(outputBytes: $used + $goalBytes + intdiv($goalBytes, 2));
         $plan = \App\Tests\Support\Builder\SalesPlanBuilder::aSalesPlan()->withCompanyId($f->company)->withMarketplaceAccountId($f->account)
             ->withPeriod($day, $day)->withMetric(\App\SalesPlanning\Domain\SalesPlanMetric::RetainedSales)->build();
         $lines = \App\Tests\Support\Builder\SalesPlanLineBuilder::linesOf($plan)->withMarketplaceSku('SKU')->withTotalQuantity(100)->withPrice(Money::ofMinor(100, 'RUB'))->build();
@@ -307,10 +307,15 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertInstanceOf(\App\SalesPlanning\Domain\SalesPlanRepository::class, $repository);
         try {
             $repository->add($plan, $lines);
-            $bounded = $this->facade($db, $f, $this->clock($f), true, limits: $limits)->salesCohortMetrics($f->company->toRfc4122(), $f->account->toRfc4122(), $request);
+            $bounded = $this->facade($db, $f, $this->clock($f), true, limits: $probeLimits)->salesCohortMetrics($f->company->toRfc4122(), $f->account->toRfc4122(), $request);
             self::assertNotNull($bounded->forecastBudget, 'Mapper must fit: failure belongs to late goal projection.');
-            self::assertLessThan($goalBytes * 2, $limits->outputBytes - $bounded->forecastBudget->outputBytesUsed);
-            self::assertGreaterThan($goalBytes, $limits->outputBytes - $bounded->forecastBudget->outputBytesUsed);
+            self::assertLessThan($goalBytes * 2, $probeLimits->outputBytes - $bounded->forecastBudget->outputBytesUsed);
+            self::assertGreaterThan($goalBytes, $probeLimits->outputBytes - $bounded->forecastBudget->outputBytesUsed);
+            // Calibrate the final action from the measured mapper output. Leave
+            // room for one goal projection and one byte less than the second;
+            // a 50% cushion allowed both projections when the actual envelope
+            // was smaller than the standalone estimate on CI.
+            $limits = new NetTargetLimits(outputBytes: $bounded->forecastBudget->outputBytesUsed + $goalBytes + 1);
             $db->inspectPopulationContext = false;
             $db->resetObservations();
             $clock = $this->clock($f);
