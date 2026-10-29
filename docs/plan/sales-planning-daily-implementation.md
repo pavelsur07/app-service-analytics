@@ -690,7 +690,7 @@ readonly DTO; `api/tests/Integration/Ingestion/NetSalesForecastQueryTest.php`.
   строк по вероятностям; тест разных цен и частичного возврата исключает
   общую среднюю РРЦ и float. Нет цены — нет денежной оценки.
   **2–3 ч. Зависимость: B10.**
-- [ ] **B12. Добавить нетто-прогноз в Facade и API.** Отдать expectedNetSalesQuantity,
+- [x] **B12. Добавить нетто-прогноз в Facade и API.** Отдать expectedNetSalesQuantity,
   Revenue, методику и качество; сгенерировать контракт и проверить
   api-types-check. **2–3 ч. Зависимости: B11, A29.**
 - [ ] **B13. Вывести нетто-прогноз в seller.** Показать отдельно от факта
