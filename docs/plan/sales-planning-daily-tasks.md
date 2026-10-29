@@ -935,3 +935,21 @@ CI40796267542/681 и40797001942/682SUCCESS. Production682-7612f88 провере
 01:04:04UTC:12healthy,7originalepoch/версия,7closedpublication,23readonly
 smoke,pingscorrect. B12 закрыта62/68; следующийB13seller, численноекачество
 иrollout остаютсязаB15–B18 иотдельнымHTTPperformancegate.
+
+
+## Приёмка B13: точный net UI seller, 2026-10-29
+
+Отдельный net-блок и одно описание методики, serverperiod/cumulative,
+canonicalstringMoney/authoritative0..4/sign/exactMINMAX, независимые qty/money
+null/zero/reasons. Общие причины не дублируются; pending/not_assessed честные.
+Generatedschema/backend/query/cache API не менялись.560tests/type/lint/knip/
+buildGREEN, guardedE2E7+extension0/cleanup0.1280/768 browser/details/keyboard/
+scroll actual;390fixedsidebar limitation сохранён, localbuildsyntheticcaptcha.
+Два actualCodexCLI0/0,gpt-6.1-sol,package
+6e90314e44f605edc24dfa15ee00e120c7331a683cfbc9ee6ce15a26af8fb684,coverage19/19.
+Uniqueaccepted0/0/rejected0; ownerUIfinding1fixed separately.
+PR284source3900aad/mergeea84c1c6583ddda33d334d1b0d3561626fef26b4;
+CI40801387870/683 и40801816809/684SUCCESS. Production684-ea84c1c
+verified01:46:47UTC:12healthy/7epoch+version/7closedgate/23readonlysmoke/pings
+andservednewUIJSmarkers. B13 закрыта63/68; следующийB14 goal/rate/speed,
+прогнозкачества/численныйrollout по-прежнемунеразрешён.
