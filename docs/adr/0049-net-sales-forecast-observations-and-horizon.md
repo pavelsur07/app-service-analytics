@@ -242,6 +242,46 @@ revision IDs/значения и receipts одного read-only RR, модел�
 не заявляется. Snapshot capture выполняет отдельный bounded application
 сценарий с известным company/account, не меняя GET readonly транзакцию.
 
+Публикация B15 использует собственный приватный prefix
+`conwix/monolith/net-forecast/v1/companies/{company}/accounts/{account}/`.
+Content-addressed chunks и root разделены по kind/request/attempt; новый RR
+получает новый attempt UUIDv7. Fixed-key root и conditional PUT не являются
+опорой корректности: фактический provider игнорирует условную запись.
+После закрытия внешнего read-only RR writer проверяет bytes/hash объектов,
+затем отдельная короткая READ COMMITTED transaction вставляет неизменяемый
+`net_forecast_artifact` по естественному PK(company, account, kind, request).
+Request hash вне PK; конфликт другого запроса отклоняется. ON CONFLICT DO
+NOTHING и отдельный последующий SELECT выбирают committed winner; UPDATE
+нет. S3 IO внутри DB transaction запрещён. Возвращается verified winner с
+его exact readAt из root, не timestamp проигравшей попытки. Reader пересобирает
+ключ из tenant/account-scoped publication row, проверяет внешний root hash,
+версии и каждый chunk. Потеря/порча опубликованных bytes не запускает recapture.
+
+Plan-linked capture принадлежит SalesPlanning: видимые plan/baseline/goal
+читаются в общем pinned RR, prepare/publish проходят только через Ingestion
+Facade. Общая materialization path сохраняет targets, training, actual consumed
+source evidence и independent baseline в том же RR. Public numeric gate
+остаётся закрытым; private source/model results и validation_pending сохраняются
+раздельно. Replay использует sealed inputs и чистую арифметику без current DB.
+
+Отсутствующая lifecycle policy при включённом versioning — открытое
+эксплуатационное расхождение с ADR-024. DB anchor не исправляет его и не
+ограничивает глобальное накопление orphan versions. B15 не меняет IAM,
+retention, lifecycle в runtime и raw adapter. По последующему указанию владельца
+в проект добавлена узкая lifecycle-конфигурация
+`ops/storage/net-forecast-lifecycle.json`: только noncurrent versions prefix
+`conwix/monolith/net-forecast/v1/` удаляются через 90 дней; current artifacts
+остаются бессрочно. Сам файл не меняет состояние бакета: оператор применяет
+его после read-before-write и слияния всех уже существующих правил, затем
+проверяет read-back. Это закрывает накопление неактуальных версий для новых
+повторных записей, но не удаляет уникальные orphan current objects и не вводит
+GC. До release root фиксирует приватность,
+retention/recovery и способ разрешения расхождения; автоматического выбора
+победителя после потери БД по S3 LIST нет. Tenant export/deletion inventory
+включает новый prefix и publication table. App rollback сохраняет additive
+таблицу; destructive down после captures требует отдельного восстановления
+DB+bucket, а не выполняется при обычном rollback.
+
 Truth привязан к каждому компоненту прогноза и его фактическому origin:
 - D, известный на T: ждать deliveryOrigin+H+L и полный coverage; если этот
   срок уже прошёл, зафиксированное D(T) остаётся базой rolling target.

@@ -159,3 +159,26 @@ services:
     # по интерфейсу только внутри самого бандла, не в App\.
     App\Shared\Ui\RequestContextProcessor:
         tags: [monolog.processor]
+
+    # Artifact invocations cap retries themselves; raw storage keeps its existing client.
+    net_forward.http_client:
+        class: Symfony\Component\HttpClient\CurlHttpClient
+        factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
+        arguments:
+            - { timeout: 2, max_duration: 2 }
+    net_forward.s3_client:
+        class: AsyncAws\S3\S3Client
+        arguments:
+            $configuration:
+                endpoint: '%env(RAW_STORAGE_ENDPOINT)%'
+                region: '%env(RAW_STORAGE_REGION)%'
+                accessKeyId: '%env(RAW_STORAGE_ACCESS_KEY)%'
+                accessKeySecret: '%env(RAW_STORAGE_SECRET_KEY)%'
+                pathStyleEndpoint: 'true'
+            $httpClient: '@net_forward.http_client'
+            $logger: null
+    App\Ingestion\Infrastructure\Storage\S3NetForwardArtifactStorage:
+        arguments:
+            $s3: '@net_forward.s3_client'
+    App\Ingestion\Domain\NetForwardArtifactStorage: '@App\Ingestion\Infrastructure\Storage\S3NetForwardArtifactStorage'
+    App\Ingestion\Domain\NetForecastArtifactRepository: '@App\Ingestion\Infrastructure\Persistence\DbalNetForecastArtifactRepository'

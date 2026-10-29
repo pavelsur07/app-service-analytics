@@ -475,6 +475,25 @@ raw v3 с `postings`. Сбой после перехода устраняетс�
       `…/companies/{company_id}/`. Ключ сервиса — с правами только на свой
       префикс; если провайдер политики по префиксу не умеет — отметить
       здесь, что граница держится кодом
+- [x] Lifecycle для forward-artifacts: конфигурация
+      `ops/storage/net-forecast-lifecycle.json` удаляет только noncurrent
+      версии старше 90 дней под `conwix/monolith/net-forecast/v1/`.
+      Current-версии хранятся бессрочно. Перед применением прочитать текущую
+      lifecycle-конфигурацию бакета: `put-bucket-lifecycle-configuration`
+      заменяет весь набор правил, поэтому существующие правила нужно сохранить
+      в итоговом документе. После применения перечитать конфигурацию и
+      подтвердить prefix/status/90 дней; правило не ограничивает рост
+      уникальных current-artifacts и не является GC. Production read-back
+      2026-10-29 подтвердил Enabled, точный prefix, 90 дней и отсутствие
+      current expiration. Timeweb описывает этот механизм в
+      [документации по версионированию S3](https://timeweb.cloud/docs/s3-storage/supported-features/s3-object-versioning).
+      Команды применяются оператором после проверки/слияния существующих правил:
+
+      ```sh
+      aws s3api get-bucket-lifecycle-configuration --bucket "$RAW_STORAGE_BUCKET" --endpoint-url https://s3.twcstorage.ru
+      aws s3api put-bucket-lifecycle-configuration --bucket "$RAW_STORAGE_BUCKET" --lifecycle-configuration file://ops/storage/net-forecast-lifecycle.json --endpoint-url https://s3.twcstorage.ru
+      aws s3api get-bucket-lifecycle-configuration --bucket "$RAW_STORAGE_BUCKET" --endpoint-url https://s3.twcstorage.ru
+      ```
 - [ ] Правило lifecycle на `conwix/svc/ozon-fetcher/` — 90 дней, включая
       неактуальные версии; на `conwix/raw/` срока нет
 - [ ] Реквизиты в `/opt/conwix/.env` — через `bin/set-raw-storage-env.sh`,

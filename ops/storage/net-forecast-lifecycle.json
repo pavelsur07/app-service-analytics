@@ -1,0 +1,14 @@
+{
+  "Rules": [
+    {
+      "ID": "net-forecast-noncurrent-versions-90-days",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "conwix/monolith/net-forecast/v1/"
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 90
+      }
+    }
+  ]
+}

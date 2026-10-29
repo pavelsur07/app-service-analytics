@@ -953,3 +953,24 @@ CI40801387870/683 и40801816809/684SUCCESS. Production684-ea84c1c
 verified01:46:47UTC:12healthy/7epoch+version/7closedgate/23readonlysmoke/pings
 andservednewUIJSmarkers. B13 закрыта63/68; следующийB14 goal/rate/speed,
 прогнозкачества/численныйrollout по-прежнемунеразрешён.
+
+
+## Приёмка B14: прогноз цели и скорости, 2026-10-29
+
+Обе цели используют полный exact итог: retained expectedNet и effective orders
+минус future PRE T1; исходный baseline, независимые HalfUp поля, signed
+отклонение и JS-safe bps. API generated, seller показывает server values.
+Shared budget продолжается до final view; поздний отказ очищает весь net+goal,
+сохраняя факты/gross/план без повторных SQL.
+735unit/847integration/383functional/static/API,572seller/all frontend gates,
+admin/extension types и guardedE2E7+extension PASS;12 resource proofs,13200
+independent oracle values/1316source hashes и owncleanup. Internal max4.946s,
+полный Action16.17–20.60s: это не HTTP<3s/accuracy admission.
+4actual CodexCLI(gpt-6.1-sol),2roles×2packages,0findings/0gaps,coverage43/43;
+новых уникальных принятых CLI0 на каждом проходе,owner2fixed/rejected0.
+Полные заключения/модели/session IDs сохранены в PR285 и B14.md.
+PR285source05929ba/mastera3c0489bdd5c5efe5f54e1c0594378bc784258ef;
+CI40811495023/685 и40812224554/686SUCCESS. Production686-a3c0489 verified
+03:36:47UTC:12healthy,7originalepoch+version,7closedgate,28readonlysmoke,
+pings иservedgoalUI markers. B14 закрыта64/68; следующийB15sealed inputs/truth.
+B16–B18 требуют реальных дозревших данных и performance допуска.

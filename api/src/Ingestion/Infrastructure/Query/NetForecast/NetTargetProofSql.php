@@ -256,14 +256,14 @@ final class NetTargetProofSql
             ),
             target_receipt_calendar AS MATERIALIZED (
                 SELECT d.day,
-                       MAX(r.marked_at) FILTER (WHERE r.status = 'completed' AND r.capture_origin = 'live_polling' AND r.capture_version = :captureVersion) AS latest_completed,
+                       MAX(r.marked_at) FILTER (WHERE r.status = 'completed' AND r.date_from = d.day AND r.date_to = d.day AND r.capture_origin = 'live_polling' AND r.capture_version = :captureVersion) AS latest_completed,
                        MAX(r.marked_at) FILTER (WHERE r.status = 'failed') AS latest_failed,
-                       MAX(r.marked_at) FILTER (WHERE r.status = 'completed' AND r.capture_origin = 'live_polling' AND r.capture_version = :captureVersion
+                       MAX(r.marked_at) FILTER (WHERE r.status = 'completed' AND r.date_from = d.day AND r.date_to = d.day AND r.capture_origin = 'live_polling' AND r.capture_version = :captureVersion
                          AND r.marked_at >= ((d.day + 1)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')
                          AND r.marked_at <= ((d.day + 2)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')) AS timely_completed,
                        MAX(r.marked_at) FILTER (WHERE r.status = 'failed' AND r.marked_at <= ((d.day + 2)::timestamp AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC')) AS timely_failed,
                        MD5(COALESCE(STRING_AGG(r.id::text, ',' ORDER BY r.id) FILTER (WHERE r.id IS NOT NULL), '')) AS witness_digest
-                FROM target_calendar_dates d LEFT JOIN receipt_inputs r ON r.report_type = 'ozon_returns_list' AND d.day BETWEEN r.date_from AND r.date_to
+                FROM target_calendar_dates d LEFT JOIN receipt_inputs r ON r.report_type = 'ozon_returns_list' AND r.date_from <= d.day AND r.date_to >= d.day
                 GROUP BY d.day
             ),
             target_daily_proof AS MATERIALIZED (

@@ -5,8 +5,16 @@ declare(strict_types=1);
 namespace App\Ingestion\Application\Facade;
 
 use App\Ingestion\Application\NetForecast\NetForecastSeriesRequest;
+use App\Ingestion\Application\NetForecast\NetForwardArtifactReader;
+use App\Ingestion\Application\NetForecast\NetForwardCaptureRequest;
+use App\Ingestion\Application\NetForecast\NetForwardPlanContext;
 use App\Ingestion\Application\NetForecast\NetTrainingSnapshot;
+use App\Ingestion\Application\NetForecast\PrepareNetForecastCaptureAction;
+use App\Ingestion\Application\NetForecast\PublishNetForecastCaptureAction;
 use App\Ingestion\Application\NetForecast\ReadNetForecastAction;
+use App\Ingestion\Application\NetForecast\VerifiedNetForwardArtifact;
+use App\Ingestion\Domain\NetForecastArtifactRepository;
+use App\Ingestion\Domain\NetForwardArtifactKind;
 use App\Ingestion\Domain\ValueObject\ObservedReturnCurve;
 use App\Ingestion\Infrastructure\Config\NetForecastPublication;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutMaturityQuery;
@@ -51,7 +59,49 @@ final class IngestionFacade
         private readonly ReadNetForecastAction $netForecast,
         private readonly NetTrainingSnapshot $netSnapshot,
         private readonly SalesCohortNetMapper $netMapper = new SalesCohortNetMapper(),
+        private readonly ?PrepareNetForecastCaptureAction $prepareForward = null,
+        private readonly ?PublishNetForecastCaptureAction $publishForward = null,
+        private readonly ?NetForwardArtifactReader $forwardReader = null,
+        private readonly ?NetForecastArtifactRepository $forwardRepository = null,
     ) {
+    }
+
+    public function findForwardCapture(string $companyId, string $accountId, ForwardCaptureRequest $request): ?ForwardArtifactRef
+    {
+        $repository = $this->forwardRepository ?? throw new \LogicException('Forward capture unavailable.');
+        $reader = $this->forwardReader ?? throw new \LogicException('Forward capture unavailable.');
+        $reader->assertNoTransaction();
+        if (null === $repository->find($companyId, $accountId, NetForwardArtifactKind::Input, $request->requestId)) {
+            return null;
+        }
+
+        return self::forwardRef($reader->read($companyId, $accountId, NetForwardArtifactKind::Input, $request->requestId, requestHash: $request->hash()));
+    }
+
+    public function prepareForwardCapture(string $companyId, string $accountId, ForwardCaptureRequest $request, ForwardPlanContext $plan, int $deadlineNs): PreparedForwardCapture
+    {
+        $prepare = $this->prepareForward ?? throw new \LogicException('Forward capture unavailable.');
+        $publish = $this->publishForward ?? throw new \LogicException('Forward capture unavailable.');
+        $prepared = $prepare($companyId, $accountId,
+            new NetForwardCaptureRequest($request->requestId, $request->planId, $request->from, $request->to, $request->groupBy),
+            new NetForwardPlanContext($plan->planId, $plan->planVersion, $plan->versionNumber, $plan->baselineId, $plan->baselineVersion, $plan->metric, $plan->currency, $plan->accumulationFrom, $plan->marketplaceSkus, $plan->goalRows), $deadlineNs);
+
+        return new PreparedForwardCapture($companyId, $accountId, static fn (): ForwardArtifactRef => self::forwardRef($publish($companyId, $accountId, $prepared)));
+    }
+
+    public function publishForwardCapture(string $companyId, string $accountId, PreparedForwardCapture $capture): ForwardArtifactRef
+    {
+        return $capture->publish($companyId, $accountId);
+    }
+
+    private static function forwardRef(VerifiedNetForwardArtifact $artifact): ForwardArtifactRef
+    {
+        $chunks = $artifact->manifest['chunks'];
+        if (!\is_array($chunks)) {
+            throw new \UnexpectedValueException('Artifact chunks missing.');
+        }
+
+        return new ForwardArtifactRef($artifact->publication->root->kind->value, $artifact->publication->root->requestId, $artifact->publication->root->sha256, $artifact->readAt, \count($chunks));
     }
 
     /**

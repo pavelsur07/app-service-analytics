@@ -214,7 +214,7 @@ final readonly class NetTargetQuery
                          't1', CASE WHEN p.reason IS NULL THEN p.t1 END, 't2', CASE WHEN p.reason IS NULL THEN p.t2 END, 'p', CASE WHEN p.reason IS NULL THEN p.p END,
                          'eligibleOpenPre', CASE WHEN p.reason IS NULL THEN p.open_pre END, 'eligibleOpenPost', CASE WHEN p.reason IS NULL THEN p.open_post END,
                          'unknownQuantity', CASE WHEN p.reason IS NULL THEN p.unknown END, 'deliveryOrigin', p.delivery_origin,
-                         'readiness', CASE WHEN p.current_d > 0 AND p.age >= 67 AND p.reason IS NULL THEN JSONB_BUILD_OBJECT(
+                         'readiness', CASE WHEN p.age >= 67 AND p.reason IS NULL AND p.daily_complete AND p.deep_completed_at IS NOT NULL AND p.coverage_through >= p.delivery_origin + INTERVAL '67 days' THEN JSONB_BUILD_OBJECT(
                            'orderNumber', p.order_number, 'marketplaceSku', p.marketplace_sku, 'deliveryOrigin', p.delivery_origin,
                            'coveragePolicy', 'daily_complete_receipts_v1', 'coverageFrom', p.coverage_from, 'coverageThrough', p.coverage_through,
                            'deepCompletedAt', p.deep_completed_at, 'historyComplete', TRUE, 'postingsCoverageComplete', TRUE, 'returnsCoverageComplete', TRUE) END,
