@@ -50,6 +50,12 @@ services:
         arguments:
             $publishedModelVersion: '%env(default:net_forecast.published_model_default:NET_FORECAST_PUBLISHED_MODEL_VERSION)%'
 
+    App\Shared\Domain\QueryTimingRecorder: '@App\Shared\Application\QueryTelemetry'
+
+    App\Shared\Application\QueryTelemetry:
+        arguments:
+            $logger: '@monolog.logger.net_capture'
+
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
 

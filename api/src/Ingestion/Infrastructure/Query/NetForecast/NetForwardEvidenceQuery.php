@@ -20,6 +20,59 @@ final readonly class NetForwardEvidenceQuery
     public function build(string $companyId, string $accountId, NetTrainingContext $context, NetTargetRequest $request, string $population, ?string $after = null): QueryBuilder
     {
         $context->assertScope($companyId, $accountId);
+        $target = 'target' === $population;
+        $evidence = $this->evidenceSql($population);
+        // Body contains the selected relation's stable identity and full consumed values.
+        // It orders evidence deterministically; this is never used as causal ordering.
+        $source = $evidence.", page AS MATERIALIZED (SELECT relation, body, relation || ':' || body AS cursor FROM evidence WHERE CAST(:after AS text) IS NULL OR relation || ':' || body > :after ORDER BY cursor LIMIT ".self::PAGE_SIZE.'), sized AS MATERIALIZED (SELECT SUM(octet_length(body) + octet_length(cursor)) <= 1048576 AS ok FROM page) SELECT relation, CASE WHEN sized.ok THEN body END AS body, CASE WHEN sized.ok THEN cursor END AS cursor FROM page CROSS JOIN sized ORDER BY page.cursor';
+        $query = $this->connection->createQueryBuilder()->select('e.relation', 'e.body', 'e.cursor')->from('('.$source.')', 'e')->setParameter('after', $after);
+
+        return $target ? NetTargetSourceSql::bind($query, $context, $request, new NetTargetLimits()) : NetTrainingSourceSql::bind($query, $context, new NetTrainingRequest($request->marketplaceSkus), new NetTrainingLimits());
+    }
+
+    /** One source calculation in the caller's pinned RR; transfer remains <=200 rows/1MiB per page.
+     * @return \Generator<int, list<NetForwardEvidenceRow>> */
+    public function pages(string $companyId, string $accountId, NetTrainingContext $context, NetTargetRequest $request, string $population, ?int $deadlineNs = null): \Generator
+    {
+        $context->assertScope($companyId, $accountId);
+        if (!$this->connection->isTransactionActive() || 'on' !== $this->connection->fetchOne('SHOW transaction_read_only') || !\in_array($this->connection->fetchOne('SHOW transaction_isolation'), ['repeatable read', 'serializable'], true) || $context->snapshotId !== $this->connection->fetchOne('SELECT txid_current_snapshot()::text')) {
+            throw new \LogicException('Evidence cursor requires the matching pinned read-only snapshot.');
+        }
+        if (null !== $deadlineNs && hrtime(true) >= $deadlineNs) {
+            throw new \OverflowException('Evidence cursor deadline exceeded.');
+        }
+        $source = $this->evidenceSql($population).", ordered AS MATERIALIZED (SELECT relation, body, relation || ':' || body AS cursor, ROW_NUMBER() OVER (ORDER BY relation || ':' || body) AS ordinal FROM evidence), sized AS (SELECT relation, body, cursor, ordinal, SUM(octet_length(body) + octet_length(cursor)) OVER (PARTITION BY (ordinal - 1) / ".self::PAGE_SIZE.') <= 1048576 AS ok FROM ordered) SELECT relation, CASE WHEN ok THEN body END AS body, CASE WHEN ok THEN cursor END AS cursor FROM sized ORDER BY ordinal';
+        $query = $this->connection->createQueryBuilder()->select('e.relation', 'e.body', 'e.cursor')->from('('.$source.')', 'e');
+        $query = 'target' === $population ? NetTargetSourceSql::bind($query, $context, $request, new NetTargetLimits()) : NetTrainingSourceSql::bind($query, $context, new NetTrainingRequest($request->marketplaceSkus), new NetTrainingLimits());
+        $cursor = 'net_evidence_'.bin2hex(random_bytes(8));
+        $this->connection->executeStatement('DECLARE '.$cursor.' NO SCROLL CURSOR FOR '.$query->getSQL(), $query->getParameters(), $query->getParameterTypes());
+        $completed = false;
+        try {
+            do {
+                if (null !== $deadlineNs && hrtime(true) >= $deadlineNs) {
+                    throw new \OverflowException('Evidence cursor deadline exceeded.');
+                }
+                $page = self::mapRows($this->connection->executeQuery('FETCH FORWARD '.self::PAGE_SIZE.' FROM '.$cursor));
+                if ([] !== $page) {
+                    yield $page;
+                }
+            } while (self::PAGE_SIZE === \count($page));
+            $completed = true;
+        } finally {
+            if ($completed) {
+                $this->connection->executeStatement('CLOSE '.$cursor);
+            } else {
+                try {
+                    $this->connection->executeStatement('CLOSE '.$cursor);
+                } catch (\Throwable) {
+                    // Preserve the original failure; the owning transaction also closes cursors on rollback.
+                }
+            }
+        }
+    }
+
+    private function evidenceSql(string $population): string
+    {
         if (!\in_array($population, ['gross', 'returns', 'target'], true)) {
             throw new \InvalidArgumentException('Unknown evidence population.');
         }
@@ -44,12 +97,8 @@ final readonly class NetForwardEvidenceQuery
             }
             $segments[] = "SELECT '$relation' AS relation, ($body)::text AS body FROM $relation r$join";
         }
-        // Body contains the selected relation's stable identity and full consumed values.
-        // It orders evidence deterministically; this is never used as causal ordering.
-        $source = 'WITH '.$ctes.', evidence AS MATERIALIZED ('.implode(' UNION ', $segments)."), page AS MATERIALIZED (SELECT relation, body, relation || ':' || body AS cursor FROM evidence WHERE CAST(:after AS text) IS NULL OR relation || ':' || body > :after ORDER BY cursor LIMIT ".self::PAGE_SIZE.'), sized AS MATERIALIZED (SELECT SUM(octet_length(body) + octet_length(cursor)) <= 1048576 AS ok FROM page) SELECT relation, CASE WHEN sized.ok THEN body END AS body, CASE WHEN sized.ok THEN cursor END AS cursor FROM page CROSS JOIN sized ORDER BY page.cursor';
-        $query = $this->connection->createQueryBuilder()->select('e.relation', 'e.body', 'e.cursor')->from('('.$source.')', 'e')->setParameter('after', $after);
 
-        return $target ? NetTargetSourceSql::bind($query, $context, $request, new NetTargetLimits()) : NetTrainingSourceSql::bind($query, $context, new NetTrainingRequest($request->marketplaceSkus), new NetTrainingLimits());
+        return 'WITH '.$ctes.', evidence AS MATERIALIZED ('.implode(' UNION ', $segments).')';
     }
 
     /** @return list<NetForwardEvidenceRow> */
