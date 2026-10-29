@@ -105,7 +105,7 @@ final readonly class NetQualityTruthReader
                     throw new \UnexpectedValueException('Truth components or input price/mask do not match selection.');
                 }
                 $seen[$key] = true;
-                if ('ineligible' === $truth['state'] && (null !== $ready || 'source_correction' === $truth['reason'])) {
+                if ((null !== $ready && 'ready' !== $truth['state']) || 'source_correction' === $truth['reason']) {
                     $invalidations[] = ['truth' => $frame->reference->toArray(), 'sourceRowId' => $id, 'reason' => $truth['reason'] ?? 'selected_truth_invalidated'];
                 }
                 if (($part['truthScope'] ?? null) !== 'part') {

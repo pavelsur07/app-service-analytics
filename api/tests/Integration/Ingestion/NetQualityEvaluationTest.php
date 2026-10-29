@@ -99,7 +99,14 @@ final class NetQualityEvaluationTest extends KernelTestCase
         }
     }
 
-    public function testLaterRealSourceCorrectionInvalidatesAnEarlierReadyTruth(): void
+    /** @return array<string, array{string, int}> */
+    public static function sourceCorrections(): array
+    {
+        return ['quantity_correction' => ['SKU', 11], 'source_moves_outside_scope' => ['OUTSIDE', 10]];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('sourceCorrections')]
+    public function testLaterRealSourceCorrectionInvalidatesAnEarlierReadyTruth(string $newSku, int $newQuantity): void
     {
         self::bootKernel(['debug' => false]);
         $connection = self::getContainer()->get(Connection::class);
@@ -114,7 +121,7 @@ final class NetQualityEvaluationTest extends KernelTestCase
             $selection = $f->selection();
             $pending = $f->truth(7);
             $ready = $f->truth(70);
-            $f->targets->delivered('TARGET', 'SKU', 11, $f->targets->readAt->modify('-1 day'), day: $f->targets->readAt->modify('-2 days')->setTime(0, 0), amount: \App\Shared\Domain\ValueObject\Money::ofMinor(7, 'RUB'));
+            $f->targets->delivered('TARGET', $newSku, $newQuantity, $f->targets->readAt->modify('-1 day'), day: $f->targets->readAt->modify('-2 days')->setTime(0, 0), amount: \App\Shared\Domain\ValueObject\Money::ofMinor(7, 'RUB'));
             $corrected = $f->truth(75);
             $inventory = $f->truthInventory([$pending, $ready, $corrected]);
             $evaluate = new Net\EvaluateNetForecastQualityAction($f->artifacts->reader, new Net\NetQualityProtocolReader($f->artifacts->reader), new Net\NetQualityInventoryReader($f->artifacts->reader), new Net\NetQualityTruthReader($f->artifacts->reader, new Net\NetForwardInputCodec()), $f->artifacts->writer, new Net\NetQualityMetrics(), new Net\NetQualityDecision(), new Net\NetForwardManifestCodec(), new Net\NetQualityReportCodec(), '123-aaaaaaa');
