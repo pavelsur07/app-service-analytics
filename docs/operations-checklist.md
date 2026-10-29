@@ -475,7 +475,7 @@ raw v3 с `postings`. Сбой после перехода устраняетс�
       `…/companies/{company_id}/`. Ключ сервиса — с правами только на свой
       префикс; если провайдер политики по префиксу не умеет — отметить
       здесь, что граница держится кодом
-- [ ] Lifecycle для forward-artifacts: конфигурация
+- [x] Lifecycle для forward-artifacts: конфигурация
       `ops/storage/net-forecast-lifecycle.json` удаляет только noncurrent
       версии старше 90 дней под `conwix/monolith/net-forecast/v1/`.
       Current-версии хранятся бессрочно. Перед применением прочитать текущую
@@ -483,8 +483,10 @@ raw v3 с `postings`. Сбой после перехода устраняетс�
       заменяет весь набор правил, поэтому существующие правила нужно сохранить
       в итоговом документе. После применения перечитать конфигурацию и
       подтвердить prefix/status/90 дней; правило не ограничивает рост
-      уникальных current-artifacts и не является GC. Timeweb описывает этот
-      механизм в [документации по версионированию S3](https://timeweb.cloud/docs/s3-storage/supported-features/s3-object-versioning).
+      уникальных current-artifacts и не является GC. Production read-back
+      2026-10-29 подтвердил Enabled, точный prefix, 90 дней и отсутствие
+      current expiration. Timeweb описывает этот механизм в
+      [документации по версионированию S3](https://timeweb.cloud/docs/s3-storage/supported-features/s3-object-versioning).
       Команды применяются оператором после проверки/слияния существующих правил:
 
       ```sh
