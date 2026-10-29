@@ -577,6 +577,7 @@ jobs:
             -f docker/php/Dockerfile \
             --target prod \
             --build-arg APP_VERSION='${{ steps.tag.outputs.tag }}' \
+            --build-arg APP_SOURCE_COMMIT='${{ github.sha }}' \
             -t "$image:${{ steps.tag.outputs.tag }}" \
             -t "$image:latest" \
             .
@@ -645,6 +646,9 @@ jobs:
           echo "APP_VERSION в образе: $baked"
           [ "$baked" = '${{ steps.tag.outputs.tag }}' ] \
             || { echo "APP_VERSION в образе не совпал с тегом" >&2; exit 1; }
+          source_commit=$(docker run --rm "$image" php -r 'echo getenv("APP_SOURCE_COMMIT");')
+          [ "$source_commit" = '${{ github.sha }}' ] \
+            || { echo "APP_SOURCE_COMMIT в образе не совпал с source SHA" >&2; exit 1; }
 
   deploy:
     name: выкладка

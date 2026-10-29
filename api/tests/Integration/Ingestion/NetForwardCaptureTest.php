@@ -103,7 +103,8 @@ final class NetForwardCaptureTest extends KernelTestCase
                 {
                 }
 
-                public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body): void
+                /** @param (\Closure(int): void)|null $beforeRead */
+                public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body, ?\Closure $beforeRead = null): void
                 {
                     TestCaseProxy::assertNoTransaction($this->db);
                     $key->assertScope($companyId, $accountId);
@@ -179,9 +180,10 @@ final class NetForwardCaptureTest extends KernelTestCase
                 {
                 }
 
-                public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body): void
+                /** @param (\Closure(int): void)|null $beforeRead */
+                public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body, ?\Closure $beforeRead = null): void
                 {
-                    $this->inner->putContent($companyId, $accountId, $key, $body);
+                    $this->inner->putContent($companyId, $accountId, $key, $body, $beforeRead);
                 }
 
                 public function get(string $companyId, string $accountId, NetForwardArtifactKey $key, int $maxBytes): string

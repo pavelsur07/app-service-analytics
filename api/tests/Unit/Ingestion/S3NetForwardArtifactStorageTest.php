@@ -20,8 +20,11 @@ final class S3NetForwardArtifactStorageTest extends TestCase
         $body = '{"exact":1}';
         $key = $this->key($body);
         $client = new MockHttpClient([new MockResponse('', ['http_code' => 200]), new MockResponse($body, ['response_headers' => ['content-length: '.\strlen($body)]])]);
-        $this->storage($client)->putContent($key->companyId, $key->accountId, $key, $body);
+        $budget = new \App\Ingestion\Application\NetForecast\NetQualityBudget();
+        $this->storage($client)->putContent($key->companyId, $key->accountId, $key, $body, static fn (int $bytes) => $budget->readBytes($bytes));
         self::assertSame(2, $client->getRequestsCount());
+        self::assertSame(1, $budget->summary()['reads']);
+        self::assertSame(\strlen($body), $budget->summary()['readBytes']);
     }
 
     public function testLostPutResponseRecoversViaGetWithoutSecondPut(): void
@@ -29,8 +32,11 @@ final class S3NetForwardArtifactStorageTest extends TestCase
         $body = '{}';
         $key = $this->key($body);
         $client = new MockHttpClient([new MockResponse('', ['http_code' => 500]), new MockResponse($body)]);
-        $this->storage($client)->putContent($key->companyId, $key->accountId, $key, $body);
+        $budget = new \App\Ingestion\Application\NetForecast\NetQualityBudget();
+        $this->storage($client)->putContent($key->companyId, $key->accountId, $key, $body, static fn (int $bytes) => $budget->readBytes($bytes));
         self::assertSame(2, $client->getRequestsCount());
+        self::assertSame(1, $budget->summary()['reads']);
+        self::assertSame(\strlen($body), $budget->summary()['readBytes']);
     }
 
     public function testSuccessfulPutWithCorruptedReadBackFails(): void
@@ -47,6 +53,20 @@ final class S3NetForwardArtifactStorageTest extends TestCase
         $client = new MockHttpClient([new MockResponse(str_repeat('x', 300))]);
         $this->expectException(\OverflowException::class);
         $this->storage($client)->get($key->companyId, $key->accountId, $key, 2);
+    }
+
+    public function testReadbackCannotStartOutsideSharedQualityByteBudget(): void
+    {
+        $body = '{}';
+        $key = $this->key($body);
+        $client = new MockHttpClient([new MockResponse(''), new MockResponse($body)]);
+        $budget = new \App\Ingestion\Application\NetForecast\NetQualityBudget(maxReadBytes: 1);
+        $this->expectException(\OverflowException::class);
+        try {
+            $this->storage($client)->putContent($key->companyId, $key->accountId, $key, $body, static fn (int $bytes) => $budget->readBytes($bytes));
+        } finally {
+            self::assertSame(1, $client->getRequestsCount(), 'Guard must run before the GET.');
+        }
     }
 
     private function key(string $body): NetForwardArtifactKey

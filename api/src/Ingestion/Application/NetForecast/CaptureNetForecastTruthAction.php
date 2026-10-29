@@ -27,12 +27,13 @@ use App\Ingestion\Infrastructure\Query\NetForecast\NetTrainingValue;
 use Doctrine\DBAL\Connection;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Uid\Uuid;
 
 /** New observation and new immutable artifact; input and previous truth never mutate. */
 final readonly class CaptureNetForecastTruthAction
 {
-    public function __construct(private Connection $connection, private NetForecastArtifactRepository $repository, private NetForwardArtifactReader $reader, private PublishNetForecastCaptureAction $publish, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputs, private NetForecastCaptureEpochs $epochs, private NetTargetQuery $targets, private NetForwardEvidenceQuery $evidence, private ClockInterface $clock = new NativeClock())
+    public function __construct(private Connection $connection, private NetForecastArtifactRepository $repository, private NetForwardArtifactReader $reader, private PublishNetForecastCaptureAction $publish, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputs, private NetForecastCaptureEpochs $epochs, private NetTargetQuery $targets, private NetForwardEvidenceQuery $evidence, private ClockInterface $clock = new NativeClock(), #[Autowire('%app.version%')] private string $softwareRelease = 'unversioned')
     {
     }
 
@@ -234,7 +235,12 @@ final readonly class CaptureNetForecastTruthAction
             [$truthMoney, $moneyReason] = $allReady ? $money->toMoneyOutcome() : [null, 'components_not_ready'];
             $spool->append('truth_summary', ['state' => $allReady ? 'ready' : 'pending', 'quantity' => $allReady ? (string) $total : null, 'money' => $allReady ? $this->inputs->pack($truthMoney) : null, 'moneyReason' => $moneyReason, 'componentGroups' => \count($groups), 'reason' => $allReady ? null : 'components_not_ready']);
             $attempt = Uuid::v7()->toRfc4122();
-            $root = $this->codec->encode(['companyId' => $companyId, 'marketplaceAccountId' => $accountId, 'kind' => 'truth', 'requestId' => $requestId, 'requestHash' => $requestHash, 'attemptId' => $attempt, 'readAtUtc' => $readAt->format('Y-m-d\TH:i:s.u\Z'), 'parent' => ['requestId' => $parent->publication->root->requestId, 'artifactHash' => $parent->publication->root->sha256], 'chunks' => $spool->descriptors(), 'metadata' => ['policy' => 'component_truth_h60_l7_v1', 'snapshot' => $snapshotId, 'epoch' => $this->inputs->pack($epoch), 'horizonDays' => 60, 'reportingLagDays' => 7, 'publicPolicy' => 'validation_pending']]);
+            $rootData = ['companyId' => $companyId, 'marketplaceAccountId' => $accountId, 'kind' => 'truth', 'requestId' => $requestId, 'requestHash' => $requestHash, 'attemptId' => $attempt, 'readAtUtc' => $readAt->format('Y-m-d\TH:i:s.u\Z'), 'parent' => ['requestId' => $parent->publication->root->requestId, 'artifactHash' => $parent->publication->root->sha256], 'chunks' => $spool->descriptors(), 'metadata' => ['policy' => 'component_truth_h60_l7_v1', 'snapshot' => $snapshotId, 'epoch' => $this->inputs->pack($epoch), 'horizonDays' => 60, 'reportingLagDays' => 7, 'publicPolicy' => 'validation_pending', 'softwareRelease' => $this->softwareRelease]];
+            $parentMetadata = $parent->manifest['metadata'];
+            if (\is_array($parentMetadata) && \is_array($parentMetadata['qualityProtocol'] ?? null)) {
+                $rootData['metadata']['qualityProtocol'] = $parentMetadata['qualityProtocol'];
+            }
+            $root = $this->codec->encode($rootData);
 
             return new PreparedNetForwardArtifact(new NetForecastArtifactPublication(new NetForwardArtifactKey($companyId, $accountId, NetForwardArtifactKind::Truth, $requestId, $attempt, hash('sha256', $root)), $requestHash, \strlen($root)), $root, $spool);
         });

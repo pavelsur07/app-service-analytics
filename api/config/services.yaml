@@ -8,6 +8,8 @@
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
     app.version: '%env(APP_VERSION)%'
+    app.source_commit: '%env(default:net_forecast.source_commit_default:APP_SOURCE_COMMIT)%'
+    net_forecast.source_commit_default: ''
     net_forecast.capture_epochs_default: '[]'
     net_forecast.published_model_default: ''
 

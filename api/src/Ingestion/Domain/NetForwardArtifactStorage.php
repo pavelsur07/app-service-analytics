@@ -6,7 +6,8 @@ namespace App\Ingestion\Domain;
 
 interface NetForwardArtifactStorage
 {
-    public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body): void;
+    /** @param (\Closure(int): void)|null $beforeRead */
+    public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body, ?\Closure $beforeRead = null): void;
 
     public function get(string $companyId, string $accountId, NetForwardArtifactKey $key, int $maxBytes): string;
 }

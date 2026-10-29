@@ -18,7 +18,8 @@ final readonly class S3NetForwardArtifactStorage implements NetForwardArtifactSt
     {
     }
 
-    public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body): void
+    /** @param (\Closure(int): void)|null $beforeRead */
+    public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body, ?\Closure $beforeRead = null): void
     {
         $key->assertScope($companyId, $accountId);
         $size = \strlen($body);
@@ -31,7 +32,7 @@ final readonly class S3NetForwardArtifactStorage implements NetForwardArtifactSt
                 $this->s3->putObject(['Bucket' => $this->rawStorageBucket, 'Key' => $key->toString(), 'Body' => $body, 'ContentType' => 'application/json', 'IfNoneMatch' => '*'])->resolve();
             } catch (\Throwable $failure) {
                 try {
-                    if ($body === $this->get($companyId, $accountId, $key, $size)) {
+                    if ($body === $this->readBack($companyId, $accountId, $key, $size, $beforeRead)) {
                         return;
                     }
                     throw new \UnexpectedValueException('Artifact read-back mismatch.');
@@ -42,12 +43,20 @@ final readonly class S3NetForwardArtifactStorage implements NetForwardArtifactSt
                     throw new \RuntimeException('Artifact PUT failed.', 0, $failure);
                 }
             }
-            if ($body !== $this->get($companyId, $accountId, $key, $size)) {
+            if ($body !== $this->readBack($companyId, $accountId, $key, $size, $beforeRead)) {
                 throw new \UnexpectedValueException('Artifact read-back mismatch.');
             }
 
             return;
         }
+    }
+
+    /** @param (\Closure(int): void)|null $beforeRead */
+    private function readBack(string $companyId, string $accountId, NetForwardArtifactKey $key, int $size, ?\Closure $beforeRead): string
+    {
+        $beforeRead?->__invoke($size);
+
+        return $this->get($companyId, $accountId, $key, $size);
     }
 
     public function get(string $companyId, string $accountId, NetForwardArtifactKey $key, int $maxBytes): string

@@ -336,3 +336,36 @@ visibility, честный holdout, quality gate, CI и независимые �
 evaluation artifacts, индексы и проверка роста. Полная кривая требует
 доказанного наблюдения H+L; точность заранее неизвестна. Выигрыш — модель
 с явным горизонтом, происхождением данных и честной границей доступности.
+
+
+### Уточнение исполнения B16: private quality artifacts, 2026-10-29
+
+Протокол, inventories, selection, dataset и report используют тот же private
+artifact store и DB first-winner anchor B15, с прежним составным PK. Совместимая
+migration `Version20261029130000` расширяет только `kind VARCHAR(5)` до20.
+Пять kinds: `quality-protocol`, `quality-inventory`, `quality-selection`,
+`quality-dataset`, `quality-report`; inventory хранит subtype capture/truth.
+Down отказывает при наличии quality evidence; rollback приложения сохраняет
+расширенную колонку. Evidence ради rollback не удаляют.
+
+Optional protocol ref/hash входит в новый capture request hash и sealed input;
+верификация storage происходит до RR. Старые captures без binding сохраняют
+прежний hash и не получают prospective eligibility задним числом. Нового
+межмодульного доступа или публичного контракта это не создаёт.
+
+Selection фиксируется до финального truth inventory. Dataset/report имеют
+один explicit evaluation UUID и разные kinds; report появляется только после
+verified dataset. `QUALITY_PASSED` остаётся результатом частного исследования,
+`numericRolloutAllowed=false` во всех состояниях. Точные operational caps и
+policy missing truth receipts включаются в frozen protocol. Синтетический
+resource profile и CI не являются predictive/HTTP evidence.
+
+
+Полнота B16 read budget включает storage PUT readback/recovery GET: optional
+primitive callback в существующем storage port вызывается до каждого такого
+GET; Domain не зависит от Application. Failed GET может консервативно
+резервировать ожидаемый размер, что report обозначает явно. Exact source pin
+проверяется по полному SHA, встроенному в образ существующим CI, а не только
+по короткому release tag. Holdout начинается после freeze. Более поздний
+registered truth не переписывает earliest ready, но его correction/invalidation
+сохраняется отдельно и блокирует положительное решение.

@@ -78,13 +78,32 @@ final class IngestionFacade
         return self::forwardRef($reader->read($companyId, $accountId, NetForwardArtifactKind::Input, $request->requestId, requestHash: $request->hash()));
     }
 
-    public function prepareForwardCapture(string $companyId, string $accountId, ForwardCaptureRequest $request, ForwardPlanContext $plan, int $deadlineNs): PreparedForwardCapture
+    public function verifyForwardQualityProtocol(string $companyId, string $accountId, ForwardCaptureRequest $request, ForwardQualityProtocolRef $protocol, int $deadlineNs): ForwardQualityCaptureContext
+    {
+        $reader = $this->forwardReader ?? throw new \LogicException('Forward capture unavailable.');
+        $context = (new \App\Ingestion\Application\NetForecast\NetQualityProtocolReader($reader))->forCapture($companyId, $accountId,
+            new NetForwardCaptureRequest($request->requestId, $request->planId, $request->from, $request->to, $request->groupBy, $protocol->requestId, $protocol->sha256),
+            new \App\Ingestion\Application\NetForecast\NetQualityArtifactRef(NetForwardArtifactKind::QualityProtocol, $protocol->requestId, $protocol->sha256),
+            new \App\Ingestion\Application\NetForecast\NetQualityBudget($deadlineNs));
+
+        return new ForwardQualityCaptureContext($protocol, $context->frozenAt->format('Y-m-d\TH:i:s.u\Z'), (new \App\Ingestion\Application\NetForecast\NetForwardManifestCodec())->encode($context->protocol->data));
+    }
+
+    public function prepareForwardCapture(string $companyId, string $accountId, ForwardCaptureRequest $request, ForwardPlanContext $plan, int $deadlineNs, ?ForwardQualityCaptureContext $quality = null): PreparedForwardCapture
     {
         $prepare = $this->prepareForward ?? throw new \LogicException('Forward capture unavailable.');
         $publish = $this->publishForward ?? throw new \LogicException('Forward capture unavailable.');
+        $context = null;
+        if (null !== $quality) {
+            $payload = (new \App\Ingestion\Application\NetForecast\NetForwardManifestCodec())->decode($quality->protocolJson);
+            $context = new \App\Ingestion\Application\NetForecast\NetQualityCaptureContext(
+                new \App\Ingestion\Application\NetForecast\NetQualityArtifactRef(NetForwardArtifactKind::QualityProtocol, $quality->protocol->requestId, $quality->protocol->sha256),
+                new \App\Ingestion\Application\NetForecast\NetQualityProtocol(\App\Ingestion\Application\NetForecast\NetQualitySchema::rows([$payload], 1)[0]),
+                \App\Ingestion\Application\NetForecast\NetQualitySchema::utc($quality->frozenAtUtc));
+        }
         $prepared = $prepare($companyId, $accountId,
-            new NetForwardCaptureRequest($request->requestId, $request->planId, $request->from, $request->to, $request->groupBy),
-            new NetForwardPlanContext($plan->planId, $plan->planVersion, $plan->versionNumber, $plan->baselineId, $plan->baselineVersion, $plan->metric, $plan->currency, $plan->accumulationFrom, $plan->marketplaceSkus, $plan->goalRows), $deadlineNs);
+            new NetForwardCaptureRequest($request->requestId, $request->planId, $request->from, $request->to, $request->groupBy, $request->qualityProtocol?->requestId, $request->qualityProtocol?->sha256),
+            new NetForwardPlanContext($plan->planId, $plan->planVersion, $plan->versionNumber, $plan->baselineId, $plan->baselineVersion, $plan->metric, $plan->currency, $plan->accumulationFrom, $plan->marketplaceSkus, $plan->goalRows), $deadlineNs, $context);
 
         return new PreparedForwardCapture($companyId, $accountId, static fn (): ForwardArtifactRef => self::forwardRef($publish($companyId, $accountId, $prepared)));
     }

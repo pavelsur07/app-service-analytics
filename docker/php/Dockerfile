@@ -123,6 +123,8 @@ RUN APP_SECRET=build-time-only php bin/console cache:warmup --env=prod \
 # а не притворяться версией 0.1.0.
 ARG APP_VERSION=0.0.0-unbuilt
 ENV APP_VERSION=$APP_VERSION
+ARG APP_SOURCE_COMMIT=
+ENV APP_SOURCE_COMMIT=$APP_SOURCE_COMMIT
 
 USER www-data
 
