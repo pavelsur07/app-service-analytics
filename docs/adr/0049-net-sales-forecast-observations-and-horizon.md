@@ -267,7 +267,15 @@ source evidence и independent baseline в том же RR. Public numeric gate
 Отсутствующая lifecycle policy при включённом versioning — открытое
 эксплуатационное расхождение с ADR-024. DB anchor не исправляет его и не
 ограничивает глобальное накопление orphan versions. B15 не меняет IAM,
-retention, lifecycle и raw adapter. До release root фиксирует приватность,
+retention, lifecycle в runtime и raw adapter. По последующему указанию владельца
+в проект добавлена узкая lifecycle-конфигурация
+`ops/storage/net-forecast-lifecycle.json`: только noncurrent versions prefix
+`conwix/monolith/net-forecast/v1/` удаляются через 90 дней; current artifacts
+остаются бессрочно. Сам файл не меняет состояние бакета: оператор применяет
+его после read-before-write и слияния всех уже существующих правил, затем
+проверяет read-back. Это закрывает накопление неактуальных версий для новых
+повторных записей, но не удаляет уникальные orphan current objects и не вводит
+GC. До release root фиксирует приватность,
 retention/recovery и способ разрешения расхождения; автоматического выбора
 победителя после потери БД по S3 LIST нет. Tenant export/deletion inventory
 включает новый prefix и publication table. App rollback сохраняет additive
