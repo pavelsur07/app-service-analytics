@@ -18,6 +18,18 @@ use PHPUnit\Framework\TestCase;
  */
 final class MoneyTest extends TestCase
 {
+    public function testAuthoritativeCurrencyFractionDigitsAndFullNativeIntegerRange(): void
+    {
+        foreach (['JPY' => 0, 'RUB' => 2, 'KWD' => 3, 'CLF' => 4] as $currency => $digits) {
+            foreach ([\PHP_INT_MIN, \PHP_INT_MAX, 0, -1] as $minor) {
+                $money = Money::ofMinor($minor, $currency);
+                self::assertSame($digits, $money->fractionDigits());
+                self::assertSame($minor, $money->minorAmount());
+                self::assertSame($currency, $money->currency());
+            }
+        }
+    }
+
     #[DataProvider('decimalStrings')]
     public function testOfDecimalStringParsesExactlyIntoMinorUnits(string $amount, int $expectedMinor): void
     {

@@ -893,3 +893,22 @@ masterCI40769212303/672/attempt1SUCCESS. Production672-2108ba8 rootverified
 21:12:51UTC,12running/healthy,7PHP sameepoch/config,13readonlysmokePASS,
 seller/admin versions correct. Capture epoch сохранён; numeric rollout закрыт.
 B10 закрыта60/68; следующий B11 — точные деньги с разными исходными ценами.
+
+
+## Приёмка B11: точные деньги по исходным ценам, 2026-10-28
+
+Сумма price каждой accepted строки × exact net с одним HalfUp послеscopeSUM;
+missing/mixed/signed/zero/overflow сохраняют честную недоступность и независимые
+штуки. Private exactdaycarry для периодов учтён в общих guards; runtimeoutputmin
+и HEX-safe conservativeJSONbound проверены. По профилю устранено избыточное
+сокращение дробей без publicquantity/SQL/Shared/cap изменений.
+686unit/7710,831integration/20770,staticGREEN. Actual2000groups exactMoney344539998,
+4647ms compute/peak60.88MiB/allocation40+8=48MiB;fixturecleaned. Запас мал.
+Два actualCodexCLI gpt-6.1-sol complete/exit0/hashvalid/0findings0gaps;14/14blobs.
+Пакетc71a2acbce692c7c0c2fdbafcd4469d16738bb6099157c03aa2868bd7b34efe2,
+uniqueaccepted0/0/rejected0. PR282merge93a9377381af47198ff9c56264ed6fe33c479981,
+sourceCI40776346669/674 иmasterCI40776716345/675SUCCESS.
+Production675-93a9377 rootverified22:09:47UTC,12healthy/7PHPoriginalepoch,
+18readonlysmokePASS,pingscorrect. Localhealthverifierformat mistakefixed with
+failedsnapshotpreserved; finalactualPASS. B11 закрыта61/68; следующийB12,
+численноекачество/rollout по-прежнему не подтверждены.

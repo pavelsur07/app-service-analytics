@@ -8,11 +8,14 @@ use App\Ingestion\Application\Facade\IngestionFacade;
 use App\Ingestion\Application\Facade\SalesCohortComponents;
 use App\Ingestion\Application\Facade\SalesCohortGrouping;
 use App\Ingestion\Application\Facade\SalesCohortRequest;
+use App\Ingestion\Application\NetForecast\NetTrainingSnapshot;
+use App\Ingestion\Application\NetForecast\ReadNetForecastAction;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplacePostingStatusRepository;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\MarketplaceReturnFactRepository;
 use App\Ingestion\Domain\SalesFactRepository;
+use App\Ingestion\Infrastructure\Config\NetForecastPublication;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutMaturityQuery;
 use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkuSearchQuery;
 use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkusPresentQuery;
@@ -64,7 +67,10 @@ final class IngestionFacadeSalesCohortTest extends KernelTestCase
         self::assertSame('not_assessed', $batch->returnsCoverage);
         self::assertSame('partial', $batch->ordersCoverage);
         self::assertNull(self::components($zero->period)->expectedNetSalesQuantity);
-        self::assertSame('net_forecast_not_available', self::components($zero->period)->netForecastUnavailableReason);
+        self::assertSame('validation_pending', self::components($zero->period)->netForecastUnavailableReason);
+        self::assertNull($batch->netForecast->readAt);
+        self::assertSame('not_assessed', $batch->netForecast->assessmentStatus);
+        self::assertNull(self::components($zero->period)->netForecastQuality->sourceUnavailableReason);
         self::assertNull($batch->skus[0]->points[1]->period);
         self::assertSame('partial', $batch->skus[0]->points[1]->periodCoverage);
     }
@@ -81,6 +87,8 @@ final class IngestionFacadeSalesCohortTest extends KernelTestCase
         self::assertSame('not_assessed', $batch->ordersCoverage);
         self::assertSame($at, $batch->calculatedAt);
         self::assertSame(0, self::queryCount($debug));
+        self::assertSame('not_assessed', $batch->netForecast->assessmentStatus);
+        self::assertNull($batch->netForecast->readAt);
         $connection->close();
     }
 
@@ -367,10 +375,16 @@ final class IngestionFacadeSalesCohortTest extends KernelTestCase
             }
         };
 
+        $reader = self::getContainer()->get(ReadNetForecastAction::class);
+        self::assertInstanceOf(ReadNetForecastAction::class, $reader);
+
         return new IngestionFacade(new ListingSnapshotsQuery($connection), new AccountCatalogSkuSearchQuery($connection),
             new AccountCatalogSkusPresentQuery($connection),
             new SalesCohortSeriesQuery($connection, new SalesCohortMetricsQuery($connection), new SalesCohortCoverageQuery($connection)),
-            new BuyoutMaturityQuery($connection), $clock);
+            new BuyoutMaturityQuery($connection), $clock,
+            new NetForecastPublication(),
+            $reader,
+            new NetTrainingSnapshot($connection));
     }
 
     private static function components(?SalesCohortComponents $components): SalesCohortComponents

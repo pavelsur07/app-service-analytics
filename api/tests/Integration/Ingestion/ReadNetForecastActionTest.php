@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Ingestion;
 
+use App\Ingestion\Application\Facade\IngestionFacade;
+use App\Ingestion\Application\Facade\SalesCohortGrouping;
+use App\Ingestion\Application\Facade\SalesCohortRequest;
 use App\Ingestion\Application\NetForecast\AggregateNetForecastAction;
 use App\Ingestion\Application\NetForecast\ApplyOpenRetentionAction;
 use App\Ingestion\Application\NetForecast\AssessDeliveredRiskAction;
@@ -13,16 +16,26 @@ use App\Ingestion\Application\NetForecast\BuildPreHandoverGrossRateAction;
 use App\Ingestion\Application\NetForecast\BuildReturnCurveAction;
 use App\Ingestion\Application\NetForecast\NetForecastBatch;
 use App\Ingestion\Application\NetForecast\NetForecastPart;
+use App\Ingestion\Application\NetForecast\NetForecastSeriesRequest;
 use App\Ingestion\Application\NetForecast\NetTrainingReadException;
+use App\Ingestion\Application\NetForecast\NetTrainingSnapshot;
 use App\Ingestion\Application\NetForecast\ReadNetForecastAction;
 use App\Ingestion\Application\NetForecast\ReadNetTrainingAction;
 use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Infrastructure\Config\NetForecastCaptureEpochs;
+use App\Ingestion\Infrastructure\Config\NetForecastPublication;
+use App\Ingestion\Infrastructure\Query\Buyout\BuyoutMaturityQuery;
+use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkuSearchQuery;
+use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkusPresentQuery;
+use App\Ingestion\Infrastructure\Query\Listings\ListingSnapshotsQuery;
 use App\Ingestion\Infrastructure\Query\NetForecast\GrossTrainingAggregateQuery;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetLimits;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetQuery;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetRequest;
 use App\Ingestion\Infrastructure\Query\NetForecast\ReturnTrainingAggregateQuery;
+use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortCoverageQuery;
+use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortMetricsQuery;
+use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortSeriesQuery;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Ingestion\NetTargetFixture;
 use App\Tests\Support\Ingestion\NetTrainingFixture;
@@ -30,7 +43,9 @@ use DAMA\DoctrineTestBundle\PHPUnit\SkipDatabaseRollback;
 use Doctrine\DBAL\Cache\QueryCacheProfile;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Result;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use Psr\Clock\ClockInterface;
@@ -66,6 +81,203 @@ final class ReadNetForecastActionTest extends KernelTestCase
         parent::tearDown();
     }
 
+    /** @return iterable<string, array{bool}> */
+    public static function facadePublicationModes(): iterable
+    {
+        yield 'closed' => [false];
+        yield 'enabled' => [true];
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    #[DataProvider('facadePublicationModes')]
+    public function testFacadePublicationKeepsLegacyClosedAndPublishesExactScopedNetOnlyWhenEnabled(bool $enabled): void
+    {
+        [$db, $f] = $this->fixture(true);
+        $origin = $f->readAt->modify('-1 day');
+        $f->delivered('D', 'SKU', 70, $origin, amount: Money::ofMinor(100, 'RUB'));
+        $f->sale('OPEN', 'SKU', 50, 'awaiting_packaging', $f->readAt->modify('-2 hours'), amount: Money::ofMinor(100, 'RUB'));
+        $f->daily($origin);
+        $f->currentReturns();
+        $target = $this->request($f);
+        $request = new SalesCohortRequest(['SKU'], $target->from, $target->to, $target->from, valuationCurrency: 'RUB');
+
+        $clock = $this->clock($f);
+        $db->resetObservations();
+        $batch = $this->facade($db, $f, $clock, $enabled)->salesCohortMetrics($f->company->toRfc4122(), $f->account->toRfc4122(), $request);
+        self::assertSame(1, $clock->calls);
+        self::assertEquals($f->readAt, $batch->calculatedAt);
+        self::assertSame($enabled ? 'assessed' : 'not_assessed', $batch->netForecast->assessmentStatus);
+        self::assertEquals($enabled ? $f->readAt : null, $batch->netForecast->readAt);
+        self::assertSame($enabled ? $f->epoch->id : null, $batch->netForecast->epochId);
+        self::assertSame($enabled ? 3 : 0, $db->populations);
+        $cohort = $batch->skus[0]->points[0]->period;
+        self::assertNotNull($cohort);
+        self::assertSame($enabled ? '90.000' : null, $cohort->expectedNetSalesQuantity);
+        self::assertSame($enabled ? 9000 : null, $cohort->expectedNetRevenue?->minorAmount());
+        self::assertSame($enabled ? null : 'validation_pending', $cohort->netForecastUnavailableReason);
+        self::assertSame($enabled ? null : 'validation_pending', $cohort->netForecastMoneyUnavailableReason);
+        self::assertSame($enabled ? ['sku'] : [], $cohort->netForecastQuality->trainingScopes);
+        self::assertNull($cohort->netForecastQuality->sourceUnavailableReason);
+
+        foreach ([[$f->company->toRfc4122(), Uuid::v7()->toRfc4122()], [Uuid::v7()->toRfc4122(), $f->account->toRfc4122()]] as [$company, $account]) {
+            $foreign = $this->facade($db, $f, $this->clock($f), true)->salesCohortMetrics($company, $account, $request);
+            self::assertNull($foreign->skus[0]->points[0]->period);
+        }
+    }
+
+    public function testFacadeEmptyAndMissingEpochDoNotRunPopulations(): void
+    {
+        [$db, $f] = $this->fixture();
+        $target = $this->request($f);
+        foreach ([false, true] as $enabled) {
+            $clock = $this->clock($f);
+            $db->resetObservations();
+            $empty = $this->facade($db, $f, $clock, $enabled)->salesCohortMetrics($f->company->toRfc4122(), $f->account->toRfc4122(),
+                new SalesCohortRequest([], $target->from, $target->to, $target->from));
+            self::assertSame([], $db->sql);
+            self::assertSame(1, $clock->calls);
+            self::assertSame([], $empty->skus);
+            self::assertSame('not_assessed', $empty->netForecast->assessmentStatus);
+            self::assertNull($empty->netForecast->readAt);
+        }
+        $this->terminalZero($f);
+        $clock = $this->clock($f);
+        $db->resetObservations();
+        $missing = $this->facade($db, $f, $clock, true, false)->salesCohortMetrics($f->company->toRfc4122(), $f->account->toRfc4122(),
+            new SalesCohortRequest(['SKU'], $target->from, $target->to, $target->from));
+        self::assertSame(1, $clock->calls);
+        self::assertSame(0, $db->populations);
+        $dataSelects = array_filter($db->sql, static fn (string $sql): bool => 1 === preg_match('/^\s*(?:WITH|SELECT)\b/', $sql) && !str_contains($sql, 'txid_current_snapshot'));
+        self::assertCount(2, $dataSelects);
+        self::assertEquals($f->readAt, $missing->netForecast->readAt);
+        self::assertNull($missing->netForecast->epochId);
+        $cohort = $missing->skus[0]->points[0]->period;
+        self::assertNotNull($cohort);
+        self::assertSame('source_history_unavailable', $cohort->netForecastUnavailableReason);
+        self::assertSame('source_history_unavailable', $cohort->netForecastQuality->sourceUnavailableReason);
+    }
+
+    /** @return iterable<string, array{bool, int, string}> */
+    public static function facadeSqlCases(): iterable
+    {
+        foreach ([false, true] as $enabled) {
+            foreach ([1, 50] as $size) {
+                foreach (['day', 'month'] as $group) {
+                    yield ($enabled ? 'enabled' : 'closed').'-'.$size.'-'.$group => [$enabled, $size, $group];
+                }
+            }
+        }
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    #[DataProvider('facadeSqlCases')]
+    public function testFacadeFixedDataSelectCountAndSnapshotControlSet(bool $enabled, int $size, string $group): void
+    {
+        [$db, $f] = $this->fixture();
+        $this->terminalZero($f);
+        $target = $this->request($f);
+        $skus = 1 === $size ? ['SKU'] : array_merge(['SKU'], array_map(static fn (int $i): string => 'EMPTY-'.$i, range(1, 49)));
+        $db->inspectPopulationContext = false;
+        $db->resetObservations();
+        $clock = $this->clock($f);
+        $batch = $this->facade($db, $f, $clock, $enabled)->salesCohortMetrics($f->company->toRfc4122(), $f->account->toRfc4122(),
+            new SalesCohortRequest($skus, $target->from, $target->to, $target->from,
+                SalesCohortGrouping::from($group)));
+        self::assertCount($size, $batch->skus);
+        self::assertSame(1, $clock->calls);
+        $data = 0;
+        $controls = [];
+        foreach ($db->sql as $sql) {
+            $sql = trim($sql);
+            if (str_starts_with($sql, 'SELECT txid_current_snapshot()') || 1 !== preg_match('/^(?:SELECT|WITH)\b/', $sql)) {
+                $controls[$sql] = ($controls[$sql] ?? 0) + 1;
+            } else {
+                ++$data;
+            }
+        }
+        self::assertSame($enabled ? 5 : 2, $data);
+        $expected = $enabled ? [
+            'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY' => 1,
+            'SELECT txid_current_snapshot()::text' => 3,
+            'SHOW transaction_isolation' => 2,
+            'SHOW transaction_read_only' => 2,
+            'SAVEPOINT net_training_read_guard' => 2,
+            'ROLLBACK TO SAVEPOINT net_training_read_guard' => 2,
+            'RELEASE SAVEPOINT net_training_read_guard' => 2,
+            'SET LOCAL jit = off' => 2,
+            "SET LOCAL statement_timeout = '5s'" => 2,
+        ] : [];
+        ksort($expected);
+        ksort($controls);
+        self::assertSame($expected, $controls);
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testFacadeReusesPinnedReadonlySnapshotAndRejectsReadCommittedBeforeClock(): void
+    {
+        [$db, $f] = $this->fixture();
+        $this->terminalZero($f);
+        $target = $this->request($f);
+        $request = new SalesCohortRequest(['SKU'], $target->from, $target->to, $target->from);
+        $db->beginTransaction();
+        try {
+            $clock = $this->clock($f);
+            try {
+                $this->facade($db, $f, $clock, true)->salesCohortMetrics($f->company->toRfc4122(), $f->account->toRfc4122(), $request);
+                self::fail('READ COMMITTED must be rejected before reading net.');
+            } catch (NetTrainingReadException) {
+                self::assertSame(0, $clock->calls);
+            }
+        } finally {
+            $db->rollBack();
+        }
+        $other = $this->other($db);
+        $db->beginTransaction();
+        $db->executeStatement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+        $db->executeStatement("SET LOCAL statement_timeout = '20s'");
+        $clock = $this->clock($f, static function () use ($other, $f): void {
+            // Concurrent committed revision after the Facade snapshot pin.
+            $foreignWriter = new NetTargetFixture($other, $f->readAt, $f->company, $f->account);
+            $foreignWriter->sale('ZERO', 'SKU', 9, 'delivered', $f->readAt->modify('-30 minutes'));
+        });
+        try {
+            $batch = $this->facade($db, $f, $clock, true)->salesCohortMetrics($f->company->toRfc4122(), $f->account->toRfc4122(), $request);
+            self::assertSame(1, $clock->calls);
+            self::assertSame(7, $batch->skus[0]->points[0]->period?->rawOrderedQuantity);
+            self::assertSame('0.000', $batch->skus[0]->points[0]->period->expectedNetSalesQuantity);
+            self::assertSame('20s', $db->fetchOne('SHOW statement_timeout'));
+            self::assertSame('on', $db->fetchOne('SHOW transaction_read_only'));
+            try {
+                $db->executeStatement('UPDATE sales_fact SET quantity = quantity WHERE company_id = ?', [$f->company->toRfc4122()]);
+                self::fail('Read-only snapshot must reject writes.');
+            } catch (DriverException $error) {
+                self::assertSame('25006', $error->getSQLState());
+            }
+        } finally {
+            $db->rollBack();
+        }
+        $latestQuantity = $db->fetchOne('SELECT quantity FROM sales_fact WHERE company_id = ? AND source_row_id = ?', [$f->company->toRfc4122(), 'ZERO']);
+        self::assertTrue(\is_string($latestQuantity) || \is_int($latestQuantity));
+        self::assertSame('9', (string) $latestQuantity);
+    }
+
+    private function facade(Connection $db, NetTargetFixture $f, ClockInterface $clock, bool $enabled, bool $epoch = true): IngestionFacade
+    {
+        return new IngestionFacade(
+            new ListingSnapshotsQuery($db),
+            new AccountCatalogSkuSearchQuery($db),
+            new AccountCatalogSkusPresentQuery($db),
+            new SalesCohortSeriesQuery($db, new SalesCohortMetricsQuery($db), new SalesCohortCoverageQuery($db)),
+            new BuyoutMaturityQuery($db), $clock,
+            new NetForecastPublication($enabled ? 'observed_retention_h60_v1' : ''),
+            $this->action($db, $f, $clock, $epoch),
+            new NetTrainingSnapshot($db),
+        );
+    }
+
     public function testEmptyRequestTouchesNeitherDatabaseNorClock(): void
     {
         [$db, $f] = $this->fixture();
@@ -91,6 +303,29 @@ final class ReadNetForecastActionTest extends KernelTestCase
                 self::assertSame(0, $clock->calls);
             }
         }
+    }
+
+    public function testSeriesRequestMatchesTargetsBeforeEmptyShortcutAndSharesReadSnapshot(): void
+    {
+        [$db, $f] = $this->fixture();
+        $clock = $this->clock($f);
+        $empty = $this->request($f, []);
+        foreach ([new NetForecastSeriesRequest(['SKU'], $empty->from, $empty->to), new NetForecastSeriesRequest([], $empty->from->modify('-1 day'), $empty->to)] as $mismatch) {
+            $db->resetObservations();
+            try {
+                ($this->action($db, $f, $clock))($f->company->toRfc4122(), $f->account->toRfc4122(), $empty, seriesRequest: $mismatch);
+                self::fail('Mismatched series must be rejected before empty shortcut.');
+            } catch (\InvalidArgumentException) {
+                self::assertSame([], $db->sql);
+                self::assertSame(0, $clock->calls);
+            }
+        }
+        $this->terminalZero($f);
+        $target = $this->request($f);
+        $result = ($this->action($db, $f, $clock))($f->company->toRfc4122(), $f->account->toRfc4122(), $target, seriesRequest: new NetForecastSeriesRequest($target->marketplaceSkus, $target->from, $target->to));
+        self::assertNull($result->unavailableReason);
+        self::assertSame('0.000', $result->series?->skus[0]->points[0]->period->quantities?->expectedNetDecimal());
+        self::assertSame(1, $clock->calls);
     }
 
     public function testAccumulationCannotSilentlyExtendPast184CalendarDays(): void
@@ -751,6 +986,7 @@ final class NetForecastObservedConnection extends Connection
     /** @var list<string> */
     public array $sql = [];
     public int $populations = 0;
+    public bool $inspectPopulationContext = true;
     public int $transactionStarts = 0;
     /** @var list<string> */
     public array $populationSnapshots = [];
@@ -780,13 +1016,15 @@ final class NetForecastObservedConnection extends Connection
         $population = str_contains($sql, 'result.refusal_reason') ? 'target' : (str_contains($sql, 'result.age_profile') ? 'returns' : (str_contains($sql, 'result.p95_seconds') ? 'gross' : null));
         if (null !== $population) {
             ++$this->populations;
-            $snapshot = $this->fetchOne('SELECT txid_current_snapshot()::text');
-            ReadNetForecastActionTest::assertIsString($snapshot);
-            ReadNetForecastActionTest::assertIsString($params['asOf'] ?? null);
-            $this->populationSnapshots[] = $snapshot;
-            $this->populationReadAts[] = $params['asOf'];
-            ReadNetForecastActionTest::assertSame('off', $this->fetchOne('SHOW jit'));
-            ReadNetForecastActionTest::assertSame('5s', $this->fetchOne('SHOW statement_timeout'));
+            if ($this->inspectPopulationContext) {
+                $snapshot = $this->fetchOne('SELECT txid_current_snapshot()::text');
+                ReadNetForecastActionTest::assertIsString($snapshot);
+                ReadNetForecastActionTest::assertIsString($params['asOf'] ?? null);
+                $this->populationSnapshots[] = $snapshot;
+                $this->populationReadAts[] = $params['asOf'];
+                ReadNetForecastActionTest::assertSame('off', $this->fetchOne('SHOW jit'));
+                ReadNetForecastActionTest::assertSame('5s', $this->fetchOne('SHOW statement_timeout'));
+            }
             if ($this->timeoutPopulation === $population) {
                 $this->timeoutPopulation = null;
                 $this->executeStatement("SET LOCAL statement_timeout = '1ms'");

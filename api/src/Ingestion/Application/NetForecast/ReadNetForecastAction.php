@@ -26,18 +26,19 @@ final readonly class ReadNetForecastAction
     ) {
     }
 
-    public function __invoke(string $companyId, string $accountId, NetTargetRequest $request): NetForecastBatch
+    public function __invoke(string $companyId, string $accountId, NetTargetRequest $request, ?NetForecastSeriesRequest $seriesRequest = null): NetForecastBatch
     {
         if (!Uuid::isValid($companyId) || !Uuid::isValid($accountId)) {
             throw new \InvalidArgumentException('Forecast company and account must be UUID values.');
         }
+        $seriesRequest?->assertMatches($request);
         if ([] === $request->marketplaceSkus) {
-            return new NetForecastBatch($companyId, $accountId, null, null, [], NetForecastQuantities::zero(), null, null, 'money_currency_missing');
+            return new NetForecastBatch($companyId, $accountId, null, null, [], NetForecastQuantities::zero(), null, null, 'money_currency_missing', null === $seriesRequest ? null : new NetForecastSeries([]));
         }
         $readAt = null;
         $context = null;
         try {
-            return (new NetTrainingSnapshot($this->connection))->read(function (string $snapshotId) use ($companyId, $accountId, $request, &$readAt, &$context): NetForecastBatch {
+            return (new NetTrainingSnapshot($this->connection))->read(function (string $snapshotId) use ($companyId, $accountId, $request, $seriesRequest, &$readAt, &$context): NetForecastBatch {
                 $training = ($this->training)($companyId, $accountId, new NetTrainingRequest($request->marketplaceSkus));
                 $readAt = $training->readAt;
                 $context = $training->context;
@@ -74,7 +75,7 @@ final readonly class ReadNetForecastAction
                 $targets = $this->targets->mapRows($context, $request, $rows);
                 unset($rows);
 
-                return ($this->aggregate)($companyId, $accountId, $targets, $training, $computeStarted, $allocation, $this->limits);
+                return ($this->aggregate)($companyId, $accountId, $targets, $training, $computeStarted, $allocation, $this->limits, $seriesRequest);
             });
         } catch (DriverException $error) {
             if ('57014' !== $error->getSQLState()) {

@@ -9,6 +9,7 @@
 parameters:
     app.version: '%env(APP_VERSION)%'
     net_forecast.capture_epochs_default: '[]'
+    net_forecast.published_model_default: ''
 
 services:
     # default configuration for services in *this* file
@@ -42,6 +43,10 @@ services:
     App\Ingestion\Infrastructure\Config\NetForecastCaptureEpochs:
         arguments:
             $epochsJson: '%env(default:net_forecast.capture_epochs_default:NET_FORECAST_CAPTURE_EPOCHS_JSON)%'
+
+    App\Ingestion\Infrastructure\Config\NetForecastPublication:
+        arguments:
+            $publishedModelVersion: '%env(default:net_forecast.published_model_default:NET_FORECAST_PUBLISHED_MODEL_VERSION)%'
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones

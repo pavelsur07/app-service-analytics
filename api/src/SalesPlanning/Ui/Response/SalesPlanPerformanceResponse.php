@@ -26,6 +26,7 @@ final readonly class SalesPlanPerformanceResponse
         #[OA\Property(maxItems: 50)] public array $skus,
         public ?string $nextCursor,
         public string $summaryScope,
+        public PerformanceNetMetadataResponse $netForecast,
     ) {
     }
 
@@ -47,6 +48,7 @@ final readonly class SalesPlanPerformanceResponse
             array_map(PerformanceSkuResponse::of(...), $v->skus),
             $v->nextCursor,
             $v->summaryScope,
+            PerformanceNetMetadataResponse::of($v->netForecast),
         );
     }
 }

@@ -32,7 +32,7 @@ final readonly class AggregateNetForecastAction
     {
     }
 
-    public function __invoke(string $companyId, string $accountId, NetTargetBatch $targets, NetTrainingBatch $training, ?int $computeStarted = null, ?int $allocationBaseline = null, ?NetTargetLimits $runtimeLimits = null): NetForecastBatch
+    public function __invoke(string $companyId, string $accountId, NetTargetBatch $targets, NetTrainingBatch $training, ?int $computeStarted = null, ?int $allocationBaseline = null, ?NetTargetLimits $runtimeLimits = null, ?NetForecastSeriesRequest $seriesRequest = null): NetForecastBatch
     {
         $started = min(hrtime(true), $computeStarted ?? hrtime(true));
         $baseline = min(memory_get_usage(true), $allocationBaseline ?? memory_get_usage(true));
@@ -64,8 +64,11 @@ final readonly class AggregateNetForecastAction
             || (null !== $training->context && !self::sameContext($context, $training->context))) {
             return $this->refuse($companyId, $accountId, $context, 'training_context_mismatch');
         }
+        if ($empty && null !== $seriesRequest && [] !== $seriesRequest->marketplaceSkus) {
+            return $this->refuse($companyId, $accountId, $context, 'source_history_unavailable');
+        }
         if ($empty) {
-            return new NetForecastBatch($companyId, $accountId, null, null, [], NetForecastQuantities::zero(), null, null, 'money_currency_missing');
+            return new NetForecastBatch($companyId, $accountId, null, null, [], NetForecastQuantities::zero(), null, null, 'money_currency_missing', null === $seriesRequest ? null : new NetForecastSeries([]));
         }
         if (null !== $targets->budgetFailure || 'input_budget_exceeded' === $targets->unavailableReason) {
             return $this->refuse($companyId, $accountId, $context, 'input_budget_exceeded');
@@ -92,11 +95,23 @@ final readonly class AggregateNetForecastAction
             };
             $guard();
             $this->checkShape($targets, $guard);
+            if (null !== $seriesRequest) {
+                $expectedSkus = $seriesRequest->marketplaceSkus;
+                $actualSkus = array_column($targets->skus, 'marketplaceSku');
+                sort($expectedSkus, \SORT_STRING);
+                sort($actualSkus, \SORT_STRING);
+                if ($expectedSkus !== $actualSkus) {
+                    return $this->refuse($companyId, $accountId, $context, 'source_history_unavailable');
+                }
+            }
             $used = 0;
             $this->charge([$companyId, $accountId, $context], $used, $guard, $outputLimit);
             $skus = $targets->skus;
             usort($skus, static fn (NetTargetSkuRow $a, NetTargetSkuRow $b): int => strcmp($a->marketplaceSku, $b->marketplaceSku));
             $output = [];
+            $seriesOutput = [];
+            $emptyScope = null === $seriesRequest ? null : new NetForecastScope(NetForecastQuantities::zero(), null, null, 'money_currency_missing', [], []);
+            $emptyRevenue = null === $seriesRequest ? null : NetForecastRevenue::empty();
             $total = NetForecastQuantities::zero();
             $revenue = NetForecastRevenue::empty();
             $reason = null;
@@ -104,7 +119,11 @@ final readonly class AggregateNetForecastAction
             $openMemo = [];
             foreach ($skus as $sku) {
                 $childRevenue = NetForecastRevenue::empty();
-                $result = $this->sku($sku, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit);
+                $seriesSku = null;
+                $result = $this->sku($sku, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit, $seriesRequest, $seriesSku, $emptyScope, $emptyRevenue);
+                if (null !== $seriesSku) {
+                    $seriesOutput[] = $seriesSku;
+                }
                 $output[] = $result;
                 $total = self::add($total, $result->quantities);
                 $revenue = $this->addRevenue($revenue, $childRevenue, $guard);
@@ -118,7 +137,14 @@ final readonly class AggregateNetForecastAction
             [$money, $moneyReason] = $this->guardedPublish($revenue, $total, $reason, $guard);
             $this->charge([$total, $reason, 'expectedNetRevenue' => $money, 'moneyUnavailableReason' => $moneyReason], $used, $guard, $outputLimit);
 
-            return new NetForecastBatch($companyId, $accountId, $context->readAt, $context, $output, $total, $reason, $money, $moneyReason);
+            $series = null === $seriesRequest ? null : new NetForecastSeries($seriesOutput);
+            $this->charge($series, $used, $guard, $outputLimit);
+            $guard();
+
+            return new NetForecastBatch($companyId, $accountId, $context->readAt, $context, $output, $total, $reason, $money, $moneyReason, $series,
+                (int) ($started + (int) ($seconds * 1000000000)), $baseline, $used, $allocationLimit, $peakLimit, $outputLimit);
+        } catch (\UnexpectedValueException) {
+            return $this->refuse($companyId, $accountId, $context, 'source_history_unavailable');
         } catch (\OverflowException) {
             // Never expose a truncated hierarchy or a partial quantity under a full-total name.
             return $this->refuse($companyId, $accountId, $context, 'input_budget_exceeded');
@@ -186,7 +212,7 @@ final readonly class AggregateNetForecastAction
      * @param array<string, OpenCoefficient>      $openMemo
      * @param \Closure(): void                    $guard
      */
-    private function sku(NetTargetSkuRow $sku, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit): NetForecastSku
+    private function sku(NetTargetSkuRow $sku, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit, ?NetForecastSeriesRequest $seriesRequest, ?NetForecastSeriesSku &$seriesSku, ?NetForecastScope $emptyScope, ?NetForecastRevenue $emptyRevenue): NetForecastSku
     {
         $days = $sku->days;
         usort($days, static fn (NetTargetDayRow $a, NetTargetDayRow $b): int => strcmp($a->businessDate, $b->businessDate));
@@ -197,11 +223,22 @@ final readonly class AggregateNetForecastAction
         foreach ($days as $day) {
             $guard();
             $childRevenue = NetForecastRevenue::empty();
-            $result = $this->day($sku->marketplaceSku, $day, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit);
+            $result = $this->day($sku->marketplaceSku, $day, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit, $emptyScope?->quantities, $emptyRevenue);
             $output[] = $result;
-            $total = self::add($total, $result->quantities);
-            $revenue = $this->addRevenue($revenue, $childRevenue, $guard);
+            if (null === $seriesRequest) {
+                $total = self::add($total, $result->quantities);
+                $revenue = $this->addRevenue($revenue, $childRevenue, $guard);
+            }
             $reason = self::reason($reason, $result->unavailableReason);
+        }
+        if (null !== $seriesRequest) {
+            $seriesSku = (new ProjectNetForecastSeriesAction())->projectSku(new NetForecastSku($sku->marketplaceSku, $output, null, null, null, null), $seriesRequest, $guard, $revenue, $emptyScope, $emptyRevenue);
+            if (null === $seriesSku) {
+                throw new \UnexpectedValueException('Target calendar is not complete.');
+            }
+            $last = array_key_last($seriesSku->points);
+            \assert(null !== $last);
+            $total = $seriesSku->points[$last]->cumulative->quantities;
         }
         if (null !== $reason) {
             $total = null;
@@ -218,13 +255,13 @@ final readonly class AggregateNetForecastAction
      * @param array<string, OpenCoefficient>      $openMemo
      * @param \Closure(): void                    $guard
      */
-    private function day(string $sku, NetTargetDayRow $day, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit): NetForecastDay
+    private function day(string $sku, NetTargetDayRow $day, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit, ?NetForecastQuantities $zero, ?NetForecastRevenue $emptyRevenue): NetForecastDay
     {
         $groups = $day->groups;
         usort($groups, static fn (NetTargetGroupRow $a, NetTargetGroupRow $b): int => strcmp($a->orderNumber ?? '', $b->orderNumber ?? ''));
         $output = [];
-        $total = NetForecastQuantities::zero();
-        $revenue = NetForecastRevenue::empty();
+        $total = $zero ?? NetForecastQuantities::zero();
+        $revenue = $emptyRevenue ?? NetForecastRevenue::empty();
         $reason = [] === $groups && !$day->emptyComplete ? 'source_history_unavailable' : null;
         foreach ($groups as $group) {
             $guard();

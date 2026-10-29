@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\SalesPlanning\Ui\Response;
 
 use App\SalesPlanning\Application\SalesPlanPerformanceCohort;
+use OpenApi\Attributes as OA;
 
 final readonly class PerformanceCohortResponse
 {
@@ -27,8 +28,11 @@ final readonly class PerformanceCohortResponse
         public ?int $currentProjectedBuyoutQuantity,
         public ?int $currentProjectedBuyoutRateBps,
         public ?int $unestimatedRateBps,
-        public ?string $expectedNetSalesQuantity,
-        public string $netForecastUnavailableReason,
+        #[OA\Property(pattern: '^[0-9]+\.[0-9]{3}$', nullable: true)] public ?string $expectedNetSalesQuantity,
+        public ?string $netForecastUnavailableReason,
+        public ?PerformanceNetMoneyResponse $expectedNetRevenue,
+        public ?string $netForecastMoneyUnavailableReason,
+        public PerformanceNetQualityResponse $netForecastQuality,
     ) {
     }
 
@@ -55,6 +59,9 @@ final readonly class PerformanceCohortResponse
             $c->unestimatedRateBps,
             $c->expectedNetSalesQuantity,
             $c->netForecastUnavailableReason,
+            PerformanceNetMoneyResponse::of($c->expectedNetRevenue),
+            $c->netForecastMoneyUnavailableReason,
+            PerformanceNetQualityResponse::of($c->netForecastQuality),
         );
     }
 }

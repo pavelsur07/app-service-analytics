@@ -2011,6 +2011,21 @@ export interface components {
             minor: number;
             currency: string;
         };
+        PerformanceNetMoneyResponse: {
+            minor: string;
+            currency: string;
+            fractionDigits: number;
+        };
+        PerformanceNetQualityResponse: {
+            sourceUnavailableReason?: string | null;
+            sourceMoneyUnavailableReason?: string | null;
+            trainingScopes: string[];
+            componentReasons: string[];
+            /** @enum {string} */
+            validationStatus: "validation_pending" | "release_approved";
+            /** @enum {string} */
+            assessmentStatus: "not_assessed" | "assessed";
+        };
         PerformanceCohortResponse: {
             rawOrderedQuantity: number;
             preHandoverCancelledQuantity: number;
@@ -2031,7 +2046,10 @@ export interface components {
             currentProjectedBuyoutRateBps?: number | null;
             unestimatedRateBps?: number | null;
             expectedNetSalesQuantity?: string | null;
-            netForecastUnavailableReason: string;
+            netForecastUnavailableReason?: string | null;
+            expectedNetRevenue?: components["schemas"]["PerformanceNetMoneyResponse"] | null;
+            netForecastMoneyUnavailableReason?: string | null;
+            netForecastQuality: components["schemas"]["PerformanceNetQualityResponse"];
         };
         PerformanceValuesResponse: {
             planQuantity: number;
@@ -2064,6 +2082,21 @@ export interface components {
             marketplaceSku: string;
             points: components["schemas"]["PerformancePointResponse"][];
         };
+        PerformanceNetMetadataResponse: {
+            methodology: string;
+            trainingVersion: string;
+            horizonDays: number;
+            /** Format: date-time */
+            readAt?: string | null;
+            epochId?: string | null;
+            captureVersion?: string | null;
+            coveragePolicy: string;
+            /** @enum {string} */
+            validationStatus: "validation_pending" | "release_approved";
+            scope: string;
+            /** @enum {string} */
+            assessmentStatus: "not_assessed" | "assessed";
+        };
         SalesPlanPerformanceResponse: {
             currentPlanId: string;
             baselinePlanId: string;
@@ -2081,6 +2114,7 @@ export interface components {
             skus: components["schemas"]["PerformanceSkuResponse"][];
             nextCursor?: string | null;
             summaryScope: string;
+            netForecast: components["schemas"]["PerformanceNetMetadataResponse"];
         };
         AppInfoResponse: {
             app: string;

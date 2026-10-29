@@ -13,6 +13,7 @@ use App\Ingestion\Application\NetForecast\BuildPreHandoverGrossRateAction;
 use App\Ingestion\Application\NetForecast\BuildReturnCurveAction;
 use App\Ingestion\Application\NetForecast\NetForecastBatch;
 use App\Ingestion\Application\NetForecast\NetForecastPart;
+use App\Ingestion\Application\NetForecast\NetForecastSeriesRequest;
 use App\Ingestion\Application\NetForecast\NetTrainingBatch;
 use App\Ingestion\Domain\ValueObject\NetForecastCaptureEpoch;
 use App\Ingestion\Infrastructure\Query\NetForecast\GrossTrainingAggregateRow;
@@ -396,10 +397,15 @@ final class AggregateNetForecastActionTest extends TestCase
         $training = self::training(gross: [self::gross(null)], returns: [self::returns(null)]);
         $baseline = memory_get_usage(true);
         $started = hrtime(true);
-        $result = self::aggregate(new NetTargetBatch($context, $skus), $training);
+        $seriesRequest = new NetForecastSeriesRequest(array_column($skus, 'marketplaceSku'), $context->readAt->modify('-30 days'), $context->readAt, $context->readAt->modify('-183 days'));
+        $result = (self::action())(self::COMPANY, self::ACCOUNT, new NetTargetBatch($context, $skus), $training, seriesRequest: $seriesRequest);
         $elapsed = hrtime(true) - $started;
         $bytes = \strlen(json_encode($result, \JSON_THROW_ON_ERROR));
-        fwrite(\STDERR, \sprintf("B11 representative compute_ns=%d peak_bytes=%d allocation_bytes=%d compact_output_bytes=%d reason=%s\n", $elapsed, memory_get_peak_usage(true), memory_get_usage(true) - $baseline, $bytes, $result->unavailableReason ?? 'available'));
+        fwrite(\STDERR, \sprintf("B12 representative compute_ns=%d peak_bytes=%d allocation_bytes=%d compact_output_bytes=%d reason=%s\n", $elapsed, memory_get_peak_usage(true), memory_get_usage(true) - $baseline, $bytes, $result->unavailableReason ?? 'available'));
+        self::assertNotNull($result->series);
+        self::assertCount(50, $result->series->skus);
+        self::assertCount(31, $result->series->skus[0]->points);
+        self::assertSame('3600.000', $result->series->skus[0]->points[30]->cumulative->quantities?->expectedNetDecimal());
         self::assertSame(22222080000, $result->expectedNetRevenue?->minorAmount());
         self::assertNull($result->moneyUnavailableReason);
         self::assertLessThanOrEqual(5000000000, $elapsed);
@@ -409,6 +415,155 @@ final class AggregateNetForecastActionTest extends TestCase
         self::assertSame('180000', $result->quantities?->expectedNetNumerator);
         self::assertSame('1', $result->quantities->expectedNetDenominator);
         self::assertLessThanOrEqual(33554432, \strlen(json_encode($result, \JSON_THROW_ON_ERROR)));
+    }
+
+    public function testSeriesAndOriginalSkuBatchTotalsKeepAllExactFieldsAndReasonPriority(): void
+    {
+        foreach ([
+            [self::part(id: 'a', d: 0, pre: 1, price: '1'), self::part(id: 'b', d: 0, pre: 1, price: '1')],
+            [self::part(id: 'a', price: null), self::part(id: 'b')],
+            [self::part(id: 'a', currency: 'USD'), self::part(id: 'b')],
+            [self::part(id: 'a', d: 14, price: (string) \PHP_INT_MAX), self::part(id: 'b', d: 14, price: (string) -\PHP_INT_MAX)],
+            [self::part(id: 'a', reason: 'return_risk_unavailable'), self::part(id: 'b', unknown: 1)],
+        ] as $parts) {
+            $days = [];
+            foreach ($parts as $i => $part) {
+                $date = 0 === $i ? '2026-10-08' : '2026-10-09';
+                $days[] = new NetTargetDayRow($date, [new NetTargetGroupRow('order-'.$i, self::SKU, $date, [$part], [], true, null)], true, null);
+            }
+            $targets = new NetTargetBatch(self::context(), [new NetTargetSkuRow(self::SKU, $days)]);
+            $original = self::aggregate($targets, self::training());
+            $request = new NetForecastSeriesRequest([self::SKU], new \DateTimeImmutable('2026-10-09'), new \DateTimeImmutable('2026-10-09'), new \DateTimeImmutable('2026-10-08'));
+            $series = (self::action())(self::COMPANY, self::ACCOUNT, $targets, self::training(), seriesRequest: $request);
+            self::assertNotNull($series->series);
+            foreach (['quantities', 'expectedNetRevenue', 'unavailableReason', 'moneyUnavailableReason'] as $field) {
+                self::assertEquals($original->$field, $series->$field, 'batch '.$field);
+                self::assertEquals($original->skus[0]->$field, $series->skus[0]->$field, 'SKU '.$field);
+                self::assertEquals($original->skus[0]->$field, $series->series->skus[0]->points[0]->cumulative->$field, 'final cumulative '.$field);
+            }
+            self::assertCount(2, $series->skus[0]->days);
+            self::assertCount(1, $series->skus[0]->days[0]->groups);
+        }
+    }
+
+    public function testOptionalSeriesCannotBypassScopeContextCompletenessOrSharedBudgets(): void
+    {
+        $date = new \DateTimeImmutable(self::DAY);
+        $request = new NetForecastSeriesRequest([self::SKU], $date, $date);
+        $targets = self::targets([self::group([self::part(d: 0)])]);
+        foreach ([self::context(snapshot: 'different'), self::context(start: '2026-01-01T00:00:00.000001Z'), self::context(end: '2026-11-01T00:00:00.000001Z')] as $context) {
+            $result = (self::action())(self::COMPANY, self::ACCOUNT, $targets, self::training(context: $context), seriesRequest: $request);
+            self::assertSame('training_context_mismatch', $result->unavailableReason);
+            self::assertNull($result->series);
+        }
+        $context = self::context();
+        $late = new NetTrainingBatch(self::COMPANY, self::ACCOUNT, $context->readAt->modify('+1 microsecond'), null, [], []);
+        self::assertSame('training_context_mismatch', (self::action())(self::COMPANY, self::ACCOUNT, $targets, $late, seriesRequest: $request)->unavailableReason);
+        foreach ([self::context(company: self::FOREIGN), self::context(account: self::FOREIGN)] as $foreign) {
+            try {
+                (self::action())(self::COMPANY, self::ACCOUNT, self::targets([], context: $foreign), self::training(), seriesRequest: new NetForecastSeriesRequest([], $date, $date));
+                self::fail('Series empty shortcut accepted foreign scope.');
+            } catch (\InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+        foreach ([new NetTargetLimits(phpPeakBytes: 1), new NetTargetLimits(phpAllocationBytes: 1), new NetTargetLimits(computeSeconds: 0.000000001)] as $limits) {
+            $result = (self::action())(self::COMPANY, self::ACCOUNT, $targets, self::training(), runtimeLimits: $limits, seriesRequest: $request);
+            self::assertSame('input_budget_exceeded', $result->unavailableReason);
+            self::assertNull($result->series);
+            self::assertSame([], $result->skus);
+        }
+        $expired = (self::action())(self::COMPANY, self::ACCOUNT, $targets, self::training(), computeStarted: hrtime(true) - 6000000000, seriesRequest: $request);
+        self::assertSame('input_budget_exceeded', $expired->unavailableReason);
+        foreach ([new NetForecastSeriesRequest(['missing'], $date, $date), new NetForecastSeriesRequest([self::SKU], $date, $date->modify('+1 day')), new NetForecastSeriesRequest([self::SKU], $date, $date, $date->modify('-1 day'))] as $missing) {
+            $result = (self::action())(self::COMPANY, self::ACCOUNT, $targets, self::training(), seriesRequest: $missing);
+            self::assertSame('source_history_unavailable', $result->unavailableReason);
+            self::assertSame([], $result->skus);
+            self::assertNull($result->series);
+        }
+        $empty = (self::action())(self::COMPANY, self::ACCOUNT, self::targets([]), self::training(), seriesRequest: $request);
+        self::assertSame('source_history_unavailable', $empty->unavailableReason);
+        self::assertNull($empty->series);
+    }
+
+    public function testSeriesQualityUnionsDiagnosticsWithoutSummingTrainingSamples(): void
+    {
+        $training = self::training(gross: [self::gross(gross: 1800, t2: 200), self::gross(sku: null)], returns: [self::returns(reason: 'returns_coverage_missing'), self::returns(sku: null)]);
+        $targets = self::targets([self::group([self::part(id: 'a', d: 0, pre: 50), self::part(id: 'b', d: 0, pre: 50)])]);
+        $date = new \DateTimeImmutable(self::DAY);
+        $result = (self::action())(self::COMPANY, self::ACCOUNT, $targets, $training, seriesRequest: new NetForecastSeriesRequest([self::SKU], $date, $date));
+        self::assertNotNull($result->series);
+        $scope = $result->series->skus[0]->points[0]->period;
+        self::assertSame(['account', 'no_eligible_open', 'no_remaining_delivery'], $scope->basis);
+        self::assertSame(['returns_coverage_missing'], $scope->reasons);
+        self::assertSame('50.000', $scope->quantities?->expectedNetDecimal());
+        $json = json_encode($result->series, \JSON_THROW_ON_ERROR);
+        self::assertStringNotContainsString('sampleQuantity', $json);
+        self::assertStringNotContainsString('sourceRowId', $json);
+        self::assertStringNotContainsString('rawDocumentId', $json);
+    }
+
+    public function testOptionalSeriesKeepsFirstMonetaryFailureBeforeLaterPeriodFailure(): void
+    {
+        foreach ([
+            [['RUB', '1'], ['USD', '1'], ['RUB', null], 'money_currency_mismatch', 'money_price_missing'],
+            [['RUB', '1'], ['USD', null], ['USD', '1'], 'money_price_missing', 'money_price_missing'],
+            [['RUB', null], ['USD', '1'], ['RUB', '1'], 'money_price_missing', 'money_currency_mismatch'],
+            [['RUB', '0'], ['USD', '0'], ['RUB', null], 'money_currency_mismatch', 'money_price_missing'],
+            [['RUB', (string) \PHP_INT_MAX], ['USD', '1'], ['RUB', null], 'money_currency_mismatch', 'money_price_missing'],
+            [['RUB', '1'], ['USD', '1'], [null, '1'], 'money_currency_mismatch', 'money_currency_missing'],
+            [['RUB', '1'], [null, '1'], ['USD', '1'], 'money_currency_missing', 'money_currency_missing'],
+            [['RUB', '1'], ['USD', '1'], ['USD', 'invalid'], 'money_currency_mismatch', 'money_input_invalid'],
+        ] as [$hidden, $firstVisible, $lastVisible, $cumulativeReason, $periodReason]) {
+            $days = [];
+            foreach (['2026-08-31' => $hidden, '2026-09-01' => $firstVisible, '2026-09-02' => $lastVisible] as $date => [$currency, $price]) {
+                $days[] = new NetTargetDayRow($date, [new NetTargetGroupRow('order-'.$date, self::SKU, $date, [self::part(id: $date, d: 14, currency: $currency, price: $price)], [], true, null)], true, null);
+            }
+            $targets = new NetTargetBatch(self::context(), [new NetTargetSkuRow(self::SKU, $days)]);
+            $original = self::aggregate($targets, self::training());
+            $request = new NetForecastSeriesRequest([self::SKU], new \DateTimeImmutable('2026-09-01'), new \DateTimeImmutable('2026-09-02'), new \DateTimeImmutable('2026-08-31'), 'month');
+            $series = (self::action())(self::COMPANY, self::ACCOUNT, $targets, self::training(), seriesRequest: $request);
+            self::assertSame($cumulativeReason, $original->moneyUnavailableReason);
+            self::assertSame($original->moneyUnavailableReason, $series->moneyUnavailableReason);
+            self::assertSame($original->skus[0]->moneyUnavailableReason, $series->skus[0]->moneyUnavailableReason);
+            self::assertNotNull($series->series);
+            $point = $series->series->skus[0]->points[0];
+            self::assertSame($cumulativeReason, $point->cumulative->moneyUnavailableReason);
+            self::assertSame($periodReason, $point->period->moneyUnavailableReason);
+            foreach (['quantities', 'expectedNetRevenue', 'unavailableReason'] as $field) {
+                self::assertEquals($original->$field, $series->$field);
+                self::assertEquals($original->skus[0]->$field, $point->cumulative->$field);
+            }
+        }
+    }
+
+    public function testOptionalSeriesUsesTheSameFullResultAndOutputBudget(): void
+    {
+        $context = self::context();
+        $targets = self::targets([self::group([self::part()])]);
+        $date = new \DateTimeImmutable($targets->skus[0]->days[0]->businessDate);
+        $request = new NetForecastSeriesRequest([self::SKU], $date, $date);
+        $result = (self::action())($context->companyId, $context->accountId, $targets, self::training(), seriesRequest: $request);
+        self::assertNotNull($result->series);
+        self::assertSame($result->quantities?->expectedNetDecimal(), $result->series->skus[0]->points[0]->period->quantities?->expectedNetDecimal());
+        $failed = (self::action())($context->companyId, $context->accountId, $targets, self::training(), runtimeLimits: new NetTargetLimits(outputBytes: 1), seriesRequest: $request);
+        self::assertSame('input_budget_exceeded', $failed->unavailableReason);
+        self::assertSame([], $failed->skus);
+        self::assertNull($failed->series);
+        $low = 1;
+        $high = 50000;
+        while ($low < $high) {
+            $mid = intdiv($low + $high, 2);
+            $probe = (self::action())($context->companyId, $context->accountId, $targets, self::training(), runtimeLimits: new NetTargetLimits(outputBytes: $mid));
+            if ('input_budget_exceeded' === $probe->unavailableReason) {
+                $low = $mid + 1;
+            } else {
+                $high = $mid;
+            }
+        }
+        $withSeries = (self::action())($context->companyId, $context->accountId, $targets, self::training(), runtimeLimits: new NetTargetLimits(outputBytes: $low), seriesRequest: $request);
+        self::assertSame('input_budget_exceeded', $withSeries->unavailableReason, 'Series fields must share the original output byte budget.');
+        self::assertNull($withSeries->series);
     }
 
     public function testStableReasonOrderDoesNotDependOnInputOrder(): void

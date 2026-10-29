@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application\Facade;
 
+use App\Ingestion\Application\NetForecast\NetForecastSeriesRequest;
+use App\Ingestion\Application\NetForecast\NetTrainingSnapshot;
+use App\Ingestion\Application\NetForecast\ReadNetForecastAction;
+use App\Ingestion\Domain\ValueObject\ObservedReturnCurve;
+use App\Ingestion\Infrastructure\Config\NetForecastPublication;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutMaturityQuery;
 use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkuSearchQuery;
 use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkusPresentQuery;
 use App\Ingestion\Infrastructure\Query\Listings\ListingSnapshotCriteria;
 use App\Ingestion\Infrastructure\Query\Listings\ListingSnapshotsQuery;
+use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetRequest;
 use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortMetricsRow;
 use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortSeriesQuery;
 use Psr\Clock\ClockInterface;
@@ -22,6 +28,8 @@ use Psr\Clock\ClockInterface;
  * подключения (ADR-040 п. 4). Facade растёт по запросу потребителя,
  * а не вперёд: пустой контракт «на будущее» превращается в место, куда
  * складывают всё подряд, и граница исчезает первой.
+ *
+ * @phpstan-type NetPoints array<string, array<string, array{period: SalesCohortNetValues, cumulative: SalesCohortNetValues}>>
  */
 final class IngestionFacade
 {
@@ -39,6 +47,10 @@ final class IngestionFacade
         private readonly SalesCohortSeriesQuery $cohortSeries,
         private readonly BuyoutMaturityQuery $cohortMaturity,
         private readonly ClockInterface $clock,
+        private readonly NetForecastPublication $netPublication,
+        private readonly ReadNetForecastAction $netForecast,
+        private readonly NetTrainingSnapshot $netSnapshot,
+        private readonly SalesCohortNetMapper $netMapper = new SalesCohortNetMapper(),
     ) {
     }
 
@@ -171,9 +183,42 @@ final class IngestionFacade
     /** Current mutable order cohorts; no historical snapshot or return-tail promise. */
     public function salesCohortMetrics(string $companyId, string $accountId, SalesCohortRequest $request): SalesCohortBatch
     {
-        $calculatedAt = $this->clock->now();
+        if ([] === $request->marketplaceSkus || !$this->netPublication->allowsModel(ObservedReturnCurve::MODEL_VERSION)) {
+            $calculatedAt = $this->clock->now();
+
+            return [] === $request->marketplaceSkus ? new SalesCohortBatch([], $calculatedAt, $request)
+                : $this->readGrossCohorts($companyId, $accountId, $request, $calculatedAt, SalesCohortNetMetadata::pending());
+        }
+
+        return $this->netSnapshot->read(function () use ($companyId, $accountId, $request): SalesCohortBatch {
+            $net = ($this->netForecast)($companyId, $accountId,
+                new NetTargetRequest($request->marketplaceSkus, $request->from, $request->to, $request->accumulationFrom),
+                new NetForecastSeriesRequest($request->marketplaceSkus, $request->from, $request->to, $request->accumulationFrom, $request->groupBy->value));
+            $metadata = new SalesCohortNetMetadata(readAt: $net->readAt, epochId: $net->context?->epoch->id,
+                captureVersion: $net->context?->epoch->captureVersion, validationStatus: 'release_approved', assessmentStatus: 'assessed');
+            $calculatedAt = $net->readAt ?? $this->clock->now();
+            $reason = (null === $net->series ? null : $net->series->unavailableReason) ?? $net->unavailableReason ?? 'source_history_unavailable';
+            $moneyReason = $net->moneyUnavailableReason ?? $reason;
+            try {
+                $points = $this->netMapper->map($net, $request);
+            } catch (\OverflowException) {
+                $points = [];
+                $reason = $moneyReason = 'input_budget_exceeded';
+            } catch (\UnexpectedValueException) {
+                $points = [];
+                $reason = $moneyReason = 'source_history_unavailable';
+            }
+            unset($net);
+
+            return $this->readGrossCohorts($companyId, $accountId, $request, $calculatedAt, $metadata, $points, $reason, $moneyReason);
+        });
+    }
+
+    /** @param NetPoints $netPoints */
+    private function readGrossCohorts(string $companyId, string $accountId, SalesCohortRequest $request, \DateTimeImmutable $calculatedAt, SalesCohortNetMetadata $metadata, array $netPoints = [], string $netReason = 'validation_pending', string $moneyReason = 'validation_pending'): SalesCohortBatch
+    {
         if ([] === $request->marketplaceSkus) {
-            return new SalesCohortBatch([], $calculatedAt, $request);
+            throw new \LogicException('Gross cohort reader requires a nonempty SKU page.');
         }
         $maturity = $this->cohortMaturity->build($companyId, $accountId, $calculatedAt)->executeQuery()->fetchAssociative();
         if (false === $maturity) {
@@ -192,7 +237,8 @@ final class IngestionFacade
             foreach ($row->points as $point) {
                 $points[] = new SalesCohortPoint(
                     $point->bucketFrom, $point->bucketTo, $point->periodCoverage, $point->cumulativeCoverage,
-                    self::cohortComponents($point->period), self::cohortComponents($point->cumulative),
+                    self::cohortComponents($point->period, $netPoints[$row->marketplaceSku][$point->bucketFrom.'|'.$point->bucketTo]['period'] ?? null, $metadata, $netReason, $moneyReason),
+                    self::cohortComponents($point->cumulative, $netPoints[$row->marketplaceSku][$point->bucketFrom.'|'.$point->bucketTo]['cumulative'] ?? null, $metadata, $netReason, $moneyReason),
                 );
             }
             $skus[] = new SalesCohortSku($row->marketplaceSku, $points);
@@ -203,10 +249,10 @@ final class IngestionFacade
         $coveragePoints = $skus[0]->points ?? [];
         $lastPoint = [] === $coveragePoints ? null : $coveragePoints[array_key_last($coveragePoints)];
 
-        return new SalesCohortBatch($skus, $calculatedAt, $request, ordersCoverage: null === $lastPoint ? 'not_assessed' : $lastPoint->cumulativeCoverage);
+        return new SalesCohortBatch($skus, $calculatedAt, $request, ordersCoverage: null === $lastPoint ? 'not_assessed' : $lastPoint->cumulativeCoverage, netForecast: $metadata);
     }
 
-    private static function cohortComponents(?SalesCohortMetricsRow $row): ?SalesCohortComponents
+    private static function cohortComponents(?SalesCohortMetricsRow $row, ?SalesCohortNetValues $net, SalesCohortNetMetadata $metadata, string $netReason, string $moneyReason): ?SalesCohortComponents
     {
         if (null === $row) {
             return null;
@@ -220,6 +266,10 @@ final class IngestionFacade
             $row->maturityStatus, $row->inFlightRateBps, $row->knownBuyoutRateBps,
             $row->actualBuyoutRateBps, $row->currentProjectedBuyoutQuantity,
             $row->currentProjectedBuyoutRateBps, $row->unestimatedRateBps,
+            $net?->quantity, null === $net ? $netReason : $net->reason,
+            $net?->revenue, null === $net ? $moneyReason : $net->moneyReason,
+            (null === $net ? null : $net->quality) ?? ('not_assessed' === $metadata->assessmentStatus ? SalesCohortNetQuality::pending()
+                : new SalesCohortNetQuality($netReason, $moneyReason, [], [], $metadata->validationStatus, $metadata->assessmentStatus)),
         );
     }
 }

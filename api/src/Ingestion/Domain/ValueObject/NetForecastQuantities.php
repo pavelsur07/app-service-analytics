@@ -6,6 +6,7 @@ namespace App\Ingestion\Domain\ValueObject;
 
 use Brick\Math\BigInteger;
 use Brick\Math\BigRational;
+use Brick\Math\RoundingMode;
 
 /** Exact full net quantities, without rounding or public arithmetic-library types. */
 final readonly class NetForecastQuantities
@@ -80,6 +81,38 @@ final readonly class NetForecastQuantities
             self::sum($this->future, $other->future),
             self::sum($this->retained, $other->retained),
         );
+    }
+
+    /**
+     * Sufficient proof for regrouping any subset without a stored-field precision refusal.
+     * P, the product of all non-unit component denominators, is <10^S (or 1 for S=0).
+     * Every subset denominator divides P; future<=D, retained<=E and net<=D+E.
+     * With n terms and L base digits, D+E < 2*n*10^L < 10^(L+digits(n)+1).
+     * Thus S+L+digits(n)+1 bounds all eight fields, including the unreduced net numerator.
+     * False requires chronological addition; it does not establish an overflow.
+     *
+     * @param iterable<self> $quantities
+     */
+    public static function canSumWithoutPrecisionOverflow(iterable $quantities): bool
+    {
+        $count = $baseDigits = $denominatorDigits = 0;
+        foreach ($quantities as $quantity) {
+            ++$count;
+            $baseDigits = max($baseDigits, \strlen($quantity->currentD), \strlen($quantity->eligibleOpenQuantity));
+            foreach ([$quantity->futureReturnsDenominator, $quantity->retainedOpenDenominator] as $denominator) {
+                if ('1' !== $denominator) {
+                    $denominatorDigits += \strlen($denominator);
+                }
+            }
+        }
+
+        return 0 === $count || $denominatorDigits + $baseDigits + \strlen((string) $count) + 1 <= self::MAX_DIGITS;
+    }
+
+    public function expectedNetDecimal(): string
+    {
+        // The scope fraction is already validated; avoid reducing it again just to divide.
+        return (string) BigInteger::of($this->expectedNetNumerator)->toBigDecimal()->dividedBy($this->expectedNetDenominator, 3, RoundingMode::HalfUp);
     }
 
     private static function sum(BigRational $a, BigRational $b): BigRational

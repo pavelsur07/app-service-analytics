@@ -7,8 +7,20 @@ use App\Identity\Infrastructure\Repository\DoctrineCompanyRepository;
 use App\Identity\Infrastructure\Repository\DoctrineMarketplaceAccountRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Ingestion\Application\Facade\IngestionFacade;
+use App\Ingestion\Application\NetForecast\AggregateNetForecastAction;
+use App\Ingestion\Application\NetForecast\ApplyOpenRetentionAction;
+use App\Ingestion\Application\NetForecast\AssessDeliveredRiskAction;
+use App\Ingestion\Application\NetForecast\AssessOpenRetentionAction;
+use App\Ingestion\Application\NetForecast\BuildPostHandoverGrossRateAction;
+use App\Ingestion\Application\NetForecast\BuildPreHandoverGrossRateAction;
+use App\Ingestion\Application\NetForecast\BuildReturnCurveAction;
+use App\Ingestion\Application\NetForecast\NetTrainingSnapshot;
+use App\Ingestion\Application\NetForecast\ReadNetForecastAction;
+use App\Ingestion\Application\NetForecast\ReadNetTrainingAction;
 use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceReportType;
+use App\Ingestion\Infrastructure\Config\NetForecastCaptureEpochs;
+use App\Ingestion\Infrastructure\Config\NetForecastPublication;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceDayLoadWriter;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplaceListingWriter;
 use App\Ingestion\Infrastructure\Persistence\DoctrineMarketplacePostingStatusWriter;
@@ -18,6 +30,9 @@ use App\Ingestion\Infrastructure\Query\Buyout\BuyoutMaturityQuery;
 use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkuSearchQuery;
 use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkusPresentQuery;
 use App\Ingestion\Infrastructure\Query\Listings\ListingSnapshotsQuery;
+use App\Ingestion\Infrastructure\Query\NetForecast\GrossTrainingAggregateQuery;
+use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetQuery;
+use App\Ingestion\Infrastructure\Query\NetForecast\ReturnTrainingAggregateQuery;
 use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortCoverageQuery;
 use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortMetricsQuery;
 use App\Ingestion\Infrastructure\Query\SalesCohort\SalesCohortSeriesQuery;
@@ -339,7 +354,22 @@ try {
                     $profiled = DriverManager::getConnection($db->getParams(), (new Configuration())->setMiddlewares([new Middleware($debug, null, 'benchmark')]));
                     $profiled->executeStatement("SET statement_timeout = '30s'");
                     $debug->reset();
-                    $facade = new IngestionFacade(new ListingSnapshotsQuery($profiled), new AccountCatalogSkuSearchQuery($profiled), new AccountCatalogSkusPresentQuery($profiled), new SalesCohortSeriesQuery($profiled, new SalesCohortMetricsQuery($profiled), new SalesCohortCoverageQuery($profiled)), new BuyoutMaturityQuery($profiled), new NativeClock());
+                    $curves = new BuildReturnCurveAction();
+                    $pre = new BuildPreHandoverGrossRateAction();
+                    $post = new BuildPostHandoverGrossRateAction();
+                    $net = new ReadNetForecastAction($profiled,
+                        new ReadNetTrainingAction($profiled,
+                            new GrossTrainingAggregateQuery($profiled),
+                            new ReturnTrainingAggregateQuery($profiled),
+                            new NetForecastCaptureEpochs()),
+                        new NetTargetQuery($profiled),
+                        new AggregateNetForecastAction(
+                            new AssessDeliveredRiskAction($curves),
+                            new AssessOpenRetentionAction($pre, $post, $curves,
+                                new ApplyOpenRetentionAction($pre, $post, $curves))));
+                    $facade = new IngestionFacade(new ListingSnapshotsQuery($profiled), new AccountCatalogSkuSearchQuery($profiled), new AccountCatalogSkusPresentQuery($profiled), new SalesCohortSeriesQuery($profiled, new SalesCohortMetricsQuery($profiled), new SalesCohortCoverageQuery($profiled)), new BuyoutMaturityQuery($profiled), new NativeClock(),
+                        new NetForecastPublication(), $net,
+                        new NetTrainingSnapshot($profiled));
                     $action = new ReadSalesPlanPerformanceAction(new SalesPlanPerformanceSnapshot($profiled), new SalesPlansQuery($profiled), new SalesPlanBaselineQuery($profiled), new SalesPlanPerformanceQuery($profiled), $facade, new SalesPlanPerformanceCalculator());
                     $started = hrtime(true);
                     $view = $action($state['companyId'], $plan['id'], new SalesPlanPerformanceRequest(new DateTimeImmutable($from), new DateTimeImmutable($plan['to']), SalesPlanGrouping::from($group), limit: $limit));

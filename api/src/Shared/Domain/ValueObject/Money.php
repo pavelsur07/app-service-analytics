@@ -59,6 +59,12 @@ final readonly class Money
         return $this->money->getCurrency()->getCurrencyCode();
     }
 
+    /** ISO currency scale; the library remains private to Money. */
+    public function fractionDigits(): int
+    {
+        return $this->money->getCurrency()->getDefaultFractionDigits();
+    }
+
     public function minorAmount(): int
     {
         return $this->money->getMinorAmount()->toInt();

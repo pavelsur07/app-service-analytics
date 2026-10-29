@@ -9842,6 +9842,73 @@
                 },
                 "type": "object"
             },
+            "PerformanceNetMoneyResponse": {
+                "required": [
+                    "minor",
+                    "currency",
+                    "fractionDigits"
+                ],
+                "properties": {
+                    "minor": {
+                        "type": "string",
+                        "pattern": "^(?:0|-[1-9][0-9]*|[1-9][0-9]*)$"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "fractionDigits": {
+                        "type": "integer",
+                        "maximum": 4,
+                        "minimum": 0
+                    }
+                },
+                "type": "object"
+            },
+            "PerformanceNetQualityResponse": {
+                "required": [
+                    "trainingScopes",
+                    "componentReasons",
+                    "validationStatus",
+                    "assessmentStatus"
+                ],
+                "properties": {
+                    "sourceUnavailableReason": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "sourceMoneyUnavailableReason": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "trainingScopes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "componentReasons": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "validationStatus": {
+                        "type": "string",
+                        "enum": [
+                            "validation_pending",
+                            "release_approved"
+                        ]
+                    },
+                    "assessmentStatus": {
+                        "type": "string",
+                        "enum": [
+                            "not_assessed",
+                            "assessed"
+                        ]
+                    }
+                },
+                "type": "object"
+            },
             "PerformanceCohortResponse": {
                 "required": [
                     "rawOrderedQuantity",
@@ -9855,7 +9922,7 @@
                     "knownProjectedBuyoutQuantity",
                     "knownProjectedEligibleQuantity",
                     "maturityStatus",
-                    "netForecastUnavailableReason"
+                    "netForecastQuality"
                 ],
                 "properties": {
                     "rawOrderedQuantity": {
@@ -9925,10 +9992,27 @@
                     },
                     "expectedNetSalesQuantity": {
                         "type": "string",
+                        "pattern": "^[0-9]+\\.[0-9]{3}$",
                         "nullable": true
                     },
                     "netForecastUnavailableReason": {
-                        "type": "string"
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "expectedNetRevenue": {
+                        "nullable": true,
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/PerformanceNetMoneyResponse"
+                            }
+                        ]
+                    },
+                    "netForecastMoneyUnavailableReason": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "netForecastQuality": {
+                        "$ref": "#/components/schemas/PerformanceNetQualityResponse"
                     }
                 },
                 "type": "object"
@@ -10060,6 +10144,62 @@
                 },
                 "type": "object"
             },
+            "PerformanceNetMetadataResponse": {
+                "required": [
+                    "methodology",
+                    "trainingVersion",
+                    "horizonDays",
+                    "coveragePolicy",
+                    "validationStatus",
+                    "scope",
+                    "assessmentStatus"
+                ],
+                "properties": {
+                    "methodology": {
+                        "type": "string"
+                    },
+                    "trainingVersion": {
+                        "type": "string"
+                    },
+                    "horizonDays": {
+                        "type": "integer"
+                    },
+                    "readAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "epochId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "captureVersion": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "coveragePolicy": {
+                        "type": "string"
+                    },
+                    "validationStatus": {
+                        "type": "string",
+                        "enum": [
+                            "validation_pending",
+                            "release_approved"
+                        ]
+                    },
+                    "scope": {
+                        "type": "string"
+                    },
+                    "assessmentStatus": {
+                        "type": "string",
+                        "enum": [
+                            "not_assessed",
+                            "assessed"
+                        ]
+                    }
+                },
+                "type": "object"
+            },
             "SalesPlanPerformanceResponse": {
                 "required": [
                     "currentPlanId",
@@ -10075,7 +10215,8 @@
                     "ordersCoverage",
                     "returnsCoverage",
                     "skus",
-                    "summaryScope"
+                    "summaryScope",
+                    "netForecast"
                 ],
                 "properties": {
                     "currentPlanId": {
@@ -10133,6 +10274,9 @@
                     },
                     "summaryScope": {
                         "type": "string"
+                    },
+                    "netForecast": {
+                        "$ref": "#/components/schemas/PerformanceNetMetadataResponse"
                     }
                 },
                 "type": "object"

@@ -346,7 +346,15 @@ ADR-016) и планирование продаж — поиск по катал
 Ingestion считают плотные периоды и накопление SQL до отсечения окна.
 Incomplete coverage скрывает полный объект компонентов, unknown и отсутствие
 обучения различаются; query count не зависит от SKU. Согласованный HTTP
-snapshot открывает вызывающий SalesPlanning по ADR046.
+snapshot открывает вызывающий SalesPlanning по ADR046. Default-closed
+`NetForecastPublication` оставляет два gross SQL без нового net чтения;
+`SalesCohortNetMetadata`/`SalesCohortNetQuality` сообщают pending/not_assessed.
+Разрешённый внутренний путь оборачивает net и gross в тот же read-only RR;
+`SalesCohortNetMapper` переводит точный scope в `SalesCohortNetValues` до gross
+SQL, продолжая фактические compute/memory/output budgets. SalesPlanning
+копирует эти поля в собственные metadata/quality DTO; новый денежный response
+передаёт minor строкой и авторитетный `Money::fractionDigits()`, сохраняя
+старый числовой денежный контракт observed/gross.
 
 `Ingestion/Application/NetForecast` читает отдельные gross/return training
 aggregates в одном фактическом read-only RR snapshot (ADR-049).

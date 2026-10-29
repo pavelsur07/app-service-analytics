@@ -14,6 +14,30 @@ final class NetForecastQuantitiesTest extends TestCase
         self::assertTrue(class_exists(NetForecastQuantities::class), 'Exact net quantities value must exist.');
     }
 
+    public function testDecimalPublicationRoundsOnlyTheExactScope(): void
+    {
+        $third = NetForecastQuantities::fromComponents('0', '1', '0', '1', '1', '3');
+        self::assertSame('0.333', $third->expectedNetDecimal());
+        self::assertSame('1.000', $third->plus($third)->plus($third)->expectedNetDecimal());
+        self::assertSame('0.001', NetForecastQuantities::fromComponents('0', '1', '0', '1', '1', '2000')->expectedNetDecimal());
+        self::assertSame('9223372036854775807.500', NetForecastQuantities::fromComponents('9223372036854775808', '0', '1', '2', '0', '1')->expectedNetDecimal());
+        self::assertSame('18446744073709551616.000', NetForecastQuantities::fromComponents('18446744073709551616', '0', '0', '1', '0', '1')->expectedNetDecimal());
+        self::assertSame('0.000', NetForecastQuantities::zero()->expectedNetDecimal());
+    }
+
+    public function testDecimalBoundaryHalfUpTiesCarryAndLargeValidatedFractions(): void
+    {
+        foreach ([['1', '2000', '0.001'], ['1', '2001', '0.000'], ['1', '1999', '0.001'], ['2', '6', '0.333'], ['0', '9', '0.000']] as [$numerator, $denominator, $expected]) {
+            self::assertSame($expected, NetForecastQuantities::fromComponents('0', '1', '0', '1', $numerator, $denominator)->expectedNetDecimal());
+        }
+        self::assertSame('1000.000', NetForecastQuantities::fromComponents('999', '1', '0', '1', '1999', '2000')->expectedNetDecimal());
+        $integer = '1'.str_repeat('0', 1024);
+        self::assertSame($integer.'.001', NetForecastQuantities::fromComponents($integer, '1', '0', '1', '1', '2000')->expectedNetDecimal());
+        $denominator = '1'.str_repeat('0', 300);
+        self::assertSame('0.500', NetForecastQuantities::fromComponents('0', '1', '0', '1', '5'.str_repeat('0', 299), $denominator)->expectedNetDecimal());
+        self::assertSame('0.500', NetForecastQuantities::fromComponents('0', '1', '0', '1', '5'.str_repeat('0', 298).'1', $denominator)->expectedNetDecimal());
+    }
+
     public function testSeventyMinusFivePlusTwentyFiveIsNinety(): void
     {
         $q = NetForecastQuantities::fromComponents('70', '50', '10', '2', '75', '3');
@@ -118,6 +142,26 @@ final class NetForecastQuantitiesTest extends TestCase
             $sum->expectedNetNumerator, $sum->expectedNetDenominator]);
         self::assertSame('5', $a->plus($a)->expectedNetNumerator);
         self::assertSame('3', $a->plus($a)->expectedNetDenominator);
+    }
+
+    public function testSumPrecisionProofCoversBothDenominatorsAndBasesAtBoundary(): void
+    {
+        self::assertTrue(NetForecastQuantities::canSumWithoutPrecisionOverflow([]));
+        $safe = NetForecastQuantities::fromComponents('1', '1', '1', '1'.str_repeat('0', 8189), '1', '1'.str_repeat('0', 8190));
+        // Denominator lengths 8190+8191, base length1, count length1, margin1 = 16384.
+        self::assertTrue(NetForecastQuantities::canSumWithoutPrecisionOverflow([$safe]));
+        $unproven = NetForecastQuantities::fromComponents('1', '1', '1', '1'.str_repeat('0', 8190), '1', '1'.str_repeat('0', 8190));
+        self::assertFalse(NetForecastQuantities::canSumWithoutPrecisionOverflow([$unproven]));
+        self::assertSame('2', $unproven->plus($unproven)->expectedNetNumerator);
+        $largeBase = NetForecastQuantities::fromComponents(str_repeat('9', 16382), str_repeat('9', 16382), '0', '1', '0', '1');
+        self::assertTrue(NetForecastQuantities::canSumWithoutPrecisionOverflow([$largeBase, $largeBase]));
+        foreach (get_object_vars($largeBase->plus($largeBase)) as $field) {
+            self::assertIsString($field);
+            self::assertLessThanOrEqual(16384, \strlen($field));
+        }
+        $largerBase = NetForecastQuantities::fromComponents(str_repeat('9', 16383), '0', '0', '1', '0', '1');
+        self::assertFalse(NetForecastQuantities::canSumWithoutPrecisionOverflow([$largerBase]));
+        self::assertSame($largerBase, $largerBase->plus(NetForecastQuantities::zero()));
     }
 
     public function testPrecisionOverflowOfExactSumIsRefused(): void
