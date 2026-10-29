@@ -111,7 +111,8 @@ final readonly class NetForecastQuantities
 
     public function expectedNetDecimal(): string
     {
-        return (string) BigRational::ofFraction($this->expectedNetNumerator, $this->expectedNetDenominator)->toScale(3, RoundingMode::HalfUp);
+        // The scope fraction is already validated; avoid reducing it again just to divide.
+        return (string) BigInteger::of($this->expectedNetNumerator)->toBigDecimal()->dividedBy($this->expectedNetDenominator, 3, RoundingMode::HalfUp);
     }
 
     private static function sum(BigRational $a, BigRational $b): BigRational

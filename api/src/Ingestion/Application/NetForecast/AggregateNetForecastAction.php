@@ -141,7 +141,8 @@ final readonly class AggregateNetForecastAction
             $this->charge($series, $used, $guard, $outputLimit);
             $guard();
 
-            return new NetForecastBatch($companyId, $accountId, $context->readAt, $context, $output, $total, $reason, $money, $moneyReason, $series);
+            return new NetForecastBatch($companyId, $accountId, $context->readAt, $context, $output, $total, $reason, $money, $moneyReason, $series,
+                (int) ($started + (int) ($seconds * 1000000000)), $baseline, $used, $allocationLimit, $peakLimit, $outputLimit);
         } catch (\UnexpectedValueException) {
             return $this->refuse($companyId, $accountId, $context, 'source_history_unavailable');
         } catch (\OverflowException) {

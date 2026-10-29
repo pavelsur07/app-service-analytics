@@ -16,6 +16,7 @@ final readonly class SalesCohortBatch
         public string $returnsCoverage = 'not_assessed',
         /** Orders coverage over the entire accumulationFrom..to range; empty batch is not assessed. */
         public string $ordersCoverage = 'not_assessed',
+        public SalesCohortNetMetadata $netForecast = new SalesCohortNetMetadata(),
     ) {
     }
 }

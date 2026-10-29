@@ -25,6 +25,19 @@ final class NetForecastQuantitiesTest extends TestCase
         self::assertSame('0.000', NetForecastQuantities::zero()->expectedNetDecimal());
     }
 
+    public function testDecimalBoundaryHalfUpTiesCarryAndLargeValidatedFractions(): void
+    {
+        foreach ([['1', '2000', '0.001'], ['1', '2001', '0.000'], ['1', '1999', '0.001'], ['2', '6', '0.333'], ['0', '9', '0.000']] as [$numerator, $denominator, $expected]) {
+            self::assertSame($expected, NetForecastQuantities::fromComponents('0', '1', '0', '1', $numerator, $denominator)->expectedNetDecimal());
+        }
+        self::assertSame('1000.000', NetForecastQuantities::fromComponents('999', '1', '0', '1', '1999', '2000')->expectedNetDecimal());
+        $integer = '1'.str_repeat('0', 1024);
+        self::assertSame($integer.'.001', NetForecastQuantities::fromComponents($integer, '1', '0', '1', '1', '2000')->expectedNetDecimal());
+        $denominator = '1'.str_repeat('0', 300);
+        self::assertSame('0.500', NetForecastQuantities::fromComponents('0', '1', '0', '1', '5'.str_repeat('0', 299), $denominator)->expectedNetDecimal());
+        self::assertSame('0.500', NetForecastQuantities::fromComponents('0', '1', '0', '1', '5'.str_repeat('0', 298).'1', $denominator)->expectedNetDecimal());
+    }
+
     public function testSeventyMinusFivePlusTwentyFiveIsNinety(): void
     {
         $q = NetForecastQuantities::fromComponents('70', '50', '10', '2', '75', '3');

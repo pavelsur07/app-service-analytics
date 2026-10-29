@@ -15,6 +15,18 @@ export const performanceFixture = {
   returnsCoverage: 'not_assessed',
   summaryScope: 'sku_page',
   nextCursor: null,
+  netForecast: {
+    methodology: 'observed_retention_h60_v1',
+    trainingVersion: 'net_training_observed_v1',
+    horizonDays: 60,
+    readAt: null,
+    epochId: null,
+    captureVersion: null,
+    coveragePolicy: 'daily_complete_receipts_v1',
+    validationStatus: 'validation_pending',
+    scope: 'placed_order_cohorts',
+    assessmentStatus: 'not_assessed',
+  },
   skus: [
     {
       marketplaceSku: 'SKU-1',
@@ -59,7 +71,17 @@ export const performanceFixture = {
               currentProjectedBuyoutRateBps: 9000,
               unestimatedRateBps: 200,
               expectedNetSalesQuantity: null,
-              netForecastUnavailableReason: 'net_forecast_not_available',
+              netForecastUnavailableReason: 'validation_pending',
+              expectedNetRevenue: null,
+              netForecastMoneyUnavailableReason: 'validation_pending',
+              netForecastQuality: {
+                sourceUnavailableReason: null,
+                sourceMoneyUnavailableReason: null,
+                trainingScopes: [],
+                componentReasons: [],
+                validationStatus: 'validation_pending',
+                assessmentStatus: 'not_assessed',
+              },
             },
           },
           cumulative: {

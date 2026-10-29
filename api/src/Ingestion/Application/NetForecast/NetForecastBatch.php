@@ -22,6 +22,13 @@ final readonly class NetForecastBatch
         public ?Money $expectedNetRevenue,
         public ?string $moneyUnavailableReason,
         public ?NetForecastSeries $series = null,
+        /** Internal publication budget continues through Facade mapping; never transport metadata. */
+        public ?int $computeDeadlineNs = null,
+        public ?int $allocationBaselineBytes = null,
+        public ?int $outputBytesUsed = null,
+        public ?int $allocationLimitBytes = null,
+        public ?int $peakLimitBytes = null,
+        public ?int $outputLimitBytes = null,
     ) {
     }
 }

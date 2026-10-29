@@ -22,6 +22,7 @@ final readonly class SalesPlanPerformanceView
         public string $returnsCoverage,
         public array $skus,
         public ?string $nextCursor,
+        public SalesPlanPerformanceNetMetadata $netForecast,
         public string $summaryScope = 'sku_page',
     ) {
     }

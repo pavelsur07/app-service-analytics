@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Tests\Unit\SalesPlanning;
 
 use App\Ingestion\Application\Facade\SalesCohortComponents;
+use App\Ingestion\Application\Facade\SalesCohortNetQuality;
 use App\SalesPlanning\Application\SalesPlanPerformanceCalculator;
 use App\SalesPlanning\Domain\SalesPlanMetric;
+use App\SalesPlanning\Ui\Response\PerformanceCohortResponse;
 use App\Shared\Domain\ValueObject\Money;
 use PHPUnit\Framework\TestCase;
 
@@ -54,6 +56,28 @@ final class SalesPlanPerformanceCalculatorTest extends TestCase
         $value = (new SalesPlanPerformanceCalculator())->calculate(32, Money::ofMinor(123, 'RUB'), 16, SalesPlanMetric::RetainedSales, $this->facts(1));
         self::assertSame(313, $value->attainmentBps);
         self::assertSame('0.063', $value->actualSpeed);
+    }
+
+    public function testAvailableNetIsCopiedThroughOwnCohortWithoutComputingB14Fields(): void
+    {
+        $quality = new SalesCohortNetQuality(null, 'money_price_missing', ['sku'], ['insufficient_sample'], 'release_approved', 'assessed');
+        $facts = new SalesCohortComponents(100, 0, 100, 70, Money::ofMinor(7000, 'RUB'), 50, 70, 0, 0,
+            '95', '120', 'preliminary', 4000, 9000, null, 95, 9500, 0,
+            '90.000', null, null, 'money_price_missing', $quality);
+        $values = (new SalesPlanPerformanceCalculator())->calculate(100, Money::ofMinor(10000, 'RUB'), 1, SalesPlanMetric::RetainedSales, $facts);
+        $response = PerformanceCohortResponse::of($values->cohort);
+        self::assertNotNull($response);
+        self::assertSame('90.000', $response->expectedNetSalesQuantity);
+        self::assertNull($response->netForecastUnavailableReason);
+        self::assertNull($response->expectedNetRevenue);
+        self::assertSame('money_price_missing', $response->netForecastMoneyUnavailableReason);
+        self::assertSame(['sku'], $response->netForecastQuality->trainingScopes);
+        self::assertSame(['insufficient_sample'], $response->netForecastQuality->componentReasons);
+        self::assertSame('assessed', $response->netForecastQuality->assessmentStatus);
+        self::assertSame('release_approved', $response->netForecastQuality->validationStatus);
+        self::assertNull($values->expectedGoalQuantity);
+        self::assertNull($values->expectedAttainmentBps);
+        self::assertNull($values->expectedSpeed);
     }
 
     private function facts(int $observed = 700): SalesCohortComponents

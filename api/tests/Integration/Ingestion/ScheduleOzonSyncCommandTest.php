@@ -45,14 +45,25 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
             ->persistWith($companies, $marketplaceAccounts);
 
         $tester = $this->commandTester();
+        $beforeTick = new \DateTimeImmutable('now', new \DateTimeZone('Europe/Moscow'));
         $tester->execute(['--once' => true]);
+        $afterTick = new \DateTimeImmutable('now', new \DateTimeZone('Europe/Moscow'));
         $tester->assertCommandIsSuccessful();
         // Строка журнала называет обойдённые подключения и окна тика:
         // по ней видно, был ли рескан, — по сырью он не виден.
-        self::assertMatchesRegularExpression(
-            '/Тик планировщика: подключений — \d+; рескан — (да|нет); дней: продажи — \d+, расходы — \d+, возвраты — \d+\./u',
-            $tester->getDisplay(),
-        );
+        self::assertSame(1, preg_match(
+            '/Тик планировщика: подключений — \d+; рескан — (да|нет); дней: продажи — (\d+), расходы — (\d+), возвраты — (\d+)\./u',
+            $tester->getDisplay(), $tick,
+        ));
+        if (!isset($tick[1])) {
+            self::fail('Missing scheduler tick metadata.');
+        }
+        $rescan = 'да' === $tick[1];
+        self::assertContains($rescan, [3 === (int) $beforeTick->format('G'), 3 === (int) $afterTick->format('G')]);
+        $postingDays = $rescan ? 30 : 3;
+        $expenseDays = $rescan ? 45 : 3;
+        $returnDays = $rescan ? 90 : 3;
+        self::assertSame([(string) $postingDays, (string) $expenseDays, (string) $returnDays], \array_slice($tick, 2));
 
         $sent = $this->transport($container)->getSent();
 
@@ -81,30 +92,24 @@ final class ScheduleOzonSyncCommandTest extends KernelTestCase
             }
         }
 
-        $today = new \DateTimeImmutable('now', new \DateTimeZone('Europe/Moscow'));
-        $window = [
-            $today->format('Y-m-d'),
-            $today->modify('-1 day')->format('Y-m-d'),
-            $today->modify('-2 day')->format('Y-m-d'),
-        ];
+        $firstDay = $postingDates[$accountA->id()->toRfc4122()][0] ?? null;
+        self::assertIsString($firstDay);
+        self::assertContains($firstDay, [$beforeTick->format('Y-m-d'), $afterTick->format('Y-m-d')]);
+        $today = new \DateTimeImmutable($firstDay, new \DateTimeZone('Europe/Moscow'));
+        $expenseWindow = array_map(static fn (int $daysAgo): string => $today->modify('-'.$daysAgo.' day')->format('Y-m-d'), range(0, $expenseDays - 1));
+        $postingWindow = array_map(static fn (int $daysAgo): string => $today->modify('-'.$daysAgo.' day')->format('Y-m-d'), range(0, $postingDays - 1));
 
         foreach ([$accountA, $accountB] as $account) {
             $id = $account->id()->toRfc4122();
             self::assertSame([$id], array_values(array_unique($catalogTargets[$id] ?? [])));
-            self::assertSame($window, $expenseDates[$id] ?? []);
-            $returnDays = 3 === (int) $today->format('G') ? 90 : 3;
+            self::assertSame($expenseWindow, $expenseDates[$id] ?? []);
             self::assertSame([[
                 $today->modify('-'.($returnDays - 1).' day')->format('Y-m-d'),
                 $today->format('Y-m-d'),
             ]], $returnRanges[$id] ?? []);
 
-            // Окно продаж — не «сегодня»: заказ меняет статус после
-            // загрузки, и день, спрошенный один раз, застывает
-            // (DispatchActiveOzonSyncsAction). Точное число дней здесь
-            // не проверяется намеренно: в час глубокого рескана оно
-            // другое, и жёсткое равенство сделало бы тест зависящим
-            // от времени суток.
-            self::assertSame($window, \array_slice($postingDates[$id] ?? [], 0, 3));
+            // Full windows are derived from the independently checked tick date and mode.
+            self::assertSame($postingWindow, $postingDates[$id] ?? []);
         }
     }
 

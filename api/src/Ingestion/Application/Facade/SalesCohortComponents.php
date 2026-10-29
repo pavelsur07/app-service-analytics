@@ -30,7 +30,10 @@ final readonly class SalesCohortComponents
         public ?int $currentProjectedBuyoutRateBps,
         public ?int $unestimatedRateBps,
         public ?string $expectedNetSalesQuantity = null,
-        public string $netForecastUnavailableReason = 'net_forecast_not_available',
+        public ?string $netForecastUnavailableReason = 'validation_pending',
+        public ?Money $expectedNetRevenue = null,
+        public ?string $netForecastMoneyUnavailableReason = 'validation_pending',
+        public SalesCohortNetQuality $netForecastQuality = new SalesCohortNetQuality(),
     ) {
     }
 }

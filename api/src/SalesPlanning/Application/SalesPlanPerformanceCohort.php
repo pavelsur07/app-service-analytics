@@ -30,8 +30,11 @@ final readonly class SalesPlanPerformanceCohort
         public ?int $currentProjectedBuyoutQuantity,
         public ?int $currentProjectedBuyoutRateBps,
         public ?int $unestimatedRateBps,
-        public ?string $expectedNetSalesQuantity = null,
-        public string $netForecastUnavailableReason = 'net_forecast_not_available',
+        public ?string $expectedNetSalesQuantity,
+        public ?string $netForecastUnavailableReason,
+        public ?Money $expectedNetRevenue,
+        public ?string $netForecastMoneyUnavailableReason,
+        public SalesPlanPerformanceNetQuality $netForecastQuality,
     ) {
     }
 
@@ -58,6 +61,9 @@ final readonly class SalesPlanPerformanceCohort
             $value->unestimatedRateBps,
             $value->expectedNetSalesQuantity,
             $value->netForecastUnavailableReason,
+            $value->expectedNetRevenue,
+            $value->netForecastMoneyUnavailableReason,
+            SalesPlanPerformanceNetQuality::of($value->netForecastQuality),
         );
     }
 }

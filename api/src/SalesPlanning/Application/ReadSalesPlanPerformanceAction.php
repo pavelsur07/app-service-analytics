@@ -93,7 +93,7 @@ final readonly class ReadSalesPlanPerformanceAction
 
             return new SalesPlanPerformanceView($planId, $base->id, $metric->value, $base->currency, $base->dateFrom,
                 $from, $to, $request->groupBy->value, $cohorts->calculatedAt, $cohorts->methodology,
-                $coverage, $cohorts->returnsCoverage, $skus, $nextCursor);
+                $coverage, $cohorts->returnsCoverage, $skus, $nextCursor, SalesPlanPerformanceNetMetadata::of($cohorts->netForecast));
         });
     }
 
