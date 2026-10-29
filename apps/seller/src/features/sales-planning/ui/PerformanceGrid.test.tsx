@@ -55,6 +55,11 @@ it('uses independent server period and cumulative net rather than visible sums',
             ...point,
             period: {
               ...point.period,
+              expectedGoalQuantity: '0.333',
+              expectedAttainmentBps: 3333,
+              expectedQuantityDeviation: '-0.667',
+              expectedSpeed: '0.167',
+              forecastUnavailableReason: null,
               cohort: {
                 ...point.period.cohort,
                 expectedNetSalesQuantity: '0.333',
@@ -67,6 +72,11 @@ it('uses independent server period and cumulative net rather than visible sums',
             },
             cumulative: {
               ...point.cumulative,
+              expectedGoalQuantity: '1.000',
+              expectedAttainmentBps: 5000,
+              expectedQuantityDeviation: '-1.000',
+              expectedSpeed: '0.250',
+              forecastUnavailableReason: null,
               cohort: {
                 ...point.period.cohort,
                 expectedNetSalesQuantity: '1.000',
@@ -87,6 +97,11 @@ it('uses independent server period and cumulative net rather than visible sums',
     <PerformanceGrid data={data} mode="cumulative" />,
   )
   expect(period).toContain('0,333 шт.')
+  expect(period).toContain('33,33%')
+  expect(period).toContain('-0,667 шт.')
+  expect(cumulative).toContain('50%')
+  expect(cumulative).toContain('-1,000 шт.')
+  expect(cumulative).toContain('0,250 шт./день')
   expect(period).toContain('0,001')
   expect(period).toContain('KWD')
   expect(cumulative).toContain('1,000 шт.')

@@ -2068,7 +2068,8 @@ export interface components {
             expectedGoalQuantity?: string | null;
             expectedAttainmentBps?: number | null;
             expectedSpeed?: string | null;
-            forecastUnavailableReason: string;
+            forecastUnavailableReason?: string | null;
+            expectedQuantityDeviation?: string | null;
         };
         PerformancePointResponse: {
             bucketFrom: string;

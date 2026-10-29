@@ -34,6 +34,23 @@ final readonly class SalesCohortComponents
         public ?Money $expectedNetRevenue = null,
         public ?string $netForecastMoneyUnavailableReason = 'validation_pending',
         public SalesCohortNetQuality $netForecastQuality = new SalesCohortNetQuality(),
+        public ?SalesCohortGoalForecast $goalForecast = null,
     ) {
+    }
+
+    /** Bounded in-memory fallback; factual and gross components remain unchanged. */
+    public function withoutForecast(): self
+    {
+        return new self(
+            $this->rawOrderedQuantity, $this->preHandoverCancelledQuantity, $this->effectiveOrderedQuantity,
+            $this->observedNetSalesQuantity, $this->observedRevenue, $this->inFlightQuantity,
+            $this->buyoutResolvedQuantity, $this->unestimatedQuantity, $this->unknownOutcomeQuantity,
+            $this->knownProjectedBuyoutQuantity, $this->knownProjectedEligibleQuantity, $this->maturityStatus,
+            $this->inFlightRateBps, $this->knownBuyoutRateBps, $this->actualBuyoutRateBps,
+            $this->currentProjectedBuyoutQuantity, $this->currentProjectedBuyoutRateBps, $this->unestimatedRateBps,
+            null, 'input_budget_exceeded', null, 'input_budget_exceeded',
+            new SalesCohortNetQuality('input_budget_exceeded', 'input_budget_exceeded', [], [],
+                $this->netForecastQuality->validationStatus, $this->netForecastQuality->assessmentStatus),
+        );
     }
 }

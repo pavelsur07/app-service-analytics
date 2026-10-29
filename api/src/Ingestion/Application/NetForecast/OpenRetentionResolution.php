@@ -7,7 +7,7 @@ namespace App\Ingestion\Application\NetForecast;
 final readonly class OpenRetentionResolution
 {
     /** @param list<OpenRetentionAttempt> $attempts */
-    private function __construct(public ?OpenRetentionAssessment $selected, public array $attempts, public ?string $unavailableReason)
+    private function __construct(public ?OpenRetentionAssessment $selected, public array $attempts, public ?string $unavailableReason, public ?ScopedPreHandoverGrossRate $selectedPreGross, public ?string $preGrossUnavailableReason)
     {
     }
 
@@ -18,11 +18,11 @@ final readonly class OpenRetentionResolution
             throw new \InvalidArgumentException('Known zero resolution requires an untrained zero assessment.');
         }
 
-        return new self($selected, [], null);
+        return new self($selected, [], null, null, null);
     }
 
     /** @param list<OpenRetentionAttempt> $attempts */
-    public static function available(OpenRetentionAssessment $selected, array $attempts): self
+    public static function available(OpenRetentionAssessment $selected, array $attempts, ?ScopedPreHandoverGrossRate $selectedPreGross = null, ?string $preGrossUnavailableReason = null): self
     {
         self::assertAttempts($attempts);
         if (null === $selected->quantities || null !== $selected->unavailableReason || !\in_array($selected->basis, ['sku', 'account'], true)
@@ -35,11 +35,13 @@ final readonly class OpenRetentionResolution
             }
         }
 
-        return new self($selected, $attempts, null);
+        self::assertPreGross($selectedPreGross, $preGrossUnavailableReason, $attempts);
+
+        return new self($selected, $attempts, null, $selectedPreGross, $preGrossUnavailableReason);
     }
 
     /** @param list<OpenRetentionAttempt> $attempts */
-    public static function unavailable(string $reason, array $attempts = []): self
+    public static function unavailable(string $reason, array $attempts = [], ?ScopedPreHandoverGrossRate $selectedPreGross = null, ?string $preGrossUnavailableReason = null): self
     {
         self::assertAttempts($attempts);
         if ('' === trim($reason) || ([] !== $attempts && (2 !== \count($attempts) || 'open_retention_unavailable' !== $reason))) {
@@ -51,7 +53,36 @@ final readonly class OpenRetentionResolution
             }
         }
 
-        return new self(null, $attempts, $reason);
+        self::assertPreGross($selectedPreGross, $preGrossUnavailableReason, $attempts);
+
+        return new self(null, $attempts, $reason, $selectedPreGross, $preGrossUnavailableReason ?? ([] === $attempts ? $reason : null));
+    }
+
+    /** @param list<OpenRetentionAttempt> $attempts */
+    private static function assertPreGross(?ScopedPreHandoverGrossRate $gross, ?string $reason, array $attempts): void
+    {
+        if (null === $gross) {
+            return;
+        }
+        if (null !== $reason || null !== $gross->unavailableReason || null === $gross->source || null === $gross->probability || null === $gross->context) {
+            throw new \InvalidArgumentException('Invalid selected PRE population.');
+        }
+        $first = null;
+        foreach ($attempts as $attempt) {
+            $rate = $attempt->assessment->grossRate;
+            if ($rate instanceof ScopedPreHandoverGrossRate && null === $rate->unavailableReason && null !== $rate->probability) {
+                $first = $rate;
+                break;
+            }
+        }
+        if ($first !== $gross || $gross->source->marketplaceSku !== $gross->marketplaceSku) {
+            throw new \InvalidArgumentException('PRE population must be the first valid attempt.');
+        }
+        $batch = new NetTrainingBatch($gross->companyId, $gross->accountId, $gross->readAt, $gross->context, [$gross->source], []);
+        $rebuilt = (new BuildPreHandoverGrossRateAction())->build($gross->companyId, $gross->accountId, $batch, $gross->marketplaceSku);
+        if (null !== $rebuilt->unavailableReason || $rebuilt->probability?->numerator !== $gross->probability->numerator || $rebuilt->probability->denominator !== $gross->probability->denominator) {
+            throw new \InvalidArgumentException('PRE population probability does not match its source.');
+        }
     }
 
     /** @param list<OpenRetentionAttempt> $attempts */

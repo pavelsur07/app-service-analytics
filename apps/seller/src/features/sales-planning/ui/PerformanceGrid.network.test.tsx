@@ -57,7 +57,16 @@ it('keeps same-plan/SKU company net values isolated through the real client and 
       ({ params, request, response }) => {
         requests++
         const data = structuredClone(netPerformanceFixture)
-        const cohort = data.skus[0]?.points[0]?.period.cohort
+        const goal = data.skus[0]?.points[0]?.period
+        if (goal == null) throw new Error('Missing goal fixture')
+        goal.expectedGoalQuantity =
+          params.companyId === 'one' ? '905.125' : '8.000'
+        goal.expectedAttainmentBps = params.companyId === 'one' ? 9051 : 80
+        goal.expectedQuantityDeviation =
+          params.companyId === 'one' ? '-94.875' : '-992.000'
+        goal.expectedSpeed = params.companyId === 'one' ? '452.563' : '4.000'
+        goal.forecastUnavailableReason = null
+        const cohort = goal.cohort
         if (cohort == null) throw new Error('Missing net fixture')
         cohort.expectedNetSalesQuantity =
           params.companyId === 'one' ? '90.125' : '3.000'
@@ -96,6 +105,10 @@ it('keeps same-plan/SKU company net values isolated through the real client and 
       expect(html).toContain(expected)
       expect(html).not.toContain(forbidden)
       expect(html).toContain(amount)
+      expect(html).toContain(company === 'one' ? '905,125 шт.' : '8,000 шт.')
+      expect(html).not.toContain(
+        company === 'one' ? '8,000 шт.' : '905,125 шт.',
+      )
     }
     expect(requests).toBe(2)
     expect(client.getQueryCache().getAll()).toHaveLength(2)

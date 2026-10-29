@@ -6,15 +6,15 @@ namespace App\Ingestion\Application\Facade;
 
 use App\Ingestion\Application\NetForecast\NetForecastBatch;
 use App\Ingestion\Application\NetForecast\NetForecastScope;
+use App\Ingestion\Domain\ValueObject\NetForecastFutureT1;
 
 /** @phpstan-type NetPoints array<string, array<string, array{period: SalesCohortNetValues, cumulative: SalesCohortNetValues}>> */
 final readonly class SalesCohortNetMapper
 {
-    /** @return NetPoints */
-    public function map(NetForecastBatch $batch, SalesCohortRequest $request): array
+    public function map(NetForecastBatch $batch, SalesCohortRequest $request): SalesCohortNetProjection
     {
         if (null === $batch->series || null !== $batch->series->unavailableReason) {
-            return [];
+            return new SalesCohortNetProjection([], null);
         }
         $expected = $request->marketplaceSkus;
         $actual = array_column($batch->series->skus, 'marketplaceSku');
@@ -53,6 +53,7 @@ final readonly class SalesCohortNetMapper
                             'netForecastUnavailableReason' => $value->reason,
                             'netForecastMoneyUnavailableReason' => $value->moneyReason,
                             'netForecastQuality' => $value->quality,
+                            'goalForecast' => $value->goalForecast,
                         ], \JSON_THROW_ON_ERROR));
                         $values[$scope] = ['value' => $value, 'bytes' => $bytes];
                     }
@@ -70,7 +71,16 @@ final readonly class SalesCohortNetMapper
 
         $guard();
 
-        return $points;
+        $provenance = $batch->futureT1Provenance();
+        $used += \strlen(json_encode(['goalForecastMethodVersion' => NetForecastFutureT1::METHOD_VERSION, 'goalForecastProvenance' => $provenance], \JSON_THROW_ON_ERROR));
+        $guard();
+        \assert(null !== $batch->computeDeadlineNs && null !== $batch->allocationBaselineBytes && null !== $batch->allocationLimitBytes && null !== $batch->peakLimitBytes && null !== $batch->outputLimitBytes);
+        $budget = new SalesCohortForecastBudget($batch->computeDeadlineNs, $batch->allocationBaselineBytes, $used,
+            min(50331648, $batch->allocationLimitBytes), min(100663296, $batch->peakLimitBytes), min(33554432, $batch->outputLimitBytes));
+        $projection = new SalesCohortNetProjection($points, $budget, NetForecastFutureT1::METHOD_VERSION, $provenance);
+        $guard();
+
+        return $projection;
     }
 
     private static function value(NetForecastScope $scope): SalesCohortNetValues
@@ -82,6 +92,9 @@ final readonly class SalesCohortNetMapper
 
         return new SalesCohortNetValues($scope->quantities?->expectedNetDecimal(), $scope->expectedNetRevenue,
             $scope->unavailableReason, $scope->moneyUnavailableReason,
-            new SalesCohortNetQuality($scope->unavailableReason, $scope->moneyUnavailableReason, $trainingScopes, $reasons, 'release_approved', 'assessed'));
+            new SalesCohortNetQuality($scope->unavailableReason, $scope->moneyUnavailableReason, $trainingScopes, $reasons, 'release_approved', 'assessed'),
+            new SalesCohortGoalForecast($scope->quantities?->expectedNetNumerator, $scope->quantities?->expectedNetDenominator,
+                null === $scope->quantities ? ($scope->unavailableReason ?? 'quantity_unavailable') : null,
+                $scope->futureT1->numerator(), $scope->futureT1->denominator(), $scope->futureT1->unavailableReason));
     }
 }

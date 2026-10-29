@@ -31,6 +31,25 @@ final class AssessOpenRetentionActionTest extends TestCase
     private const string FOREIGN = '01900000-0000-7000-8000-000000000003';
     private const string SKU = '00123';
 
+    public function testFirstValidPreGrossIsIndependentOfReturnsAndAccountRetention(): void
+    {
+        $sku = self::gross(quantity: 100, gross: 70, t1: 10, t2: 20);
+        $account = self::gross(sku: null, t1: 100, t2: 0);
+        foreach ([[], [self::returns(sku: null)]] as $returns) {
+            $result = self::assess(self::target(), self::batch([$sku, $account], $returns));
+            self::assertSame($sku, $result->selectedPreGross?->source);
+            self::assertSame(100, $result->selectedPreGross->probability?->denominator);
+            self::assertNull($result->preGrossUnavailableReason);
+            self::assertSame([] === $returns ? null : 'account', $result->selected?->basis);
+        }
+        $badSku = self::gross(reason: 'source_history_unavailable');
+        $fallback = self::assess(self::target(), self::batch([$badSku, $account]));
+        self::assertSame($account, $fallback->selectedPreGross?->source);
+        self::assertSame(200, $fallback->selectedPreGross->probability?->denominator);
+        self::assertSame('gross_probability_unavailable', self::assess(self::target(), self::batch())->preGrossUnavailableReason);
+        self::assertNull(self::assess(self::target(post: true), self::batch([$sku, $account]))->selectedPreGross);
+    }
+
     public function testUnavailableSkuReturnFallsBackToWholeAccountPairAtBothStages(): void
     {
         foreach ([false, true] as $post) {

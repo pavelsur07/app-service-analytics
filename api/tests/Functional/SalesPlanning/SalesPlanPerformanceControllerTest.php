@@ -75,8 +75,8 @@ final class SalesPlanPerformanceControllerTest extends SessionWebTestCase
 
     #[RunInSeparateProcess]
     #[PreserveGlobalState(false)]
-    #[DataProvider('publicationVersions')]
-    public function testHealthyNetThroughAuthorizedControllerAndClosedGateOnIdenticalSources(string $publication): void
+    #[DataProvider('goalPublicationModes')]
+    public function testHealthyNetThroughAuthorizedControllerAndClosedGateOnIdenticalSources(string $publication, SalesPlanMetric $metric): void
     {
         $client = self::createClient();
         $db = self::getContainer()->get(Connection::class);
@@ -117,7 +117,7 @@ final class SalesPlanPerformanceControllerTest extends SessionWebTestCase
             $f->daily($origin);
             $f->currentReturns();
             $plan = SalesPlanBuilder::aSalesPlan()->withCompanyId($company->id())->withMarketplaceAccountId($f->account)
-                ->withPeriod($day, $day)->withMetric(SalesPlanMetric::RetainedSales)->build();
+                ->withPeriod($day, $day)->withMetric($metric)->build();
             $lines = SalesPlanLineBuilder::linesOf($plan)->withMarketplaceSku('SKU')->withTotalQuantity(100)->build();
             $plan->approve($user->id(), $f->readAt);
             $plans->add($plan, $lines);
@@ -141,7 +141,16 @@ final class SalesPlanPerformanceControllerTest extends SessionWebTestCase
             self::assertSame('' === $publication ? 'validation_pending' : null, self::path($cohort, 'netForecastUnavailableReason'));
             self::assertSame('' === $publication ? 'not_assessed' : 'assessed', self::path($body, 'netForecast', 'assessmentStatus'));
             self::assertSame('' === $publication ? null : $f->readAt->format(\DateTimeInterface::ATOM), self::path($body, 'netForecast', 'readAt'));
-            self::assertNull(self::path($body, 'skus', 0, 'points', 0, 'period', 'expectedGoalQuantity'));
+            $value = self::path($body, 'skus', 0, 'points', 0, 'period');
+            $retained = SalesPlanMetric::RetainedSales === $metric;
+            self::assertSame('' === $publication ? null : ($retained ? '90.000' : '96.923'), self::path($value, 'expectedGoalQuantity'));
+            self::assertSame('' === $publication ? null : ($retained ? 9000 : 9692), self::path($value, 'expectedAttainmentBps'));
+            self::assertSame('' === $publication ? null : ($retained ? '-10.000' : '-3.077'), self::path($value, 'expectedQuantityDeviation'));
+            self::assertSame('' === $publication ? null : ($retained ? '90.000' : '96.923'), self::path($value, 'expectedSpeed'));
+            self::assertSame('' === $publication ? 'validation_pending' : null, self::path($value, 'forecastUnavailableReason'));
+            foreach (['retainedNumerator', 'futureT1', 'goalForecastMethodVersion', 'goalForecastProvenance', 'grossSqlElapsedNs', 'outputBytesUsed', 'snapshotId', 'sourceRowId', 'Brick'] as $private) {
+                self::assertStringNotContainsString($private, (string) $client->getResponse()->getContent());
+            }
         } finally {
             $f->cleanup();
             foreach (['sales_plan_day_claim', 'sales_plan_line', 'sales_plan', 'company_member', 'company'] as $table) {
@@ -149,6 +158,15 @@ final class SalesPlanPerformanceControllerTest extends SessionWebTestCase
             }
             $writer->executeStatement('DELETE FROM "user" WHERE id = ?', [$user->id()->toRfc4122()]);
             $writer->close();
+        }
+    }
+
+    /** @return iterable<string, array{string, SalesPlanMetric}> */
+    public static function goalPublicationModes(): iterable
+    {
+        foreach (SalesPlanMetric::cases() as $metric) {
+            yield $metric->value.' closed' => ['', $metric];
+            yield $metric->value.' enabled' => ['observed_retention_h60_v1', $metric];
         }
     }
 

@@ -10,6 +10,8 @@ describe('generated performance contract', () => {
     expect(value.observedSalesSpeed).toBe('350.000')
     expect(value.cohort.currentProjectedBuyoutQuantity).toBe(900)
     expect(value.expectedGoalQuantity).toBeNull()
+    expect(value.expectedQuantityDeviation).toBeNull()
+    expect(value.forecastUnavailableReason).toBe('validation_pending')
     expect(value.cohort.expectedNetSalesQuantity).toBeNull()
     expect(value.cohort.expectedNetRevenue).toBeNull()
     expect(value.cohort.netForecastUnavailableReason).toBe('validation_pending')

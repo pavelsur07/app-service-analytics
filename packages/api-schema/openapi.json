@@ -10022,8 +10022,7 @@
                     "planQuantity",
                     "planRevenueRrp",
                     "calendarDays",
-                    "planSpeed",
-                    "forecastUnavailableReason"
+                    "planSpeed"
                 ],
                 "properties": {
                     "planQuantity": {
@@ -10078,18 +10077,28 @@
                     },
                     "expectedGoalQuantity": {
                         "type": "string",
+                        "pattern": "^[0-9]+\\.[0-9]{3}$",
                         "nullable": true
                     },
                     "expectedAttainmentBps": {
                         "type": "integer",
-                        "nullable": true
+                        "nullable": true,
+                        "maximum": 9007199254740991,
+                        "minimum": 0
                     },
                     "expectedSpeed": {
                         "type": "string",
+                        "pattern": "^[0-9]+\\.[0-9]{3}$",
                         "nullable": true
                     },
                     "forecastUnavailableReason": {
-                        "type": "string"
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "expectedQuantityDeviation": {
+                        "type": "string",
+                        "pattern": "^-?[0-9]+\\.[0-9]{3}$",
+                        "nullable": true
                     }
                 },
                 "type": "object"

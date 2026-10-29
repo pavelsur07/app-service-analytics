@@ -94,6 +94,8 @@ final class SalesPlanPerformanceReadTest extends KernelTestCase
                 self::assertNull($view->skus[0]->points[$index]->period->cohort);
                 self::assertNull($view->skus[0]->points[$index]->cumulative->cohort);
                 self::assertSame('partial', $view->skus[0]->points[$index]->periodCoverage);
+                self::assertSame($enabled ? 'orders_coverage_unavailable' : 'validation_pending', $view->skus[0]->points[$index]->period->forecastUnavailableReason);
+                self::assertNull($view->skus[0]->points[$index]->period->expectedQuantityDeviation);
             }
             self::assertNull($view->netForecast->epochId);
         } finally {

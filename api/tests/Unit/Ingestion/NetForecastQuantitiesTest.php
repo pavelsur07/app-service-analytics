@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Ingestion;
 
 use App\Ingestion\Domain\ValueObject\NetForecastQuantities;
+use Brick\Math\BigRational;
 use PHPUnit\Framework\TestCase;
 
 final class NetForecastQuantitiesTest extends TestCase
@@ -162,6 +163,30 @@ final class NetForecastQuantitiesTest extends TestCase
         $largerBase = NetForecastQuantities::fromComponents(str_repeat('9', 16383), '0', '0', '1', '0', '1');
         self::assertFalse(NetForecastQuantities::canSumWithoutPrecisionOverflow([$largerBase]));
         self::assertSame($largerBase, $largerBase->plus(NetForecastQuantities::zero()));
+    }
+
+    public function testReducedSumMatchesIndependentBrickForAdversarialCanonicalPairs(): void
+    {
+        $denominators = ['1', '6', '15', '45', '99999999999999999999999999999999999999991', '1'.str_repeat('0', 200), '1'.str_repeat('0', 199).'1'];
+        foreach ($denominators as $a) {
+            foreach ($denominators as $b) {
+                $left = NetForecastQuantities::fromComponents('37', '53', '1', $a, '1', $b);
+                $right = NetForecastQuantities::fromComponents('19', '71', '1', $b, '1', $a);
+                $sum = $left->plus($right);
+                $future = BigRational::ofFraction(1, $a)->plus(BigRational::ofFraction(1, $b));
+                $retained = BigRational::ofFraction(1, $b)->plus(BigRational::ofFraction(1, $a));
+                $net = BigRational::of(56)->minus($future)->plus($retained);
+                foreach (['futureReturns' => $future, 'retainedOpen' => $retained, 'expectedNet' => $net] as $name => $oracle) {
+                    self::assertSame((string) $oracle->getNumerator(), $sum->{$name.'Numerator'});
+                    self::assertSame((string) $oracle->getDenominator(), $sum->{$name.'Denominator'});
+                }
+                // A negative fractional shift inside the constructor must stay exact.
+                $different = NetForecastQuantities::fromComponents('1', '1', '1', $a, '0', '1');
+                $expected = BigRational::of(1)->minus(BigRational::ofFraction(1, $a));
+                self::assertSame((string) $expected->getNumerator(), $different->expectedNetNumerator);
+                self::assertSame((string) $expected->getDenominator(), $different->expectedNetDenominator);
+            }
+        }
     }
 
     public function testPrecisionOverflowOfExactSumIsRefused(): void

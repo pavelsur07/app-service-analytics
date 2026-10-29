@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Application\NetForecast;
 
+use App\Ingestion\Domain\ValueObject\NetForecastFutureT1;
 use App\Ingestion\Domain\ValueObject\NetForecastQuantities;
 use App\Ingestion\Domain\ValueObject\NetForecastRevenue;
 
@@ -38,7 +39,7 @@ final readonly class ProjectNetForecastSeriesAction
         }
         $output = [];
         $revenue = $emptyRevenue = NetForecastRevenue::empty();
-        $emptyScope = new NetForecastScope(NetForecastQuantities::zero(), null, null, 'money_currency_missing', [], []);
+        $emptyScope = new NetForecastScope(NetForecastQuantities::zero(), null, null, 'money_currency_missing', [], [], NetForecastFutureT1::zero());
         foreach ($batch->skus as $sku) {
             $projected = $this->projectSku($sku, $request, $guard, $revenue, $emptyScope, $emptyRevenue);
             if (null === $projected) {
@@ -75,12 +76,13 @@ final readonly class ProjectNetForecastSeriesAction
         })();
         $foldQuantities = NetForecastQuantities::canSumWithoutPrecisionOverflow($quantities);
         $guard();
-        $emptyScope ??= new NetForecastScope(NetForecastQuantities::zero(), null, null, 'money_currency_missing', [], []);
+        $emptyScope ??= new NetForecastScope(NetForecastQuantities::zero(), null, null, 'money_currency_missing', [], [], NetForecastFutureT1::zero());
         $zero = $emptyScope->quantities;
         $emptyRevenue ??= NetForecastRevenue::empty();
         $publishedCumulative = null;
         $publishedRevenue = null;
         $cumulative = $period = $zero;
+        $cumulativeT1 = $periodT1 = $emptyScope->futureT1;
         $cumulativeRevenue = $periodRevenue = $emptyRevenue;
         $cumulativeReason = $periodReason = null;
         $cumulativeBasis = $periodBasis = $cumulativeReasons = $periodReasons = [];
@@ -88,6 +90,8 @@ final readonly class ProjectNetForecastSeriesAction
         $bucketFrom = $request->from->format('Y-m-d');
         $bucketTo = $this->bucketEnd($request, $bucketFrom);
         foreach ($sku->days as $day) {
+            $guard();
+            $cumulativeT1 = $cumulativeT1->plus($day->futureT1());
             $guard();
             [$basis, $reasons] = $this->quality($day, $guard);
             // Without a proof, preserve the original intermediate quantity precision checks.
@@ -102,6 +106,8 @@ final readonly class ProjectNetForecastSeriesAction
                 $cumulativeReasons += $reasons;
                 continue;
             }
+            $periodT1 = $periodT1->plus($day->futureT1());
+            $guard();
             $period = $this->add($period, $day->quantities, $day->unavailableReason, $guard);
             $periodRevenue = $this->addRevenue($periodRevenue, $day->exactRevenue(), $guard);
             $periodReason = self::reason($periodReason, $day->unavailableReason ?? (null === $day->quantities ? 'quantity_unavailable' : null));
@@ -115,13 +121,14 @@ final readonly class ProjectNetForecastSeriesAction
                 $cumulativeReason = self::reason($cumulativeReason, $periodReason);
                 $cumulativeBasis += $periodBasis;
                 $cumulativeReasons += $periodReasons;
-                $publishedCumulative = $this->publish($cumulative, $cumulativeRevenue, $cumulativeReason, $cumulativeBasis, $cumulativeReasons, $guard, $publishedCumulative, $publishedRevenue);
+                $publishedCumulative = $this->publish($cumulative, $cumulativeRevenue, $cumulativeReason, $cumulativeBasis, $cumulativeReasons, $guard, $cumulativeT1, $publishedCumulative, $publishedRevenue);
                 $publishedRevenue = $cumulativeRevenue;
                 $points[] = new NetForecastSeriesPoint($bucketFrom, $bucketTo,
-                    $this->publish($period, $periodRevenue, $periodReason, $periodBasis, $periodReasons, $guard, $emptyScope, $emptyRevenue),
+                    $this->publish($period, $periodRevenue, $periodReason, $periodBasis, $periodReasons, $guard, $periodT1, $emptyScope, $emptyRevenue),
                     $publishedCumulative);
                 $guard();
                 $period = $zero;
+                $periodT1 = $emptyScope->futureT1;
                 $periodRevenue = $emptyRevenue;
                 $periodReason = null;
                 $periodBasis = $periodReasons = [];
@@ -219,14 +226,14 @@ final readonly class ProjectNetForecastSeriesAction
     /** @param array<string, true> $basis
      * @param array<string, true> $reasons
      * @param \Closure(): void $guard */
-    private function publish(?NetForecastQuantities $quantities, NetForecastRevenue $revenue, ?string $reason, array $basis, array $reasons, \Closure $guard, ?NetForecastScope $previous = null, ?NetForecastRevenue $previousRevenue = null): NetForecastScope
+    private function publish(?NetForecastQuantities $quantities, NetForecastRevenue $revenue, ?string $reason, array $basis, array $reasons, \Closure $guard, NetForecastFutureT1 $futureT1, ?NetForecastScope $previous = null, ?NetForecastRevenue $previousRevenue = null): NetForecastScope
     {
         $guard();
         $basis = array_keys($basis);
         $reasons = array_keys($reasons);
         sort($basis, \SORT_STRING);
         sort($reasons, \SORT_STRING);
-        if (null !== $previous && $previous->quantities === $quantities && $previousRevenue === $revenue
+        if (null !== $previous && $previous->futureT1 === $futureT1 && $previous->quantities === $quantities && $previousRevenue === $revenue
             && $previous->unavailableReason === $reason && $previous->basis === $basis && $previous->reasons === $reasons) {
             $guard();
 
@@ -242,7 +249,7 @@ final readonly class ProjectNetForecastSeriesAction
             }
         }
 
-        $scope = new NetForecastScope($quantities, $money, $reason, $moneyReason, $basis, $reasons);
+        $scope = new NetForecastScope($quantities, $money, $reason, $moneyReason, $basis, $reasons, $futureT1);
         $guard();
 
         return $scope;

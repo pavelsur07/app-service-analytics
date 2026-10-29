@@ -286,6 +286,14 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('3 шт.')
   await expect(metric(cell, 'Выручка по ценам продаж')).toHaveText(/300,00\s*₽/)
   await expect(metric(cell, 'Ожидаемые нетто-продажи')).toHaveText('—')
+  for (const label of [
+    'Ожидаемое количество по метрике цели',
+    'Ожидаемое выполнение',
+    'Ожидаемое отклонение от цели',
+    'Ожидаемый темп метрики цели',
+  ]) {
+    await expect(metric(cell, label)).toHaveText('—')
+  }
   await expect(metric(cell, 'Ожидаемая нетто-выручка')).toHaveText('—')
   const summary = page
     .locator('summary')
@@ -530,6 +538,12 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect(metric(cell, 'Ожидаемая нетто-выручка')).toHaveText('—')
   const returned = await performance(page, data, current)
   expect(returned.baselinePlanId).toBe(baseline)
+  const goal = returned.skus[0]?.points[0]?.cumulative
+  expect(goal?.expectedQuantityDeviation).toBeNull()
+  expect(goal?.expectedGoalQuantity).toBeNull()
+  expect(goal?.expectedAttainmentBps).toBeNull()
+  expect(goal?.expectedSpeed).toBeNull()
+  expect(goal?.forecastUnavailableReason).toBe('validation_pending')
   expect(
     returned.skus[0]?.points[0]?.cumulative.cohort?.observedNetSalesQuantity,
   ).toBe(2)
