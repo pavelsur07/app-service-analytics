@@ -1,100 +1,121 @@
-import type { components } from '../../../api/schema'
 import { formatBasisPoints } from '../../../shared/lib/formatBasisPoints'
-import { formatMinorAmount } from '../../../shared/lib/formatMinorAmount'
 import {
   formatGoalDeviation,
   formatNetQuantity,
   goalForecastReason,
 } from '../lib/netForecastPresentation'
+import {
+  PerformanceMetricRow,
+  PerformanceMoneyRow,
+  PerformanceValue,
+  type PerformanceColumn,
+} from './PerformanceMetricRow'
 
 export function PerformanceAttainment({
-  value,
+  columns,
+  currency,
 }: {
-  value: components['schemas']['PerformanceValuesResponse']
+  columns: readonly PerformanceColumn[]
+  currency: string
 }) {
   return (
-    <dl className="flex flex-col gap-1 text-sm tabular-nums">
-      <div>
-        <dt>Выполнение по факту цели</dt>
-        <dd className="font-semibold">
-          {value.attainmentBps == null
+    <>
+      <PerformanceMetricRow
+        label="Выполнение по факту цели"
+        unit="%"
+        columns={columns}
+      >
+        {(value) => (
+          <PerformanceValue
+            reason={
+              value.planQuantity === 0
+                ? 'Нулевая цель: процент не определён.'
+                : null
+            }
+          >
+            {value.attainmentBps == null
+              ? '—'
+              : formatBasisPoints(value.attainmentBps, { withUnit: false })}
+          </PerformanceValue>
+        )}
+      </PerformanceMetricRow>
+      <PerformanceMetricRow
+        label="Отклонение от цели"
+        unit="шт."
+        columns={columns}
+      >
+        {(value) => value.quantityDeviation ?? '—'}
+      </PerformanceMetricRow>
+      <PerformanceMoneyRow
+        label="Отклонение выручки от плановой РРЦ"
+        columns={columns}
+        currency={currency}
+        amount={(value) => value.revenueDeviation}
+      />
+      <PerformanceMetricRow
+        label="Темп метрики цели"
+        unit="шт./день"
+        columns={columns}
+      >
+        {(value) => value.actualSpeed?.replace('.', ',') ?? '—'}
+      </PerformanceMetricRow>
+      <PerformanceMetricRow
+        label="Ожидаемое количество по метрике цели"
+        unit="шт."
+        columns={columns}
+      >
+        {(value) =>
+          value.expectedGoalQuantity == null
             ? '—'
-            : formatBasisPoints(value.attainmentBps)}
-        </dd>
-      </div>
-      {value.planQuantity === 0 && (
-        <div className="text-text-muted">
-          <dt className="sr-only">Примечание к проценту</dt>
-          <dd>Нулевая цель: процент не определён.</dd>
-        </div>
-      )}
-      <div>
-        <dt className="text-text-muted">Отклонение от цели</dt>
-        <dd>
-          {value.quantityDeviation == null
+            : formatNetQuantity(value.expectedGoalQuantity, { withUnit: false })
+        }
+      </PerformanceMetricRow>
+      <PerformanceMetricRow
+        label="Ожидаемое выполнение"
+        unit="%"
+        columns={columns}
+      >
+        {(value) =>
+          value.expectedAttainmentBps == null
             ? '—'
-            : `${value.quantityDeviation} шт.`}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-text-muted">Отклонение выручки от плановой РРЦ</dt>
-        <dd>
-          {value.revenueDeviation == null
+            : formatBasisPoints(value.expectedAttainmentBps, {
+                withUnit: false,
+              })
+        }
+      </PerformanceMetricRow>
+      <PerformanceMetricRow
+        label="Ожидаемое отклонение от цели"
+        unit="шт."
+        columns={columns}
+      >
+        {(value) =>
+          value.expectedQuantityDeviation == null
             ? '—'
-            : formatMinorAmount(
-                value.revenueDeviation.minor,
-                value.revenueDeviation.currency,
-              )}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-text-muted">Темп метрики цели</dt>
-        <dd>
-          {value.actualSpeed == null
-            ? '—'
-            : `${value.actualSpeed.replace('.', ',')} шт./день`}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-text-muted">
-          Ожидаемое количество по метрике цели
-        </dt>
-        <dd>
-          {value.expectedGoalQuantity == null
-            ? '—'
-            : formatNetQuantity(value.expectedGoalQuantity)}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-text-muted">Ожидаемое выполнение</dt>
-        <dd>
-          {value.expectedAttainmentBps == null
-            ? '—'
-            : formatBasisPoints(value.expectedAttainmentBps)}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-text-muted">Ожидаемое отклонение от цели</dt>
-        <dd>
-          {value.expectedQuantityDeviation == null
-            ? '—'
-            : formatGoalDeviation(value.expectedQuantityDeviation)}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-text-muted">Ожидаемый темп метрики цели</dt>
-        <dd>
-          {value.expectedSpeed == null
-            ? '—'
-            : `${value.expectedSpeed.replace('.', ',')} шт./день`}
-        </dd>
-      </div>
-      {value.forecastUnavailableReason != null && (
-        <div className="text-text-muted">
-          <dt className="sr-only">Доступность прогноза цели</dt>
-          <dd>{goalForecastReason(value.forecastUnavailableReason)}</dd>
-        </div>
-      )}
-    </dl>
+            : formatGoalDeviation(value.expectedQuantityDeviation, {
+                withUnit: false,
+              })
+        }
+      </PerformanceMetricRow>
+      <PerformanceMetricRow
+        label="Ожидаемый темп метрики цели"
+        unit="шт./день"
+        columns={columns}
+      >
+        {(value) => value.expectedSpeed?.replace('.', ',') ?? '—'}
+      </PerformanceMetricRow>
+      <PerformanceMetricRow label="Доступность прогноза цели" columns={columns}>
+        {(value) =>
+          value.forecastUnavailableReason == null ? (
+            'Доступен'
+          ) : (
+            <PerformanceValue
+              reason={goalForecastReason(value.forecastUnavailableReason)}
+            >
+              Нет оценки
+            </PerformanceValue>
+          )
+        }
+      </PerformanceMetricRow>
+    </>
   )
 }

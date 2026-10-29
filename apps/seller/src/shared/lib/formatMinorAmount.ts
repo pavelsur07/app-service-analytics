@@ -6,14 +6,22 @@
 export function formatMinorAmount(
   minorAmount: number,
   currency: string,
-  options: { wholeUnits?: boolean } = {},
+  options: { wholeUnits?: boolean; withCurrency?: boolean } = {},
 ): string {
   const digits = options.wholeUnits === true ? 0 : undefined
 
-  return new Intl.NumberFormat('ru-RU', {
+  const formatter = new Intl.NumberFormat('ru-RU', {
     style: 'currency',
     currency,
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
-  }).format(minorAmount / 100)
+  })
+  if (options.withCurrency === false)
+    return formatter
+      .formatToParts(minorAmount / 100)
+      .filter((part) => part.type !== 'currency')
+      .map((part) => part.value)
+      .join('')
+      .trim()
+  return formatter.format(minorAmount / 100)
 }

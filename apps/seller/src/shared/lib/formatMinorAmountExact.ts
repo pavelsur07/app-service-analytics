@@ -4,6 +4,7 @@ export function formatMinorAmountExact(
   minor: string,
   currency: string,
   fractionDigits: number,
+  options: { withCurrency?: boolean } = {},
 ): string {
   if (
     typeof minor !== 'string' ||
@@ -26,7 +27,7 @@ export function formatMinorAmountExact(
   const grouped = new Intl.NumberFormat('ru-RU', {
     maximumFractionDigits: 0,
   }).format(BigInt(whole))
-  const options = {
+  const digitOptions = {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   }
@@ -34,24 +35,28 @@ export function formatMinorAmountExact(
   let suffix = ''
   try {
     formatter = new Intl.NumberFormat('ru-RU', {
-      ...options,
+      ...digitOptions,
       style: 'currency',
       currency,
     })
   } catch {
     // An unfamiliar client currency must not change the server's scale or digits.
-    formatter = new Intl.NumberFormat('ru-RU', options)
-    suffix = `\u00a0${currency}`
+    formatter = new Intl.NumberFormat('ru-RU', digitOptions)
+    suffix = options.withCurrency === false ? '' : `\u00a0${currency}`
   }
   // A signed nonzero template preserves '-' even when the exact whole part is 0.
   return (
     formatter
       .formatToParts(negative ? -1n : 1n)
+      .filter(
+        (part) => options.withCurrency !== false || part.type !== 'currency',
+      )
       .map((part) => {
         if (part.type === 'integer') return grouped
         if (part.type === 'fraction') return fraction
         return part.value
       })
-      .join('') + suffix
+      .join('')
+      .trim() + suffix
   )
 }

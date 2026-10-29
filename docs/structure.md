@@ -663,7 +663,11 @@ apps/seller/
 Дневное планирование — `apps/seller/src/features/sales-planning/`.
 `SalesPlanPage` сохраняет редактор текущей версии и показывает lifecycle и
 сравнение с исходной целью; `PerformanceGrid` выводит готовые period/cumulative
-компоненты без пересчёта денег и ставок. `model` содержит company-scoped
+компоненты без пересчёта денег и ставок. В обоих режимах каждый SKU — отдельная
+группа строк: даты в столбцах, показатель и единица в закреплённом первом столбце.
+`PerformanceMetricRow` задаёт общую разметку; числовые ячейки не повторяют единицы,
+разные валюты выводятся отдельными строками. Пояснения доступны по раскрытию.
+`model` содержит company-scoped
 performance/lifecycle Query и mutation; `lib` — date-only MSK окно и cursor
 scope, включая version шапки. Исторические закрытые планы остаются readonly.
 `SalesPlanCalendar` показывает readonly границы и редактируемые manual события.

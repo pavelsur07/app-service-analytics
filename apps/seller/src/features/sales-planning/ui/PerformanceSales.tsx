@@ -1,37 +1,38 @@
-import type { components } from '../../../api/schema'
-import { formatMinorAmount } from '../../../shared/lib/formatMinorAmount'
+import {
+  PerformanceMetricRow,
+  PerformanceMoneyRow,
+  type PerformanceColumn,
+} from './PerformanceMetricRow'
 
 export function PerformanceSales({
-  value,
+  columns,
+  currency,
 }: {
-  value: components['schemas']['PerformanceValuesResponse']
+  columns: readonly PerformanceColumn[]
+  currency: string
 }) {
-  const cohort = value.cohort
-  const revenue = cohort?.observedRevenue
   return (
-    <dl className="flex flex-col gap-1 text-sm tabular-nums">
-      <div>
-        <dt>Наблюдаемые продажи</dt>
-        <dd className="font-semibold">
-          {cohort == null ? '—' : `${cohort.observedNetSalesQuantity} шт.`}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-text-muted">Выручка по ценам продаж</dt>
-        <dd>
-          {revenue == null
-            ? '—'
-            : formatMinorAmount(revenue.minor, revenue.currency)}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-text-muted">Скорость продаж</dt>
-        <dd>
-          {value.observedSalesSpeed == null
-            ? '—'
-            : `${value.observedSalesSpeed.replace('.', ',')} шт./день`}
-        </dd>
-      </div>
-    </dl>
+    <>
+      <PerformanceMetricRow
+        label="Наблюдаемые продажи"
+        unit="шт."
+        columns={columns}
+      >
+        {({ cohort }) => cohort?.observedNetSalesQuantity ?? '—'}
+      </PerformanceMetricRow>
+      <PerformanceMoneyRow
+        label="Выручка по ценам продаж"
+        columns={columns}
+        currency={currency}
+        amount={({ cohort }) => cohort?.observedRevenue}
+      />
+      <PerformanceMetricRow
+        label="Скорость продаж"
+        unit="шт./день"
+        columns={columns}
+      >
+        {(value) => value.observedSalesSpeed?.replace('.', ',') ?? '—'}
+      </PerformanceMetricRow>
+    </>
   )
 }

@@ -1,4 +1,9 @@
 import type { components } from '../../../api/schema'
+import {
+  PerformanceMetricRow,
+  PerformanceMoneyRow,
+  type PerformanceColumn,
+} from './PerformanceMetricRow'
 import { formatMinorAmountExact } from '../../../shared/lib/formatMinorAmountExact'
 import {
   formatNetQuantity,
@@ -7,6 +12,44 @@ import {
 } from '../lib/netForecastPresentation'
 
 export function PerformanceNetForecast({
+  columns,
+  currency,
+}: {
+  columns: readonly PerformanceColumn[]
+  currency: string
+}) {
+  return (
+    <>
+      <PerformanceMetricRow
+        label="Ожидаемые нетто-продажи"
+        unit="шт."
+        columns={columns}
+      >
+        {({ cohort }) =>
+          cohort?.expectedNetSalesQuantity == null
+            ? '—'
+            : formatNetQuantity(cohort.expectedNetSalesQuantity, {
+                withUnit: false,
+              })
+        }
+      </PerformanceMetricRow>
+      <PerformanceMoneyRow
+        label="Ожидаемая нетто-выручка"
+        columns={columns}
+        currency={currency}
+        amount={({ cohort }) => cohort?.expectedNetRevenue}
+      />
+      <PerformanceMetricRow
+        label="Доступность нетто-прогноза"
+        columns={columns}
+      >
+        {({ cohort }) => <PerformanceNetStatus cohort={cohort} />}
+      </PerformanceMetricRow>
+    </>
+  )
+}
+
+function PerformanceNetStatus({
   cohort,
 }: {
   cohort: components['schemas']['PerformanceCohortResponse'] | null | undefined
@@ -85,44 +128,45 @@ export function PerformanceNetForecast({
       addQuality(netForecastReason(reason, 'quantity'), reason)
   }
   return (
-    <div className="flex flex-col gap-2 text-sm">
-      <dl className="tabular-nums" aria-label="Нетто-прогноз">
-        <dt>Ожидаемые нетто-продажи</dt>
-        <dd className="font-semibold">{quantity}</dd>
+    <details className="text-sm text-text-muted">
+      <summary className="cursor-help focus-visible:outline-2 focus-visible:outline-accent-default">
+        {quantityReason === null && moneyReason === null
+          ? 'Есть оценка'
+          : quantityReason === null || moneyReason === null
+            ? 'Частичная оценка'
+            : 'Нет оценки'}
+      </summary>
+      <div className="mt-2 max-w-64 text-left whitespace-normal">
         {sharedReason === null && quantityReason !== null && (
-          <dd className="text-text-muted">{quantityReason}</dd>
+          <p>Количество: {quantityReason}</p>
         )}
-        <dt className="text-text-muted">Ожидаемая нетто-выручка</dt>
-        <dd>{revenue}</dd>
         {sharedReason === null && moneyReason !== null && (
-          <dd className="text-text-muted">{moneyReason}</dd>
+          <p>Выручка: {moneyReason}</p>
         )}
-      </dl>
-      {sharedReason !== null && (
-        <p className="text-text-muted">Продажи и выручка: {sharedReason}</p>
-      )}
-      {quality != null && (
-        <div className="text-text-muted">
-          {qualityMessages.map((message) => (
-            <p key={message}>{message}</p>
-          ))}
-          {quality.trainingScopes.length > 0 && (
-            <p>
-              Данные оценки:{' '}
-              {quality.trainingScopes
-                .map((scope) =>
-                  scope === 'sku'
-                    ? 'SKU'
-                    : scope === 'account'
-                      ? 'кабинет'
-                      : 'неизвестная область',
-                )
-                .join(', ')}
-              .
-            </p>
-          )}
-        </div>
-      )}
-    </div>
+        {sharedReason !== null && <p>Продажи и выручка: {sharedReason}</p>}
+        {quality != null && (
+          <>
+            {qualityMessages.map((message) => (
+              <p key={message}>{message}</p>
+            ))}
+            {quality.trainingScopes.length > 0 && (
+              <p>
+                Данные оценки:{' '}
+                {quality.trainingScopes
+                  .map((scope) =>
+                    scope === 'sku'
+                      ? 'SKU'
+                      : scope === 'account'
+                        ? 'кабинет'
+                        : 'неизвестная область',
+                  )
+                  .join(', ')}
+                .
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </details>
   )
 }

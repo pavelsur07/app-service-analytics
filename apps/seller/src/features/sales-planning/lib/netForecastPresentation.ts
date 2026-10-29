@@ -1,6 +1,9 @@
-export function formatNetQuantity(value: string): string {
+export function formatNetQuantity(
+  value: string,
+  options: { withUnit?: boolean } = {},
+): string {
   return typeof value === 'string' && /^[0-9]+\.[0-9]{3}$/.test(value)
-    ? `${value.replace('.', ',')} шт.`
+    ? `${value.replace('.', ',')}${options.withUnit === false ? '' : ' шт.'}`
     : '—'
 }
 
@@ -61,9 +64,12 @@ export function netForecastStatus(
   return 'Статус оценки неизвестен.'
 }
 
-export function formatGoalDeviation(value: string): string {
+export function formatGoalDeviation(
+  value: string,
+  options: { withUnit?: boolean } = {},
+): string {
   return /^-?[0-9]+\.[0-9]{3}$/.test(value)
-    ? `${value.replace('.', ',')} шт.`
+    ? `${value.replace('.', ',')}${options.withUnit === false ? '' : ' шт.'}`
     : '—'
 }
 

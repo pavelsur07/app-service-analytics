@@ -1,5 +1,8 @@
 import type { components } from '../../../api/schema'
-import { formatMinorAmount } from '../../../shared/lib/formatMinorAmount'
+import {
+  PerformanceMetricRow,
+  PerformanceMoneyRow,
+} from './PerformanceMetricRow'
 import { bucketLabel } from '../lib/salesPlan'
 import { PerformanceOrders } from './PerformanceOrders'
 import { PerformanceSales } from './PerformanceSales'
@@ -29,8 +32,9 @@ export function PerformanceGrid({
     >
       <table className="w-full text-sm">
         <caption className="pb-3 text-left text-text-secondary">
-          Исходная цель, наблюдаемые результаты и прогнозы. Только эта страница
-          SKU.
+          <span className="sticky left-0 inline-block">
+            Только эта страница SKU.
+          </span>
         </caption>
         <thead>
           <tr className="border-b border-border-default">
@@ -38,73 +42,86 @@ export function PerformanceGrid({
               className="sticky left-0 z-10 bg-surface-raised px-3 py-2 text-left"
               scope="col"
             >
-              SKU
+              Показатель
             </th>
             {columns.map((point) => (
               <th
                 key={point.bucketFrom}
                 scope="col"
-                className="px-3 py-2 text-left whitespace-nowrap"
+                className="px-3 py-2 text-right whitespace-nowrap"
               >
                 {bucketLabel(point.bucketFrom, point.bucketTo)}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody>
-          {data.skus.map((sku) => (
-            <tr
+        {data.skus.map((sku) => {
+          const values = sku.points.map((point) => ({
+            key: point.bucketFrom,
+            value: point[mode],
+          }))
+          return (
+            <tbody
               key={sku.marketplaceSku}
-              className="border-b border-border-subtle"
+              aria-label={`SKU ${sku.marketplaceSku}`}
             >
-              <th
-                scope="row"
-                className="sticky left-0 z-10 bg-surface-raised px-3 py-3 text-left align-top"
+              <tr className="border-b border-border-default bg-surface-raised">
+                <th
+                  scope="rowgroup"
+                  className="sticky left-0 z-10 bg-surface-raised px-3 py-3 text-left font-semibold"
+                >
+                  SKU {sku.marketplaceSku}
+                </th>
+                {columns.length > 0 && <td colSpan={columns.length} />}
+              </tr>
+              <PerformanceMetricRow label="Покрытие заказов" columns={values}>
+                {(_, index) => {
+                  const point = sku.points[index]
+                  return point === undefined ? (
+                    '—'
+                  ) : (
+                    <PerformanceQuality
+                      coverage={
+                        mode === 'period'
+                          ? point.periodCoverage
+                          : point.cumulativeCoverage
+                      }
+                      current={
+                        point.bucketFrom <= today && point.bucketTo >= today
+                      }
+                      future={point.bucketFrom > today}
+                    />
+                  )
+                }}
+              </PerformanceMetricRow>
+              <PerformanceMetricRow
+                label="Исходная цель"
+                unit="шт."
+                columns={values}
               >
-                {sku.marketplaceSku}
-              </th>
-              {sku.points.map((point) => {
-                const value = point[mode]
-                return (
-                  <td key={point.bucketFrom} className="px-3 py-3 align-top">
-                    <div className="flex flex-col gap-4">
-                      <PerformanceQuality
-                        coverage={
-                          mode === 'period'
-                            ? point.periodCoverage
-                            : point.cumulativeCoverage
-                        }
-                        current={
-                          point.bucketFrom <= today && point.bucketTo >= today
-                        }
-                        future={point.bucketFrom > today}
-                      />
-                      <dl className="tabular-nums">
-                        <dt className="font-semibold">Исходная цель</dt>
-                        <dd>{value.planQuantity} шт.</dd>
-                        <dt className="text-text-muted">
-                          Плановая выручка по РРЦ
-                        </dt>
-                        <dd>
-                          {formatMinorAmount(
-                            value.planRevenueRrp.minor,
-                            value.planRevenueRrp.currency,
-                          )}
-                        </dd>
-                      </dl>
-                      <PerformanceOrders cohort={value.cohort} />
-                      <PerformanceSales value={value} />
-                      <PerformanceAttainment value={value} />
-                      <PerformanceBuyout cohort={value.cohort} />
-                      <PerformanceForecast cohort={value.cohort} />
-                      <PerformanceNetForecast cohort={value.cohort} />
-                    </div>
-                  </td>
-                )
-              })}
-            </tr>
-          ))}
-        </tbody>
+                {(value) => value.planQuantity}
+              </PerformanceMetricRow>
+              <PerformanceMoneyRow
+                label="Плановая выручка по РРЦ"
+                columns={values}
+                currency={data.currency}
+                amount={(value) => value.planRevenueRrp}
+              />
+              <PerformanceOrders columns={values} />
+              <PerformanceSales columns={values} currency={data.currency} />
+              <PerformanceAttainment
+                columns={values}
+                currency={data.currency}
+              />
+              <PerformanceBuyout columns={values} />
+              <PerformanceForecast columns={values} />
+              <PerformanceNetForecast
+                columns={values}
+                currency={data.currency}
+              />
+            </tbody>
+          )
+        })}
       </table>
     </div>
   )

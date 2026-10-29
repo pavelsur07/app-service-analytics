@@ -8,6 +8,12 @@ import {
 } from './netForecastPresentation'
 
 describe('net forecast presentation', () => {
+  it('separates quantity units without losing signed or large server decimals', () => {
+    expect(
+      formatNetQuantity('900719925474099312345.125', { withUnit: false }),
+    ).toBe('900719925474099312345,125')
+    expect(formatGoalDeviation('-0.333', { withUnit: false })).toBe('-0,333')
+  })
   it.each([
     ['90.125', '90,125 шт.'],
     ['0.000', '0,000 шт.'],
