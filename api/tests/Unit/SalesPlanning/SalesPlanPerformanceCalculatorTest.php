@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\SalesPlanning;
 
 use App\Ingestion\Application\Facade\SalesCohortComponents;
+use App\Ingestion\Application\Facade\SalesCohortGoalForecast;
 use App\Ingestion\Application\Facade\SalesCohortNetQuality;
 use App\SalesPlanning\Application\SalesPlanPerformanceCalculator;
 use App\SalesPlanning\Domain\SalesPlanMetric;
@@ -28,7 +29,7 @@ final class SalesPlanPerformanceCalculatorTest extends TestCase
         self::assertNull($result->expectedGoalQuantity);
         self::assertNull($result->expectedAttainmentBps);
         self::assertNull($result->expectedSpeed);
-        self::assertSame('net_forecast_not_available', $result->forecastUnavailableReason);
+        self::assertSame('validation_pending', $result->forecastUnavailableReason);
     }
 
     public function testOrderMetricZeroTargetPartialAndMissingMoneyRemainDistinct(): void
@@ -80,9 +81,78 @@ final class SalesPlanPerformanceCalculatorTest extends TestCase
         self::assertNull($values->expectedSpeed);
     }
 
-    private function facts(int $observed = 700): SalesCohortComponents
+    public function testBothMetricsUseFullExactGoalAndIndependentFourRatios(): void
+    {
+        $calc = new SalesPlanPerformanceCalculator();
+        $forecast = new SalesCohortGoalForecast('900', '1', null, '50', '1', null);
+        foreach (SalesPlanMetric::cases() as $metric) {
+            $result = $calc->calculate(1000, Money::ofMinor(0, 'RUB'), 3, $metric, $this->facts(goal: $forecast), forecastGuard: static function (int $bytes = 0): void {});
+            self::assertSame('900.000', $result->expectedGoalQuantity);
+            self::assertSame(9000, $result->expectedAttainmentBps);
+            self::assertSame('-100.000', $result->expectedQuantityDeviation);
+            self::assertSame('300.000', $result->expectedSpeed);
+            self::assertNull($result->forecastUnavailableReason);
+            self::assertSame(SalesPlanMetric::RetainedSales === $metric ? 7000 : 9500, $result->attainmentBps);
+        }
+        foreach ([['1', '3', 1, 1, '0.333', 3333, '-0.667', '0.333'], ['1', '16', 1, 1, '0.063', 625, '-0.938', '0.063'], ['1', '1', 32, 16, '1.000', 313, '-31.000', '0.063'], ['0', '1', 1, 1, '0.000', 0, '-1.000', '0.000'], ['1', '3', 0, 1, '0.333', null, '0.333', '0.333'], ['9999', '10000', 1, 1, '1.000', 9999, '0.000', '1.000']] as [$n, $d, $plan, $days, $q, $bps, $dev, $speed]) {
+            $result = $calc->calculate($plan, Money::ofMinor(0, 'RUB'), $days, SalesPlanMetric::RetainedSales, $this->facts(goal: new SalesCohortGoalForecast($n, $d, null, null, null, 'gross_probability_unavailable')), forecastGuard: static function (int $bytes = 0): void {});
+            self::assertSame([$q, $bps, $dev, $speed, null], [$result->expectedGoalQuantity, $result->expectedAttainmentBps, $result->expectedQuantityDeviation, $result->expectedSpeed, $result->forecastUnavailableReason]);
+        }
+    }
+
+    public function testJavascriptIntegerBoundIsCheckedBeforeNativeCastAndKeepsFacts(): void
+    {
+        foreach (['9007199254740991', '9007199254740992', '9007199254740993', '92233720368547758080000'] as $n) {
+            $result = (new SalesPlanPerformanceCalculator())->calculate(1, Money::ofMinor(0, 'RUB'), 1, SalesPlanMetric::RetainedSales, $this->facts(goal: new SalesCohortGoalForecast($n, '10000', null, '0', '1', null)), forecastGuard: static function (int $bytes = 0): void {});
+            self::assertSame(700, $result->actualGoalQuantity);
+            if ('9007199254740991' === $n) {
+                self::assertSame(9007199254740991, $result->expectedAttainmentBps);
+            } else {
+                self::assertSame([null, null, null, null, 'goal_attainment_overflow'], [$result->expectedGoalQuantity, $result->expectedAttainmentBps, $result->expectedQuantityDeviation, $result->expectedSpeed, $result->forecastUnavailableReason]);
+            }
+        }
+    }
+
+    public function testGoalRequiresOriginalBudgetAndHonoursIndependentUnavailableReasons(): void
+    {
+        $calc = new SalesPlanPerformanceCalculator();
+        $facts = $this->facts(goal: new SalesCohortGoalForecast(null, null, 'return_risk_unavailable', '0', '1', null));
+        $orders = $calc->calculate(1000, Money::ofMinor(0, 'RUB'), 1, SalesPlanMetric::OrdersExcludingPreHandoverCancellations, $facts, forecastGuard: static function (int $bytes = 0): void {});
+        self::assertSame('950.000', $orders->expectedGoalQuantity);
+        self::assertSame('input_budget_exceeded', $calc->calculate(1000, Money::ofMinor(0, 'RUB'), 1, SalesPlanMetric::OrdersExcludingPreHandoverCancellations, $facts)->forecastUnavailableReason);
+        self::assertSame('return_risk_unavailable', $calc->calculate(1000, Money::ofMinor(0, 'RUB'), 1, SalesPlanMetric::RetainedSales, $facts, forecastGuard: static function (int $bytes = 0): void {})->forecastUnavailableReason);
+        $bad = $this->facts(goal: new SalesCohortGoalForecast('1', '1', null, '951', '1', null));
+        self::assertSame('goal_component_mismatch', $calc->calculate(1000, Money::ofMinor(0, 'RUB'), 1, SalesPlanMetric::OrdersExcludingPreHandoverCancellations, $bad, forecastGuard: static function (int $bytes = 0): void {})->forecastUnavailableReason);
+        self::assertSame('validation_pending', $calc->calculate(1, Money::ofMinor(0, 'RUB'), 1, SalesPlanMetric::RetainedSales, null, 'validation_pending')->forecastUnavailableReason);
+    }
+
+    public function testUnavailableOccurrencesChargeTheSharedOutputBeforeReturning(): void
+    {
+        foreach ([null, $this->facts()] as $cohort) {
+            $used = 0;
+            $calculator = new SalesPlanPerformanceCalculator();
+            $guard = static function (int $bytes = 0) use (&$used): void { $used += $bytes; };
+            $value = $calculator->calculate(1, Money::ofMinor(0, 'RUB'), 1, SalesPlanMetric::RetainedSales, $cohort, 'orders_coverage_unavailable', $guard);
+            $serialized = json_encode(['expectedGoalQuantity' => null, 'expectedAttainmentBps' => null,
+                'expectedQuantityDeviation' => null, 'expectedSpeed' => null, 'forecastUnavailableReason' => $value->forecastUnavailableReason], \JSON_THROW_ON_ERROR);
+            self::assertGreaterThanOrEqual(\strlen($serialized), $used);
+            $remaining = $used - 1;
+            try {
+                $calculator->calculate(1, Money::ofMinor(0, 'RUB'), 1, SalesPlanMetric::RetainedSales, $cohort, 'orders_coverage_unavailable', static function (int $bytes = 0) use ($remaining): void {
+                    if ($bytes > $remaining) {
+                        throw new \OverflowException('Original output exhausted.');
+                    }
+                });
+                self::fail('Unavailable occurrence must obey the original remaining output.');
+            } catch (\OverflowException $exception) {
+                self::assertSame('Original output exhausted.', $exception->getMessage());
+            }
+        }
+    }
+
+    private function facts(int $observed = 700, ?SalesCohortGoalForecast $goal = null): SalesCohortComponents
     {
         return new SalesCohortComponents(1000, 50, 950, $observed, Money::ofMinor(123, 'RUB'), 100, 800, 0, 0,
-            '900', '1000', 'preliminary', 1000, 8750, null, 900, 9000, 0);
+            '900', '1000', 'preliminary', 1000, 8750, null, 900, 9000, 0, goalForecast: $goal);
     }
 }

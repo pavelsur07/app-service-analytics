@@ -60,3 +60,38 @@ export function netForecastStatus(
   if (status === 'assessed') return 'Оценка по этим данным выполнялась.'
   return 'Статус оценки неизвестен.'
 }
+
+export function formatGoalDeviation(value: string): string {
+  return /^-?[0-9]+\.[0-9]{3}$/.test(value)
+    ? `${value.replace('.', ',')} шт.`
+    : '—'
+}
+
+const goalReasons: Readonly<Record<string, string>> = {
+  validation_pending: reasons.validation_pending ?? '',
+  source_history_unavailable:
+    'История наблюдений для прогноза цели недоступна.',
+  orders_coverage_unavailable:
+    'Нет полного покрытия заказов для прогноза цели.',
+  quantity_unavailable: 'Количество для прогноза цели недоступно.',
+  future_t1_unavailable: 'Не удалось оценить будущие отмены до передачи.',
+  gross_probability_unavailable:
+    'Недостаточно наблюдений для оценки будущих отмен.',
+  goal_component_mismatch:
+    'Исходные количества для прогноза цели противоречивы.',
+  goal_attainment_overflow:
+    'Выполнение цели выходит за поддерживаемый диапазон.',
+  input_budget_exceeded: reasons.input_budget_exceeded ?? '',
+  query_budget_exceeded: reasons.query_budget_exceeded ?? '',
+  unknown_outcome: reasons.unknown_outcome ?? '',
+  return_risk_unavailable: reasons.return_risk_unavailable ?? '',
+  open_retention_unavailable: reasons.open_retention_unavailable ?? '',
+}
+
+export function goalForecastReason(reason: string | null | undefined): string {
+  return (
+    (reason != null && Object.hasOwn(goalReasons, reason)
+      ? goalReasons[reason]
+      : undefined) ?? 'Прогноз метрики цели недоступен.'
+  )
+}

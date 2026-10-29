@@ -1,6 +1,11 @@
 import type { components } from '../../../api/schema'
 import { formatBasisPoints } from '../../../shared/lib/formatBasisPoints'
 import { formatMinorAmount } from '../../../shared/lib/formatMinorAmount'
+import {
+  formatGoalDeviation,
+  formatNetQuantity,
+  goalForecastReason,
+} from '../lib/netForecastPresentation'
 
 export function PerformanceAttainment({
   value,
@@ -51,6 +56,16 @@ export function PerformanceAttainment({
         </dd>
       </div>
       <div>
+        <dt className="text-text-muted">
+          Ожидаемое количество по метрике цели
+        </dt>
+        <dd>
+          {value.expectedGoalQuantity == null
+            ? '—'
+            : formatNetQuantity(value.expectedGoalQuantity)}
+        </dd>
+      </div>
+      <div>
         <dt className="text-text-muted">Ожидаемое выполнение</dt>
         <dd>
           {value.expectedAttainmentBps == null
@@ -58,6 +73,28 @@ export function PerformanceAttainment({
             : formatBasisPoints(value.expectedAttainmentBps)}
         </dd>
       </div>
+      <div>
+        <dt className="text-text-muted">Ожидаемое отклонение от цели</dt>
+        <dd>
+          {value.expectedQuantityDeviation == null
+            ? '—'
+            : formatGoalDeviation(value.expectedQuantityDeviation)}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-text-muted">Ожидаемый темп метрики цели</dt>
+        <dd>
+          {value.expectedSpeed == null
+            ? '—'
+            : `${value.expectedSpeed.replace('.', ',')} шт./день`}
+        </dd>
+      </div>
+      {value.forecastUnavailableReason != null && (
+        <div className="text-text-muted">
+          <dt className="sr-only">Доступность прогноза цели</dt>
+          <dd>{goalForecastReason(value.forecastUnavailableReason)}</dd>
+        </div>
+      )}
     </dl>
   )
 }

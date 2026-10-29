@@ -42,19 +42,23 @@ final readonly class AssessOpenRetentionAction
             return OpenRetentionResolution::unavailable('training_context_missing');
         }
         $attempts = [];
+        $selectedPreGross = null;
         foreach ([$target->marketplaceSku, null] as $sku) {
             $gross = OpenTargetEvidence::BEFORE_HANDOVER === $target->stage
                 ? $this->preRates->build($companyId, $accountId, $batch, $sku)
                 : $this->postRates->build($companyId, $accountId, $batch, $sku);
+            if (null === $selectedPreGross && $gross instanceof ScopedPreHandoverGrossRate && null === $gross->unavailableReason && null !== $gross->probability) {
+                $selectedPreGross = $gross;
+            }
             $returns = $this->curves->build($companyId, $accountId, $batch, $sku);
             $assessment = $this->apply->apply($companyId, $accountId, $target, $gross, $returns);
             $attempts[] = new OpenRetentionAttempt($sku, $assessment);
             if (null !== $assessment->quantities) {
-                return OpenRetentionResolution::available($assessment, $attempts);
+                return OpenRetentionResolution::available($assessment, $attempts, $selectedPreGross);
             }
         }
 
-        return OpenRetentionResolution::unavailable('open_retention_unavailable', $attempts);
+        return OpenRetentionResolution::unavailable('open_retention_unavailable', $attempts, $selectedPreGross, OpenTargetEvidence::BEFORE_HANDOVER === $target->stage && null === $selectedPreGross ? 'gross_probability_unavailable' : null);
     }
 
     private function sameContext(NetTrainingContext $context, NetTrainingContext $target): bool

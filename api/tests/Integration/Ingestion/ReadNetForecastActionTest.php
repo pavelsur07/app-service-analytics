@@ -111,8 +111,20 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertEquals($enabled ? $f->readAt : null, $batch->netForecast->readAt);
         self::assertSame($enabled ? $f->epoch->id : null, $batch->netForecast->epochId);
         self::assertSame($enabled ? 3 : 0, $db->populations);
+        if ($enabled) {
+            self::assertNotNull($batch->forecastBudget);
+            self::assertGreaterThan(0, $batch->forecastBudget->grossSqlElapsedNs);
+            self::assertLessThanOrEqual(hrtime(true) + 5000000000, $batch->forecastBudget->computeDeadlineNs);
+            self::assertSame('pre_t1_gross_first_valid_v1', $batch->goalForecastMethodVersion());
+            self::assertCount(1, $batch->goalForecastProvenance());
+        } else {
+            self::assertNull($batch->forecastBudget);
+            self::assertNull($batch->goalForecastMethodVersion());
+            self::assertSame([], $batch->goalForecastProvenance());
+        }
         $cohort = $batch->skus[0]->points[0]->period;
         self::assertNotNull($cohort);
+        self::assertSame($enabled, null !== $cohort->goalForecast);
         self::assertSame($enabled ? '90.000' : null, $cohort->expectedNetSalesQuantity);
         self::assertSame($enabled ? 9000 : null, $cohort->expectedNetRevenue?->minorAmount());
         self::assertSame($enabled ? null : 'validation_pending', $cohort->netForecastUnavailableReason);
@@ -264,7 +276,70 @@ final class ReadNetForecastActionTest extends KernelTestCase
         self::assertSame('9', (string) $latestQuantity);
     }
 
-    private function facade(Connection $db, NetTargetFixture $f, ClockInterface $clock, bool $enabled, bool $epoch = true): IngestionFacade
+    public function testLateGoalOutputFailureClearsTheWholeViewWithoutExtraQueries(): void
+    {
+        [$db, $f] = $this->fixture();
+        $day = new \DateTimeImmutable($f->readAt->modify('-1 day')->format('Y-m-d'));
+        $f->sale('ZERO', 'SKU', 7, 'delivered', $f->readAt->modify('-2 hours'), day: $day);
+        $f->returned('ZERO', 'SKU', 7, $f->readAt->modify('-1 hour'));
+        $f->daily($day);
+        $f->currentReturns();
+        $request = new SalesCohortRequest(['SKU'], $day, $day, $day, valuationCurrency: 'RUB');
+        $batch = $this->facade($db, $f, $this->clock($f), true)->salesCohortMetrics($f->company->toRfc4122(), $f->account->toRfc4122(), $request);
+        self::assertNotNull($batch->forecastBudget);
+        $used = $batch->forecastBudget->outputBytesUsed;
+        $cohort = $batch->skus[0]->points[0]->period;
+        self::assertNotNull($cohort);
+        self::assertSame('0.000', $cohort->expectedNetSalesQuantity);
+        $goalBytes = 0;
+        $calculator = new \App\SalesPlanning\Application\SalesPlanPerformanceCalculator();
+        $value = $calculator->calculate(100, Money::ofMinor(10000, 'RUB'), 1, \App\SalesPlanning\Domain\SalesPlanMetric::RetainedSales, $cohort, forecastGuard: static function (int $bytes = 0) use (&$goalBytes): void { $goalBytes += $bytes; });
+        self::assertSame('0.000', $value->expectedGoalQuantity);
+        self::assertGreaterThan(100, $goalBytes);
+        $limits = new NetTargetLimits(outputBytes: $used + $goalBytes + intdiv($goalBytes, 2));
+        $plan = \App\Tests\Support\Builder\SalesPlanBuilder::aSalesPlan()->withCompanyId($f->company)->withMarketplaceAccountId($f->account)
+            ->withPeriod($day, $day)->withMetric(\App\SalesPlanning\Domain\SalesPlanMetric::RetainedSales)->build();
+        $lines = \App\Tests\Support\Builder\SalesPlanLineBuilder::linesOf($plan)->withMarketplaceSku('SKU')->withTotalQuantity(100)->withPrice(Money::ofMinor(100, 'RUB'))->build();
+        $plan->approve(Uuid::v7(), $day);
+        $repository = self::getContainer()->get(\App\SalesPlanning\Domain\SalesPlanRepository::class);
+        self::assertInstanceOf(\App\SalesPlanning\Domain\SalesPlanRepository::class, $repository);
+        try {
+            $repository->add($plan, $lines);
+            $bounded = $this->facade($db, $f, $this->clock($f), true, limits: $limits)->salesCohortMetrics($f->company->toRfc4122(), $f->account->toRfc4122(), $request);
+            self::assertNotNull($bounded->forecastBudget, 'Mapper must fit: failure belongs to late goal projection.');
+            self::assertLessThan($goalBytes * 2, $limits->outputBytes - $bounded->forecastBudget->outputBytesUsed);
+            self::assertGreaterThan($goalBytes, $limits->outputBytes - $bounded->forecastBudget->outputBytesUsed);
+            $db->inspectPopulationContext = false;
+            $db->resetObservations();
+            $clock = $this->clock($f);
+            $action = new \App\SalesPlanning\Application\ReadSalesPlanPerformanceAction(new \App\SalesPlanning\Application\SalesPlanPerformanceSnapshot($db), new \App\SalesPlanning\Infrastructure\Query\SalesPlansQuery($db), new \App\SalesPlanning\Infrastructure\Query\SalesPlanBaselineQuery($db), new \App\SalesPlanning\Infrastructure\Query\SalesPlanPerformanceQuery($db), $this->facade($db, $f, $clock, true, limits: $limits), $calculator);
+            $view = $action($f->company->toRfc4122(), $plan->id()->toRfc4122(), new \App\SalesPlanning\Application\SalesPlanPerformanceRequest($day, $day));
+            self::assertSame(1, $clock->calls);
+            self::assertEquals($f->readAt, $view->calculatedAt);
+            self::assertEquals($f->readAt, $view->netForecast->readAt);
+            foreach ([$view->skus[0]->points[0]->period, $view->skus[0]->points[0]->cumulative] as $result) {
+                self::assertSame(100, $result->planQuantity);
+                self::assertSame(10000, $result->planRevenueRrp->minorAmount());
+                self::assertSame(0, $result->actualGoalQuantity);
+                self::assertSame($cohort->currentProjectedBuyoutQuantity, $result->cohort?->currentProjectedBuyoutQuantity);
+                self::assertNull($result->expectedGoalQuantity);
+                self::assertNull($result->expectedAttainmentBps);
+                self::assertNull($result->expectedQuantityDeviation);
+                self::assertNull($result->expectedSpeed);
+                self::assertSame('input_budget_exceeded', $result->forecastUnavailableReason);
+                self::assertNull($result->cohort?->expectedNetSalesQuantity);
+                self::assertNull($result->cohort?->expectedNetRevenue);
+                self::assertSame('input_budget_exceeded', $result->cohort?->netForecastUnavailableReason);
+            }
+            $data = array_filter($db->sql, static fn (string $sql): bool => 1 === preg_match('/^\s*(?:SELECT|WITH)\b/', $sql) && !str_contains($sql, 'txid_current_snapshot'));
+            self::assertCount(8, $data, 'Three plan plus five Ingestion SELECTs; fallback adds none.');
+        } finally {
+            $db->executeStatement('DELETE FROM sales_plan_line WHERE company_id = ?', [$f->company->toRfc4122()]);
+            $db->executeStatement('DELETE FROM sales_plan WHERE company_id = ?', [$f->company->toRfc4122()]);
+        }
+    }
+
+    private function facade(Connection $db, NetTargetFixture $f, ClockInterface $clock, bool $enabled, bool $epoch = true, NetTargetLimits $limits = new NetTargetLimits()): IngestionFacade
     {
         return new IngestionFacade(
             new ListingSnapshotsQuery($db),
@@ -273,7 +348,7 @@ final class ReadNetForecastActionTest extends KernelTestCase
             new SalesCohortSeriesQuery($db, new SalesCohortMetricsQuery($db), new SalesCohortCoverageQuery($db)),
             new BuyoutMaturityQuery($db), $clock,
             new NetForecastPublication($enabled ? 'observed_retention_h60_v1' : ''),
-            $this->action($db, $f, $clock, $epoch),
+            $this->action($db, $f, $clock, $epoch, $limits),
             new NetTrainingSnapshot($db),
         );
     }

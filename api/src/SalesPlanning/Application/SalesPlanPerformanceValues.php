@@ -25,7 +25,8 @@ final readonly class SalesPlanPerformanceValues
         public ?string $expectedGoalQuantity = null,
         public ?int $expectedAttainmentBps = null,
         public ?string $expectedSpeed = null,
-        public string $forecastUnavailableReason = 'net_forecast_not_available',
+        public ?string $forecastUnavailableReason = 'net_forecast_not_available',
+        public ?string $expectedQuantityDeviation = null,
     ) {
     }
 }

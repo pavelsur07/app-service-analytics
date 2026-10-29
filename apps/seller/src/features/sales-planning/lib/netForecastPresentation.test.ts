@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatNetQuantity,
+  formatGoalDeviation,
+  goalForecastReason,
   netForecastReason,
   netForecastStatus,
 } from './netForecastPresentation'
@@ -71,6 +73,41 @@ describe('net forecast presentation', () => {
     )
     expect(netForecastStatus('assessed', 'assessment')).toBe(
       'Оценка по этим данным выполнялась.',
+    )
+  })
+})
+
+describe('goal forecast presentation', () => {
+  it.each([
+    ['-100.000', '-100,000 шт.'],
+    ['0.000', '0,000 шт.'],
+    ['900719925474099312345.125', '900719925474099312345,125 шт.'],
+  ])('preserves signed decimal %s', (value, expected) => {
+    expect(formatGoalDeviation(value)).toBe(expected)
+  })
+  it.each(['', '1.2', '+1.000', '1e3', 'NaN'])(
+    'rejects malformed signed decimal %s',
+    (value) => {
+      expect(formatGoalDeviation(value)).toBe('—')
+    },
+  )
+  it('keeps orders goal reasons independent of net labels and raw reason codes', () => {
+    for (const reason of [
+      null,
+      'future_t1_unavailable',
+      'constructor',
+      '__proto__',
+      'source_history_unavailable',
+      'quantity_unavailable',
+    ]) {
+      expect(goalForecastReason(reason)).not.toContain('нетто')
+      expect(goalForecastReason(reason)).not.toContain('future_t1')
+    }
+    expect(goalForecastReason('validation_pending')).toContain(
+      'Проверка качества',
+    )
+    expect(goalForecastReason('goal_component_mismatch')).toContain(
+      'противоречивы',
     )
   })
 })

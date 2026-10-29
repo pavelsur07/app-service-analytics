@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\SalesPlanning\Ui\Response;
 
 use App\SalesPlanning\Application\SalesPlanPerformanceValues;
+use OpenApi\Attributes as OA;
 
 final readonly class PerformanceValuesResponse
 {
@@ -22,10 +23,11 @@ final readonly class PerformanceValuesResponse
         /** Observed retained sales D per calendar day, three decimals, HalfUp. */
         public ?string $observedSalesSpeed,
         public ?PerformanceMoneyResponse $revenueDeviation,
-        public ?string $expectedGoalQuantity,
-        public ?int $expectedAttainmentBps,
-        public ?string $expectedSpeed,
-        public string $forecastUnavailableReason,
+        #[OA\Property(pattern: '^[0-9]+\.[0-9]{3}$', nullable: true)] public ?string $expectedGoalQuantity,
+        #[OA\Property(minimum: 0, maximum: 9007199254740991, nullable: true)] public ?int $expectedAttainmentBps,
+        #[OA\Property(pattern: '^[0-9]+\.[0-9]{3}$', nullable: true)] public ?string $expectedSpeed,
+        public ?string $forecastUnavailableReason,
+        #[OA\Property(pattern: '^-?[0-9]+\.[0-9]{3}$', nullable: true)] public ?string $expectedQuantityDeviation,
     ) {
     }
 
@@ -47,6 +49,7 @@ final readonly class PerformanceValuesResponse
             $v->expectedAttainmentBps,
             $v->expectedSpeed,
             $v->forecastUnavailableReason,
+            $v->expectedQuantityDeviation,
         );
     }
 }

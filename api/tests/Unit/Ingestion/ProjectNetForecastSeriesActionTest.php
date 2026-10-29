@@ -9,6 +9,7 @@ use App\Ingestion\Application\NetForecast\NetForecastDay;
 use App\Ingestion\Application\NetForecast\NetForecastSeriesRequest;
 use App\Ingestion\Application\NetForecast\NetForecastSku;
 use App\Ingestion\Application\NetForecast\ProjectNetForecastSeriesAction;
+use App\Ingestion\Domain\ValueObject\NetForecastFutureT1;
 use App\Ingestion\Domain\ValueObject\NetForecastQuantities;
 use App\Ingestion\Domain\ValueObject\NetForecastRevenue;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetRequest;
@@ -19,6 +20,26 @@ final class ProjectNetForecastSeriesActionTest extends TestCase
     protected function setUp(): void
     {
         self::assertTrue(class_exists(ProjectNetForecastSeriesAction::class), 'Bounded exact series projector must exist.');
+    }
+
+    public function testFutureT1HasIndependentChronologicalAvailabilityAndReuseIdentity(): void
+    {
+        $zero = NetForecastQuantities::zero();
+        $revenue = NetForecastRevenue::empty();
+        $make = static fn (string $date, NetForecastFutureT1 $t1): NetForecastDay => new NetForecastDay($date, [], $zero, null, null, 'money_currency_missing', $revenue, $t1);
+        $third = NetForecastFutureT1::fromProbability(1, 1, 3);
+        $days = [$make('2026-08-01', $third), $make('2026-08-02', $third), $make('2026-08-03', $third)];
+        $points = (new ProjectNetForecastSeriesAction())(self::batch($days), self::request('2026-08-02', '2026-08-03', 'day', '2026-08-01'), static function (): void {})->skus[0]->points;
+        self::assertSame('1', $points[1]->cumulative->futureT1->numerator());
+        self::assertSame('1', $points[1]->cumulative->futureT1->denominator());
+        self::assertSame('1', $points[1]->period->futureT1->numerator());
+        self::assertSame('3', $points[1]->period->futureT1->denominator());
+        self::assertNotSame($points[0]->cumulative, $points[1]->cumulative);
+        $days[0] = $make('2026-08-01', NetForecastFutureT1::unavailable('unknown_outcome'));
+        $points = (new ProjectNetForecastSeriesAction())(self::batch($days), self::request('2026-08-02', '2026-08-03', 'day', '2026-08-01'), static function (): void {})->skus[0]->points;
+        self::assertSame('unknown_outcome', $points[1]->cumulative->futureT1->unavailableReason);
+        self::assertNull($points[1]->period->futureT1->unavailableReason);
+        self::assertNotNull($points[1]->cumulative->quantities);
     }
 
     public function testHiddenThirdCarriesIntoCumulativeButNotVisiblePeriod(): void

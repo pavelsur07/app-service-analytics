@@ -200,36 +200,45 @@ final class IngestionFacade
             $reason = (null === $net->series ? null : $net->series->unavailableReason) ?? $net->unavailableReason ?? 'source_history_unavailable';
             $moneyReason = $net->moneyUnavailableReason ?? $reason;
             try {
-                $points = $this->netMapper->map($net, $request);
+                $projection = $this->netMapper->map($net, $request);
+                $points = $projection->points;
             } catch (\OverflowException) {
                 $points = [];
+                $projection = null;
                 $reason = $moneyReason = 'input_budget_exceeded';
             } catch (\UnexpectedValueException) {
                 $points = [];
+                $projection = null;
                 $reason = $moneyReason = 'source_history_unavailable';
             }
             unset($net);
 
-            return $this->readGrossCohorts($companyId, $accountId, $request, $calculatedAt, $metadata, $points, $reason, $moneyReason);
+            return $this->readGrossCohorts($companyId, $accountId, $request, $calculatedAt, $metadata, $points, $reason, $moneyReason, $projection);
         });
     }
 
     /** @param NetPoints $netPoints */
-    private function readGrossCohorts(string $companyId, string $accountId, SalesCohortRequest $request, \DateTimeImmutable $calculatedAt, SalesCohortNetMetadata $metadata, array $netPoints = [], string $netReason = 'validation_pending', string $moneyReason = 'validation_pending'): SalesCohortBatch
+    private function readGrossCohorts(string $companyId, string $accountId, SalesCohortRequest $request, \DateTimeImmutable $calculatedAt, SalesCohortNetMetadata $metadata, array $netPoints = [], string $netReason = 'validation_pending', string $moneyReason = 'validation_pending', ?SalesCohortNetProjection $projection = null): SalesCohortBatch
     {
         if ([] === $request->marketplaceSkus) {
             throw new \LogicException('Gross cohort reader requires a nonempty SKU page.');
         }
-        $maturity = $this->cohortMaturity->build($companyId, $accountId, $calculatedAt)->executeQuery()->fetchAssociative();
+        $query = $this->cohortMaturity->build($companyId, $accountId, $calculatedAt);
+        $started = null === $projection?->budget ? null : hrtime(true);
+        $maturity = $query->executeQuery()->fetchAssociative();
+        $sqlElapsed = null === $started ? 0 : hrtime(true) - $started;
         if (false === $maturity) {
             throw new \UnexpectedValueException('Missing sales cohort maturity aggregate.');
         }
         $p95 = BuyoutMaturityQuery::mapRow($maturity)->p95Seconds;
-        $rows = $this->cohortSeries->build(
+        $query = $this->cohortSeries->build(
             $companyId, $accountId, $request->marketplaceSkus,
             $request->from, $request->to, $request->accumulationFrom,
             $request->groupBy->value, $request->valuationCurrency, $calculatedAt, $p95,
-        )->executeQuery()->fetchAllAssociative();
+        );
+        $started = null === $projection?->budget ? null : hrtime(true);
+        $rows = $query->executeQuery()->fetchAllAssociative();
+        $sqlElapsed += null === $started ? 0 : hrtime(true) - $started;
         $skus = [];
         foreach ($rows as $raw) {
             $row = SalesCohortSeriesQuery::mapRow($raw);
@@ -249,7 +258,11 @@ final class IngestionFacade
         $coveragePoints = $skus[0]->points ?? [];
         $lastPoint = [] === $coveragePoints ? null : $coveragePoints[array_key_last($coveragePoints)];
 
-        return new SalesCohortBatch($skus, $calculatedAt, $request, ordersCoverage: null === $lastPoint ? 'not_assessed' : $lastPoint->cumulativeCoverage, netForecast: $metadata);
+        return new SalesCohortBatch($skus, $calculatedAt, $request, ordersCoverage: null === $lastPoint ? 'not_assessed' : $lastPoint->cumulativeCoverage, netForecast: $metadata,
+            forecastBudget: null === $projection?->budget ? null : new SalesCohortForecastBudget(
+                $projection->budget->computeDeadlineNs, $projection->budget->allocationBaselineBytes, $projection->budget->outputBytesUsed,
+                $projection->budget->allocationLimitBytes, $projection->budget->peakLimitBytes, $projection->budget->outputLimitBytes, $sqlElapsed),
+            goalForecastMethodVersion: $projection?->goalForecastMethodVersion, goalForecastProvenance: $projection->goalForecastProvenance ?? []);
     }
 
     private static function cohortComponents(?SalesCohortMetricsRow $row, ?SalesCohortNetValues $net, SalesCohortNetMetadata $metadata, string $netReason, string $moneyReason): ?SalesCohortComponents
@@ -270,6 +283,7 @@ final class IngestionFacade
             $net?->revenue, null === $net ? $moneyReason : $net->moneyReason,
             (null === $net ? null : $net->quality) ?? ('not_assessed' === $metadata->assessmentStatus ? SalesCohortNetQuality::pending()
                 : new SalesCohortNetQuality($netReason, $moneyReason, [], [], $metadata->validationStatus, $metadata->assessmentStatus)),
+            $net?->goalForecast,
         );
     }
 }

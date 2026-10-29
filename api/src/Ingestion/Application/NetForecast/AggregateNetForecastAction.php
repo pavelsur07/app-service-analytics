@@ -6,6 +6,7 @@ namespace App\Ingestion\Application\NetForecast;
 
 use App\Ingestion\Domain\ValueObject\DeliveredRiskQuantities;
 use App\Ingestion\Domain\ValueObject\GrossProbability;
+use App\Ingestion\Domain\ValueObject\NetForecastFutureT1;
 use App\Ingestion\Domain\ValueObject\NetForecastQuantities;
 use App\Ingestion\Domain\ValueObject\NetForecastRevenue;
 use App\Ingestion\Domain\ValueObject\OpenRetainedQuantities;
@@ -24,7 +25,7 @@ use App\Shared\Domain\ValueObject\Money;
  * Pure current-RR composition. Memo values never retain targets or training graphs.
  *
  * @phpstan-type DeliveredCoefficient array{probability: ?ReturnProbability, diagnostic: NetForecastComponent}
- * @phpstan-type OpenCoefficient array{gross: ?GrossProbability, cumulativeH: ?ReturnProbability, diagnostic: NetForecastComponent}
+ * @phpstan-type OpenCoefficient array{gross: ?GrossProbability, cumulativeH: ?ReturnProbability, diagnostic: NetForecastComponent, t1Numerator: ?int, t1Denominator: ?int, t1UnavailableReason: ?string, t1Basis: ?string}
  */
 final readonly class AggregateNetForecastAction
 {
@@ -110,7 +111,8 @@ final readonly class AggregateNetForecastAction
             usort($skus, static fn (NetTargetSkuRow $a, NetTargetSkuRow $b): int => strcmp($a->marketplaceSku, $b->marketplaceSku));
             $output = [];
             $seriesOutput = [];
-            $emptyScope = null === $seriesRequest ? null : new NetForecastScope(NetForecastQuantities::zero(), null, null, 'money_currency_missing', [], []);
+            $zeroT1 = NetForecastFutureT1::zero();
+            $emptyScope = null === $seriesRequest ? null : new NetForecastScope(NetForecastQuantities::zero(), null, null, 'money_currency_missing', [], [], $zeroT1);
             $emptyRevenue = null === $seriesRequest ? null : NetForecastRevenue::empty();
             $total = NetForecastQuantities::zero();
             $revenue = NetForecastRevenue::empty();
@@ -120,7 +122,7 @@ final readonly class AggregateNetForecastAction
             foreach ($skus as $sku) {
                 $childRevenue = NetForecastRevenue::empty();
                 $seriesSku = null;
-                $result = $this->sku($sku, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit, $seriesRequest, $seriesSku, $emptyScope, $emptyRevenue);
+                $result = $this->sku($sku, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit, $seriesRequest, $seriesSku, $emptyScope, $emptyRevenue, $zeroT1);
                 if (null !== $seriesSku) {
                     $seriesOutput[] = $seriesSku;
                 }
@@ -139,10 +141,18 @@ final readonly class AggregateNetForecastAction
 
             $series = null === $seriesRequest ? null : new NetForecastSeries($seriesOutput);
             $this->charge($series, $used, $guard, $outputLimit);
+            $provenance = [];
+            foreach ($openMemo as $key => $coefficient) {
+                if (str_ends_with($key, '|'.OpenTargetEvidence::BEFORE_HANDOVER)) {
+                    $skuKey = substr($key, 0, -\strlen('|'.OpenTargetEvidence::BEFORE_HANDOVER));
+                    $provenance[$skuKey] = ['basis' => $coefficient['t1Basis'], 'numerator' => $coefficient['t1Numerator'], 'denominator' => $coefficient['t1Denominator'], 'reason' => $coefficient['t1UnavailableReason']];
+                }
+            }
+            $this->charge(['futureT1Provenance' => $provenance, 'goalForecastMethodVersion' => NetForecastFutureT1::METHOD_VERSION], $used, $guard, $outputLimit);
             $guard();
 
             return new NetForecastBatch($companyId, $accountId, $context->readAt, $context, $output, $total, $reason, $money, $moneyReason, $series,
-                (int) ($started + (int) ($seconds * 1000000000)), $baseline, $used, $allocationLimit, $peakLimit, $outputLimit);
+                (int) ($started + (int) ($seconds * 1000000000)), $baseline, $used, $allocationLimit, $peakLimit, $outputLimit, $provenance);
         } catch (\UnexpectedValueException) {
             return $this->refuse($companyId, $accountId, $context, 'source_history_unavailable');
         } catch (\OverflowException) {
@@ -212,7 +222,7 @@ final readonly class AggregateNetForecastAction
      * @param array<string, OpenCoefficient>      $openMemo
      * @param \Closure(): void                    $guard
      */
-    private function sku(NetTargetSkuRow $sku, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit, ?NetForecastSeriesRequest $seriesRequest, ?NetForecastSeriesSku &$seriesSku, ?NetForecastScope $emptyScope, ?NetForecastRevenue $emptyRevenue): NetForecastSku
+    private function sku(NetTargetSkuRow $sku, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit, ?NetForecastSeriesRequest $seriesRequest, ?NetForecastSeriesSku &$seriesSku, ?NetForecastScope $emptyScope, ?NetForecastRevenue $emptyRevenue, NetForecastFutureT1 $zeroT1): NetForecastSku
     {
         $days = $sku->days;
         usort($days, static fn (NetTargetDayRow $a, NetTargetDayRow $b): int => strcmp($a->businessDate, $b->businessDate));
@@ -223,7 +233,7 @@ final readonly class AggregateNetForecastAction
         foreach ($days as $day) {
             $guard();
             $childRevenue = NetForecastRevenue::empty();
-            $result = $this->day($sku->marketplaceSku, $day, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit, $emptyScope?->quantities, $emptyRevenue);
+            $result = $this->day($sku->marketplaceSku, $day, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit, $emptyScope?->quantities, $emptyRevenue, $zeroT1);
             $output[] = $result;
             if (null === $seriesRequest) {
                 $total = self::add($total, $result->quantities);
@@ -255,7 +265,7 @@ final readonly class AggregateNetForecastAction
      * @param array<string, OpenCoefficient>      $openMemo
      * @param \Closure(): void                    $guard
      */
-    private function day(string $sku, NetTargetDayRow $day, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit, ?NetForecastQuantities $zero, ?NetForecastRevenue $emptyRevenue): NetForecastDay
+    private function day(string $sku, NetTargetDayRow $day, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit, ?NetForecastQuantities $zero, ?NetForecastRevenue $emptyRevenue, NetForecastFutureT1 $zeroT1): NetForecastDay
     {
         $groups = $day->groups;
         usort($groups, static fn (NetTargetGroupRow $a, NetTargetGroupRow $b): int => strcmp($a->orderNumber ?? '', $b->orderNumber ?? ''));
@@ -263,10 +273,11 @@ final readonly class AggregateNetForecastAction
         $total = $zero ?? NetForecastQuantities::zero();
         $revenue = $emptyRevenue ?? NetForecastRevenue::empty();
         $reason = [] === $groups && !$day->emptyComplete ? 'source_history_unavailable' : null;
+        $futureT1 = null !== $reason || null !== $day->unavailableReason ? NetForecastFutureT1::unavailable($reason ?? $day->unavailableReason) : $zeroT1;
         foreach ($groups as $group) {
             $guard();
             $childRevenue = NetForecastRevenue::empty();
-            $result = $this->group($sku, $day->businessDate, $group, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit);
+            $result = $this->group($sku, $day->businessDate, $group, $context, $training, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit, $futureT1);
             $output[] = $result;
             $total = self::add($total, $result->quantities);
             $revenue = $this->addRevenue($revenue, $childRevenue, $guard);
@@ -278,9 +289,9 @@ final readonly class AggregateNetForecastAction
         }
         $revenue = null === $total ? NetForecastRevenue::unavailable($reason ?? 'quantity_unavailable') : $revenue;
         [$money, $moneyReason] = $this->guardedPublish($revenue, $total, $reason, $guard);
-        $this->charge([$day->businessDate, $total, $reason, 'expectedNetRevenue' => $money, 'moneyUnavailableReason' => $moneyReason, 'revenue' => $revenue], $used, $guard, $outputLimit);
+        $this->charge([$day->businessDate, $total, $reason, 'expectedNetRevenue' => $money, 'moneyUnavailableReason' => $moneyReason, 'revenue' => $revenue, 'futureT1' => $futureT1], $used, $guard, $outputLimit);
 
-        return new NetForecastDay($day->businessDate, $output, $total, $reason, $money, $moneyReason, $revenue);
+        return new NetForecastDay($day->businessDate, $output, $total, $reason, $money, $moneyReason, $revenue, $futureT1);
     }
 
     /**
@@ -288,7 +299,7 @@ final readonly class AggregateNetForecastAction
      * @param array<string, OpenCoefficient>      $openMemo
      * @param \Closure(): void                    $guard
      */
-    private function group(string $sku, string $date, NetTargetGroupRow $group, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit): NetForecastGroup
+    private function group(string $sku, string $date, NetTargetGroupRow $group, NetTrainingContext $context, NetTrainingBatch $training, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit, NetForecastFutureT1 &$futureT1): NetForecastGroup
     {
         $parts = $group->parts;
         usort($parts, static fn (NetTargetPartRow $a, NetTargetPartRow $b): int => strcmp($a->sourceRowId, $b->sourceRowId));
@@ -298,10 +309,14 @@ final readonly class AggregateNetForecastAction
         $identityReason = null === $group->orderNumber || '' === trim($group->orderNumber) || '' === trim($sku)
             || $sku !== $group->marketplaceSku || $date !== $group->businessDate ? 'target_identity_mismatch' : null;
         $reason = [] === $parts ? 'source_history_unavailable' : $identityReason;
+        $t1Reason = $reason ?? $group->unavailableReason ?? (!$group->inputComplete ? 'target_input_incomplete' : null);
+        if (null !== $t1Reason) {
+            $futureT1 = $futureT1->plus(NetForecastFutureT1::unavailable($t1Reason));
+        }
         foreach ($parts as $part) {
             $guard();
             $childRevenue = NetForecastRevenue::empty();
-            $result = $this->part($group, $part, $context, $training, $identityReason, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit);
+            $result = $this->part($group, $part, $context, $training, $identityReason, $deliveredMemo, $openMemo, $used, $guard, $childRevenue, $outputLimit, $futureT1);
             $output[] = $result;
             $total = self::add($total, $result->quantities);
             $revenue = $this->addRevenue($revenue, $childRevenue, $guard);
@@ -323,17 +338,25 @@ final readonly class AggregateNetForecastAction
      * @param array<string, OpenCoefficient>      $openMemo
      * @param \Closure(): void                    $guard
      */
-    private function part(NetTargetGroupRow $group, NetTargetPartRow $part, NetTrainingContext $context, NetTrainingBatch $training, ?string $identityReason, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit): NetForecastPart
+    private function part(NetTargetGroupRow $group, NetTargetPartRow $part, NetTrainingContext $context, NetTrainingBatch $training, ?string $identityReason, array &$deliveredMemo, array &$openMemo, int &$used, \Closure $guard, NetForecastRevenue &$revenue, int $outputLimit, NetForecastFutureT1 &$futureT1): NetForecastPart
     {
         $reason = $identityReason ?? self::partReason($part);
         if (null !== $reason) {
             $delivered = $pre = $post = self::diagnostic($reason);
             $quantity = null;
+            $futureT1 = $futureT1->plus(NetForecastFutureT1::unavailable($reason));
         } else {
             \assert(null !== $group->orderNumber && null !== $part->currentD && null !== $part->eligibleOpenPre && null !== $part->eligibleOpenPost);
             $d = $this->delivered($group, $part, $context, $training, $deliveredMemo);
-            $oPre = $this->open($group, $part->eligibleOpenPre, OpenTargetEvidence::BEFORE_HANDOVER, $context, $training, $openMemo);
-            $oPost = $this->open($group, $part->eligibleOpenPost, OpenTargetEvidence::AFTER_HANDOVER, $context, $training, $openMemo);
+            $oPre = $this->open($group, $part->eligibleOpenPre, OpenTargetEvidence::BEFORE_HANDOVER, $context, $training, $openMemo, $used, $guard, $outputLimit);
+            $oPost = $this->open($group, $part->eligibleOpenPost, OpenTargetEvidence::AFTER_HANDOVER, $context, $training, $openMemo, $used, $guard, $outputLimit);
+            $guard();
+            if (0 !== $part->eligibleOpenPre) {
+                $futureT1 = $futureT1->plus(null !== $oPre['t1UnavailableReason']
+                    ? NetForecastFutureT1::unavailable($oPre['t1UnavailableReason'])
+                    : NetForecastFutureT1::fromProbability($part->eligibleOpenPre, $oPre['t1Numerator'] ?? throw new \LogicException('Missing T1 numerator.'), $oPre['t1Denominator'] ?? throw new \LogicException('Missing T1 denominator.')));
+            }
+            $guard();
             $delivered = $d['diagnostic'];
             $pre = $oPre['diagnostic'];
             $post = $oPost['diagnostic'];
@@ -479,13 +502,14 @@ final readonly class AggregateNetForecastAction
 
     /**
      * @param array<string, OpenCoefficient> $memo
+     * @param \Closure(): void               $guard
      *
      * @return OpenCoefficient
      */
-    private function open(NetTargetGroupRow $group, int $quantity, string $stage, NetTrainingContext $context, NetTrainingBatch $training, array &$memo): array
+    private function open(NetTargetGroupRow $group, int $quantity, string $stage, NetTrainingContext $context, NetTrainingBatch $training, array &$memo, int &$used, \Closure $guard, int $outputLimit): array
     {
         if (0 === $quantity) {
-            return ['gross' => null, 'cumulativeH' => null, 'diagnostic' => new NetForecastComponent('no_eligible_open', null, null, null, null, null, null, [])];
+            return ['t1Numerator' => 0, 't1Denominator' => 1, 't1UnavailableReason' => null, 't1Basis' => null, 'gross' => null, 'cumulativeH' => null, 'diagnostic' => new NetForecastComponent('no_eligible_open', null, null, null, null, null, null, [])];
         }
         $key = $group->marketplaceSku.'|'.$stage;
         if (isset($memo[$key])) {
@@ -503,7 +527,17 @@ final readonly class AggregateNetForecastAction
         $cumulativeH = $resolution->selected?->cumulativeReturnProbability;
         $diagnostic = new NetForecastComponent($resolution->selected?->basis, null, null === $gross ? null : (string) $gross->numerator, null === $gross ? null : (string) $gross->denominator, null === $cumulativeH ? null : (string) $cumulativeH->numerator, null === $cumulativeH ? null : (string) $cumulativeH->denominator, $resolution->unavailableReason, $attempts);
 
-        return $memo[$key] = ['gross' => $gross, 'cumulativeH' => $cumulativeH, 'diagnostic' => $diagnostic];
+        $pre = $resolution->selectedPreGross;
+
+        $coefficient = ['gross' => $gross, 'cumulativeH' => $cumulativeH, 'diagnostic' => $diagnostic,
+            't1Numerator' => $pre?->source?->t1Quantity, 't1Denominator' => $pre?->probability?->denominator,
+            't1UnavailableReason' => $resolution->preGrossUnavailableReason,
+            't1Basis' => null === $pre ? null : (null === $pre->marketplaceSku ? 'account' : 'sku')];
+        $this->charge(array_intersect_key($coefficient, array_flip(['t1Numerator', 't1Denominator', 't1UnavailableReason', 't1Basis'])), $used, $guard, $outputLimit);
+        $memo[$key] = $coefficient;
+        $guard();
+
+        return $coefficient;
     }
 
     private static function readiness(?NetTargetReadinessRow $row): ?DeliveredTargetReadiness
@@ -566,6 +600,23 @@ final readonly class AggregateNetForecastAction
             $this->charge($value->format('Y-m-d\TH:i:s.uP'), $used, $guard, $outputLimit);
         } elseif ($value instanceof Money) {
             $this->charge(['minor' => $value->minorAmount(), 'currency' => $value->currency()], $used, $guard, $outputLimit);
+        } elseif ($value instanceof NetForecastQuantities) {
+            $bytes = 0;
+            foreach (get_object_vars($value) as $key => $field) {
+                \assert(\is_string($field));
+                $bytes += 4 + \strlen($key) + \strlen($field);
+            }
+            if ($bytes > $outputLimit - $used) {
+                throw new \OverflowException('Exact quantity byte budget exceeded.');
+            }
+            $used += $bytes;
+            $guard();
+        } elseif ($value instanceof NetForecastFutureT1) {
+            $bytes = $value->storageBytes() - 128;
+            if ($bytes > $outputLimit - $used) {
+                throw new \OverflowException('Future T1 byte budget exceeded.');
+            }
+            $used += $bytes;
         } elseif ($value instanceof NetForecastRevenue) {
             $bytes = $value->storageBytes();
             if ($bytes > $outputLimit - $used) {

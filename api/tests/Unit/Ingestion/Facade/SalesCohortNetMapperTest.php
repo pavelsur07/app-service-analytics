@@ -20,14 +20,14 @@ final class SalesCohortNetMapperTest extends TestCase
     public function testExactNetAndIndependentMoneyReasonWithStableSelectedQuality(): void
     {
         $mapped = (new SalesCohortNetMapper())->map(self::batch(), self::request());
-        $value = $mapped['SKU']['2026-08-01|2026-08-01']['period'];
+        $value = $mapped->points['SKU']['2026-08-01|2026-08-01']['period'];
         self::assertSame('90.000', $value->quantity);
         self::assertSame(9000, $value->revenue?->minorAmount());
         self::assertNull($value->reason);
         self::assertNull($value->moneyReason);
         self::assertSame(['account', 'sku'], $value->quality->trainingScopes);
         self::assertSame(['insufficient_sample'], $value->quality->componentReasons);
-        $moneyMissing = (new SalesCohortNetMapper())->map(self::batch(missingMoney: true), self::request())['SKU']['2026-08-01|2026-08-01']['period'];
+        $moneyMissing = (new SalesCohortNetMapper())->map(self::batch(missingMoney: true), self::request())->points['SKU']['2026-08-01|2026-08-01']['period'];
         self::assertSame('90.000', $moneyMissing->quantity);
         self::assertNull($moneyMissing->reason);
         self::assertNull($moneyMissing->revenue);
@@ -52,7 +52,7 @@ final class SalesCohortNetMapperTest extends TestCase
         $batch = new NetForecastBatch('company', 'account', $base->readAt, null, [], $base->quantities, null, $base->expectedNetRevenue, null, $series,
             $base->computeDeadlineNs, $base->allocationBaselineBytes, $base->outputBytesUsed, $base->allocationLimitBytes, $base->peakLimitBytes, $base->outputLimitBytes);
         $request = new SalesCohortRequest(['SKU'], new \DateTimeImmutable('2026-08-01'), new \DateTimeImmutable('2026-08-04'), new \DateTimeImmutable('2026-08-01'));
-        $mapped = (new SalesCohortNetMapper())->map($batch, $request)['SKU'];
+        $mapped = (new SalesCohortNetMapper())->map($batch, $request)->points['SKU'];
         self::assertSame('90.000', $mapped['2026-08-01|2026-08-01']['period']->quantity);
         self::assertSame(9000, $mapped['2026-08-04|2026-08-04']['cumulative']->revenue?->minorAmount());
         self::assertNull($mapped['2026-08-02|2026-08-02']['period']->revenue);
@@ -68,6 +68,26 @@ final class SalesCohortNetMapperTest extends TestCase
         self::assertSame(['price_source'], $mapped['2026-08-04|2026-08-04']['period']->quality->componentReasons);
     }
 
+    public function testProjectionContinuesAllOriginalBudgetScalarsAndChargesEveryOccurrence(): void
+    {
+        $input = self::batch();
+        $projection = (new SalesCohortNetMapper())->map($input, self::request());
+        self::assertNotNull($projection->budget);
+        self::assertSame($input->computeDeadlineNs, $projection->budget->computeDeadlineNs);
+        self::assertSame($input->allocationBaselineBytes, $projection->budget->allocationBaselineBytes);
+        self::assertSame($input->allocationLimitBytes, $projection->budget->allocationLimitBytes);
+        self::assertSame($input->peakLimitBytes, $projection->budget->peakLimitBytes);
+        self::assertSame($input->outputLimitBytes, $projection->budget->outputLimitBytes);
+        self::assertGreaterThan($input->outputBytesUsed, $projection->budget->outputBytesUsed);
+        self::assertSame(0, $projection->budget->grossSqlElapsedNs);
+        $values = $projection->points['SKU']['2026-08-01|2026-08-01'];
+        self::assertSame($values['period'], $values['cumulative']);
+        self::assertSame('90', $values['period']->goalForecast?->retainedNumerator);
+        self::assertSame('1', $values['period']->goalForecast->retainedDenominator);
+        self::assertSame('future_t1_unavailable', $values['period']->goalForecast->futureT1UnavailableReason);
+        self::assertSame('pre_t1_gross_first_valid_v1', $projection->goalForecastMethodVersion);
+    }
+
     public function testExpiredActualDeadlineCannotPublishAnyNet(): void
     {
         $this->expectException(\OverflowException::class);
@@ -78,7 +98,7 @@ final class SalesCohortNetMapperTest extends TestCase
     {
         $batch = self::batch();
         $mapped = (new SalesCohortNetMapper())->map($batch, self::request());
-        $value = $mapped['SKU']['2026-08-01|2026-08-01']['period'];
+        $value = $mapped->points['SKU']['2026-08-01|2026-08-01']['period'];
         $firstScopeBytes = \strlen(json_encode(['expectedNetSalesQuantity' => $value->quantity,
             'expectedNetRevenue' => ['minor' => '9000', 'currency' => 'RUB', 'fractionDigits' => 2],
             'netForecastUnavailableReason' => null, 'netForecastMoneyUnavailableReason' => null,

@@ -45,6 +45,28 @@ final class AggregateNetForecastActionTest extends TestCase
         self::assertTrue(class_exists(AggregateNetForecastAction::class), 'Pure exact aggregate must exist.');
     }
 
+    public function testFutureT1UsesSamePrePopulationAndRemainsIndependentOfReturns(): void
+    {
+        $gross = new GrossTrainingAggregateRow(self::SKU, true, null, 100, 30, 70, 10, 15, 5, 30, 86400, 0, 0);
+        $result = self::aggregate(self::targets([self::group([self::part(d: 0, pre: 10), self::part(id: 'b', d: 0, pre: 90, post: 100, price: null)])]), self::training(gross: [$gross], returns: []));
+        self::assertNull($result->quantities);
+        $t1 = $result->skus[0]->days[0]->futureT1();
+        self::assertSame('10', $t1->numerator());
+        self::assertSame('1', $t1->denominator());
+        self::assertNull($t1->unavailableReason);
+        self::assertSame([self::SKU => ['basis' => 'sku', 'numerator' => 10, 'denominator' => 100, 'reason' => null]], $result->futureT1Provenance());
+        self::assertArrayNotHasKey('futureT1Provenance', get_object_vars($result));
+    }
+
+    public function testFutureT1KnownZeroDoesNotRequireUnusedModelsButUnknownDoes(): void
+    {
+        foreach ([[self::part(d: 70, origin: false), '0', null], [self::part(d: 0, unknown: 1), null, 'unknown_outcome'], [self::part(d: 0, pre: 100), null, 'gross_probability_unavailable']] as [$part, $n, $reason]) {
+            $result = self::aggregate(self::targets([self::group([$part])]), self::training(gross: [], returns: []));
+            self::assertSame($n, $result->skus[0]->days[0]->futureT1()->numerator());
+            self::assertSame($reason, $result->skus[0]->days[0]->futureT1()->unavailableReason);
+        }
+    }
+
     public function testSeventyMinusFivePlusTwentyFiveIsNinety(): void
     {
         $part = self::part(d: 70, pre: 50, knownR: 30);

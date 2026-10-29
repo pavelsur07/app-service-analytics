@@ -19,31 +19,27 @@ final readonly class NetForecastQuantities
     public string $retainedOpenDenominator;
     public string $expectedNetNumerator;
     public string $expectedNetDenominator;
-    private BigRational $future;
-    private BigRational $retained;
 
-    private function __construct(public string $currentD, public string $eligibleOpenQuantity, BigRational $future, BigRational $retained)
+    private function __construct(public string $currentD, public string $eligibleOpenQuantity, private BigInteger $futureN, private BigInteger $futureD, private BigInteger $retainedN, private BigInteger $retainedD)
     {
-        if ($future->isNegative() || $future->isGreaterThan($currentD)
-            || $retained->isNegative() || $retained->isGreaterThan($eligibleOpenQuantity)) {
+        if ($futureN->isNegative() || $futureN->isGreaterThan($futureD->multipliedBy($currentD))
+            || $retainedN->isNegative() || $retainedN->isGreaterThan($retainedD->multipliedBy($eligibleOpenQuantity))) {
             throw new \InvalidArgumentException('Invalid full net components.');
         }
         // Adding integer currentD preserves the reduced fractional denominator.
-        $net = self::sum($retained, $future->negated());
-        $this->futureReturnsNumerator = (string) $future->getNumerator();
-        $this->futureReturnsDenominator = (string) $future->getDenominator();
-        $this->retainedOpenNumerator = (string) $retained->getNumerator();
-        $this->retainedOpenDenominator = (string) $retained->getDenominator();
-        $this->expectedNetNumerator = (string) BigInteger::of($currentD)->multipliedBy($net->getDenominator())->plus($net->getNumerator());
-        $this->expectedNetDenominator = (string) $net->getDenominator();
+        [$netN, $netD] = self::sum($retainedN, $retainedD, $futureN->negated(), $futureD);
+        $this->futureReturnsNumerator = (string) $futureN;
+        $this->futureReturnsDenominator = (string) $futureD;
+        $this->retainedOpenNumerator = (string) $retainedN;
+        $this->retainedOpenDenominator = (string) $retainedD;
+        $this->expectedNetNumerator = (string) BigInteger::of($currentD)->multipliedBy($netD)->plus($netN);
+        $this->expectedNetDenominator = (string) $netD;
         foreach ([$this->currentD, $this->eligibleOpenQuantity, $this->futureReturnsNumerator, $this->futureReturnsDenominator,
             $this->retainedOpenNumerator, $this->retainedOpenDenominator, $this->expectedNetNumerator, $this->expectedNetDenominator] as $value) {
             if (\strlen($value) > self::MAX_DIGITS) {
                 throw new \OverflowException('Exact quantity precision budget exceeded.');
             }
         }
-        $this->future = $future;
-        $this->retained = $retained;
     }
 
     public static function fromComponents(string $currentD, string $eligibleOpenQuantity, string $futureReturnsNumerator, string $futureReturnsDenominator, string $retainedOpenNumerator, string $retainedOpenDenominator): self
@@ -57,12 +53,15 @@ final readonly class NetForecastQuantities
             throw new \InvalidArgumentException('Quantity denominators must be positive.');
         }
 
-        return new self($currentD, $eligibleOpenQuantity, BigRational::ofFraction($futureReturnsNumerator, $futureReturnsDenominator), BigRational::ofFraction($retainedOpenNumerator, $retainedOpenDenominator));
+        $future = BigRational::ofFraction($futureReturnsNumerator, $futureReturnsDenominator);
+        $retained = BigRational::ofFraction($retainedOpenNumerator, $retainedOpenDenominator);
+
+        return new self($currentD, $eligibleOpenQuantity, $future->getNumerator(), $future->getDenominator(), $retained->getNumerator(), $retained->getDenominator());
     }
 
     public static function zero(): self
     {
-        return new self('0', '0', BigRational::zero(), BigRational::zero());
+        return new self('0', '0', BigInteger::zero(), BigInteger::one(), BigInteger::zero(), BigInteger::one());
     }
 
     public function plus(self $other): self
@@ -75,11 +74,13 @@ final readonly class NetForecastQuantities
             return $other;
         }
 
+        [$futureN, $futureD] = self::sum($this->futureN, $this->futureD, $other->futureN, $other->futureD);
+        [$retainedN, $retainedD] = self::sum($this->retainedN, $this->retainedD, $other->retainedN, $other->retainedD);
+
         return new self(
-            (string) BigRational::of($this->currentD)->plus($other->currentD)->getNumerator(),
-            (string) BigRational::of($this->eligibleOpenQuantity)->plus($other->eligibleOpenQuantity)->getNumerator(),
-            self::sum($this->future, $other->future),
-            self::sum($this->retained, $other->retained),
+            (string) BigInteger::of($this->currentD)->plus($other->currentD),
+            (string) BigInteger::of($this->eligibleOpenQuantity)->plus($other->eligibleOpenQuantity),
+            $futureN, $futureD, $retainedN, $retainedD,
         );
     }
 
@@ -115,23 +116,27 @@ final readonly class NetForecastQuantities
         return (string) BigInteger::of($this->expectedNetNumerator)->toBigDecimal()->dividedBy($this->expectedNetDenominator, 3, RoundingMode::HalfUp);
     }
 
-    private static function sum(BigRational $a, BigRational $b): BigRational
+    /**
+     * Reduced inputs can share a remaining factor only through their denominator GCD.
+     * Same exact kernel as NetForecastRevenue::plus; constructor precision checks still
+     * run after every chronological addition, including an intermediate cancellation.
+     *
+     * @return array{BigInteger, BigInteger}
+     */
+    private static function sum(BigInteger $aN, BigInteger $aD, BigInteger $bN, BigInteger $bD): array
     {
-        if ($a->isZero()) {
-            return $b;
+        if ($aN->isZero()) {
+            return [$bN, $bD];
         }
-        if ($b->isZero()) {
-            return $a;
+        if ($bN->isZero()) {
+            return [$aN, $aD];
         }
-        $aDenominator = $a->getDenominator();
-        $bDenominator = $b->getDenominator();
-        if ((string) $aDenominator === (string) $bDenominator) {
-            return BigRational::ofFraction($a->getNumerator()->plus($b->getNumerator()), $aDenominator);
-        }
-        $gcd = $aDenominator->gcd($bDenominator);
-        $aFactor = $bDenominator->quotient($gcd);
-        $bFactor = $aDenominator->quotient($gcd);
+        $gcd = $aD->gcd($bD);
+        $aFactor = $bD->quotient($gcd);
+        $bFactor = $aD->quotient($gcd);
+        $numerator = $aN->multipliedBy($aFactor)->plus($bN->multipliedBy($bFactor));
+        $reduction = $numerator->gcd($gcd);
 
-        return BigRational::ofFraction($a->getNumerator()->multipliedBy($aFactor)->plus($b->getNumerator()->multipliedBy($bFactor)), $aDenominator->multipliedBy($aFactor));
+        return [$numerator->quotient($reduction), $aD->multipliedBy($aFactor)->quotient($reduction)];
     }
 }

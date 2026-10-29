@@ -15,6 +15,7 @@ final readonly class SalesCohortNetValues
         public ?string $reason,
         public ?string $moneyReason,
         public SalesCohortNetQuality $quality,
+        public ?SalesCohortGoalForecast $goalForecast = null,
     ) {
     }
 }
