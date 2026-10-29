@@ -51,6 +51,17 @@ final class NetQualityTruthTest extends KernelTestCase
             unset($part);
             $ineligible = new Net\NetQualityTruthFrame($pendingRef, $f->input, $pending->readAt->modify('-1 second'), $ineligibleParts, $pending->softwareRelease);
             self::assertSame('pending', $truths->choose($observation, [$ineligible, $pending])->state, 'Without a fully-ready label preserve the earliest pending observation.');
+            $correctedParts = $ready->parts;
+            foreach ($correctedParts as &$part) {
+                $part['state'] = 'ineligible';
+                $part['quantity'] = null;
+                $part['reason'] = 'source_correction';
+            }
+            unset($part);
+            $corrected = new Net\NetQualityTruthFrame($readyRef, $f->input, $ready->readAt->modify('+1 day'), $correctedParts, $ready->softwareRelease);
+            $invalidated = $truths->choose($observation, [$corrected, $ready]);
+            self::assertSame($readyRef, $invalidated->truthRef, 'Earliest ready stays immutable.');
+            self::assertNotEmpty($invalidated->invalidations, 'A later correction must remain visible to the decision.');
         } finally {
             $f->cleanup();
             $db->close();

@@ -105,7 +105,11 @@ final readonly class EvaluateNetForecastQualityAction
                 if ($observation->inputRef->toArray() !== $first->inputRef->toArray()) {
                     throw new \UnexpectedValueException('Selection substituted an input hash.');
                 }
-                $row = $scorer->score($observation, $this->truths->choose($observation, $frames));
+                $outcome = $this->truths->choose($observation, $frames);
+                if ([] !== $outcome->invalidations) {
+                    $violations[] = 'selected_truth_invalidated';
+                }
+                $row = $scorer->score($observation, $outcome);
                 $dataset->append('quality_dataset', $row);
                 $accumulators[$observation->group]->add($row);
             }
@@ -120,7 +124,7 @@ final readonly class EvaluateNetForecastQualityAction
         }
         $decision = $this->decisions->decide(new NetQualityDecisionInput($groups, $context->protocol->currencies, array_values(array_unique($violations))));
         $datasetRef = $this->writer->publishStaged($companyId, $accountId, new NetQualityArtifactDocument(NetForwardArtifactKind::QualityDataset, $evaluationId, $requestHash, $selectionRef, ['schema' => 'net_quality_dataset_v1', 'protocol' => $context->protocolRef->toArray(), 'truthInventory' => $inventory->reference->toArray(), 'softwareRelease' => $this->softwareRelease], []), $dataset, $budget);
-        $report = ['schema' => 'net_quality_report_v1', 'protocol' => $context->protocolRef->toArray(), 'selection' => $selectionRef->toArray(), 'truthInventory' => $inventory->reference->toArray(), 'dataset' => $datasetRef->toArray(), 'softwareRelease' => $this->softwareRelease, 'parameters' => $context->protocol->data['parameters'], 'counts' => $counts, 'groups' => array_map(static fn (NetQualityGroupResult $result): array => $result->toArray(), $groups), 'selectionSummary' => $summary, 'truthSlotCounts' => $truthSlotCounts, 'legacyComparison' => ['status' => 'target_not_comparable', 'reason' => 'legacy_buyout_and_sales_cohort_are_aggregate_gross_targets_without_order_sku_retained_component_masks'], 'resources' => $budget->summary(), 'mechanicalValidation' => 'not_run', 'performanceValidation' => 'not_run', 'B17' => 'OPEN', 'B18' => 'OPEN', ...$decision->toArray()];
+        $report = ['schema' => 'net_quality_report_v1', 'protocol' => $context->protocolRef->toArray(), 'selection' => $selectionRef->toArray(), 'truthInventory' => $inventory->reference->toArray(), 'dataset' => $datasetRef->toArray(), 'softwareRelease' => $this->softwareRelease, 'parameters' => $context->protocol->data['parameters'], 'counts' => $counts, 'groups' => array_map(static fn (NetQualityGroupResult $result): array => $result->toArray(), $groups), 'selectionSummary' => $summary, 'truthSlotCounts' => $truthSlotCounts, 'legacyComparison' => ['status' => 'target_not_comparable', 'reason' => 'legacy_buyout_and_sales_cohort_are_aggregate_gross_targets_without_order_sku_retained_component_masks'], 'resources' => $budget->summary(), 'readByteAccounting' => 'verified_sizes_including_put_readback_with_failed_get_upper_bounds', 'mechanicalValidation' => 'not_run', 'performanceValidation' => 'not_run', 'B17' => 'OPEN', 'B18' => 'OPEN', ...$decision->toArray()];
         $reportRef = $this->writer->publish($companyId, $accountId, new NetQualityArtifactDocument(NetForwardArtifactKind::QualityReport, $evaluationId, $requestHash, $datasetRef, ['schema' => 'net_quality_report_v1', 'protocol' => $context->protocolRef->toArray(), 'softwareRelease' => $this->softwareRelease], [['type' => 'quality_report', 'row' => ['value' => $report]]]), $budget);
         [, $winner] = (new NetQualityArtifactPayloadReader($this->reader))->read($companyId, $accountId, $reportRef, 'quality_report', $budget);
 

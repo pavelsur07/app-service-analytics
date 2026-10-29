@@ -85,6 +85,8 @@ final readonly class NetQualityTruthReader
         usort($frames, static fn (NetQualityTruthFrame $a, NetQualityTruthFrame $b): int => [$a->readAt->format('Y-m-d\TH:i:s.u\Z'), $a->reference->requestId] <=> [$b->readAt->format('Y-m-d\TH:i:s.u\Z'), $b->reference->requestId]);
         $first = null;
         $pending = null;
+        $ready = null;
+        $invalidations = [];
         foreach ($frames as $frame) {
             if ($frame->inputRef->toArray() !== $observation->inputRef->toArray() || $frame->readAt < NetQualitySchema::utc($observation->readAtUtc)) {
                 throw new \UnexpectedValueException('Truth cannot precede or replace its selected input.');
@@ -103,6 +105,9 @@ final readonly class NetQualityTruthReader
                     throw new \UnexpectedValueException('Truth components or input price/mask do not match selection.');
                 }
                 $seen[$key] = true;
+                if ('ineligible' === $truth['state'] && (null !== $ready || 'source_correction' === $truth['reason'])) {
+                    $invalidations[] = ['truth' => $frame->reference->toArray(), 'sourceRowId' => $id, 'reason' => $truth['reason'] ?? 'selected_truth_invalidated'];
+                }
                 if (($part['truthScope'] ?? null) !== 'part') {
                     $state = 'ineligible';
                     $reasons[] = 'scope_not_comparable';
@@ -124,7 +129,10 @@ final readonly class NetQualityTruthReader
             }
             $outcome = new NetQualityTruthOutcome($state, 'ready' === $state ? $sum : null, $frame->reference, 'ready' === $state ? $quantities : [], array_values(array_unique($reasons)), $censored);
             if ('ready' === $state) {
-                return $outcome;
+                if (null !== $ready && $ready->quantities !== $outcome->quantities) {
+                    $invalidations[] = ['truth' => $frame->reference->toArray(), 'reason' => 'ready_truth_changed'];
+                }
+                $ready ??= $outcome;
             }
             $first ??= $outcome;
             if ('pending' === $state) {
@@ -132,6 +140,8 @@ final readonly class NetQualityTruthReader
             }
         }
 
-        return $pending ?? $first ?? new NetQualityTruthOutcome('pending', null, null, [], ['truth_not_captured'], true);
+        $chosen = $ready ?? $pending ?? $first ?? new NetQualityTruthOutcome('pending', null, null, [], ['truth_not_captured'], true);
+
+        return new NetQualityTruthOutcome($chosen->state, $chosen->quantity, $chosen->truthRef, $chosen->quantities, $chosen->reasons, $chosen->censored, $invalidations);
     }
 }

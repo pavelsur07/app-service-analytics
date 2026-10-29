@@ -28,7 +28,7 @@ final class NetQualityInventoryTest extends KernelTestCase
         $protocol = NetQualityProtocolBuilder::aProtocol()->build();
         try {
             $repository = new DbalNetForecastArtifactRepository($f->db);
-            $ref = (new Net\FreezeNetQualityProtocolAction($f->writer, $f->reader, $repository, $f->clock, '123-aaaaaaa'))($protocol->companyId, $protocol->accountId, $protocol);
+            $ref = (new Net\FreezeNetQualityProtocolAction($f->writer, $f->reader, $repository, $f->clock, '123-aaaaaaa', str_repeat('a', 40)))($protocol->companyId, $protocol->accountId, $protocol);
             $slots = array_map(static fn (array $slot): array => ['requestId' => $slot['requestId'], 'status' => 'missing', 'artifact' => null, 'reason' => 'not_captured'], $protocol->slots);
             $data = ['requestId' => Uuid::v7()->toRfc4122(), 'protocol' => $ref->toArray(), 'subtype' => 'capture', 'cutoffUtc' => $protocol->data['captureToUtc'], 'slots' => $slots];
             $f->clock->modify('+20 days');

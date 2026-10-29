@@ -359,3 +359,13 @@ verified dataset. `QUALITY_PASSED` остаётся результатом ча�
 `numericRolloutAllowed=false` во всех состояниях. Точные operational caps и
 policy missing truth receipts включаются в frozen protocol. Синтетический
 resource profile и CI не являются predictive/HTTP evidence.
+
+
+Полнота B16 read budget включает storage PUT readback/recovery GET: optional
+primitive callback в существующем storage port вызывается до каждого такого
+GET; Domain не зависит от Application. Failed GET может консервативно
+резервировать ожидаемый размер, что report обозначает явно. Exact source pin
+проверяется по полному SHA, встроенному в образ существующим CI, а не только
+по короткому release tag. Holdout начинается после freeze. Более поздний
+registered truth не переписывает earliest ready, но его correction/invalidation
+сохраняется отдельно и блокирует положительное решение.

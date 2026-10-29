@@ -31,7 +31,7 @@ final readonly class NetQualityInputReader
             throw new \UnexpectedValueException('Unsupported or unregistered forward input.');
         }
         $binding = $metadata['qualityProtocol'];
-        if (!\is_array($binding['protocol'] ?? null) || NetQualityArtifactRef::fromArray($binding['protocol'])->toArray() !== $context->protocolRef->toArray() || ($binding['frozenAtUtc'] ?? null) !== $context->frozenAt->format('Y-m-d\TH:i:s.u\Z') || !\is_string($metadata['softwareRelease'] ?? null) || !str_ends_with($metadata['softwareRelease'], substr(NetQualitySchema::string($protocol->data, 'codeCommit'), 0, 7))) {
+        if (($metadata['codeCommit'] ?? null) !== $protocol->data['codeCommit'] || !\is_array($binding['protocol'] ?? null) || NetQualityArtifactRef::fromArray($binding['protocol'])->toArray() !== $context->protocolRef->toArray() || ($binding['frozenAtUtc'] ?? null) !== $context->frozenAt->format('Y-m-d\TH:i:s.u\Z') || !\is_string($metadata['softwareRelease'] ?? null) || !str_ends_with($metadata['softwareRelease'], substr(NetQualitySchema::string($protocol->data, 'codeCommit'), 0, 7))) {
             throw new \UnexpectedValueException('Input protocol, freeze, or code pin mismatch.');
         }
         $request = new NetForwardCaptureRequest($ref->requestId, $protocol->planId, $protocol->from, $protocol->to, qualityProtocolId: $context->protocolRef->requestId, qualityProtocolHash: $context->protocolRef->sha256);

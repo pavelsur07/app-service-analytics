@@ -29,8 +29,12 @@ final readonly class NetQualityForwardFixture
     public Net\NetQualityArtifactRef $input;
     public Net\NetQualityArtifactRef $protocolRef;
 
-    public function __construct(Connection $db, Net\AggregateNetForecastAction $aggregate)
+    /** @param list<int> $truthLags */
+    public function __construct(Connection $db, Net\AggregateNetForecastAction $aggregate, array $truthLags = [7, 70])
     {
+        if ([] === $truthLags) {
+            throw new \InvalidArgumentException('Fixture needs registered truth slots.');
+        }
         $training = new NetTrainingFixture($db);
         $at = $training->readAt->modify('+12 hours');
         $this->targets = $targets = new NetTargetFixture($db, $at, $training->company, $training->account);
@@ -52,7 +56,7 @@ final readonly class NetQualityForwardFixture
             $id = Uuid::v7()->toRfc4122();
             $scheduled = $start->modify('+'.$i.' days +12 hours');
             $slots[] = ['requestId' => $id, 'scheduledAtUtc' => $scheduled->format('Y-m-d\TH:i:s.u\Z')];
-            foreach ([7, 70] as $lag) {
+            foreach ($truthLags as $lag) {
                 $truths[] = ['requestId' => Uuid::v7()->toRfc4122(), 'inputId' => $id, 'scheduledAtUtc' => $scheduled->modify('+'.$lag.' days')->format('Y-m-d\TH:i:s.u\Z')];
             }
             if ($scheduled->format('Y-m-d') === $at->format('Y-m-d')) {
@@ -65,17 +69,17 @@ final readonly class NetQualityForwardFixture
         $planId = Uuid::v7()->toRfc4122();
         $from = $day->modify('-1 day')->format('Y-m-d');
         $to = $day->modify('+1 day')->format('Y-m-d');
-        $this->protocol = NetQualityProtocolBuilder::aProtocol()->with('companyId', $training->company->toRfc4122())->with('accountId', $training->account->toRfc4122())->with('planId', $planId)->with('baselineId', $planId)->with('epochId', $targets->epoch->id)->with('epochStartUtc', $targets->epoch->start->format('Y-m-d\TH:i:s.u\Z'))->with('from', $from)->with('to', $to)->with('calibrationFrom', $from)->with('calibrationTo', $from)->with('holdoutFrom', $day->format('Y-m-d'))->with('holdoutTo', $to)->with('captureFromUtc', $start->format('Y-m-d\TH:i:s.u\Z'))->with('captureToUtc', $start->modify('+14 days')->format('Y-m-d\TH:i:s.u\Z'))->with('truthCutoffUtc', $start->modify('+85 days')->format('Y-m-d\TH:i:s.u\Z'))->with('slots', $slots)->with('truthSlots', $truths)->build();
-        $this->artifacts = $artifacts = new NetQualityArtifactFixture($db, $start->modify('-1 day'));
+        $this->protocol = NetQualityProtocolBuilder::aProtocol()->with('companyId', $training->company->toRfc4122())->with('accountId', $training->account->toRfc4122())->with('planId', $planId)->with('baselineId', $planId)->with('epochId', $targets->epoch->id)->with('epochStartUtc', $targets->epoch->start->format('Y-m-d\TH:i:s.u\Z'))->with('from', $from)->with('to', $to)->with('calibrationFrom', $from)->with('calibrationTo', $from)->with('holdoutFrom', $day->format('Y-m-d'))->with('holdoutTo', $to)->with('captureFromUtc', $start->format('Y-m-d\TH:i:s.u\Z'))->with('captureToUtc', $start->modify('+14 days')->format('Y-m-d\TH:i:s.u\Z'))->with('truthCutoffUtc', $start->modify('+'.(max($truthLags) + 15).' days')->format('Y-m-d\TH:i:s.u\Z'))->with('slots', $slots)->with('truthSlots', $truths)->build();
+        $this->artifacts = $artifacts = new NetQualityArtifactFixture($db, min($start->modify('-1 day'), $day->modify('-1 day')));
         $company = $this->protocol->companyId;
         $account = $this->protocol->accountId;
-        $this->protocolRef = (new Net\FreezeNetQualityProtocolAction($artifacts->writer, $artifacts->reader, new DbalNetForecastArtifactRepository($db), $artifacts->clock, '123-aaaaaaa'))($company, $account, $this->protocol);
+        $this->protocolRef = (new Net\FreezeNetQualityProtocolAction($artifacts->writer, $artifacts->reader, new DbalNetForecastArtifactRepository($db), $artifacts->clock, '123-aaaaaaa', str_repeat('a', 40)))($company, $account, $this->protocol);
         $request = new Net\NetForwardCaptureRequest($selected, $planId, $from, $to, qualityProtocolId: $this->protocolRef->requestId, qualityProtocolHash: $this->protocolRef->sha256);
         $this->context = (new Net\NetQualityProtocolReader($artifacts->reader))->forCapture($company, $account, $request, $this->protocolRef, new Net\NetQualityBudget());
         $epoch = $targets->epoch;
         $epochs = new NetForecastCaptureEpochs(json_encode([['epochId' => $epoch->id, 'captureVersion' => $epoch->captureVersion, 'startUtc' => $epoch->start->format('Y-m-d\TH:i:s\Z'), 'endUtc' => null, 'cutoverRelease' => $epoch->cutoverRelease]], \JSON_THROW_ON_ERROR));
         $readTraining = new Net\ReadNetTrainingAction($db, new Query\GrossTrainingAggregateQuery($db), new Query\ReturnTrainingAggregateQuery($db), $epochs, new MockClock($at));
-        $prepare = new Net\PrepareNetForecastCaptureAction($db, new Net\ReadNetForecastInputsAction($db, $readTraining, new Query\NetTargetQuery($db)), $aggregate, new Query\NetForwardEvidenceQuery($db), new Query\NetForwardBaselineQuery($db), new BuyoutMaturityQuery($db), new SalesCohortSeriesQuery($db, new SalesCohortMetricsQuery($db), new SalesCohortCoverageQuery($db)), $artifacts->codec, new Net\NetForwardInputCodec(), '123-aaaaaaa');
+        $prepare = new Net\PrepareNetForecastCaptureAction($db, new Net\ReadNetForecastInputsAction($db, $readTraining, new Query\NetTargetQuery($db)), $aggregate, new Query\NetForwardEvidenceQuery($db), new Query\NetForwardBaselineQuery($db), new BuyoutMaturityQuery($db), new SalesCohortSeriesQuery($db, new SalesCohortMetricsQuery($db), new SalesCohortCoverageQuery($db)), $artifacts->codec, new Net\NetForwardInputCodec(), '123-aaaaaaa', str_repeat('a', 40));
         $plan = new Net\NetForwardPlanContext($planId, 1, 1, $planId, 1, 'retained_sales', 'RUB', $from, ['SKU'], [['sku' => 'SKU', 'points' => []]]);
         $prepared = (new Net\NetTrainingSnapshot($db))->read(fn () => $prepare($company, $account, $request, $plan, (int) (hrtime(true) + 30000000000), $this->context));
         $verified = ($artifacts->publisher)($company, $account, $prepared);

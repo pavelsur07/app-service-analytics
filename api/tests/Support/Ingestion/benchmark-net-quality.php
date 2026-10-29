@@ -120,7 +120,7 @@ $company = $protocol->companyId;
 $account = $protocol->accountId;
 $receipt = ['status' => 'incomplete', 'fixtureOnly' => true, 'scope' => 'selector_evaluator_synthetic_disk_adapter'];
 try {
-    $protocolRef = (new Net\FreezeNetQualityProtocolAction($writer, $reader, $repository, $clock, '123-aaaaaaa'))($company, $account, $protocol);
+    $protocolRef = (new Net\FreezeNetQualityProtocolAction($writer, $reader, $repository, $clock, '123-aaaaaaa', str_repeat('a', 40)))($company, $account, $protocol);
     $profile = new NetQualityResourceProfile($protocol, $publisher, $codec, $inputCodec);
     $inputs = [];
     $inputReceipts = [];

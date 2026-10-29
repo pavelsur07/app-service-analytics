@@ -34,7 +34,8 @@ final class NetQualityArtifactTest extends KernelTestCase
             /** @var array<string, string> */
             public array $objects = [];
 
-            public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body): void
+            /** @param (\Closure(int): void)|null $beforeRead */
+            public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body, ?\Closure $beforeRead = null): void
             {
                 $key->assertScope($companyId, $accountId);
                 $this->objects[$key->toString()] = $body;

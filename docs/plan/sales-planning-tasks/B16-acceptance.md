@@ -141,7 +141,7 @@ QUALITY_PASSED само по себе не открывает gate. В стро�
 отмечаются только по собственным receipts.
 
 - [x] `make lint stan deptrac structure-check` — PASS (final-gates2).
-- [x] `make test-unit test-int test-func TEST_WORKERS=2` — PASS (779/866/383 tests).
+- [x] `make test-unit test-int test-func TEST_WORKERS=2` — PASS (780/868/383 tests).
 - [x] `make db-rebuild-check TEST_WORKERS=2` — PASS на подтверждённых LOCAL томах;
   уничтожение локальных volumes не затронуло чужое окружение/данные.
 - [x] `make api-types-check` — PASS, public API/OpenAPI/TS не изменены;

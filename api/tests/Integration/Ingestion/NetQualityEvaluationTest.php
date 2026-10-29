@@ -57,7 +57,7 @@ final class NetQualityEvaluationTest extends KernelTestCase
             $inventories = new Net\NetQualityInventoryReader($f->artifacts->reader);
             $repository = new \App\Ingestion\Infrastructure\Persistence\DbalNetForecastArtifactRepository($db);
             $command = new \App\Ingestion\Ui\Command\EvaluateNetForecastQualityCommand(
-                new Net\FreezeNetQualityProtocolAction($f->artifacts->writer, $f->artifacts->reader, $repository, $f->artifacts->clock, '123-aaaaaaa'),
+                new Net\FreezeNetQualityProtocolAction($f->artifacts->writer, $f->artifacts->reader, $repository, $f->artifacts->clock, '123-aaaaaaa', str_repeat('a', 40)),
                 new Net\SealNetQualityInventoryAction($f->artifacts->writer, $f->artifacts->reader, $protocols, $repository, $f->artifacts->clock),
                 new Net\SelectNetQualityObservationsAction($f->artifacts->reader, $inventories, $protocols, new Net\NetQualityInputReader($f->artifacts->reader, new Net\NetForwardInputCodec()), new Net\NetQualitySelection(), $f->artifacts->writer),
                 $evaluate,
@@ -94,6 +94,36 @@ final class NetQualityEvaluationTest extends KernelTestCase
             self::assertEquals(['numerator' => '0', 'denominator' => '1'], $overall['metrics']['method']['mae']);
         } finally {
             $db->forbidSourceQueries = false;
+            $f->cleanup();
+            $db->close();
+        }
+    }
+
+    public function testLaterRealSourceCorrectionInvalidatesAnEarlierReadyTruth(): void
+    {
+        self::bootKernel(['debug' => false]);
+        $connection = self::getContainer()->get(Connection::class);
+        self::assertInstanceOf(Connection::class, $connection);
+        $params = $connection->getParams();
+        unset($params['wrapperClass']);
+        $db = DriverManager::getConnection($params);
+        $aggregate = self::getContainer()->get(Net\AggregateNetForecastAction::class);
+        self::assertInstanceOf(Net\AggregateNetForecastAction::class, $aggregate);
+        $f = new NetQualityForwardFixture($db, $aggregate, [7, 70, 75]);
+        try {
+            $selection = $f->selection();
+            $pending = $f->truth(7);
+            $ready = $f->truth(70);
+            $f->targets->delivered('TARGET', 'SKU', 11, $f->targets->readAt->modify('-1 day'), day: $f->targets->readAt->modify('-2 days')->setTime(0, 0), amount: \App\Shared\Domain\ValueObject\Money::ofMinor(7, 'RUB'));
+            $corrected = $f->truth(75);
+            $inventory = $f->truthInventory([$pending, $ready, $corrected]);
+            $evaluate = new Net\EvaluateNetForecastQualityAction($f->artifacts->reader, new Net\NetQualityProtocolReader($f->artifacts->reader), new Net\NetQualityInventoryReader($f->artifacts->reader), new Net\NetQualityTruthReader($f->artifacts->reader, new Net\NetForwardInputCodec()), $f->artifacts->writer, new Net\NetQualityMetrics(), new Net\NetQualityDecision(), new Net\NetForwardManifestCodec(), new Net\NetQualityReportCodec(), '123-aaaaaaa');
+            $result = $evaluate($f->protocol->companyId, $f->protocol->accountId, $selection, $inventory, Uuid::v7()->toRfc4122());
+            self::assertSame('INVALID_EVIDENCE', $result->decision);
+            [, $report] = (new Net\NetQualityArtifactPayloadReader($f->artifacts->reader))->read($f->protocol->companyId, $f->protocol->accountId, $result->reportRef, 'quality_report', new Net\NetQualityBudget());
+            self::assertIsArray($report['violations']);
+            self::assertContains('selected_truth_invalidated', $report['violations']);
+        } finally {
             $f->cleanup();
             $db->close();
         }

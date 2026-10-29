@@ -22,7 +22,7 @@ use Symfony\Component\Uid\Uuid;
 
 final readonly class PrepareNetForecastCaptureAction
 {
-    public function __construct(private Connection $connection, private ReadNetForecastInputsAction $inputs, private AggregateNetForecastAction $aggregate, private NetForwardEvidenceQuery $evidence, private NetForwardBaselineQuery $baseline, private BuyoutMaturityQuery $maturity, private SalesCohortSeriesQuery $legacy, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputCodec, #[Autowire('%app.version%')] private string $softwareRelease)
+    public function __construct(private Connection $connection, private ReadNetForecastInputsAction $inputs, private AggregateNetForecastAction $aggregate, private NetForwardEvidenceQuery $evidence, private NetForwardBaselineQuery $baseline, private BuyoutMaturityQuery $maturity, private SalesCohortSeriesQuery $legacy, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputCodec, #[Autowire('%app.version%')] private string $softwareRelease, #[Autowire('%app.source_commit%')] private string $sourceCommit = '')
     {
     }
 
@@ -36,6 +36,9 @@ final readonly class PrepareNetForecastCaptureAction
         }
         if ((null === $request->qualityProtocolId) !== (null === $quality)) {
             throw new \DomainException('Protocol-bound capture requires a verified pre-snapshot context.');
+        }
+        if (null !== $quality && $this->sourceCommit !== $quality->protocol->data['codeCommit']) {
+            throw new \DomainException('Capture producer does not match the exact registered commit.');
         }
         $spool = new NetForwardSpool($this->codec, $deadlineNs);
         $snapshotId = $this->connection->fetchOne('SELECT txid_current_snapshot()::text');
@@ -108,6 +111,7 @@ final readonly class PrepareNetForecastCaptureAction
         $rootData = ['companyId' => $companyId, 'marketplaceAccountId' => $accountId, 'kind' => 'input', 'requestId' => $request->requestId, 'requestHash' => $request->hash(), 'attemptId' => $attemptId, 'readAtUtc' => $readAt->format('Y-m-d\TH:i:s.u\Z'), 'parent' => null, 'chunks' => $spool->descriptors(), 'metadata' => ['model' => ObservedReturnCurve::MODEL_VERSION, 'training' => NetTrainingContext::MODEL_VERSION, 'coverage' => NetTrainingContext::COVERAGE_POLICY, 'capture' => $context?->epoch->captureVersion, 'epoch' => $this->inputCodec->pack($context?->epoch), 'snapshot' => $snapshotId, 'softwareRelease' => $this->softwareRelease, 'timezone' => 'Europe/Moscow', 'horizonDays' => 60, 'reportingLagDays' => 7, 'groupBy' => $request->groupBy, 'publicPolicy' => 'validation_pending', 'sourceReason' => $training->unavailableReason, 'modelCaps' => ['computeSeconds' => 5, 'peakBytes' => 100663296, 'allocationBytes' => 50331648, 'reserveBytes' => 8388608, 'outputBytes' => 33554432, 'digits' => 16384], 'artifactCaps' => ['wallSeconds' => 30, 'chunkBytes' => 1048576, 'chunks' => 128, 'pageRows' => NetForwardEvidenceQuery::PAGE_SIZE, 'spoolBytes' => 136314880]]];
         if (null !== $quality) {
             $rootData['metadata']['qualityProtocol'] = $quality->metadata();
+            $rootData['metadata']['codeCommit'] = $this->sourceCommit;
         }
         $root = $this->codec->encode($rootData);
         $spool->guard();

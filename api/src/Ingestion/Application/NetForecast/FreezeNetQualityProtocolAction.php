@@ -11,7 +11,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 final readonly class FreezeNetQualityProtocolAction
 {
-    public function __construct(private NetQualityArtifactWriter $writer, private NetForwardArtifactReader $reader, private NetForecastArtifactRepository $repository, private ClockInterface $clock, #[Autowire('%app.version%')] private string $softwareRelease)
+    public function __construct(private NetQualityArtifactWriter $writer, private NetForwardArtifactReader $reader, private NetForecastArtifactRepository $repository, private ClockInterface $clock, #[Autowire('%app.version%')] private string $softwareRelease, #[Autowire('%app.source_commit%')] private string $sourceCommit = '')
     {
     }
 
@@ -30,10 +30,11 @@ final readonly class FreezeNetQualityProtocolAction
             return new NetQualityArtifactRef(NetForwardArtifactKind::QualityProtocol, $protocol->protocolId, $winner->publication->root->sha256);
         }
         $start = NetQualitySchema::utc(NetQualitySchema::string($protocol->data, 'captureFromUtc'));
-        if ($start <= $this->clock->now() || !str_ends_with($this->softwareRelease, substr(NetQualitySchema::string($protocol->data, 'codeCommit'), 0, 7))) {
+        $holdout = new \DateTimeImmutable(NetQualitySchema::string($protocol->data, 'holdoutFrom'), new \DateTimeZone('Europe/Moscow'));
+        if ($start <= $this->clock->now() || $holdout <= $this->clock->now() || $this->sourceCommit !== $protocol->data['codeCommit'] || !str_ends_with($this->softwareRelease, substr(NetQualitySchema::string($protocol->data, 'codeCommit'), 0, 7))) {
             throw new \DomainException('Freeze requires future captures and the deployed code commit.');
         }
 
-        return $this->writer->publish($companyId, $accountId, new NetQualityArtifactDocument(NetForwardArtifactKind::QualityProtocol, $protocol->protocolId, $requestHash, null, ['schema' => 'net_quality_protocol_v1', 'softwareRelease' => $this->softwareRelease], [['type' => 'quality_protocol', 'row' => ['value' => $protocol->data]]]), $budget);
+        return $this->writer->publish($companyId, $accountId, new NetQualityArtifactDocument(NetForwardArtifactKind::QualityProtocol, $protocol->protocolId, $requestHash, null, ['schema' => 'net_quality_protocol_v1', 'softwareRelease' => $this->softwareRelease, 'codeCommit' => $this->sourceCommit], [['type' => 'quality_protocol', 'row' => ['value' => $protocol->data]]]), $budget);
     }
 }

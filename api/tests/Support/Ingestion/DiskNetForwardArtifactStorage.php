@@ -24,7 +24,8 @@ final class DiskNetForwardArtifactStorage implements NetForwardArtifactStorage
         $this->directory = $path;
     }
 
-    public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body): void
+    /** @param (\Closure(int): void)|null $beforeRead */
+    public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body, ?\Closure $beforeRead = null): void
     {
         $key->assertScope($companyId, $accountId);
         if (hash('sha256', $body) !== $key->sha256) {
@@ -35,6 +36,10 @@ final class DiskNetForwardArtifactStorage implements NetForwardArtifactStorage
             throw new \RuntimeException('Cannot write profile object.');
         }
         chmod($path, 0600);
+        $beforeRead?->__invoke(\strlen($body));
+        if ($this->get($companyId, $accountId, $key, \strlen($body)) !== $body) {
+            throw new \UnexpectedValueException('Profile readback mismatch.');
+        }
     }
 
     public function get(string $companyId, string $accountId, NetForwardArtifactKey $key, int $maxBytes): string

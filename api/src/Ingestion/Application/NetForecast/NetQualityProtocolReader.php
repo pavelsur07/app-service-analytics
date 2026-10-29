@@ -52,7 +52,8 @@ final readonly class NetQualityProtocolReader
                 $protocol = new NetQualityProtocol($value);
             }
         }
-        if (null === $protocol || $protocol->protocolId !== $ref->requestId || $protocol->companyId !== $companyId || $protocol->accountId !== $accountId || $artifact->readAt >= NetQualitySchema::utc(NetQualitySchema::string($protocol->data, 'captureFromUtc'))) {
+        $metadata = $artifact->manifest['metadata'];
+        if (null === $protocol || !\is_array($metadata) || ($metadata['codeCommit'] ?? null) !== ($protocol->data['codeCommit'] ?? null) || $protocol->protocolId !== $ref->requestId || $protocol->companyId !== $companyId || $protocol->accountId !== $accountId || $artifact->readAt >= NetQualitySchema::utc(NetQualitySchema::string($protocol->data, 'captureFromUtc'))) {
             throw new \UnexpectedValueException('Protocol scope or pre-registration mismatch.');
         }
 

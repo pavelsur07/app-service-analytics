@@ -15,6 +15,31 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 #[SkipDatabaseRollback]
 final class NetQualityProtocolTest extends KernelTestCase
 {
+    public function testFreezeRejectsPastHoldoutAndCommitWithOnlyTheSameShortPrefix(): void
+    {
+        self::bootKernel(['debug' => false]);
+        $connection = self::getContainer()->get(Connection::class);
+        self::assertInstanceOf(Connection::class, $connection);
+        $params = $connection->getParams();
+        unset($params['wrapperClass']);
+        $f = new NetQualityArtifactFixture(DriverManager::getConnection($params));
+        $repository = new \App\Ingestion\Infrastructure\Persistence\DbalNetForecastArtifactRepository($f->db);
+        $freeze = new Net\FreezeNetQualityProtocolAction($f->writer, $f->reader, $repository, $f->clock, '123-aaaaaaa', str_repeat('a', 40));
+        foreach ([NetQualityProtocolBuilder::aProtocol()->with('holdoutFrom', '2026-12-16')->build(), NetQualityProtocolBuilder::aProtocol()->with('holdoutFrom', '2027-01-02')->with('codeCommit', str_repeat('a', 7).str_repeat('b', 33))->build()] as $protocol) {
+            try {
+                try {
+                    $freeze($protocol->companyId, $protocol->accountId, $protocol);
+                    self::fail('Past holdout and a partial SHA match must be rejected.');
+                } catch (\DomainException) {
+                    self::assertNull($repository->find($protocol->companyId, $protocol->accountId, \App\Ingestion\Domain\NetForwardArtifactKind::QualityProtocol, $protocol->protocolId));
+                }
+            } finally {
+                $f->cleanup($protocol->companyId, $protocol->accountId);
+            }
+        }
+        $f->db->close();
+    }
+
     public function testFreezePrecedesCaptureAndProtocolVerificationCannotRunInSnapshot(): void
     {
         self::bootKernel(['debug' => false]);
@@ -25,7 +50,7 @@ final class NetQualityProtocolTest extends KernelTestCase
         $f = new NetQualityArtifactFixture(DriverManager::getConnection($params));
         $protocol = NetQualityProtocolBuilder::aProtocol()->build();
         try {
-            $freeze = new Net\FreezeNetQualityProtocolAction($f->writer, $f->reader, new \App\Ingestion\Infrastructure\Persistence\DbalNetForecastArtifactRepository($f->db), $f->clock, '123-aaaaaaa');
+            $freeze = new Net\FreezeNetQualityProtocolAction($f->writer, $f->reader, new \App\Ingestion\Infrastructure\Persistence\DbalNetForecastArtifactRepository($f->db), $f->clock, '123-aaaaaaa', str_repeat('a', 40));
             $ref = $freeze($protocol->companyId, $protocol->accountId, $protocol);
             $protocols = new Net\NetQualityProtocolReader($f->reader);
             $request = new Net\NetForwardCaptureRequest($protocol->slots[0]['requestId'], $protocol->planId, $protocol->from, $protocol->to, qualityProtocolId: $ref->requestId, qualityProtocolHash: $ref->sha256);

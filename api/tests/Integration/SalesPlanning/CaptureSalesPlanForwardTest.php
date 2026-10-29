@@ -32,6 +32,9 @@ final class CaptureSalesPlanForwardTest extends KernelTestCase
         unset($params['wrapperClass']);
         $f = new \App\Tests\Support\Ingestion\NetQualityArtifactFixture(\Doctrine\DBAL\DriverManager::getConnection($params));
         self::getContainer()->set(NetForwardArtifactStorage::class, $f->storage);
+        $previousSourceServer = $_SERVER['APP_SOURCE_COMMIT'] ?? null;
+        $previousSourceEnv = $_ENV['APP_SOURCE_COMMIT'] ?? null;
+        $_SERVER['APP_SOURCE_COMMIT'] = $_ENV['APP_SOURCE_COMMIT'] = str_repeat('a', 40);
         /** @var SalesPlanRepository $plans */
         $plans = self::getContainer()->get(SalesPlanRepository::class);
         $plan = SalesPlanBuilder::aSalesPlan()->withPeriod(new \DateTimeImmutable('2026-12-01'), new \DateTimeImmutable('2027-01-17'))->withMetric(SalesPlanMetric::RetainedSales)->build();
@@ -43,7 +46,7 @@ final class CaptureSalesPlanForwardTest extends KernelTestCase
         $protocol = \App\Tests\Support\Builder\NetQualityProtocolBuilder::aProtocol()->with('companyId', $company)->with('accountId', $account)->with('planId', $id)->with('baselineId', $id)->build();
         try {
             $plans->add($plan, $lines);
-            $freeze = new \App\Ingestion\Application\NetForecast\FreezeNetQualityProtocolAction($f->writer, $f->reader, new \App\Ingestion\Infrastructure\Persistence\DbalNetForecastArtifactRepository($f->db), $f->clock, '123-aaaaaaa');
+            $freeze = new \App\Ingestion\Application\NetForecast\FreezeNetQualityProtocolAction($f->writer, $f->reader, new \App\Ingestion\Infrastructure\Persistence\DbalNetForecastArtifactRepository($f->db), $f->clock, '123-aaaaaaa', str_repeat('a', 40));
             $ref = $freeze($company, $account, $protocol);
             /** @var CaptureSalesPlanForwardAction $capture */
             $capture = self::getContainer()->get(CaptureSalesPlanForwardAction::class);
@@ -65,6 +68,17 @@ final class CaptureSalesPlanForwardTest extends KernelTestCase
                 $db->executeStatement('DELETE FROM '.$table.' WHERE company_id = ?', [$company]);
             }
             $f->db->close();
+            self::ensureKernelShutdown();
+            if (null === $previousSourceServer) {
+                unset($_SERVER['APP_SOURCE_COMMIT']);
+            } else {
+                $_SERVER['APP_SOURCE_COMMIT'] = $previousSourceServer;
+            }
+            if (null === $previousSourceEnv) {
+                unset($_ENV['APP_SOURCE_COMMIT']);
+            } else {
+                $_ENV['APP_SOURCE_COMMIT'] = $previousSourceEnv;
+            }
         }
     }
 
@@ -75,7 +89,8 @@ final class CaptureSalesPlanForwardTest extends KernelTestCase
             /** @var array<string, string> */
             private array $objects = [];
 
-            public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body): void
+            /** @param (\Closure(int): void)|null $beforeRead */
+            public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body, ?\Closure $beforeRead = null): void
             {
                 $key->assertScope($companyId, $accountId);
                 $this->objects[$key->toString()] = $body;

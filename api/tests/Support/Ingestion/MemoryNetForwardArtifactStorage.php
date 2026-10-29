@@ -14,7 +14,8 @@ final class MemoryNetForwardArtifactStorage implements NetForwardArtifactStorage
     public array $objects = [];
     public bool $failReportWrites = false;
 
-    public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body): void
+    /** @param (\Closure(int): void)|null $beforeRead */
+    public function putContent(string $companyId, string $accountId, NetForwardArtifactKey $key, string $body, ?\Closure $beforeRead = null): void
     {
         $key->assertScope($companyId, $accountId);
         if ($this->failReportWrites && \App\Ingestion\Domain\NetForwardArtifactKind::QualityReport === $key->kind) {
@@ -24,6 +25,10 @@ final class MemoryNetForwardArtifactStorage implements NetForwardArtifactStorage
             throw new \UnexpectedValueException('Test storage hash mismatch.');
         }
         $this->objects[$key->toString()] = $body;
+        $beforeRead?->__invoke(\strlen($body));
+        if ($this->get($companyId, $accountId, $key, \strlen($body)) !== $body) {
+            throw new \UnexpectedValueException('Test readback mismatch.');
+        }
     }
 
     public function get(string $companyId, string $accountId, NetForwardArtifactKey $key, int $maxBytes): string
