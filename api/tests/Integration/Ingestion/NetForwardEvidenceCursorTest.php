@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Ingestion;
 
 use App\Ingestion\Application\NetForecast\AggregateNetForecastAction;
+use App\Ingestion\Application\NetForecast\ReadNetForwardEvidenceAction;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetForwardEvidenceQuery;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetRequest;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTrainingContext;
@@ -42,7 +43,7 @@ final class NetForwardEvidenceCursorTest extends KernelTestCase
                 } while (NetForwardEvidenceQuery::PAGE_SIZE === \count($rows));
                 $actual = hash_init('sha256');
                 $seen = 0;
-                foreach ($query->pages($context->companyId, $context->accountId, $context, $request, $population) as $page) {
+                foreach ((new ReadNetForwardEvidenceAction($db, $query))->pages($context->companyId, $context->accountId, $context, $request, $population) as $page) {
                     self::assertLessThanOrEqual(200, \count($page));
                     self::assertCount(1, $db->fetchFirstColumn("SELECT name FROM pg_cursors WHERE name LIKE 'net_evidence_%'"));
                     foreach ($page as $row) {
@@ -57,7 +58,7 @@ final class NetForwardEvidenceCursorTest extends KernelTestCase
                     self::assertGreaterThan(200, $seen, 'Exercise more than one page.');
                 }
             }
-            $pages = $query->pages($context->companyId, $context->accountId, $context, $request, 'gross');
+            $pages = (new ReadNetForwardEvidenceAction($db, $query))->pages($context->companyId, $context->accountId, $context, $request, 'gross');
             $pages->rewind();
             self::assertCount(1, $db->fetchFirstColumn("SELECT name FROM pg_cursors WHERE name LIKE 'net_evidence_%'"));
             unset($pages);
@@ -84,7 +85,7 @@ final class NetForwardEvidenceCursorTest extends KernelTestCase
             $context = new NetTrainingContext($f->protocol->companyId, $f->protocol->accountId, $f->targets->readAt, $f->targets->epoch, $snapshot);
             $request = new NetTargetRequest(['SKU'], new \DateTimeImmutable($f->protocol->from), new \DateTimeImmutable($f->protocol->to), new \DateTimeImmutable($f->protocol->from));
             try {
-                foreach ((new NetForwardEvidenceQuery($db))->pages($context->companyId, $context->accountId, $context, $request, 'gross') as $page) {
+                foreach ((new ReadNetForwardEvidenceAction($db, new NetForwardEvidenceQuery($db)))->pages($context->companyId, $context->accountId, $context, $request, 'gross') as $page) {
                     self::assertLessThanOrEqual(200, \count($page));
                 }
                 self::fail('An oversized evidence page cannot be transferred or silently omitted.');

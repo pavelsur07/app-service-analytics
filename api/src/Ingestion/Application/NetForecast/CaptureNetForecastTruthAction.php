@@ -16,7 +16,6 @@ use App\Ingestion\Domain\ValueObject\NetForwardTerminalCoverage;
 use App\Ingestion\Domain\ValueObject\NetForwardTruth;
 use App\Ingestion\Domain\ValueObject\NetForwardTruthResult;
 use App\Ingestion\Infrastructure\Config\NetForecastCaptureEpochs;
-use App\Ingestion\Infrastructure\Query\NetForecast\NetForwardEvidenceQuery;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetDayRow;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetGroupRow;
 use App\Ingestion\Infrastructure\Query\NetForecast\NetTargetPartRow;
@@ -34,7 +33,7 @@ use Symfony\Component\Uid\Uuid;
 /** New observation and new immutable artifact; input and previous truth never mutate. */
 final readonly class CaptureNetForecastTruthAction
 {
-    public function __construct(private Connection $connection, private NetForecastArtifactRepository $repository, private NetForwardArtifactReader $reader, private PublishNetForecastCaptureAction $publish, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputs, private NetForecastCaptureEpochs $epochs, private NetTargetQuery $targets, private NetForwardEvidenceQuery $evidence, private ClockInterface $clock = new NativeClock(), #[Autowire('%app.version%')] private string $softwareRelease = 'unversioned', private QueryTelemetry $telemetry = new QueryTelemetry())
+    public function __construct(private Connection $connection, private NetForecastArtifactRepository $repository, private NetForwardArtifactReader $reader, private PublishNetForecastCaptureAction $publish, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputs, private NetForecastCaptureEpochs $epochs, private NetTargetQuery $targets, private ReadNetForwardEvidenceAction $evidence, private ClockInterface $clock = new NativeClock(), #[Autowire('%app.version%')] private string $softwareRelease = 'unversioned', private QueryTelemetry $telemetry = new QueryTelemetry())
     {
     }
 

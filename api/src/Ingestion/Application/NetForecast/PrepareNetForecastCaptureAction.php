@@ -23,7 +23,7 @@ use Symfony\Component\Uid\Uuid;
 
 final readonly class PrepareNetForecastCaptureAction
 {
-    public function __construct(private Connection $connection, private ReadNetForecastInputsAction $inputs, private AggregateNetForecastAction $aggregate, private NetForwardEvidenceQuery $evidence, private NetForwardBaselineQuery $baseline, private BuyoutMaturityQuery $maturity, private SalesCohortSeriesQuery $legacy, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputCodec, #[Autowire('%app.version%')] private string $softwareRelease, #[Autowire('%app.source_commit%')] private string $sourceCommit = '', private QueryTelemetry $telemetry = new QueryTelemetry())
+    public function __construct(private Connection $connection, private ReadNetForecastInputsAction $inputs, private AggregateNetForecastAction $aggregate, private ReadNetForwardEvidenceAction $evidence, private NetForwardBaselineQuery $baseline, private BuyoutMaturityQuery $maturity, private SalesCohortSeriesQuery $legacy, private NetForwardManifestCodec $codec, private NetForwardInputCodec $inputCodec, #[Autowire('%app.version%')] private string $softwareRelease, #[Autowire('%app.source_commit%')] private string $sourceCommit = '', private QueryTelemetry $telemetry = new QueryTelemetry())
     {
     }
 
