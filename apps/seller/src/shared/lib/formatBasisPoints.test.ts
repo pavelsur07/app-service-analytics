@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { formatBasisPoints } from './formatBasisPoints'
 
 describe('formatBasisPoints', () => {
+  it('can put the percent unit in a row header without changing the value', () => {
+    expect(formatBasisPoints(-125, { withUnit: false })).toBe('−1,25')
+    expect(formatBasisPoints(9007199254740991, { withUnit: false })).toBe(
+      '90071992547409,91',
+    )
+  })
   it('показывает целые и дробные проценты без хвостовых нулей', () => {
     expect(formatBasisPoints(5000)).toBe('50%')
     expect(formatBasisPoints(4546)).toBe('45,46%')

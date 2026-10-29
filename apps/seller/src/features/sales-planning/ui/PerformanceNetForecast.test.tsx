@@ -1,7 +1,22 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { netPerformanceFixture } from '../../../../tests/fixtures/salesPerformance'
-import { PerformanceNetForecast } from './PerformanceNetForecast'
+import { PerformanceNetForecast as MetricRows } from './PerformanceNetForecast'
+import { performanceColumns } from '../../../../tests/fixtures/performanceColumns'
+import type { components } from '../../../api/schema'
+
+function PerformanceNetForecast({
+  cohort,
+}: {
+  cohort: components['schemas']['PerformanceCohortResponse'] | null | undefined
+}) {
+  return (
+    <MetricRows
+      columns={performanceColumns({ cohort: cohort ?? null })}
+      currency="RUB"
+    />
+  )
+}
 
 const cohort = netPerformanceFixture.skus[0]?.points[0]?.period.cohort
 if (cohort == null) throw new Error('Missing synthetic net cohort')
@@ -24,7 +39,7 @@ describe('independent net quantity and revenue', () => {
       expectedNetRevenue: null,
       netForecastMoneyUnavailableReason: 'money_price_missing',
     })
-    expect(result).toContain('90,125 шт.')
+    expect(result).toContain('>90,125<')
     expect(result).toContain('Нет цены исходной продажи')
     expect(result).not.toContain('Нетто-прогноз недоступен')
     expect(result).not.toContain('Продажи и выручка:')
@@ -46,7 +61,7 @@ describe('independent net quantity and revenue', () => {
       expectedNetSalesQuantity: '0.000',
       expectedNetRevenue: { minor: '0', currency: 'RUB', fractionDigits: 2 },
     })
-    expect(zeros).toContain('0,000 шт.')
+    expect(zeros).toContain('>0,000<')
     expect(zeros).toContain('0,00')
   })
 
@@ -72,7 +87,7 @@ describe('independent net quantity and revenue', () => {
       expectedNetRevenue: { minor: '01', currency: 'RUB', fractionDigits: 2 },
     })
     expect(invalid).toContain('Нетто-выручка недоступна.')
-    expect(invalid).toContain('90,125 шт.')
+    expect(invalid).toContain('>90,125<')
     expect(invalid).not.toContain('0,01')
   })
 
@@ -146,12 +161,8 @@ it('keeps different local reasons and distinct quality information while removin
     },
   })
   expect(result).not.toContain('Продажи и выручка:')
-  expect(result).toMatch(
-    /Ожидаемые нетто-продажи<\/dt><dd[^>]*>—<\/dd><dd[^>]*>История наблюдений/,
-  )
-  expect(result).toMatch(
-    /Ожидаемая нетто-выручка<\/dt><dd>—<\/dd><dd[^>]*>Нет цены/,
-  )
+  expect(result).toMatch(/<p>Количество: История наблюдений/)
+  expect(result).toMatch(/<p>Выручка: Нет цены/)
   expect(
     result.match(/История наблюдений для нетто-прогноза недоступна/g),
   ).toHaveLength(1)

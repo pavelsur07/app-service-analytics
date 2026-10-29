@@ -47,7 +47,7 @@ it('reads shared URL period/cumulative/page and resets a stale header cursor bef
         </MemoryRouter>
       </QueryClientProvider>,
     )
-    expect(html).toContain('2000 шт.')
+    expect(html).toContain('>2000<')
     expect(html).toContain('Окно: 2026-07-01')
     expect(html).toContain('Накопительно')
     expect(html.match(/Методика нетто-прогноза/g)).toHaveLength(1)
@@ -100,7 +100,7 @@ it('hides cached net while a different company/version/cursor is loading', () =>
     ).queryKey,
     netPerformanceFixture,
   )
-  expect(page(client)).toContain('90,125 шт.')
+  expect(page(client)).toContain('>90,125<')
   for (const [company, version, cursor] of [
     ['two', 7, null],
     ['one', 8, null],
@@ -108,7 +108,7 @@ it('hides cached net while a different company/version/cursor is loading', () =>
   ] as const) {
     const html = page(client, company, version, cursor)
     expect(html).toContain('Загружаем сравнение')
-    expect(html).not.toContain('90,125 шт.')
+    expect(html).not.toContain('>90,125<')
     expect(html).not.toContain('Методика нетто-прогноза')
   }
   client.clear()
@@ -145,7 +145,7 @@ it.each([403, 404, 409] as const)(
     await expect(client.fetchQuery(options)).rejects.toMatchObject({ status })
     const html = page(client)
     expect(html).toContain('Перечитать план')
-    expect(html).not.toContain('90,125 шт.')
+    expect(html).not.toContain('>90,125<')
     expect(html).not.toContain('Методика нетто-прогноза')
     server.use(
       http.get(
@@ -157,7 +157,7 @@ it.each([403, 404, 409] as const)(
     expect(page(client)).toContain(
       'Проверка качества прогноза ещё не завершена',
     )
-    expect(page(client)).not.toContain('90,125 шт.')
+    expect(page(client)).not.toContain('>90,125<')
     client.clear()
   },
 )

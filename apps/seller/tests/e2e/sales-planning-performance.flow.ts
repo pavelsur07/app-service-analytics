@@ -90,12 +90,23 @@ function planId(page: Page): string {
     throw new Error('Plan route was not opened.')
   return id
 }
-function metric(cell: Locator, label: string): Locator {
-  return cell
-    .locator('dt')
-    .filter({ hasText: new RegExp(`^${label}$`) })
-    .locator('xpath=following-sibling::dd[1]')
+function metric(
+  group: Locator,
+  label: string,
+  position: 'first' | 'last' = 'last',
+): Locator {
+  const cells = group
+    .getByRole('row')
+    .filter({
+      has: group
+        .page()
+        .getByRole('rowheader')
+        .getByText(label, { exact: true }),
+    })
+    .getByRole('cell')
+  return position === 'first' ? cells.first() : cells.last()
 }
+
 async function setSku(
   page: Page,
   data: Fixture,
@@ -277,14 +288,13 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     .getByRole('button', { name: 'Выбрать весь сезон', exact: true })
     .click()
   await page.getByRole('button', { name: 'Показать', exact: true }).click()
-  const cell = region
-    .locator('tbody tr')
-    .filter({ hasText: data.sku })
-    .locator('td')
-    .last()
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9 шт.')
-  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('3 шт.')
-  await expect(metric(cell, 'Выручка по ценам продаж')).toHaveText(/300,00\s*₽/)
+  const cell = region.getByRole('rowgroup', {
+    name: `SKU ${data.sku}`,
+    exact: true,
+  })
+  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
+  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('3')
+  await expect(metric(cell, 'Выручка по ценам продаж')).toHaveText(/^300,00$/)
   await expect(metric(cell, 'Ожидаемые нетто-продажи')).toHaveText('—')
   for (const label of [
     'Ожидаемое количество по метрике цели',
@@ -344,7 +354,7 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   ).toHaveAttribute('aria-pressed', 'true')
   await page.getByLabel('Показать с', { exact: true }).fill(data.to)
   await page.getByRole('button', { name: 'Показать', exact: true }).click()
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9 шт.')
+  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
   const sharedUrl = page.url()
   await page.reload()
   await expect(page.getByLabel('Показать с', { exact: true })).toHaveValue(
@@ -353,14 +363,14 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect(
     page.getByRole('button', { name: 'Накопительно', exact: true }),
   ).toHaveAttribute('aria-pressed', 'true')
-  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('3 шт.')
+  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('3')
   await page.goBack()
   await expect(page.getByLabel('Показать с', { exact: true })).toHaveValue(
     data.from,
   )
   await page.goForward()
   await expect(page).toHaveURL(sharedUrl)
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9 шт.')
+  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
 
   await page
     .getByRole('button', { name: 'Создать новую версию', exact: true })
@@ -486,7 +496,7 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     .getByRole('button', { name: 'Выбрать весь сезон', exact: true })
     .click()
   await page.getByRole('button', { name: 'Показать', exact: true }).click()
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9 шт.')
+  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
   const revised = await performance(page, data, current)
   expect(revised.baselinePlanId).toBe(baseline)
   expect(revised.skus[0]?.points[0]?.period.planQuantity).toBe(9)
@@ -531,9 +541,9 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     )
     .toBe(true)
   await page.getByRole('button', { name: 'Обновить факт', exact: true }).click()
-  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('2 шт.')
-  await expect(metric(cell, 'Выручка по ценам продаж')).toHaveText(/200,00\s*₽/)
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9 шт.')
+  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('2')
+  await expect(metric(cell, 'Выручка по ценам продаж')).toHaveText(/^200,00$/)
+  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
   await expect(metric(cell, 'Ожидаемые нетто-продажи')).toHaveText('—')
   await expect(metric(cell, 'Ожидаемая нетто-выручка')).toHaveText('—')
   const returned = await performance(page, data, current)
@@ -578,8 +588,8 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
 
   await page.getByRole('button', { name: 'За интервал', exact: true }).click()
   for (const [day, quantity, revenue] of [
-    [data.from, '2 шт.', /200,00\s*₽/],
-    [data.to, '0 шт.', /^0,00\s*₽$/],
+    [data.from, '2', /^200,00$/],
+    [data.to, '0', /^0,00$/],
   ] as const) {
     await page.getByLabel('Показать с', { exact: true }).fill(day)
     await page.getByLabel('Показать по', { exact: true }).fill(day)
@@ -590,16 +600,16 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     await page.getByRole('button', { name: 'Показать', exact: true }).click()
     await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText(quantity)
     await expect(metric(cell, 'Выручка по ценам продаж')).toHaveText(revenue)
-    await expect(metric(cell, 'Исходная цель')).toHaveText('3 шт.')
+    await expect(metric(cell, 'Исходная цель')).toHaveText('3')
   }
   await page.getByRole('button', { name: 'Накопительно', exact: true }).click()
-  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('2 шт.')
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9 шт.')
+  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('2')
+  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
   await page
     .getByRole('button', { name: 'Выбрать весь сезон', exact: true })
     .click()
   await page.getByRole('button', { name: 'Показать', exact: true }).click()
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9 шт.')
+  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
 
   // The same cumulative goal was already visible for the single return day.
   // Wait for the new season response to render before installing a failure.
@@ -627,11 +637,12 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await page
     .getByRole('button', { name: 'Перечитать план', exact: true })
     .click()
-  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('2 шт.')
+  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('2')
   await expect(metric(cell, 'Ожидаемые нетто-продажи')).toHaveText('—')
   await expect(summary).toHaveCount(1)
   await page.unroute(url)
-  const netGroup = cell.locator('dl[aria-label="Нетто-прогноз"]').locator('..')
+  const netGroup = metric(cell, 'Доступность нетто-прогноза')
+  await netGroup.locator('summary').click()
   await expect(
     netGroup
       .locator('p')
@@ -838,6 +849,26 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect
     .poll(() => wide.evaluate((element) => element.scrollLeft))
     .toBeGreaterThan(0)
+  const pinnedMetric = wide
+    .getByRole('rowheader')
+    .filter({ hasText: /^Исходная цель/ })
+    .first()
+  const pinnedBefore = await pinnedMetric.boundingBox()
+  expect(pinnedBefore).not.toBeNull()
+  await wide.evaluate((element) => {
+    element.scrollLeft = 400
+  })
+  await expect
+    .poll(() => wide.evaluate((element) => element.scrollLeft))
+    .toBeGreaterThan(100)
+  const pinnedAfter = await pinnedMetric.boundingBox()
+  expect(pinnedAfter?.x).toBeCloseTo(pinnedBefore?.x ?? -1, 0)
+  await expect(
+    metric(
+      wide.getByRole('rowgroup', { name: `SKU ${data.sku}`, exact: true }),
+      'Исходная цель',
+    ),
+  ).not.toContainText('шт.')
   await wide.locator('thead').scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'var/b13-grid-header-wide.png' })
   const gridViewport = page.viewportSize()
@@ -854,12 +885,13 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await wide.locator('thead').scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'var/b13-grid-header-narrow.png' })
   if (gridViewport !== null) await page.setViewportSize(gridViewport)
-  const emptyFact = wide
-    .locator('tbody tr')
-    .filter({ hasText: data.sku })
-    .locator('td')
-    .first()
-  await expect(metric(emptyFact, 'Наблюдаемые продажи')).toHaveText('—')
+  const emptyFact = wide.getByRole('rowgroup', {
+    name: `SKU ${data.sku}`,
+    exact: true,
+  })
+  await expect(metric(emptyFact, 'Наблюдаемые продажи', 'first')).toHaveText(
+    '—',
+  )
 
   const conflict = await json<
     components['schemas']['SalesPlanCreatedResponse']

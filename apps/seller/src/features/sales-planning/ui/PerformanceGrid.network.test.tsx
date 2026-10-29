@@ -33,18 +33,18 @@ it('renders the real grid from a typed network response without recomputing metr
     ),
   )
   const html = renderToStaticMarkup(<PerformanceGrid data={data} />)
-  expect(html).toContain('950 шт.')
-  expect(html).toContain('700 шт.')
-  expect(html).toContain('350,000 шт./день')
-  expect(html).toContain('95%')
-  expect(html).toContain('900 шт.')
+  expect(html).toContain('>950<')
+  expect(html).toContain('>700<')
+  expect(html).toContain('>350,000<')
+  expect(html).toContain('>95<')
+  expect(html).toContain('>900<')
   expect(html).toContain('не является прогнозом итоговых продаж')
   const cumulative = renderToStaticMarkup(
     <PerformanceGrid data={data} mode="cumulative" />,
   )
-  expect(cumulative).toContain('2000 шт.')
+  expect(cumulative).toContain('>2000<')
   expect(cumulative).toContain('Заказы загружены частично')
-  expect(cumulative).not.toContain('700 шт.')
+  expect(cumulative).not.toContain('>700<')
   client.clear()
 })
 
@@ -95,8 +95,8 @@ it('keeps same-plan/SKU company net values isolated through the real client and 
   } as const
   try {
     for (const [company, expected, forbidden, amount] of [
-      ['one', '90,125 шт.', '3,000 шт.', '92 233 720 368 547 758,07'],
-      ['two', '3,000 шт.', '90,125 шт.', '-0,0001'],
+      ['one', '>90,125<', '>3,000<', '92 233 720 368 547 758,07'],
+      ['two', '>3,000<', '>90,125<', '-0,0001'],
     ]) {
       const data = await client.fetchQuery(
         performanceQueryOptions(company ?? '', 'plan', params, 7),
@@ -105,10 +105,8 @@ it('keeps same-plan/SKU company net values isolated through the real client and 
       expect(html).toContain(expected)
       expect(html).not.toContain(forbidden)
       expect(html).toContain(amount)
-      expect(html).toContain(company === 'one' ? '905,125 шт.' : '8,000 шт.')
-      expect(html).not.toContain(
-        company === 'one' ? '8,000 шт.' : '905,125 шт.',
-      )
+      expect(html).toContain(company === 'one' ? '>905,125<' : '>8,000<')
+      expect(html).not.toContain(company === 'one' ? '>8,000<' : '>905,125<')
     }
     expect(requests).toBe(2)
     expect(client.getQueryCache().getAll()).toHaveLength(2)
@@ -148,13 +146,13 @@ it('renders independent zero, unavailable money and hidden cumulative prefix fro
       ),
     )
     const html = renderToStaticMarkup(<PerformanceGrid data={actual} />)
-    expect(html).toContain('0,000 шт.')
+    expect(html).toContain('>0,000<')
     expect(html).toContain('Нет цены исходной продажи')
-    expect(html).toContain('70 шт.')
+    expect(html).toContain('>70<')
     const cumulative = renderToStaticMarkup(
       <PerformanceGrid data={actual} mode="cumulative" />,
     )
-    expect(cumulative).not.toContain('0,000 шт.')
+    expect(cumulative).not.toContain('>0,000<')
     expect(cumulative).toContain('Нет полных данных для нетто-прогноза')
   } finally {
     client.clear()

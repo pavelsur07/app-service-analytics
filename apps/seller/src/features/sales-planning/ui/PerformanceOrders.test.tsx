@@ -1,7 +1,17 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 import { performanceFixture } from '../../../../tests/fixtures/salesPerformance'
-import { PerformanceOrders } from './PerformanceOrders'
+import { PerformanceOrders as MetricRows } from './PerformanceOrders'
+import { performanceColumns } from '../../../../tests/fixtures/performanceColumns'
+import type { components } from '../../../api/schema'
+
+function PerformanceOrders({
+  cohort,
+}: {
+  cohort: components['schemas']['PerformanceCohortResponse'] | null | undefined
+}) {
+  return <MetricRows columns={performanceColumns({ cohort: cohort ?? null })} />
+}
 
 it('shows effective orders and their evidence, not sales or unestimated quantities', () => {
   const cohort = performanceFixture.skus[0]?.points[0]?.period.cohort

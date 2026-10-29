@@ -1,15 +1,25 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 import { performanceFixture } from '../../../../tests/fixtures/salesPerformance'
-import { PerformanceAttainment } from './PerformanceAttainment'
+import { PerformanceAttainment as MetricRows } from './PerformanceAttainment'
+import { performanceColumns } from '../../../../tests/fixtures/performanceColumns'
+import type { components } from '../../../api/schema'
+
+function PerformanceAttainment({
+  value,
+}: {
+  value: components['schemas']['PerformanceValuesResponse']
+}) {
+  return <MetricRows columns={performanceColumns(value)} currency="RUB" />
+}
 
 it('uses server attainment and signed deviation, keeping zero targets undefined', () => {
   const value = performanceFixture.skus[0]?.points[0]?.period
   if (value === undefined) throw new Error('Missing fixture')
   const html = renderToStaticMarkup(<PerformanceAttainment value={value} />)
-  expect(html).toContain('95%')
-  expect(html).toContain('-50 шт.')
-  expect(html).not.toContain('90%')
+  expect(html).toContain('>95<')
+  expect(html).toContain('>-50<')
+  expect(html).not.toContain('>90<')
   const zero = renderToStaticMarkup(
     <PerformanceAttainment
       value={{
@@ -20,7 +30,7 @@ it('uses server attainment and signed deviation, keeping zero targets undefined'
       }}
     />,
   )
-  expect(zero).toContain('950 шт.')
+  expect(zero).toContain('>950<')
   expect(zero).toContain('Нулевая цель: процент не определён')
   const partial = renderToStaticMarkup(
     <PerformanceAttainment
@@ -34,7 +44,7 @@ it('uses server attainment and signed deviation, keeping zero targets undefined'
       }}
     />,
   )
-  expect(partial).not.toContain('0%')
+  expect(partial).not.toContain('>0<')
 })
 
 it('displays all four literal server goal fields and keeps actual attainment separate', () => {
@@ -55,11 +65,11 @@ it('displays all four literal server goal fields and keeps actual attainment sep
     />,
   )
   for (const text of [
-    '70%',
-    '90%',
-    '900,000 шт.',
-    '-100,000 шт.',
-    '301,125 шт./день',
+    '>70<',
+    '>90<',
+    '>900,000<',
+    '>-100,000<',
+    '>301,125<',
     'Ожидаемое количество по метрике цели',
     'Ожидаемое отклонение от цели',
     'Ожидаемый темп метрики цели',
@@ -86,9 +96,9 @@ it('preserves zero-plan quantity, signed deviation and server speed without inve
       }}
     />,
   )
-  expect(html).toContain('0,333 шт.')
-  expect(html).toContain('0,063 шт./день')
-  expect(html).not.toContain('0%')
+  expect(html).toContain('>0,333<')
+  expect(html).toContain('>0,063<')
+  expect(html).not.toContain('>0<')
 })
 
 it('formats the exact JS-safe expected bps and explains overflow or publication pending', () => {
@@ -103,7 +113,7 @@ it('formats the exact JS-safe expected bps and explains overflow or publication 
       }}
     />,
   )
-  expect(maximum).toContain('90071992547409,91%')
+  expect(maximum).toContain('>90071992547409,91<')
   const pending = renderToStaticMarkup(<PerformanceAttainment value={value} />)
   expect(pending).toContain('Проверка качества прогноза ещё не завершена')
   const overflow = renderToStaticMarkup(
@@ -117,5 +127,5 @@ it('formats the exact JS-safe expected bps and explains overflow or publication 
   expect(overflow).toContain(
     'Выполнение цели выходит за поддерживаемый диапазон',
   )
-  expect(overflow).toContain('95%')
+  expect(overflow).toContain('>95<')
 })

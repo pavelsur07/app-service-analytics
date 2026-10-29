@@ -10,7 +10,7 @@ export function PerformanceQuality({
   future?: boolean
 }) {
   return (
-    <div className="flex flex-col gap-1 text-sm">
+    <div className="flex max-w-64 flex-col gap-1 text-left text-sm whitespace-normal">
       <div>
         <Badge tone={coverage === 'complete' ? 'positive' : 'warning'}>
           {coverage === 'complete'

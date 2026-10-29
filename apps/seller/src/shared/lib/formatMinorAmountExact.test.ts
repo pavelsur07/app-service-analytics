@@ -4,6 +4,24 @@ import { formatMinorAmountExact } from './formatMinorAmountExact'
 const spaces = (value: string) => value.replace(/[\u00a0\u202f]/g, ' ')
 
 describe('exact minor amount presentation', () => {
+  it('keeps exact signed digits when the currency is shown in the row header', () => {
+    expect(
+      spaces(
+        formatMinorAmountExact('-9223372036854775808', 'RUB', 2, {
+          withCurrency: false,
+        }),
+      ),
+    ).toBe('-92 233 720 368 547 758,08')
+    expect(
+      formatMinorAmountExact('-1', 'CLF', 4, { withCurrency: false }),
+    ).toBe('-0,0001')
+    expect(formatMinorAmountExact('0', 'KWD', 3, { withCurrency: false })).toBe(
+      '0,000',
+    )
+    expect(
+      formatMinorAmountExact('1', 'CODE', 4, { withCurrency: false }),
+    ).toBe('0,0001')
+  })
   it.each([
     ['9223372036854775807', '92 233 720 368 547 758,07 ₽'],
     ['-9223372036854775808', '-92 233 720 368 547 758,08 ₽'],

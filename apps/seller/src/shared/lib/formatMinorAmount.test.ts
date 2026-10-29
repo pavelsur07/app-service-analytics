@@ -4,6 +4,11 @@ import { formatMinorAmount } from './formatMinorAmount'
 // Intl.NumberFormat вставляет неразрывный пробел (U+00A0) между суммой
 // и символом валюты, не обычный U+0020 — в строках ниже это он, не опечатка.
 describe('formatMinorAmount', () => {
+  it('can show only the number when the row header specifies currency', () => {
+    expect(formatMinorAmount(-10050, 'RUB', { withCurrency: false })).toBe(
+      '-100,50',
+    )
+  })
   it('formats minor units as a currency string', () => {
     expect(formatMinorAmount(10050, 'RUB')).toBe('100,50 ₽')
   })
