@@ -173,7 +173,8 @@ services:
         class: Symfony\Component\HttpClient\CurlHttpClient
         factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
         arguments:
-            - { timeout: 2, max_duration: 2 }
+            # The adapter verifies plain bounded bytes; avoid transparent gzip from the provider.
+            - { timeout: 2, max_duration: 2, headers: { Accept-Encoding: identity } }
     net_forward.s3_client:
         class: AsyncAws\S3\S3Client
         arguments:

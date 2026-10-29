@@ -55,6 +55,18 @@ final class S3NetForwardArtifactStorageTest extends TestCase
         $this->storage($client)->get($key->companyId, $key->accountId, $key, 2);
     }
 
+    public function testCompressedResponseIsRejectedBeforeReadingItsBody(): void
+    {
+        $key = $this->key('{}');
+        $client = new MockHttpClient([new MockResponse((static function (): \Generator {
+            self::fail('Encoded artifact bytes must not be read or decompressed.');
+            yield '';
+        })(), ['response_headers' => ['content-encoding: gzip']])]);
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('Invalid artifact length or content encoding.');
+        $this->storage($client)->get($key->companyId, $key->accountId, $key, 1024);
+    }
+
     public function testReadbackCannotStartOutsideSharedQualityByteBudget(): void
     {
         $body = '{}';
