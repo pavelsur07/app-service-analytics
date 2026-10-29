@@ -1,11 +1,14 @@
 # B16 — чек-лист приёмки и готовности к B17
 
-**Состояние на 2026-10-29: IMPLEMENTING; B16 OPEN.**
+**Состояние на 2026-10-29: инструментарий выпущен; B16 OPEN / качество NOT_MEASURED.**
 План: [B16.md](B16.md). Методика и точные пороги — его §2–7 и
 [ADR-049 §5](../../adr/0049-net-sales-forecast-observations-and-horizon.md).
 Этот файл — форма приёмки: незаполненное поле или неотмеченный пункт не PASS.
 Сейчас не предъявлены реальные protocol/inventory/dataset/report refs,
-sample counts и predictive metrics. Evaluator реализован в ветке задачи; ревью/выпуск ещё не подтверждены.
+sample counts и predictive metrics. Evaluator выпущен в PR288; проверки,
+ревью и production receipts приведены в [B16.md](B16.md). Capture/replay B15
+подтверждены [реальным smoke](https://github.com/pavelsur07/app-service-analytics/pull/291#issuecomment-6506196483);
+это не приёмка качества B16.
 
 ## 1. Статусы и смысл завершения
 
@@ -31,7 +34,7 @@ QUALITY_PASSED само по себе не открывает gate. В стро�
 - [ ] Сверены B14 release receipt PR285/CI685–686/production686-a3c0489 и B15
   PR286–287/production693-6770cf2/migrationVersion20261029041000; результаты
   нового production preflight записаны отдельно от старых receipts.
-- [ ] Документальное расхождение открытого B15 checkbox с его release receipt
+- [x] Документальное расхождение открытого B15 checkbox с его release receipt
   разобрано явно; основанием служат реальные проверки и выпуск B15.
 - [x] Одним решением согласованы два пункта B16 §0: kind5→20 с прежним PK
   и одна migration; optional protocol binding в существующем capture Facade.
