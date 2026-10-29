@@ -21,7 +21,7 @@ class NetForecastArtifact
     private readonly Uuid $marketplaceAccountId;
 
     #[ORM\Id]
-    #[ORM\Column(length: 5)]
+    #[ORM\Column(length: 20)]
     private readonly string $kind;
 
     #[ORM\Id]

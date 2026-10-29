@@ -26,13 +26,16 @@ final readonly class PrepareNetForecastCaptureAction
     {
     }
 
-    public function __invoke(string $companyId, string $accountId, NetForwardCaptureRequest $request, NetForwardPlanContext $plan, int $deadlineNs): PreparedNetForwardArtifact
+    public function __invoke(string $companyId, string $accountId, NetForwardCaptureRequest $request, NetForwardPlanContext $plan, int $deadlineNs, ?NetQualityCaptureContext $quality = null): PreparedNetForwardArtifact
     {
         if (!$this->connection->isTransactionActive() || 'on' !== $this->connection->fetchOne('SHOW transaction_read_only') || !\in_array($this->connection->fetchOne('SHOW transaction_isolation'), ['repeatable read', 'serializable'], true)) {
             throw new \LogicException('Prepare requires the caller pinned read-only snapshot.');
         }
         if ($request->planId !== $plan->planId) {
             throw new \InvalidArgumentException('Capture plan mismatch.');
+        }
+        if ((null === $request->qualityProtocolId) !== (null === $quality)) {
+            throw new \DomainException('Protocol-bound capture requires a verified pre-snapshot context.');
         }
         $spool = new NetForwardSpool($this->codec, $deadlineNs);
         $snapshotId = $this->connection->fetchOne('SELECT txid_current_snapshot()::text');
@@ -43,6 +46,7 @@ final readonly class PrepareNetForecastCaptureAction
         $frame = ($this->inputs)($companyId, $accountId, $targetRequest, $snapshotId);
         $training = $frame->training;
         $readAt = $training->readAt;
+        $quality?->assertPlan($companyId, $accountId, $request, $plan, $readAt);
         $context = $training->context;
         $forecast = null === $frame->targets ? new NetForecastBatch($companyId, $accountId, $readAt, $context, [], null, $frame->unavailableReason, null, $frame->unavailableReason)
             : ($this->aggregate)($companyId, $accountId, $frame->targets, $training, $frame->computeStartedNs, $frame->allocationBaselineBytes, $frame->limits, new NetForecastSeriesRequest($plan->marketplaceSkus, $targetRequest->from, $targetRequest->to, $targetRequest->accumulationFrom, $request->groupBy));
@@ -101,7 +105,11 @@ final readonly class PrepareNetForecastCaptureAction
             $spool->append('legacy_baseline', ['method' => 'adr030_projected_buyout', 'maturity' => $maturity, 'scope' => ['from' => $request->from, 'to' => $request->to, 'groupBy' => $request->groupBy, 'currency' => $plan->currency], 'value' => $this->inputCodec->pack(SalesCohortSeriesQuery::mapRow($row)), 'comparisonReason' => 'gross_buyout_not_retained_net']);
         }
         $attemptId = Uuid::v7()->toRfc4122();
-        $root = $this->codec->encode(['companyId' => $companyId, 'marketplaceAccountId' => $accountId, 'kind' => 'input', 'requestId' => $request->requestId, 'requestHash' => $request->hash(), 'attemptId' => $attemptId, 'readAtUtc' => $readAt->format('Y-m-d\TH:i:s.u\Z'), 'parent' => null, 'chunks' => $spool->descriptors(), 'metadata' => ['model' => ObservedReturnCurve::MODEL_VERSION, 'training' => NetTrainingContext::MODEL_VERSION, 'coverage' => NetTrainingContext::COVERAGE_POLICY, 'capture' => $context?->epoch->captureVersion, 'epoch' => $this->inputCodec->pack($context?->epoch), 'snapshot' => $snapshotId, 'softwareRelease' => $this->softwareRelease, 'timezone' => 'Europe/Moscow', 'horizonDays' => 60, 'reportingLagDays' => 7, 'groupBy' => $request->groupBy, 'publicPolicy' => 'validation_pending', 'sourceReason' => $training->unavailableReason, 'modelCaps' => ['computeSeconds' => 5, 'peakBytes' => 100663296, 'allocationBytes' => 50331648, 'reserveBytes' => 8388608, 'outputBytes' => 33554432, 'digits' => 16384], 'artifactCaps' => ['wallSeconds' => 30, 'chunkBytes' => 1048576, 'chunks' => 128, 'pageRows' => NetForwardEvidenceQuery::PAGE_SIZE, 'spoolBytes' => 136314880]]]);
+        $rootData = ['companyId' => $companyId, 'marketplaceAccountId' => $accountId, 'kind' => 'input', 'requestId' => $request->requestId, 'requestHash' => $request->hash(), 'attemptId' => $attemptId, 'readAtUtc' => $readAt->format('Y-m-d\TH:i:s.u\Z'), 'parent' => null, 'chunks' => $spool->descriptors(), 'metadata' => ['model' => ObservedReturnCurve::MODEL_VERSION, 'training' => NetTrainingContext::MODEL_VERSION, 'coverage' => NetTrainingContext::COVERAGE_POLICY, 'capture' => $context?->epoch->captureVersion, 'epoch' => $this->inputCodec->pack($context?->epoch), 'snapshot' => $snapshotId, 'softwareRelease' => $this->softwareRelease, 'timezone' => 'Europe/Moscow', 'horizonDays' => 60, 'reportingLagDays' => 7, 'groupBy' => $request->groupBy, 'publicPolicy' => 'validation_pending', 'sourceReason' => $training->unavailableReason, 'modelCaps' => ['computeSeconds' => 5, 'peakBytes' => 100663296, 'allocationBytes' => 50331648, 'reserveBytes' => 8388608, 'outputBytes' => 33554432, 'digits' => 16384], 'artifactCaps' => ['wallSeconds' => 30, 'chunkBytes' => 1048576, 'chunks' => 128, 'pageRows' => NetForwardEvidenceQuery::PAGE_SIZE, 'spoolBytes' => 136314880]]];
+        if (null !== $quality) {
+            $rootData['metadata']['qualityProtocol'] = $quality->metadata();
+        }
+        $root = $this->codec->encode($rootData);
         $spool->guard();
 
         return new PreparedNetForwardArtifact(new NetForecastArtifactPublication(new NetForwardArtifactKey($companyId, $accountId, NetForwardArtifactKind::Input, $request->requestId, $attemptId, hash('sha256', $root)), $request->hash(), \strlen($root)), $root, $spool);

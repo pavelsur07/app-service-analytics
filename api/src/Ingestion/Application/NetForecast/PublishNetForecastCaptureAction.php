@@ -14,7 +14,7 @@ final readonly class PublishNetForecastCaptureAction
     {
     }
 
-    public function __invoke(string $companyId, string $accountId, PreparedNetForwardArtifact $artifact): VerifiedNetForwardArtifact
+    public function __invoke(string $companyId, string $accountId, PreparedNetForwardArtifact $artifact, ?NetQualityBudget $budget = null): VerifiedNetForwardArtifact
     {
         $this->reader->assertNoTransaction();
         $root = $artifact->publication->root;
@@ -33,6 +33,6 @@ final readonly class PublishNetForecastCaptureAction
             $this->repository->publishFirst($companyId, $accountId, $artifact->publication, $artifact->spool->deadlineNs);
         }
 
-        return $this->reader->read($companyId, $accountId, $root->kind, $root->requestId, requestHash: $artifact->publication->requestHash, deadline: $artifact->spool->deadlineNs);
+        return $this->reader->read($companyId, $accountId, $root->kind, $root->requestId, requestHash: $artifact->publication->requestHash, deadline: $artifact->spool->deadlineNs, budget: $budget);
     }
 }

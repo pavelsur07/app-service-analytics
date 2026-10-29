@@ -22,6 +22,52 @@ use Symfony\Component\Uid\Uuid;
 #[SkipDatabaseRollback]
 final class CaptureSalesPlanForwardTest extends KernelTestCase
 {
+    public function testQualityCaptureSealsProtocolAndRejectsAnUnregisteredSlot(): void
+    {
+        self::bootKernel(['debug' => false]);
+        self::getContainer()->set(\Psr\Clock\ClockInterface::class, new \Symfony\Component\Clock\MockClock('2027-01-04T12:00:00Z'));
+        /** @var Connection $db */
+        $db = self::getContainer()->get(Connection::class);
+        $params = $db->getParams();
+        unset($params['wrapperClass']);
+        $f = new \App\Tests\Support\Ingestion\NetQualityArtifactFixture(\Doctrine\DBAL\DriverManager::getConnection($params));
+        self::getContainer()->set(NetForwardArtifactStorage::class, $f->storage);
+        /** @var SalesPlanRepository $plans */
+        $plans = self::getContainer()->get(SalesPlanRepository::class);
+        $plan = SalesPlanBuilder::aSalesPlan()->withPeriod(new \DateTimeImmutable('2026-12-01'), new \DateTimeImmutable('2027-01-17'))->withMetric(SalesPlanMetric::RetainedSales)->build();
+        $lines = SalesPlanLineBuilder::linesOf($plan)->withMarketplaceSku('SKU')->withTotalQuantity(42)->build();
+        $plan->approve(Uuid::v7(), new \DateTimeImmutable('2027-01-01'));
+        $company = $plan->companyId()->toRfc4122();
+        $account = $plan->marketplaceAccountId()->toRfc4122();
+        $id = $plan->id()->toRfc4122();
+        $protocol = \App\Tests\Support\Builder\NetQualityProtocolBuilder::aProtocol()->with('companyId', $company)->with('accountId', $account)->with('planId', $id)->with('baselineId', $id)->build();
+        try {
+            $plans->add($plan, $lines);
+            $freeze = new \App\Ingestion\Application\NetForecast\FreezeNetQualityProtocolAction($f->writer, $f->reader, new \App\Ingestion\Infrastructure\Persistence\DbalNetForecastArtifactRepository($f->db), $f->clock, '123-aaaaaaa');
+            $ref = $freeze($company, $account, $protocol);
+            /** @var CaptureSalesPlanForwardAction $capture */
+            $capture = self::getContainer()->get(CaptureSalesPlanForwardAction::class);
+            $requestId = $protocol->slots[0]['requestId'];
+            $captureRef = $capture($company, $account, $id, $requestId, $protocol->from, $protocol->to, qualityProtocolId: $ref->requestId, qualityProtocolHash: $ref->sha256);
+            $artifact = $f->reader->read($company, $account, NetForwardArtifactKind::Input, $requestId, $captureRef->artifactHash);
+            $metadata = $artifact->manifest['metadata'];
+            self::assertIsArray($metadata);
+            self::assertIsArray($metadata['qualityProtocol'] ?? null);
+            $sealedRef = $metadata['qualityProtocol']['protocol'];
+            self::assertIsArray($sealedRef);
+            self::assertSame($ref->requestId, $sealedRef['requestId']);
+            self::assertSame($ref->sha256, $sealedRef['artifactHash']);
+            self::assertSame($captureRef->artifactHash, $capture($company, $account, $id, $requestId, $protocol->from, $protocol->to, qualityProtocolId: $ref->requestId, qualityProtocolHash: $ref->sha256)->artifactHash);
+            $this->expectException(\DomainException::class);
+            $capture($company, $account, $id, Uuid::v7()->toRfc4122(), $protocol->from, $protocol->to, qualityProtocolId: $ref->requestId, qualityProtocolHash: $ref->sha256);
+        } finally {
+            foreach (['net_forecast_artifact', 'sales_plan_day_claim', 'sales_plan_line', 'sales_plan'] as $table) {
+                $db->executeStatement('DELETE FROM '.$table.' WHERE company_id = ?', [$company]);
+            }
+            $f->db->close();
+        }
+    }
+
     public function testPlanValuesAreSealedAndRetryDoesNotReadMutatedPlan(): void
     {
         self::bootKernel();

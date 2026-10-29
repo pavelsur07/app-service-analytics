@@ -16,15 +16,17 @@ final class NetForwardSpool
     private string $type = '';
     private int $bufferBytes = 0;
     private int $totalBytes = 0;
+    private int $chargedBytes = 0;
     public readonly int $deadlineNs;
 
-    public function __construct(private readonly NetForwardManifestCodec $codec, ?int $deadlineNs = null)
+    public function __construct(private readonly NetForwardManifestCodec $codec, ?int $deadlineNs = null, private readonly ?NetQualityBudget $qualityBudget = null)
     {
         $this->deadlineNs = min($deadlineNs ?? \PHP_INT_MAX, (int) (hrtime(true) + 30000000000));
     }
 
     public function guard(): void
     {
+        $this->qualityBudget?->guard();
         if (hrtime(true) >= $this->deadlineNs || memory_get_peak_usage(true) > 100663296 || memory_get_usage(true) + 8388608 > 100663296) {
             throw new \OverflowException('Artifact capture resource budget exceeded.');
         }
@@ -75,6 +77,7 @@ final class NetForwardSpool
         foreach ($this->paths as $path) {
             unlink($path);
         }
+        $this->qualityBudget?->spoolBytes(-$this->chargedBytes);
     }
 
     private function flush(): void
@@ -91,6 +94,8 @@ final class NetForwardSpool
         if ($this->totalBytes + $size > 134217728) {
             throw new \OverflowException('Artifact total byte limit exceeded.');
         }
+        $this->qualityBudget?->spoolBytes($size);
+        $this->chargedBytes += $size;
         $path = tempnam(sys_get_temp_dir(), 'net-forward-');
         if (false === $path) {
             throw new \RuntimeException('Cannot create private artifact spool.');

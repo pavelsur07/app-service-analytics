@@ -7,6 +7,7 @@ namespace App\SalesPlanning\Application;
 use App\Ingestion\Application\Facade\ForwardArtifactRef;
 use App\Ingestion\Application\Facade\ForwardCaptureRequest;
 use App\Ingestion\Application\Facade\ForwardPlanContext;
+use App\Ingestion\Application\Facade\ForwardQualityProtocolRef;
 use App\Ingestion\Application\Facade\IngestionFacade;
 use App\Ingestion\Application\Facade\PreparedForwardCapture;
 use App\SalesPlanning\Infrastructure\Query\SalesPlanBaselineQuery;
@@ -21,9 +22,13 @@ final readonly class CaptureSalesPlanForwardAction
     {
     }
 
-    public function __invoke(string $companyId, string $accountId, string $planId, string $requestId, string $from, string $to, string $groupBy = 'day'): ForwardArtifactRef
+    public function __invoke(string $companyId, string $accountId, string $planId, string $requestId, string $from, string $to, string $groupBy = 'day', ?string $qualityProtocolId = null, ?string $qualityProtocolHash = null): ForwardArtifactRef
     {
-        $request = new ForwardCaptureRequest($requestId, $planId, $from, $to, $groupBy);
+        if ((null === $qualityProtocolId) !== (null === $qualityProtocolHash)) {
+            throw new \InvalidArgumentException('Quality protocol identity and hash are required together.');
+        }
+        $qualityProtocol = null !== $qualityProtocolId && null !== $qualityProtocolHash ? new ForwardQualityProtocolRef($qualityProtocolId, $qualityProtocolHash) : null;
+        $request = new ForwardCaptureRequest($requestId, $planId, $from, $to, $groupBy, $qualityProtocol);
         $native = $this->connection->getNativeConnection();
         if ($this->connection->isTransactionActive() || ($native instanceof \PDO && $native->inTransaction())) {
             throw new \LogicException('Capture must own its outer transaction.');
@@ -33,7 +38,8 @@ final readonly class CaptureSalesPlanForwardAction
             return $existing;
         }
         $deadline = (int) (hrtime(true) + 30000000000);
-        $prepared = $this->connection->transactional(function () use ($companyId, $accountId, $request, $deadline): PreparedForwardCapture {
+        $quality = null === $qualityProtocol ? null : $this->ingestion->verifyForwardQualityProtocol($companyId, $accountId, $request, $qualityProtocol, $deadline);
+        $prepared = $this->connection->transactional(function () use ($companyId, $accountId, $request, $deadline, $quality): PreparedForwardCapture {
             $this->connection->executeStatement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
             $this->connection->fetchOne('SELECT txid_current_snapshot()::text');
             $this->connection->executeStatement("SET LOCAL statement_timeout = '5s'");
@@ -63,7 +69,7 @@ final readonly class CaptureSalesPlanForwardAction
                 $goals[] = ['sku' => $mapped->marketplaceSku, 'points' => array_map(static fn ($point): array => get_object_vars($point), $mapped->points)];
             }
 
-            return $this->ingestion->prepareForwardCapture($companyId, $accountId, $request, new ForwardPlanContext($plan->id, $plan->version, $plan->versionNumber, $base->id, $base->versionNumber, $plan->metric, $base->currency, $base->dateFrom, $skus, $goals), $deadline);
+            return $this->ingestion->prepareForwardCapture($companyId, $accountId, $request, new ForwardPlanContext($plan->id, $plan->version, $plan->versionNumber, $base->id, $base->versionNumber, $plan->metric, $base->currency, $base->dateFrom, $skus, $goals), $deadline, $quality);
         });
 
         return $this->ingestion->publishForwardCapture($companyId, $accountId, $prepared);
