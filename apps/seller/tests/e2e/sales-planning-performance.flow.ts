@@ -285,8 +285,40 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect(metric(cell, 'Исходная цель')).toHaveText('9 шт.')
   await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('3 шт.')
   await expect(metric(cell, 'Выручка по ценам продаж')).toHaveText(/300,00\s*₽/)
+  await expect(metric(cell, 'Ожидаемые нетто-продажи')).toHaveText('—')
+  await expect(metric(cell, 'Ожидаемая нетто-выручка')).toHaveText('—')
+  const summary = page
+    .locator('summary')
+    .filter({ hasText: /^Методика нетто-прогноза$/ })
+  await expect(summary).toHaveCount(1)
+  const methodology = summary.locator('..')
+  await summary.focus()
+  await expect(summary).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(methodology).toHaveAttribute('open', '')
+  await expect(methodology).toContainText(
+    'Наблюдаемые продажи уже входят в него',
+  )
+  await expect(methodology).toContainText('Будущие заказы не учитываются')
+  await expect(methodology).toContainText('60 дней от доставки')
+  await page.keyboard.press('Space')
+  await expect(methodology).not.toHaveAttribute('open')
+  await expect(
+    page
+      .getByText('Оценка по этим данным не выполнялась.', { exact: true })
+      .first(),
+  ).toBeVisible()
   const initial = await performance(page, data, baseline)
   expect(initial.baselinePlanId).toBe(baseline)
+  expect(initial.netForecast.validationStatus).toBe('validation_pending')
+  expect(initial.netForecast.assessmentStatus).toBe('not_assessed')
+  expect(initial.netForecast.readAt).toBeNull()
+  expect(
+    initial.skus[0]?.points[0]?.period.cohort?.expectedNetSalesQuantity,
+  ).toBeNull()
+  expect(
+    initial.skus[0]?.points[0]?.period.cohort?.expectedNetRevenue,
+  ).toBeNull()
   expect(initial.skus[0]?.points[0]?.period.planQuantity).toBe(9)
   expect(initial.skus[0]?.points[0]?.period.planRevenueRrp).toEqual({
     minor: 180000,
@@ -494,6 +526,8 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('2 шт.')
   await expect(metric(cell, 'Выручка по ценам продаж')).toHaveText(/200,00\s*₽/)
   await expect(metric(cell, 'Исходная цель')).toHaveText('9 шт.')
+  await expect(metric(cell, 'Ожидаемые нетто-продажи')).toHaveText('—')
+  await expect(metric(cell, 'Ожидаемая нетто-выручка')).toHaveText('—')
   const returned = await performance(page, data, current)
   expect(returned.baselinePlanId).toBe(baseline)
   expect(
@@ -572,11 +606,79 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect(
     page.getByRole('button', { name: 'Перечитать план', exact: true }),
   ).toBeVisible()
+  await expect(
+    page.getByText('Ожидаемые нетто-продажи', { exact: true }),
+  ).toHaveCount(0)
+  await expect(summary).toHaveCount(0)
   await page
     .getByRole('button', { name: 'Перечитать план', exact: true })
     .click()
   await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('2 шт.')
+  await expect(metric(cell, 'Ожидаемые нетто-продажи')).toHaveText('—')
+  await expect(summary).toHaveCount(1)
   await page.unroute(url)
+  const netGroup = cell.locator('dl[aria-label="Нетто-прогноз"]').locator('..')
+  await expect(
+    netGroup
+      .locator('p')
+      .filter({ hasText: 'Проверка качества прогноза ещё не завершена' }),
+  ).toHaveCount(1)
+  await expect(netGroup.getByText(/^Продажи и выручка:/)).toBeVisible()
+  const geometry = () =>
+    region.evaluate((element) => {
+      const main = element.closest('main')
+      if (main === null) throw new Error('Missing real scroll owner')
+      return {
+        viewport: innerWidth,
+        pageWidth: document.documentElement.scrollWidth,
+        mainWidth: main.clientWidth,
+        mainScrollWidth: main.scrollWidth,
+        regionRight: element.getBoundingClientRect().right,
+        regionWidth: element.clientWidth,
+        regionScrollWidth: element.scrollWidth,
+      }
+    })
+  await netGroup.scrollIntoViewIfNeeded()
+  await expect(netGroup).toBeInViewport()
+  const wideGeometry = await geometry()
+  expect(wideGeometry.pageWidth).toBeLessThanOrEqual(wideGeometry.viewport)
+  expect(wideGeometry.regionRight).toBeLessThanOrEqual(wideGeometry.viewport)
+  await netGroup.screenshot({ path: 'var/b13-net-wide.png' })
+  const originalViewport = page.viewportSize()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await summary.focus()
+  await page.keyboard.press('Enter')
+  await expect(methodology).toHaveAttribute('open', '')
+  await expect(methodology).toContainText('дней от доставки')
+  // The existing fixed sidebar leaves a very narrow main area at phone width.
+  // Keep this evidence separate; B13 does not redesign the shared shell.
+  await page.screenshot({ path: 'var/b13-shell-390.png', fullPage: true })
+  await page.keyboard.press('Space')
+  await expect(methodology).not.toHaveAttribute('open')
+  await page.setViewportSize({ width: 768, height: 1024 })
+  await summary.focus()
+  await page.keyboard.press('Enter')
+  await expect(methodology).toHaveAttribute('open', '')
+  await methodology.screenshot({ path: 'var/b13-methodology-narrow.png' })
+  await page.keyboard.press('Space')
+  await expect(methodology).not.toHaveAttribute('open')
+  await netGroup.scrollIntoViewIfNeeded()
+  await expect(netGroup).toBeInViewport()
+  const narrowGeometry = await geometry()
+  expect(narrowGeometry.pageWidth).toBeLessThanOrEqual(narrowGeometry.viewport)
+  expect(narrowGeometry.regionRight).toBeLessThanOrEqual(
+    narrowGeometry.viewport,
+  )
+  await netGroup.screenshot({ path: 'var/b13-net-narrow.png' })
+  writeFileSync(
+    'var/b13-layout-evidence.json',
+    JSON.stringify(
+      { wide: wideGeometry, narrowerDesktop: narrowGeometry },
+      null,
+      2,
+    ),
+  )
+  if (originalViewport !== null) await page.setViewportSize(originalViewport)
   await page.screenshot({
     path: 'var/sales-planning-performance-browser.png',
     fullPage: true,
@@ -722,6 +824,22 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect
     .poll(() => wide.evaluate((element) => element.scrollLeft))
     .toBeGreaterThan(0)
+  await wide.locator('thead').scrollIntoViewIfNeeded()
+  await page.screenshot({ path: 'var/b13-grid-header-wide.png' })
+  const gridViewport = page.viewportSize()
+  await page.setViewportSize({ width: 768, height: 1024 })
+  await wide.focus()
+  await expect(wide).toBeFocused()
+  const beforeNarrowScroll = await wide.evaluate(
+    (element) => element.scrollLeft,
+  )
+  await page.keyboard.press('ArrowRight')
+  await expect
+    .poll(() => wide.evaluate((element) => element.scrollLeft))
+    .toBeGreaterThan(beforeNarrowScroll)
+  await wide.locator('thead').scrollIntoViewIfNeeded()
+  await page.screenshot({ path: 'var/b13-grid-header-narrow.png' })
+  if (gridViewport !== null) await page.setViewportSize(gridViewport)
   const emptyFact = wide
     .locator('tbody tr')
     .filter({ hasText: data.sku })
@@ -776,6 +894,11 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     `/api/companies/${second}/sales-plans/${current}`,
   )
   expect(foreignPlan.status()).toBe(404)
+  await page.goto(`/companies/${data.companyId}/sales-plans/${current}`)
+  await expect(summary).toHaveCount(1)
+  await expect(
+    page.getByText('Ожидаемые нетто-продажи', { exact: true }).first(),
+  ).toBeVisible()
   await page
     .getByRole('banner')
     .getByRole('link', { name: 'E2E Sales Planning', exact: true })
@@ -793,4 +916,8 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     await page.request.get(`/api/companies/${second}/sales-plans`),
   )
   expect(other.items).toEqual([])
+  await expect(summary).toHaveCount(0)
+  await expect(
+    page.getByText('Ожидаемые нетто-продажи', { exact: true }),
+  ).toHaveCount(0)
 }

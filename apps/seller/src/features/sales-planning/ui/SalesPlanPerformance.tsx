@@ -8,6 +8,7 @@ import { GROUPINGS } from '../lib/salesPlan'
 import { performanceRangeProblem } from '../lib/performanceWindow'
 import { useSalesPlanPerformance } from '../model/useSalesPlanPerformance'
 import { PerformanceGrid } from './PerformanceGrid'
+import { PerformanceNetMethodology } from './PerformanceNetMethodology'
 import {
   readPerformanceSearch,
   writePerformanceSearch,
@@ -252,6 +253,7 @@ export function SalesPlanPerformance({
             </time>{' '}
             МСК. Возвраты могут уточнять наблюдаемые продажи.
           </p>
+          <PerformanceNetMethodology metadata={query.data.netForecast} />
           <PerformanceGrid data={query.data} mode={mode} />
           <div className="flex justify-end gap-2">
             <Button

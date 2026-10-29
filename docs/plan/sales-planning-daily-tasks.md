@@ -912,3 +912,26 @@ Production675-93a9377 rootverified22:09:47UTC,12healthy/7PHPoriginalepoch,
 18readonlysmokePASS,pingscorrect. Localhealthverifierformat mistakefixed with
 failedsnapshotpreserved; finalactualPASS. B11 закрыта61/68; следующийB12,
 численноекачество/rollout по-прежнему не подтверждены.
+
+
+## Приёмка B12: точные net-периоды, Facade и API, 2026-10-29
+
+Новый точный строковый Money с серверным масштабом валюты, decimal3 после
+scope SUM, независимые причины недоступности и реальные metadata проведены
+через scoped Facade в API. Default-closed сохраняет2grossSQL/oneClock и
+pending/not_assessed; enabled tests —5SQL/одинRR/одничасы, HTTP90.000/9000RUB2.
+Общий budget включает scalar mapping; direct equivalent Brick division и
+per-call identity WeakMap убирают измеренную повторную работу. Guard/caps
+сохранены. Существующий scheduler test исправлен для45дней в03MSK, production
+планировщик не менялся.
+721unit/8321,846integration/21107,381functional/3459,static/schema/frontGREEN;
+8actual resource proofs/cleanup. Day4.9049s, запас95ms; SQLfailure и один
+разрешённый retry сохранены. Итоговые2CodexCLI0/0,gpt-6.1-sol,package
+e8b8283579904797248395403758971bdc03dedab8a1e08f6eff14e545a04269,coverage46/46.
+Task1 уникальные additionalfindings0/1,0/1,0/1,0/0, Task2broad0/0;
+принято3,отклонено0,отдельныйownerfence1исправлен.
+PR283 sourcebdcf364,merge7612f88962456ab44aa2089a224113c4d24987c7;
+CI40796267542/681 и40797001942/682SUCCESS. Production682-7612f88 проверен
+01:04:04UTC:12healthy,7originalepoch/версия,7closedpublication,23readonly
+smoke,pingscorrect. B12 закрыта62/68; следующийB13seller, численноекачество
+иrollout остаютсязаB15–B18 иотдельнымHTTPperformancegate.

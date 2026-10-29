@@ -32,13 +32,6 @@ export function PerformanceSales({
             : `${value.observedSalesSpeed.replace('.', ',')} шт./день`}
         </dd>
       </div>
-      <div>
-        <dt className="text-text-muted">Прогноз продаж —</dt>
-        <dd className="text-text-muted">
-          Пока не оцениваем будущие возвраты. Прогноз выручки и скорости продаж
-          также недоступен.
-        </dd>
-      </div>
     </dl>
   )
 }

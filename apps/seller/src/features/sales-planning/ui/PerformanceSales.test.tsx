@@ -12,8 +12,8 @@ it('uses observed sales and source revenue and sales speed, never goal pace or b
   expect(html).toContain('1 234,56')
   expect(html).not.toContain('475')
   expect(html).not.toContain('900')
-  expect(html).toContain('Прогноз продаж —')
-  expect(html).toContain('будущие возвраты')
+  expect(html).not.toContain('Прогноз продаж —')
+  expect(html).not.toContain('Пока не оцениваем будущие возвраты')
   const unavailable = renderToStaticMarkup(
     <PerformanceSales
       value={{ ...value, cohort: null, observedSalesSpeed: null }}
