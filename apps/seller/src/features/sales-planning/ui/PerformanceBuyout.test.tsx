@@ -19,7 +19,9 @@ it('labels known, mature and projected buyout without converting them to sales',
   const html = renderToStaticMarkup(<PerformanceBuyout cohort={c} />)
   expect(html).toContain('>87,5<')
   expect(html).toContain('>90<')
-  expect(html).toContain('Предварительный исход')
+  expect(html).toContain('>Предварительный</span>')
+  expect(html).toContain('aria-label="Пояснение: зрелость выкупа"')
+  expect(html).toContain('aria-expanded="false"')
   expect(html).toContain('не означает завершение возвратов')
   expect(html).toContain('О показателе')
   const zero = renderToStaticMarkup(

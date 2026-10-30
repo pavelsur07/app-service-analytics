@@ -1,4 +1,4 @@
-import { Badge } from '../../../../../../packages/ui/src'
+import { PerformanceStatus } from './PerformanceStatus'
 import { formatBasisPoints } from '../../../shared/lib/formatBasisPoints'
 import {
   PerformanceMetricRow,
@@ -17,13 +17,22 @@ export function PerformanceBuyout({
           cohort == null ? (
             '—'
           ) : (
-            <Badge
-              tone={cohort.maturityStatus === 'mature' ? 'positive' : 'warning'}
+            <PerformanceStatus
+              label="зрелость выкупа"
+              status={
+                cohort.maturityStatus === 'mature'
+                  ? 'Зрелый'
+                  : 'Предварительный'
+              }
+              tone={cohort.maturityStatus === 'mature' ? 'neutral' : 'warning'}
             >
-              {cohort.maturityStatus === 'mature'
-                ? 'Созревший выкуп'
-                : 'Предварительный исход'}
-            </Badge>
+              <p>
+                {cohort.maturityStatus === 'mature'
+                  ? 'Созревший выкуп.'
+                  : 'Предварительный исход: результаты заказов ещё уточняются.'}
+              </p>
+              <p>Зрелость выкупа не означает завершение возвратов.</p>
+            </PerformanceStatus>
           )
         }
       </PerformanceMetricRow>

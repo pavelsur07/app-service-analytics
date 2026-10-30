@@ -45,7 +45,7 @@ export function PerformanceMetricRow({
       {columns.map((column, index) => (
         <td
           key={column.key}
-          className="min-w-36 px-3 py-2 text-right align-top whitespace-nowrap tabular-nums"
+          className="px-3 py-2 text-right align-top wrap-anywhere whitespace-normal tabular-nums"
         >
           {children(column.value, index)}
         </td>
@@ -67,7 +67,7 @@ export function PerformanceValue({
       <summary className="cursor-help list-none underline decoration-dotted underline-offset-4 focus-visible:outline-2 focus-visible:outline-accent-default">
         {children}
       </summary>
-      <p className="mt-2 max-w-64 text-left text-xs whitespace-normal">
+      <p className="mt-2 max-w-full text-left text-xs wrap-anywhere whitespace-normal">
         {reason}
       </p>
     </details>

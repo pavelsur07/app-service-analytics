@@ -1,4 +1,4 @@
-import { Badge } from '../../../../../../packages/ui/src'
+import { PerformanceStatus } from './PerformanceStatus'
 
 export function PerformanceQuality({
   coverage,
@@ -10,16 +10,24 @@ export function PerformanceQuality({
   future?: boolean
 }) {
   return (
-    <div className="flex max-w-64 flex-col gap-1 text-left text-sm whitespace-normal">
-      <div>
-        <Badge tone={coverage === 'complete' ? 'positive' : 'warning'}>
-          {coverage === 'complete'
-            ? 'Заказы загружены полностью'
-            : coverage === 'missing'
-              ? 'Заказы не загружены'
-              : 'Заказы загружены частично'}
-        </Badge>
-      </div>
+    <PerformanceStatus
+      label="покрытие заказов"
+      status={
+        coverage === 'complete'
+          ? 'Полностью'
+          : coverage === 'missing'
+            ? 'Нет данных'
+            : 'Частично'
+      }
+      tone={coverage === 'complete' ? 'neutral' : 'warning'}
+    >
+      <p>
+        {coverage === 'complete'
+          ? 'Заказы загружены полностью'
+          : coverage === 'missing'
+            ? 'Заказы не загружены'
+            : 'Заказы загружены частично'}
+      </p>
       {current && (
         <p className="text-text-muted">
           Текущий день ещё не завершён. Его итог неполный.
@@ -30,6 +38,6 @@ export function PerformanceQuality({
           Будущие даты: состоявшихся продаж пока нет.
         </p>
       )}
-    </div>
+    </PerformanceStatus>
   )
 }
