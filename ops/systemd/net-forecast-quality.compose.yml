@@ -1,0 +1,5 @@
+# Applied only to operator one-off invocations, never to the working api service.
+services:
+  api:
+    logging: !override
+      driver: none

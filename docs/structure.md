@@ -23,6 +23,8 @@ app-service-analytics/
 │   │                         исполняется самим workflow и shell-тестом
 │   ├── review-prepare.sh точка входа сборки пакета (make review-prepare)
 │   ├── review.py         явный Git-снимок, Claude/Codex и артефакты ревью
+│   ├── net-forecast-quality.py  конечные operator jobs B16, private receipts,
+│   │                         pinned PHP CLI; исключение владельца, без host cron
 │   ├── capture-ozon-buyout-fixtures.sh  интерактивно снимает raw-ответы
 │   │                         Ozon без передачи API-ключа в argv
 │   ├── set-raw-storage-env.sh  реквизиты хранилища сырья (ADR-024)
@@ -54,6 +56,8 @@ app-service-analytics/
 │                         выбор через --target
 ├── ops/                  декларативные конфигурации внешних ресурсов;
 │   ├── README.md         назначение, ответственность и порядок применения
+│   ├── systemd/          versioned template service/timer для разовых B16 jobs;
+│   │                         даты — drop-in из private sealed protocol
 │   └── storage/
 │       └── net-forecast-lifecycle.json  S3: noncurrent-версии артефактов
 │                         прогноза старше 90 дней; current — бессрочно

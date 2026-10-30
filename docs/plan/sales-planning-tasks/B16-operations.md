@@ -25,7 +25,8 @@ calibration path проверен, prospective inputs=0, quality=NOT_MEASURED.
    Этот input не входит в final holdout и не подменяет будущий slot.
 4. В registered slots выполнить capture с protocol ID/hash; записать все
    success/failure/missing/retry receipts. После окна sealed inventory и selection
-   фиксируются до выбора labels. Новую автоматизацию ожидания не добавлять.
+   фиксируются до выбора labels. Исключение владельца 2026-10-30 разрешает
+   [разовые systemd-запуски](B16-schedule.md) для этого protocol.
 5. Собрать все registered truth receipts, seal inventory на cutoff, выполнить
    evaluator на точных refs/hashes, проверить dataset/report readback.
 6. Записать exact MAE/WAPE/signed и absolute bias, null/pending denominators,
@@ -101,8 +102,9 @@ immutable S3+DB evidence остаётся основным источником 
 Следующий основной capture: **2027-01-18T09:00:00Z**; последний —
 2027-01-31T09:00:00Z. Truth +7d: 25 января–7 февраля;
 truth +100d: 28 апреля–11 мая, ежедневно 09:00 UTC.
-Регистрация протокола не создаёт scheduled job: штатный CLI запускает оператор
-в разрешённом production-контуре. После паузы сначала сверить deployed
+Регистрация протокола сама не создаёт scheduled job. Исполнение автоматизируется
+по [разрешённому исключению](B16-schedule.md); факт установки/включения фиксируется
+отдельным receipt после review/CI. После паузы сначала сверить deployed
 model/schema/capture semantics, immutable protocol и сохранность epoch;
 изменение версии/семантики требует отдельной оценки совместимости.
 

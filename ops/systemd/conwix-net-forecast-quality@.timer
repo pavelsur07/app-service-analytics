@@ -1,0 +1,12 @@
+[Unit]
+Description=Finite registered net forecast quality calendar (%i)
+
+[Timer]
+# Exact OnCalendar entries are generated from the verified private protocol
+# as <instance>.timer.d/calendar.conf. No recurring calendar is installed.
+AccuracySec=1s
+RandomizedDelaySec=0
+Persistent=true
+
+[Install]
+WantedBy=timers.target
