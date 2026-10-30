@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import stat
 import subprocess
 import tempfile
@@ -107,11 +108,14 @@ class DockerBridge:
         self.config, self.directory = config, directory
 
     def __call__(self, operation, request_id=None, recover=False):
+        stop_active(self.config, self.directory)
         name = 'conwix-net-quality-' + (request_id or str(uuid.uuid4()))
+        save_private(self.directory / 'active.json', {'name': name, 'protocol': self.config['protocol']['requestId']})
         attempt = self.directory / ('attempt-' + str(uuid.uuid4()))
         env = dict(os.environ, IMAGE=self.config['image'])
-        argv = ['docker', 'compose', '-f', 'docker-compose.prod.yml', 'run', '--rm', '--no-deps', '-T',
+        argv = ['docker', 'compose', '-f', 'docker-compose.prod.yml', '-f', str(COMPOSE_ROOT / 'net-forecast-quality/compose.yml'), 'run', '--rm', '--no-deps', '-T',
                 '--name', name, '-v', str(BRIDGE) + ':/tmp/net-forecast-quality-bridge.php:ro',
+                '--label', 'conwix.net-quality.protocol=' + self.config['protocol']['requestId'],
                 'api', 'php', '/tmp/net-forecast-quality-bridge.php']
         payload = json.dumps({'config': self.config, 'operation': operation, 'requestId': request_id, 'recoverOnly': recover}).encode()
         with open(str(attempt) + '.stdout', 'xb') as out, open(str(attempt) + '.stderr', 'xb') as err:
@@ -119,11 +123,11 @@ class DockerBridge:
             os.chmod(err.name, 0o600)
             try:
                 result = subprocess.run(argv, input=payload, stdout=out, stderr=err, cwd=COMPOSE_ROOT, env=env, timeout=360, check=False)
-            except subprocess.TimeoutExpired:
-                # Stop only this invocation's named container; never remove evidence.
-                subprocess.run(['docker', 'stop', '--time', '15', name], stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, timeout=30, check=False)
+            except BaseException:
+                # Includes SIGTERM/SystemExit; Docker daemon outlives its CLI.
+                stop_active(self.config, self.directory)
                 raise
+        stop_active(self.config, self.directory)
         body = Path(str(attempt) + '.stdout').read_bytes()
         if result.returncode or len(body) > 65536:
             raise RuntimeError('Pinned bridge failed; private attempt logs retained')
@@ -131,6 +135,30 @@ class DockerBridge:
         if not isinstance(value, dict):
             raise ValueError('Invalid bridge output')
         return value
+
+
+def stop_active(config, directory):
+    marker = directory / 'active.json'
+    if not marker.exists():
+        return
+    active = load_private(marker)
+    name, protocol = active['name'], config['protocol']['requestId']
+    if active['protocol'] != protocol or not re.fullmatch(r'conwix-net-quality-[a-f0-9-]{36}', name):
+        raise ValueError('Invalid active container identity')
+    result = subprocess.run(['docker', 'ps', '-a', '--filter', 'name=^/'+name+'$', '--format',
+                             '{{.Names}} {{.Label "conwix.net-quality.protocol"}}'],
+                            capture_output=True, text=True, timeout=30, check=True)
+    if result.stdout.strip():
+        if result.stdout.strip() != name+' '+protocol:
+            raise ValueError('Active container ownership label mismatch')
+        subprocess.run(['docker', 'stop', '--time', '15', name], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=30, check=True)
+    marker.unlink()
+
+
+def stopped(signum, frame):
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    raise SystemExit(128 + signum)
 
 
 def run_due(path, now, backend=None, clock=None):
@@ -191,18 +219,27 @@ def run_due(path, now, backend=None, clock=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['check', 'calendar', 'run'])
+    parser.add_argument('mode', choices=['check', 'calendar', 'run', 'stop'])
     parser.add_argument('config', type=Path)
     args = parser.parse_args()
     os.umask(0o077)
+    signal.signal(signal.SIGTERM, stopped)
     try:
         config = load_private(args.config)
+        if args.mode == 'stop':
+            stop_active(config, args.config.absolute().parent)
+            print('{"status":"stopped"}')
+            return 0
         scheduled = jobs(config)
         if args.mode == 'calendar':
             print(calendar(config), end='')
             return 0
         if args.mode == 'check':
-            response = DockerBridge(config, args.config.absolute().parent)('audit')
+            directory = args.config.absolute().parent
+            fd = os.open(directory / 'run.lock', os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'w') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                response = DockerBridge(config, directory)('audit')
             if response.get('status') != 'verified':
                 raise ValueError('Protocol audit failed')
             now = dt.datetime.now(UTC)

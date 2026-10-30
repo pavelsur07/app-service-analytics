@@ -44,14 +44,19 @@
 Это [разрешённое владельцем исключение](../docs/plan/sales-planning-tasks/B16-schedule.md)
 из operator-only B16 и обычного контейнерного расписания; host cron не вводится.
 Python runner запускает существующий PHP CLI в preregistered image по digest.
-Bridge `api/bin/net-forecast-quality-bridge.php` монтируется read-only и не
+`systemd/net-forecast-quality.compose.yml` отключает daemon logging только у
+operator one-off, сбрасывая унаследованные journald options (`!override`);
+штатный api/worker logging не меняется. Bridge
+`api/bin/net-forecast-quality-bridge.php` монтируется read-only и не
 меняет код модели внутри image. Он проверяет S3 protocol/hash, source/epoch,
 company/account, registered IDs и фактическое UTC перед операциями.
 
 Timer получает только конечные `OnCalendar` строки через per-instance drop-in,
 сгенерированный `bin/net-forecast-quality.py calendar <private automation.json>`.
 Manifest и append-only attempt/receipt файлы лежат вне Git, каталог 0700,
-файлы 0600. State привязан к SHA256 всего manifest; изменение manifest после
+файлы 0600. SIGTERM и ExecStopPost останавливают собственный активный контейнер
+по marker/name + protocol label; при ошибке marker сохраняется. State привязан
+к SHA256 всего manifest; изменение manifest после
 первого выполненного задания блокируется. Численный gate не изменяется.
 
 Проверки, установка, контроль и откат —

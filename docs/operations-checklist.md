@@ -677,7 +677,9 @@ Timeweb может сжать JSON-ответ, который adapter обяза
 - [ ] До установки: два Codex CLI review exact diff, разбор findings, green CI
   и merged source. Сверить source/hash runner, PHP bridge и unit templates.
 - [ ] На `conwix-prod` установить runner и bridge в
-  `/opt/conwix/net-forecast-quality/`, root-owned 0644; templates —
+  `/opt/conwix/net-forecast-quality/`, root-owned 0644; logging overlay
+  `ops/systemd/net-forecast-quality.compose.yml` — там же как `compose.yml`;
+  templates —
   `/etc/systemd/system/conwix-net-forecast-quality@.{service,timer}`.
   Bridge содержит только код и должен читаться PHP user внутри контейнера;
   private manifest/receipts в этот каталог не помещать.
@@ -704,6 +706,12 @@ Timeweb может сжать JSON-ответ, который adapter обяза
   receipt UUID/ref/hash/actual UTC; failed/missing не являются успешным capture.
   Concurrent execution блокируется файловым lock; retry сохраняет request UUID.
   Через 15 минут допускается только recovery уже опубликованного UUID.
+- [ ] Проверить logging driver `none` именно у одноразового operator container:
+  compose overlay сбрасывает весь унаследованный journald logging, включая
+  options. Attempt stdout/stderr остаются только в private 0600 файлах.
+  SIGTERM обрабатывается runner, а `ExecStopPost` дополнительно останавливает
+  только контейнер с собственным marker/name и protocol label; чужой label
+  никогда не останавливается. Невозможность cleanup — ошибка, marker сохраняется.
 - [ ] Persistent activation после downtime не пересоздаёт прошлые observations:
   они сохраняются missing. Inventories сверяют действительные scoped DB anchors,
   selection фиксируется до выбора labels; final report не меняет publication gate.

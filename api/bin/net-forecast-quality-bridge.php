@@ -42,9 +42,13 @@ try {
         throw new DomainException('Registered epoch unavailable.');
     }
     $kernel = new App\Kernel('prod', false);
-    $kernel->boot();
-    $db = $kernel->getContainer()->get('doctrine')->getConnection();
     $env = static fn (string $key): string => $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
+    // The operator's explicit metadata connection cannot write. The existing
+    // Console Application owns its separate, normally configured connection.
+    $parameters = (new Doctrine\DBAL\Tools\DsnParser(['postgresql' => 'pdo_pgsql', 'postgres' => 'pdo_pgsql']))->parse($env('DATABASE_URL'));
+    $db = Doctrine\DBAL\DriverManager::getConnection($parameters);
+    $db->executeStatement('SET default_transaction_read_only = on');
+    $db->executeStatement("SET statement_timeout = '5s'");
     $http = Symfony\Component\HttpClient\HttpClient::create(['timeout' => 2, 'max_duration' => 2, 'headers' => ['Accept-Encoding' => 'identity']]);
     $s3 = new AsyncAws\S3\S3Client(['endpoint' => $env('RAW_STORAGE_ENDPOINT'), 'region' => $env('RAW_STORAGE_REGION'), 'accessKeyId' => $env('RAW_STORAGE_ACCESS_KEY'), 'accessKeySecret' => $env('RAW_STORAGE_SECRET_KEY'), 'pathStyleEndpoint' => 'true'], httpClient: $http, logger: null);
     $repository = new DbalNetForecastArtifactRepository($db);
@@ -103,8 +107,11 @@ try {
         'captureInventory', 'truthInventory' => Kind::QualityInventory,
         'selection' => Kind::QualitySelection, 'evaluation' => Kind::QualityReport,
     };
-    $find = static function (Kind $kind, string $requestId) use ($repository, $reader, $company, $account, $operatorBudget): ?Net\VerifiedNetForwardArtifact {
-        $publication = $repository->find($company, $account, $kind, $requestId);
+    $prefetchedKinds = [];
+    $find = static function (Kind $kind, string $requestId) use ($repository, $reader, $company, $account, $operatorBudget, &$prefetchedKinds): ?Net\VerifiedNetForwardArtifact {
+        $publication = isset($prefetchedKinds[$kind->value])
+            ? $operatorBudget->artifacts->find($company, $account, $kind, $requestId)
+            : $repository->find($company, $account, $kind, $requestId);
 
         return null === $publication ? null : $reader->read($company, $account, $kind, $requestId, $publication->root->sha256, deadline: $operatorBudget->deadline, budget: $operatorBudget);
     };
@@ -179,8 +186,16 @@ try {
                     $capture = 'captureInventory' === $operation;
                     $cutoff = $protocol->data[$capture ? 'captureToUtc' : 'truthCutoffUtc'];
                     $slots = [];
-                    foreach ($capture ? $protocol->slots : $protocol->truthSlots as $registered) {
-                        $artifact = $find($capture ? Kind::Input : Kind::Truth, $registered['requestId']);
+                    $registeredSlots = $capture ? $protocol->slots : $protocol->truthSlots;
+                    $artifactKind = $capture ? Kind::Input : Kind::Truth;
+                    $reader->prefetch($company, $account, $artifactKind, array_column($registeredSlots, 'requestId'), $operatorBudget);
+                    $prefetchedKinds[$artifactKind->value] = true;
+                    if (!$capture) {
+                        $reader->prefetch($company, $account, Kind::Input, array_column($protocol->slots, 'requestId'), $operatorBudget);
+                        $prefetchedKinds[Kind::Input->value] = true;
+                    }
+                    foreach ($registeredSlots as $registered) {
+                        $artifact = $find($artifactKind, $registered['requestId']);
                         $late = null !== $artifact && $artifact->readAt > Net\NetQualitySchema::utc($cutoff);
                         $slots[] = ['requestId' => $registered['requestId'], 'status' => null === $artifact ? 'missing' : ($late ? 'late' : 'success'), 'artifact' => null === $artifact ? null : $reference($artifact), 'reason' => null === $artifact ? 'no_publication_at_cutoff' : ($late ? 'published_after_cutoff' : null)];
                     }

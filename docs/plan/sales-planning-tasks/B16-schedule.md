@@ -61,12 +61,15 @@
 `bin/tests/net_forecast_quality_test.py`, `bin/tests/net-forecast-quality.test.sh`,
 `api/tests/Unit/Ingestion/NetQualityOperatorRefTest.php`,
 `ops/systemd/conwix-net-forecast-quality@.service` и `.timer`, перечисленные
+`ops/systemd/net-forecast-quality.compose.yml` (private daemon logging),
 выше операционные документы. Host Python вызывает только pinned PHP bridge,
 который проверяет sealed protocol перед штатными Application/CLI операциями.
 Повторные попытки captures/truth допускаются 15 минут после slot; затем только
 recovery уже опубликованного UUID, без создания запоздалого input/truth.
 Контрольные стадии начинаются в cutoff+1/2/3 минуты; их ошибки сохраняются и
 блокируют результат. Persistent timer после downtime фиксирует пропуски.
+SIGTERM/ExecStopPost завершают собственный контейнер по marker и protocol label;
+при недоступном Docker cleanup не скрывает ошибку и не удаляет marker.
 Private identifiers, request payloads и receipts остаются вне Git/review package.
 Чужие untracked B17/B18/security документы не изменять.
 

@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location('quality', ROOT / 'bin/net-forecast-quality.py')
@@ -179,6 +181,34 @@ class JobsTest(unittest.TestCase):
         def malformed(op, job=None, recover=False):
             return {'status': 'verified'} if op == 'audit' else {'status': 'sealed'}
         self.assertEqual(self.run_at('2027-01-18T09:00:01.000000Z', malformed)['failed'], 1)
+
+    def test_interrupted_docker_client_stops_its_container(self):
+        seen = []
+        def interrupted(argv, **kwargs):
+            seen.append(argv)
+            if argv[:2] == ['docker', 'compose']:
+                self.assertIn(str(self.q.COMPOSE_ROOT / 'net-forecast-quality/compose.yml'), argv)
+                raise SystemExit(143)
+            if argv[:2] == ['docker', 'ps']:
+                active = self.q.load_private(self.directory / 'active.json')
+                return subprocess.CompletedProcess(argv, 0, active['name']+' '+self.config['protocol']['requestId']+'\n')
+            return subprocess.CompletedProcess(argv, 0, '')
+        with patch.object(self.q.subprocess, 'run', side_effect=interrupted):
+            with self.assertRaises(SystemExit):
+                self.q.DockerBridge(self.config, self.directory)('audit')
+        self.assertTrue(any(cmd[:2] == ['docker', 'stop'] for cmd in seen))
+        self.assertFalse((self.directory / 'active.json').exists())
+
+    def test_stop_post_never_stops_a_container_with_foreign_label(self):
+        self.q.save_private(self.directory / 'active.json', {'name': 'conwix-net-quality-'+identity(10), 'protocol': self.config['protocol']['requestId']})
+        def foreign(argv, **kwargs):
+            if argv[:2] != ['docker', 'ps']:
+                self.fail('A foreign container must not be stopped')
+            return subprocess.CompletedProcess(argv, 0, 'conwix-net-quality-'+identity(10)+' '+identity(999)+'\n')
+        with patch.object(self.q.subprocess, 'run', side_effect=foreign):
+            with self.assertRaises(ValueError):
+                self.q.stop_active(self.config, self.directory)
+        self.assertTrue((self.directory / 'active.json').exists())
 
 
 if __name__ == '__main__':
