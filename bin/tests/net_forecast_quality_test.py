@@ -184,6 +184,7 @@ class JobsTest(unittest.TestCase):
 
     def test_interrupted_docker_client_stops_its_container(self):
         seen = []
+        present = [True]
         def interrupted(argv, **kwargs):
             seen.append(argv)
             if argv[:2] == ['docker', 'compose']:
@@ -191,7 +192,9 @@ class JobsTest(unittest.TestCase):
                 raise SystemExit(143)
             if argv[:2] == ['docker', 'ps']:
                 active = self.q.load_private(self.directory / 'active.json')
-                return subprocess.CompletedProcess(argv, 0, active['name']+' '+self.config['protocol']['requestId']+'\n')
+                return subprocess.CompletedProcess(argv, 0, active['name']+' '+self.config['protocol']['requestId']+'\n' if present[0] else '')
+            if argv[:2] == ['docker', 'stop']:
+                present[0] = False
             return subprocess.CompletedProcess(argv, 0, '')
         with patch.object(self.q.subprocess, 'run', side_effect=interrupted):
             with self.assertRaises(SystemExit):
@@ -209,6 +212,22 @@ class JobsTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.q.stop_active(self.config, self.directory)
         self.assertTrue((self.directory / 'active.json').exists())
+
+    def test_created_container_is_removed_before_marker_disappears(self):
+        name = 'conwix-net-quality-'+identity(10)
+        self.q.save_private(self.directory / 'active.json', {'name': name, 'protocol': self.config['protocol']['requestId']})
+        present = [True]
+        def created(argv, **kwargs):
+            if argv[:2] == ['docker', 'ps']:
+                return subprocess.CompletedProcess(argv, 0, name+' '+self.config['protocol']['requestId']+'\n' if present[0] else '')
+            if argv[:2] == ['docker', 'rm']:
+                self.assertTrue((self.directory / 'active.json').exists())
+                present[0] = False
+            return subprocess.CompletedProcess(argv, 0, '')
+        with patch.object(self.q.subprocess, 'run', side_effect=created):
+            self.q.stop_active(self.config, self.directory)
+        self.assertFalse(present[0], 'docker stop alone leaves created containers behind')
+        self.assertFalse((self.directory / 'active.json').exists())
 
 
 if __name__ == '__main__':

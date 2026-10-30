@@ -145,14 +145,24 @@ def stop_active(config, directory):
     name, protocol = active['name'], config['protocol']['requestId']
     if active['protocol'] != protocol or not re.fullmatch(r'conwix-net-quality-[a-f0-9-]{36}', name):
         raise ValueError('Invalid active container identity')
-    result = subprocess.run(['docker', 'ps', '-a', '--filter', 'name=^/'+name+'$', '--format',
-                             '{{.Names}} {{.Label "conwix.net-quality.protocol"}}'],
+    query = ['docker', 'ps', '-a', '--filter', 'name=^/'+name+'$', '--format',
+             '{{.Names}} {{.Label "conwix.net-quality.protocol"}}']
+    result = subprocess.run(query,
                             capture_output=True, text=True, timeout=30, check=True)
     if result.stdout.strip():
         if result.stdout.strip() != name+' '+protocol:
             raise ValueError('Active container ownership label mismatch')
         subprocess.run(['docker', 'stop', '--time', '15', name], stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, timeout=30, check=True)
+        # A created-but-never-started --rm container does not auto-remove on stop.
+        remaining = subprocess.run(query, capture_output=True, text=True, timeout=30, check=True)
+        if remaining.stdout.strip():
+            if remaining.stdout.strip() != name+' '+protocol:
+                raise ValueError('Container ownership changed during cleanup')
+            subprocess.run(['docker', 'rm', name], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=30, check=True)
+        if subprocess.run(query, capture_output=True, text=True, timeout=30, check=True).stdout.strip():
+            raise RuntimeError('Owned container cleanup incomplete')
     marker.unlink()
 
 
