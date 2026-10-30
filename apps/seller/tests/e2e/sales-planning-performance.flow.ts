@@ -642,7 +642,12 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect(summary).toHaveCount(1)
   await page.unroute(url)
   const netGroup = metric(cell, 'Доступность нетто-прогноза')
-  await netGroup.locator('summary').click()
+  await netGroup
+    .getByRole('button', {
+      name: 'Пояснение: доступность нетто-прогноза',
+      exact: true,
+    })
+    .click()
   await expect(
     netGroup
       .locator('p')
@@ -869,6 +874,41 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
       'Исходная цель',
     ),
   ).not.toContainText('шт.')
+  for (const mode of ['За интервал', 'Накопительно']) {
+    await page.getByRole('button', { name: mode, exact: true }).click()
+    const status = metric(
+      wide.getByRole('rowgroup', { name: `SKU ${data.sku}`, exact: true }),
+      'Покрытие заказов',
+      'first',
+    )
+    const info = status.getByRole('button', {
+      name: 'Пояснение: покрытие заказов',
+      exact: true,
+    })
+    const width = await status.evaluate(
+      (element) => element.getBoundingClientRect().width,
+    )
+    expect(width).toBeLessThanOrEqual(177)
+    const before = await wide.evaluate((element) => element.scrollWidth)
+    await expect(info).toHaveAttribute('aria-expanded', 'false')
+    const descriptionId = await info.getAttribute('aria-controls')
+    expect(descriptionId).not.toBeNull()
+    const explanation = status.locator(`div[id="${descriptionId}"]`)
+    await expect(explanation).toBeHidden()
+    await info.focus()
+    await page.keyboard.press('Enter')
+    await expect(info).toHaveAttribute('aria-expanded', 'true')
+    await expect(explanation).toBeVisible()
+    expect(
+      await explanation.evaluate(
+        (element) => element.getBoundingClientRect().width,
+      ),
+    ).toBeLessThan(width)
+    expect(await wide.evaluate((element) => element.scrollWidth)).toBe(before)
+    await page.keyboard.press('Space')
+    await expect(info).toHaveAttribute('aria-expanded', 'false')
+    await expect(explanation).toBeHidden()
+  }
   await wide.locator('thead').scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'var/b13-grid-header-wide.png' })
   const gridViewport = page.viewportSize()

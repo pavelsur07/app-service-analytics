@@ -5,6 +5,7 @@ import {
   type PerformanceColumn,
 } from './PerformanceMetricRow'
 import { formatMinorAmountExact } from '../../../shared/lib/formatMinorAmountExact'
+import { PerformanceStatus } from './PerformanceStatus'
 import {
   formatNetQuantity,
   netForecastReason,
@@ -128,45 +129,48 @@ function PerformanceNetStatus({
       addQuality(netForecastReason(reason, 'quantity'), reason)
   }
   return (
-    <details className="text-sm text-text-muted">
-      <summary className="cursor-help focus-visible:outline-2 focus-visible:outline-accent-default">
-        {quantityReason === null && moneyReason === null
+    <PerformanceStatus
+      label="доступность нетто-прогноза"
+      status={
+        quantityReason === null && moneyReason === null
           ? 'Есть оценка'
           : quantityReason === null || moneyReason === null
-            ? 'Частичная оценка'
-            : 'Нет оценки'}
-      </summary>
-      <div className="mt-2 max-w-64 text-left whitespace-normal">
-        {sharedReason === null && quantityReason !== null && (
-          <p>Количество: {quantityReason}</p>
-        )}
-        {sharedReason === null && moneyReason !== null && (
-          <p>Выручка: {moneyReason}</p>
-        )}
-        {sharedReason !== null && <p>Продажи и выручка: {sharedReason}</p>}
-        {quality != null && (
-          <>
-            {qualityMessages.map((message) => (
-              <p key={message}>{message}</p>
-            ))}
-            {quality.trainingScopes.length > 0 && (
-              <p>
-                Данные оценки:{' '}
-                {quality.trainingScopes
-                  .map((scope) =>
-                    scope === 'sku'
-                      ? 'SKU'
-                      : scope === 'account'
-                        ? 'кабинет'
-                        : 'неизвестная область',
-                  )
-                  .join(', ')}
-                .
-              </p>
-            )}
-          </>
-        )}
-      </div>
-    </details>
+            ? 'Частично'
+            : 'Нет оценки'
+      }
+      tone={
+        quantityReason === null && moneyReason === null ? 'neutral' : 'warning'
+      }
+    >
+      {sharedReason === null && quantityReason !== null && (
+        <p>Количество: {quantityReason}</p>
+      )}
+      {sharedReason === null && moneyReason !== null && (
+        <p>Выручка: {moneyReason}</p>
+      )}
+      {sharedReason !== null && <p>Продажи и выручка: {sharedReason}</p>}
+      {quality != null && (
+        <>
+          {qualityMessages.map((message) => (
+            <p key={message}>{message}</p>
+          ))}
+          {quality.trainingScopes.length > 0 && (
+            <p>
+              Данные оценки:{' '}
+              {quality.trainingScopes
+                .map((scope) =>
+                  scope === 'sku'
+                    ? 'SKU'
+                    : scope === 'account'
+                      ? 'кабинет'
+                      : 'неизвестная область',
+                )
+                .join(', ')}
+              .
+            </p>
+          )}
+        </>
+      )}
+    </PerformanceStatus>
   )
 }

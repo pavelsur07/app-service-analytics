@@ -30,12 +30,18 @@ export function PerformanceGrid({
       aria-label="Сравнение SKU по датам"
       tabIndex={0}
     >
-      <table className="w-full text-sm">
+      <table className="w-full table-fixed text-sm">
         <caption className="pb-3 text-left text-text-secondary">
           <span className="sticky left-0 inline-block">
             Только эта страница SKU.
           </span>
         </caption>
+        <colgroup>
+          <col className="w-48 sm:w-64" />
+          {columns.map((point) => (
+            <col key={point.bucketFrom} className="w-44" />
+          ))}
+        </colgroup>
         <thead>
           <tr className="border-b border-border-default">
             <th
