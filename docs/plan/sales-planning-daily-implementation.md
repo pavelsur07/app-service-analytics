@@ -720,6 +720,9 @@ readonly DTO; `api/tests/Integration/Ingestion/NetSalesForecastQueryTest.php`.
   MAE, смещение, WAPE при ненулевой базе, долю без оценки и денежную ошибку
   на пригодных данных. Сравнить с простой базой и текущим прогнозом;
   зафиксировать критерии выпуска до выкладки.
+  На 2026-10-30 [реальный протокол зарегистрирован](sales-planning-tasks/B16-operations.md),
+  calibration capture/replay/retry/truth проверены; prospective origins
+  18–31 января 2027, 0 scored cases, качество NOT_MEASURED, gate CLOSED.
   **2–4 ч. Зависимость: B15.**
 - [ ] **B17. Пройти проверки и ревью этапа B.** Затронутые тесты, контракт,
   два отдельных прохода Codex и разбор замечаний обязательны; неполное ревью
