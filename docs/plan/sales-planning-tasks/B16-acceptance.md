@@ -1,11 +1,13 @@
 # B16 — чек-лист приёмки и готовности к B17
 
-**Состояние на 2026-10-29: инструментарий выпущен; B16 OPEN / качество NOT_MEASURED.**
+**Состояние на 2026-10-30: протокол зарегистрирован; B16 OPEN / качество NOT_MEASURED.**
 План: [B16.md](B16.md). Методика и точные пороги — его §2–7 и
 [ADR-049 §5](../../adr/0049-net-sales-forecast-observations-and-horizon.md).
 Этот файл — форма приёмки: незаполненное поле или неотмеченный пункт не PASS.
-Сейчас не предъявлены реальные protocol/inventory/dataset/report refs,
-sample counts и predictive metrics. Evaluator выпущен в PR288; проверки,
+Реальный protocol ref/hash и проверенный calibration capture приведены в
+[операционном плане и чек-листе](B16-operations.md). Prospective capture ещё
+не начался; inventory/dataset/report и predictive metrics отсутствуют.
+Evaluator выпущен в PR288; проверки,
 ревью и production receipts приведены в [B16.md](B16.md). Capture/replay B15
 подтверждены [реальным smoke](https://github.com/pavelsur07/app-service-analytics/pull/291#issuecomment-6506196483);
 это не приёмка качества B16.
@@ -16,6 +18,7 @@ sample counts и predictive metrics. Evaluator выпущен в PR288; пров
 |---|---|---|
 | PLAN_READY | Сверенный план и этот чек-лист | Нет |
 | TOOLING_VERIFIED | Реальный код, проверки, оба CLI reviews, CI и capture-only release | Нет |
+| PROTOCOL_REGISTERED | Sealed protocol до будущих captures, hash/readback/retry проверены; будущие задания ещё не выполнены | Нет |
 | COLLECTING | Sealed protocol до captures, реальные slot receipts | Нет |
 | WAITING_FOR_TRUTH | Sealed selection, pending/censored counts, условия дозревания | Нет |
 | EVALUATED | Полный проверенный dataset/report и воспроизводимое решение | Только при условиях следующей строки |
@@ -29,7 +32,7 @@ QUALITY_PASSED само по себе не открывает gate. В стро�
 
 ## 2. Вход и единое согласование
 
-- [ ] Зафиксированы baseline и финальный source commit B16, git status/task diff;
+- [x] Зафиксированы baseline и финальный source commit B16, git status/task diff;
   чужие B17/B18/security файлы не включены в diff/package.
 - [ ] Сверены B14 release receipt PR285/CI685–686/production686-a3c0489 и B15
   PR286–287/production693-6770cf2/migrationVersion20261029041000; результаты
@@ -38,7 +41,7 @@ QUALITY_PASSED само по себе не открывает gate. В стро�
   разобрано явно; основанием служат реальные проверки и выпуск B15.
 - [x] Одним решением согласованы два пункта B16 §0: kind5→20 с прежним PK
   и одна migration; optional protocol binding в существующем capture Facade.
-- [ ] Private scope установлен: одна компания/кабинет, plan/original baseline,
+- [x] Private scope установлен: одна компания/кабинет, plan/original baseline,
   полный набор<=50SKU,<=184 order days, целевые валюты и существующий epoch.
 - [ ] Проверены private storage access, anonymous denial, retention/lifecycle,
   tenant deletion inventory и recovery limitations для quality kinds.
@@ -76,20 +79,20 @@ QUALITY_PASSED само по себе не открывает gate. В стро�
 
 ## 4. Регистрация протокола до исходов
 
-- [ ] Есть immutable `quality-protocol` ref/hash, code/model/schema/codec versions,
+- [x] Есть immutable `quality-protocol` ref/hash, code/model/schema/codec versions,
   actual epoch ID/start, timezone policy и подтверждение freeze до final captures.
-- [ ] Закреплены H60d/L7d/Wreturn90d/Wgross90d, training100units/30postings,
+- [x] Закреплены H60d/L7d/Wreturn90d/Wgross90d, training100units/30postings,
   risk-set30units/10postings, baseline `simple_mature_return_linear_h60_v1`.
-- [ ] Calibration/final holdout order intervals не пересекаются целыми orders;
+- [x] Calibration/final holdout order intervals не пересекаются целыми orders;
   все scope/currency/baseline/thresholds заданы до просмотра outcomes.
-- [ ] Capture schedule12:00 MSK, заранее назначенные request UUID/slots,
+- [x] Capture schedule12:00 MSK, заранее назначенные request UUID/slots,
   future origin window из полных ISO недель>=2, truth schedule/cutoff/coverage
   policy закреплены; actual winning readAt учитывается отдельно от slot time.
-- [ ] Зарегистрированы все7 групп: order1–2/3–5/6–9/10–15 и
+- [x] Зарегистрированы все7 групп: order1–2/3–5/6–9/10–15 и
   delivery0–6/7–29/30–59. Weak slice не удалён после просмотра метрик.
-- [ ] Правила earliest selection, tie-break, paired masks, candidate/ready
+- [x] Правила earliest selection, tie-break, paired masks, candidate/ready
   denominators, missing slots, repeated orders и rolling-origin overlap закреплены.
-- [ ] Точные thresholds §6 включены в protocol; изменённая методика/порог
+- [x] Точные thresholds §6 включены в protocol; изменённая методика/порог
   требует новой версии и нового prospective holdout, прежний отчёт сохраняется.
 
 ## 5. Реальные наблюдения и truth
@@ -165,21 +168,21 @@ QUALITY_PASSED само по себе не открывает gate. В стро�
 Заполнить фактическими значениями; `не предъявлен`/`не измерено` остаются
 блокерами соответствующего уровня, а не трактуются как успешные проверки.
 
-| Поле | На момент подготовки плана |
+| Поле | Проверено root, 2026-10-30 |
 |---|---|
 | Baseline B16 | `fac86b636c2bbcd0156c65555abbe69113272c9d` |
-| Final source / tooling release / migration / CI refs | Не предъявлены |
-| Private scope ref | Не предъявлен |
-| Protocol ref/hash/freeze UTC | Не предъявлены |
+| Final source / tooling release / migration / CI refs | Tooling PR288, source `efa3dc3b6349aa4ef79aa0285e0f8caa5771d996`, production `699-efa3dc3`, migration `Version20261029130000`, CI40922477419; current preflight `716-42b570d` / source `42b570df27b8f7c59cac814b65598b9b8e0f2033`, CI41008345074 |
+| Private scope ref | Защищённый `var/b16-live-20261030/`; scope/original baseline/1 SKU/RUB проверены штатными scoped queries |
+| Protocol ref/hash/freeze UTC | `01a188a2-c93b-7c94-8588-b6edf822cf21` / `e593a367159957b8c5e7d6951f54ea72e3bf8dce5c46aa227098857139a6f253` / `2026-10-30T05:44:47.566603Z`; readback/retry PASS |
 | Capture inventory / selection refs+hashes | Не предъявлены |
 | Truth inventory / dataset / report refs+hashes | Не предъявлены |
-| Counts overall /7 групп/валюты/недели | Не измерены |
-| Mechanical validation / review receipts | NOT_RUN |
+| Counts overall /7 групп/валюты/недели | 0 prospective inputs, 0 scored cases; registered 14 input/28 truth slots. Calibration вне sample: truth pending, componentGroups=0 |
+| Mechanical validation / review receipts | Текущий production capture/replay/retry/truth/hash/parent PASS; исторические checks/reviews инструментария — [PR288 receipt](https://github.com/pavelsur07/app-service-analytics/pull/288#issuecomment-6504226176). Новая правка только Markdown, нового code review не требует |
 | Predictive decision | NOT_MEASURED |
 | Performance validation | NOT_MEASURED; B14 full Action wall16.17–20.60s не HTTP proof |
 | B16 acceptance | OPEN |
 | B17 / B18 / numeric gate | OPEN / OPEN / CLOSED |
-| Проверяющий / UTC / ограничения | Не заполнено |
+| Проверяющий / UTC / ограничения | root, preflight 05:43:25Z, readback 05:47:09Z, 2026-10-30. Состояние PROTOCOL_REGISTERED; основные origins 18–31 января 2027; scheduled jobs не созданы; зрелых данных нет |
 
 - [ ] Подтверждены все обязательные пункты2–7; reproducible report даёт
   QUALITY_PASSED. Объём доказанных claims совпадает с registered scope.
