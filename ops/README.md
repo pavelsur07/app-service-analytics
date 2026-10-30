@@ -3,7 +3,7 @@
 `ops/` — общий каталог декларативных конфигураций внешних ресурсов продукта.
 В корне монорепозитория он находится рядом с остальными эксплуатационными
 каталогами; конкретный файл сохраняет связь с ответственным модулем или сервисом.
-Файлы группируются по ресурсу: сейчас используется `storage/`.
+Файлы группируются по ресурсу: используются `storage/` и `systemd/`.
 
 Правила размещения — [CLAUDE.md → «Эксплуатационные конфигурации»](../CLAUDE.md#эксплуатационные-конфигурации).
 Карта репозитория — [docs/structure.md](../docs/structure.md).
@@ -36,3 +36,27 @@
 
 Сам JSON не подключён к автоматическому применению при запуске приложения
 или выкладке. Изменение файла и его применение к ресурсу фиксируются отдельно.
+
+## Разовые запуски B16 — systemd
+
+`systemd/conwix-net-forecast-quality@.service` и `.timer` — шаблоны конечного
+исследования B16, владелец root, предметная ответственность Ingestion.
+Это [разрешённое владельцем исключение](../docs/plan/sales-planning-tasks/B16-schedule.md)
+из operator-only B16 и обычного контейнерного расписания; host cron не вводится.
+Python runner запускает существующий PHP CLI в preregistered image по digest.
+Bridge `api/bin/net-forecast-quality-bridge.php` монтируется read-only и не
+меняет код модели внутри image. Он проверяет S3 protocol/hash, source/epoch,
+company/account, registered IDs и фактическое UTC перед операциями.
+
+Timer получает только конечные `OnCalendar` строки через per-instance drop-in,
+сгенерированный `bin/net-forecast-quality.py calendar <private automation.json>`.
+Manifest и append-only attempt/receipt файлы лежат вне Git, каталог 0700,
+файлы 0600. State привязан к SHA256 всего manifest; изменение manifest после
+первого выполненного задания блокируется. Численный gate не изменяется.
+
+Проверки, установка, контроль и откат —
+[операционный checklist](../docs/operations-checklist.md#b16--разовые-запуски-исследования).
+Проверки review/CI обязательны до установки. Для rollback отключить только
+собственный timer и остановить соответствующий oneshot; сохранить manifest,
+receipts, S3 objects и DB anchors. Удаление evidence откатом не является.
+После завершения исследование не создаёт новых заданий автоматически.

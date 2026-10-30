@@ -667,3 +667,51 @@ Timeweb может сжать JSON-ответ, который adapter обяза
   password_reset_token WHERE user_id = … ORDER BY issued_at DESC LIMIT 5`:
   строки нет — запрос упёрся в лимит или капчу; строка есть — смотреть
   журнал SMTP провайдера. Пароль руками не меняется.
+
+## B16 — разовые запуски исследования
+
+Основание: [разрешение исключения и план](plan/sales-planning-tasks/B16-schedule.md).
+Ответственный root. Этот checklist относится только к конечному protocol;
+новых регулярных задач или автоматического numerical rollout нет.
+
+- [ ] До установки: два Codex CLI review exact diff, разбор findings, green CI
+  и merged source. Сверить source/hash runner, PHP bridge и unit templates.
+- [ ] На `conwix-prod` установить runner и bridge в
+  `/opt/conwix/net-forecast-quality/`, root-owned 0644; templates —
+  `/etc/systemd/system/conwix-net-forecast-quality@.{service,timer}`.
+  Bridge содержит только код и должен читаться PHP user внутри контейнера;
+  private manifest/receipts в этот каталог не помещать.
+- [ ] Private `automation.json` в
+  `/opt/conwix/private/net-forecast-quality/<protocol UUID>/`, каталог 0700,
+  файлы 0600. Он содержит ref/hash, original protocol data, pinned image digest,
+  epoch config hash и четыре заранее сгенерированных приложением control UUIDv7.
+  Request fields не вводятся в shell и не выводятся в общий журнал.
+- [ ] `python3 /opt/conwix/net-forecast-quality/net-forecast-quality.py check
+  <private automation.json>` проверяет настоящий S3 protocol/hash/source/epoch
+  без публикации. На дату подготовки eligible registered slots=0.
+- [ ] Режим `calendar` этого же runner создаёт drop-in
+  `<instance>.timer.d/calendar.conf`: только exact UTC dates из manifest,
+  четыре контрольные стадии после cutoffs. Проверить полученный SHA256,
+  `systemd-analyze verify` и `systemd-analyze calendar`; тесты не заменяют
+  фактическое чтение installed unit/drop-in.
+- [ ] До enable выполнить режим `run` вне зарегистрированных окон: только audit,
+  `executed=0`; anchors/протокол прежние. Убедиться, что wrong hash/source и
+  попытка раннего capture отвергаются без writes и без private payload в stdout.
+- [ ] `systemctl daemon-reload`, затем enable/start только instance timer.
+  Сверить enabled/active, `list-timers`, `NextElapseUSecRealtime`, Persistent,
+  AccuracySec=1s, RandomizedDelaySec=0 и 39 конечных calendar instants.
+- [ ] После каждого срабатывания: service result/exit code, private attempt logs,
+  receipt UUID/ref/hash/actual UTC; failed/missing не являются успешным capture.
+  Concurrent execution блокируется файловым lock; retry сохраняет request UUID.
+  Через 15 минут допускается только recovery уже опубликованного UUID.
+- [ ] Persistent activation после downtime не пересоздаёт прошлые observations:
+  они сохраняются missing. Inventories сверяют действительные scoped DB anchors,
+  selection фиксируется до выбора labels; final report не меняет publication gate.
+- [ ] Отдельно проверить качество: все обязательные B16 counts/метрики/refs,
+  decision, причины unavailable. `sealed` означает завершение операции,
+  а `QUALITY_FAILED`/`INSUFFICIENT_DATA` не закрывают B16.
+
+При ошибке остановить только instance timer/service, сохранив attempts, receipts,
+manifest, S3 objects и DB anchors. При несовместимости pinned image с новой схемой
+не менять source pin на текущий код: новый prospective protocol — отдельное решение.
+После последнего trigger отключить timer; не чистить evidence автоматически.

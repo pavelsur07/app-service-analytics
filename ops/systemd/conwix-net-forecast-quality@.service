@@ -1,0 +1,20 @@
+[Unit]
+Description=Registered net forecast quality operations (%i)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=1800
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/conwix
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/conwix/net-forecast-quality/net-forecast-quality.py run /opt/conwix/private/net-forecast-quality/%i/automation.json
+TimeoutStartSec=900
+Restart=on-failure
+RestartSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/conwix/private/net-forecast-quality/%i
