@@ -5,8 +5,7 @@ import { buildNetForecastStatusPresentation } from './netForecastStatusPresentat
 const cohort = netPerformanceFixture.skus[0]?.points[0]?.period.cohort
 if (cohort == null) throw new Error('Missing net forecast fixture')
 
-const pending =
-  'Проверка качества прогноза ещё не завершена. Численная оценка пока не публикуется.'
+const pending = 'Публикация предварительного прогноза пока не включена.'
 
 describe('net forecast status presentation', () => {
   it.each([null, undefined])(
@@ -25,7 +24,7 @@ describe('net forecast status presentation', () => {
       status: 'Есть оценка',
       tone: 'neutral',
       messages: [
-        'Публикация численной оценки разрешена.',
+        'Предварительный прогноз. Точность ещё не проверена.',
         'Оценка по этим данным выполнялась.',
         'Данные оценки: SKU, кабинет.',
       ],

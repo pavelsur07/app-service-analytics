@@ -84,6 +84,8 @@ x-api-env: &api-env
   # ADR-049: capture работает всегда, consumer принимает только явно
   # подтверждённые интервалы. Пустой default не открывает numeric rollout.
   NET_FORECAST_CAPTURE_EPOCHS_JSON: "${NET_FORECAST_CAPTURE_EPOCHS_JSON:-[]}"
+  # Предварительный выпуск: точная версия модели, пустое значение закрывает публикацию.
+  NET_FORECAST_PUBLISHED_MODEL_VERSION: "${NET_FORECAST_PUBLISHED_MODEL_VERSION:-}"
   # Мастер-ключ шифрования credentials площадок (ADR-007). Значение —
   # только в /opt/conwix/.env на сервере, не в git. Его потеря делает
   # все зашифрованные учётные данные площадок невосстановимыми —

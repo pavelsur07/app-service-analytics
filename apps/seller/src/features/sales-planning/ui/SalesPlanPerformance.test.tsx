@@ -155,7 +155,7 @@ it.each([403, 404, 409] as const)(
     )
     await client.fetchQuery(options)
     expect(page(client)).toContain(
-      'Проверка качества прогноза ещё не завершена',
+      'Публикация предварительного прогноза пока не включена',
     )
     expect(page(client)).not.toContain('>90,125<')
     client.clear()

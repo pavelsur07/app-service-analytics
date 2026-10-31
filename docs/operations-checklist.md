@@ -723,3 +723,11 @@ Timeweb может сжать JSON-ответ, который adapter обяза
 manifest, S3 objects и DB anchors. При несовместимости pinned image с новой схемой
 не менять source pin на текущий код: новый prospective protocol — отдельное решение.
 После последнего trigger отключить timer; не чистить evidence автоматически.
+
+## Предварительный выпуск планирования, 2026-10-31
+
+По решению владельца длительный анализ B16 перенесён в [issue #298](https://github.com/pavelsur07/app-service-analytics/issues/298).
+Существующий registered instance timer остановлен и отключён: inactive/disabled.
+Protocol, private manifest, receipts и artifacts сохранены. Перезапуск старого
+исследования не является условием выпуска; актуальность модели/протокола
+проверяется в issue после стабилизации.

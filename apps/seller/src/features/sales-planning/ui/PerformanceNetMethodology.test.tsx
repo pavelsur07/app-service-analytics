@@ -12,13 +12,32 @@ describe('honest net methodology context', () => {
     )
     expect(html).toContain('<details')
     expect(html).toContain('<summary')
-    expect(html).toContain('Проверка качества прогноза ещё не завершена')
+    expect(html).toContain(
+      'Публикация предварительного прогноза пока не включена',
+    )
     expect(html).toContain('Оценка по этим данным не выполнялась')
     expect(html).toContain('Наблюдаемые продажи уже входят')
     expect(html).toContain('Будущие заказы не учитываются')
     expect(html).not.toContain('модель обучена')
     expect(html).not.toContain('epoch')
     expect(html).not.toContain('2026-07-03')
+  })
+
+  it('labels an enabled calculation as preliminary without claiming accuracy', () => {
+    const html = renderToStaticMarkup(
+      <PerformanceNetMethodology
+        metadata={{
+          ...metadata,
+          validationStatus: 'release_approved',
+          assessmentStatus: 'assessed',
+        }}
+      />,
+    )
+    expect(html).toContain(
+      'Предварительный прогноз. Точность ещё не проверена.',
+    )
+    expect(html).toContain('Оценка по этим данным выполнялась.')
+    expect(html).not.toContain('Проверка качества завершена')
   })
 
   it.each([45, 90])('uses server horizon %s from delivery', (horizonDays) => {

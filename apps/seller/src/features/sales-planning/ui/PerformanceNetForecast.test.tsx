@@ -132,10 +132,10 @@ it('associates one shared pending explanation with both unavailable values', () 
   })
   expect(result.match(/>—</g)).toHaveLength(2)
   expect(result).toContain(
-    'Продажи и выручка: Проверка качества прогноза ещё не завершена',
+    'Продажи и выручка: Публикация предварительного прогноза пока не включена',
   )
   expect(
-    result.match(/Проверка качества прогноза ещё не завершена/g),
+    result.match(/Публикация предварительного прогноза пока не включена/g),
   ).toHaveLength(1)
   expect(result.match(/Оценка по этим данным не выполнялась/g)).toHaveLength(1)
 })
@@ -171,6 +171,8 @@ it('keeps different local reasons and distinct quality information while removin
     1,
   )
   expect(result.match(/Недостаточно пригодных наблюдений/g)).toHaveLength(1)
-  expect(result).toContain('Проверка качества прогноза ещё не завершена')
+  expect(result).toContain(
+    'Публикация предварительного прогноза пока не включена',
+  )
   expect(result).toContain('Данные оценки: SKU')
 })
