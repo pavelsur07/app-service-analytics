@@ -321,7 +321,7 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await page.keyboard.press('Enter')
   await expect(methodology).toHaveAttribute('open', '')
   await expect(methodology).toContainText(
-    'Фактические продажи уже входят в него',
+    'Продажи за вычетом возвратов уже входят в него',
   )
   await expect(methodology).toContainText('Будущие заказы не учитываются')
   await expect(methodology).toContainText('60 дней от доставки')
@@ -899,7 +899,8 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     exact: true,
   })
   await expect(diagnostics).toBeHidden()
-  await diagnosticToggle.click()
+  await diagnosticToggle.focus()
+  await page.keyboard.press('Enter')
   await expect(diagnostics).toBeVisible()
   for (const mode of ['За интервал', 'Накопительно']) {
     await page.getByRole('button', { name: mode, exact: true }).click()
@@ -947,12 +948,12 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await page.setViewportSize({ width: 768, height: 1024 })
   await wide.focus()
   await expect(wide).toBeFocused()
-  const beforeNarrowScroll = await diagnostics.evaluate(
+  const beforeNarrowScroll = await wide.evaluate(
     (element) => element.scrollLeft,
   )
   await page.keyboard.press('ArrowRight')
   await expect
-    .poll(() => diagnostics.evaluate((element) => element.scrollLeft))
+    .poll(() => wide.evaluate((element) => element.scrollLeft))
     .toBeGreaterThan(beforeNarrowScroll)
   await wide.locator('thead').scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'var/b13-grid-header-narrow.png' })
