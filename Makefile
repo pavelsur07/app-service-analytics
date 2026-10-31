@@ -7,6 +7,10 @@
 # одновременно и сломать порядок. Одна строка снимает вопрос целиком.
 .NOTPARALLEL:
 
+.PHONY: product-research-ozon-stage0-check
+product-research-ozon-stage0-check: ## проверка стека и офлайн-эталонов MPStats, этап 0
+	sh services/product-research-ozon/stage0/check.sh
+
 # Docker Compose v2 (плагин) на этой машине; запасной вариант — старый
 # отдельный бинарник docker-compose (v1), где плагина ещё нет.
 COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
@@ -392,6 +396,7 @@ review: ## подготовка + Claude; REVIEW_RISK=high (по умолчан�
 # набором проверок.
 
 ci-local: structure-check stan deptrac lint front-typecheck front-lint front-knip front-test audit \
+	product-research-ozon-stage0-check \
 	ozon-fetcher-lint ozon-fetcher-vet ozon-fetcher-test ozon-fetcher-vulncheck \
 	api-types-check \
 	db-wait db-test-create api-migrate-test s3-bucket-create test-unit test-int test-func \

@@ -108,6 +108,39 @@ else:
     def package(self):
         return self.root / 'var/review' / (self.root / 'var/review/current').read_text().strip()
 
+    def test_fixture_attachments_preserve_bytes_and_reject_corruption(self):
+        path = 'services/example/tests/fixtures/month.zip'
+        fixture = self.root / path
+        fixture.parent.mkdir(parents=True)
+        raw = os.urandom(40000)
+        fixture.write_bytes(raw)
+        (self.root / 'var/paths').write_text(path + '\n')
+        self.make('review-prepare', REVIEW_FIXTURE_ATTACHMENTS='1')
+        package = (self.package() / 'package.md').read_text()
+        sha = hashlib.sha256(raw).hexdigest()
+        self.assertNotIn('GIT binary patch', package)
+        self.assertIn(sha, package)
+        blob = self.root / 'var/review/attachments' / sha
+        self.assertEqual(blob.read_bytes(), raw)
+        self.make('review-codex')
+        self.make('review-claude', success=False)
+        blob.chmod(0o644)
+        blob.write_bytes(b'corrupt')
+        self.make('review-codex', success=False)
+
+    def test_fixture_attachments_do_not_hide_source_and_detect_changed_input(self):
+        path = 'services/example/tests/fixtures/page.json'
+        fixture = self.root / path
+        fixture.parent.mkdir(parents=True)
+        fixture.write_bytes(b'x' * 40000)
+        (self.root / 'feature.txt').write_text('source-is-visible\n')
+        (self.root / 'var/paths').write_text(path + '\nfeature.txt\n')
+        self.make('review-prepare', REVIEW_FIXTURE_ATTACHMENTS='1')
+        package = (self.package() / 'package.md').read_text()
+        self.assertIn('+source-is-visible', package)
+        fixture.write_bytes(b'y' * 40000)
+        self.make('review-codex', success=False)
+
     def runs(self):
         return sorted((self.root / 'var/review/runs').glob('*/metadata.json'))
 

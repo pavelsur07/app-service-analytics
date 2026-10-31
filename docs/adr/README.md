@@ -230,3 +230,7 @@ ADR-041 закрывает решение, оставленное ADR-040 п. 13
 
 - [ADR-048: пределы чтения и записи календаря](0048-sales-plan-calendar-read-and-write-bounds.md) —
   keyset GET по200, полный PUT до500, виртуальные границы и ORM-агрегат команды.
+
+## Предложенные решения
+
+- [ADR-050: исследование категорий Ozon через Python-сервис](0050-product-research-ozon.md) — Proposed.

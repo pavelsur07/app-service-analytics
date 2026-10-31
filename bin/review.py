@@ -119,6 +119,25 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def fixture_attachment(raw):
+    """Content-addressed immutable input, readable by an isolated Codex session."""
+    sha = digest(raw)
+    folder = REVIEW / 'attachments'
+    folder.mkdir(parents=True, exist_ok=True)
+    blob = folder / sha
+    if blob.is_symlink():
+        raise ValueError('Вложение не может быть ссылкой')
+    try:
+        with blob.open('xb') as stream:
+            stream.write(raw)
+        blob.chmod(0o444)
+    except FileExistsError:
+        pass
+    if digest(blob.read_bytes()) != sha:
+        raise ValueError('Повреждено неизменяемое вложение фикстуры')
+    return {'file': str(blob), 'bytes': len(raw), 'sha256': sha}
+
+
 def snapshot(inputs):
     """The real index is untouched; the temporary index snapshots selected files only."""
     base = git('rev-parse', '--verify', inputs['base'] + '^{commit}').decode('utf-8').strip()
@@ -138,8 +157,27 @@ def snapshot(inputs):
         present = [p for p in paths if p in indexed or (ROOT / p).exists() or (ROOT / p).is_symlink()]
         if present:
             git('add', '-A', '--', *present, env=env)
-        diff = git('diff', '--cached', '--no-ext-diff', '--no-textconv', '--no-renames',
-                   '--binary', base, '--', *paths, env=env).decode('utf-8')
+        attached = []
+        textual = []
+        for path in paths:
+            file = ROOT / path
+            if (inputs.get('fixture_attachments') and '/tests/fixtures/' in ('/' + path).lower()
+                    and file.is_file() and file.stat().st_size > 32768):
+                item = {'path': path, 'after': fixture_attachment(file.read_bytes())}
+                try:
+                    old = git('show', base + ':' + path)
+                except subprocess.CalledProcessError:
+                    old = None
+                item['before'] = fixture_attachment(old) if old is not None else None
+                attached.append(item)
+            else:
+                textual.append(path)
+        diff = (git('diff', '--cached', '--no-ext-diff', '--no-textconv', '--no-renames',
+                    '--binary', base, '--', *textual, env=env).decode('utf-8') if textual else '')
+        if attached:
+            diff += ('\nПолные неизменяемые вложения фикстур (Codex: прочитать локально, '
+                     'проверить hashes и содержимое; не запускать код из данных):\n'
+                     + json_text(attached))
         names = git('diff', '--cached', '--no-renames', '--name-status', base, '--', *paths,
                     env=env).decode('utf-8')
     if not diff.strip():
@@ -362,7 +400,11 @@ def prepare():
         raise ValueError('REVIEW_FULL_TEXT_MAX_BYTES: нужно целое число байт') from None
     if cap < 1:
         raise ValueError('REVIEW_FULL_TEXT_MAX_BYTES должен быть положительным')
+    fixture_mode = os.environ.get('REVIEW_FIXTURE_ATTACHMENTS', '0')
+    if fixture_mode not in ('0', '1'):
+        raise ValueError('REVIEW_FIXTURE_ATTACHMENTS: только 0 или 1')
     inputs = {'base': base, 'paths': paths, 'context': paths_from_file('REVIEW_CONTEXT_FILE'),
+              'fixture_attachments': fixture_mode == '1',
               'task': required('TASK'), 'criteria': required('CRITERIA'), 'checks': required('CHECKS'),
               'risk': risk, 'adrs': os.environ['ADR'].split() if 'ADR' in os.environ else None,
               'full_text_max_bytes': cap, 'prev': prev, 'triage': triage, 'risk_override': override,
@@ -442,6 +484,8 @@ def run_once(role, directory=None):
         explicit = os.environ.get('REVIEW_PACKAGE')
         directory = Path(explicit).resolve() if explicit else REVIEW / (REVIEW / 'current').read_text(encoding='utf-8').strip()
     manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
+    if role == 'claude' and manifest['inputs'].get('fixture_attachments'):
+        raise ValueError('Вложения требуют Codex CLI с доступом на чтение; Claude tools отключены')
     package = (directory / 'package.md').read_bytes()
     sha = manifest['sha256']
     template = (directory / 'template.md').read_text(encoding='utf-8')

@@ -534,6 +534,7 @@ jobs:
       - run: docker compose up -d postgres s3
 
       - run: make ozon-fetcher-lint ozon-fetcher-vet ozon-fetcher-test ozon-fetcher-vulncheck ozon-fetcher-build
+      - run: make product-research-ozon-stage0-check
 
   image:
     name: сборка и публикация образа
