@@ -651,7 +651,7 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect(
     netGroup
       .locator('p')
-      .filter({ hasText: 'Проверка качества прогноза ещё не завершена' }),
+      .filter({ hasText: 'Публикация предварительного прогноза пока не включена' }),
   ).toHaveCount(1)
   await expect(netGroup.getByText(/^Продажи и выручка:/)).toBeVisible()
   const geometry = () =>
