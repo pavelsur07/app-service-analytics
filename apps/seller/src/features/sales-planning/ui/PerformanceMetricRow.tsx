@@ -79,8 +79,10 @@ export function PerformanceMoneyRow({
   columns,
   currency,
   amount,
+  description,
 }: {
   label: string
+  description?: ReactNode
   columns: readonly PerformanceColumn[]
   currency: string
   amount: (value: Values) => Money | null | undefined
@@ -100,6 +102,7 @@ export function PerformanceMoneyRow({
         <PerformanceMetricRow
           key={code}
           label={label}
+          description={description}
           unit={code === 'RUB' ? 'р.' : code || 'валюта неизвестна'}
           columns={columns}
         >

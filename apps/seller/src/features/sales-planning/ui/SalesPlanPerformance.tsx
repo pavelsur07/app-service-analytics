@@ -73,9 +73,7 @@ export function SalesPlanPerformance({
   )
   return (
     <Card>
-      <h2 className="text-lg font-semibold">
-        Сравнение с исходной целью сезона
-      </h2>
+      <h2 className="text-lg font-semibold">План-факт продаж</h2>
       <p className="mt-2 text-sm text-text-muted">
         По умолчанию — до вчера по Москве, не больше 31 видимого дня. Накопление
         всегда начинается с начала сезона.
@@ -233,11 +231,11 @@ export function SalesPlanPerformance({
             {query.data.accumulationFrom}. Цель:{' '}
             {query.data.metric === 'retained_sales'
               ? 'продажи за вычетом состоявшихся возвратов'
-              : 'заказы без отмен до передачи'}
+              : 'заказы без отмен до передачи в доставку'}
             .
           </p>
           <p className="text-sm text-text-muted">
-            Покрытие с начала сезона:{' '}
+            Полнота данных с начала сезона:{' '}
             {query.data.ordersCoverage === 'complete'
               ? 'полное'
               : query.data.ordersCoverage === 'missing'
@@ -251,7 +249,12 @@ export function SalesPlanPerformance({
                 timeStyle: 'short',
               }).format(new Date(query.data.calculatedAt))}
             </time>{' '}
-            МСК. Возвраты могут уточнять наблюдаемые продажи.
+            МСК. Возвраты могут уточнять фактические продажи.
+          </p>
+          <p className="text-sm text-text-secondary">
+            Показатели относятся к дате заказа. Поздние продажи и возвраты
+            уточняют результаты этой даты. Прогноз оценивает итог уже
+            размещённых заказов и не учитывает будущие заказы.
           </p>
           <PerformanceNetMethodology metadata={query.data.netForecast} />
           <PerformanceGrid data={query.data} mode={mode} />

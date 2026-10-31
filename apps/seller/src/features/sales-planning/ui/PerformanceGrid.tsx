@@ -20,6 +20,29 @@ export function PerformanceGrid({
   mode?: 'period' | 'cumulative'
   data: components['schemas']['SalesPlanPerformanceResponse']
 }) {
+  if (data.skus.length === 0) return <p>В выбранной странице нет SKU.</p>
+  return (
+    <div className="flex flex-col gap-3">
+      <PerformanceTable data={data} mode={mode} />
+      <details>
+        <summary className="cursor-pointer text-sm focus-visible:outline-2 focus-visible:outline-accent-default">
+          Подробности заказов, выкупа и качества данных
+        </summary>
+        <PerformanceTable data={data} mode={mode} detailed />
+      </details>
+    </div>
+  )
+}
+
+function PerformanceTable({
+  data,
+  mode,
+  detailed = false,
+}: {
+  mode: 'period' | 'cumulative'
+  detailed?: boolean
+  data: components['schemas']['SalesPlanPerformanceResponse']
+}) {
   const columns = data.skus[0]?.points ?? []
   const today = moscowToday(new Date(data.calculatedAt))
   if (data.skus.length === 0) return <p>В выбранной странице нет SKU.</p>
@@ -27,7 +50,11 @@ export function PerformanceGrid({
     <div
       className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-accent-default"
       role="region"
-      aria-label="Сравнение SKU по датам"
+      aria-label={
+        detailed
+          ? 'Подробные показатели SKU по датам'
+          : 'Сравнение SKU по датам'
+      }
       tabIndex={0}
     >
       <table className="w-full table-fixed text-sm">
@@ -80,51 +107,107 @@ export function PerformanceGrid({
                 </th>
                 {columns.length > 0 && <td colSpan={columns.length} />}
               </tr>
-              <PerformanceMetricRow label="Покрытие заказов" columns={values}>
-                {(_, index) => {
-                  const point = sku.points[index]
-                  return point === undefined ? (
-                    '—'
-                  ) : (
-                    <PerformanceQuality
-                      coverage={
-                        mode === 'period'
-                          ? point.periodCoverage
-                          : point.cumulativeCoverage
-                      }
-                      current={
-                        point.bucketFrom <= today && point.bucketTo >= today
-                      }
-                      future={point.bucketFrom > today}
+              {detailed ? (
+                <>
+                  <PerformanceMetricRow
+                    label="Полнота данных о заказах"
+                    columns={values}
+                  >
+                    {(_, index) => {
+                      const point = sku.points[index]
+                      return point === undefined ? (
+                        '—'
+                      ) : (
+                        <PerformanceQuality
+                          coverage={
+                            mode === 'period'
+                              ? point.periodCoverage
+                              : point.cumulativeCoverage
+                          }
+                          current={
+                            point.bucketFrom <= today && point.bucketTo >= today
+                          }
+                          future={point.bucketFrom > today}
+                        />
+                      )
+                    }}
+                  </PerformanceMetricRow>
+                  <PerformanceOrders columns={values} />
+                  {data.metric !== 'retained_sales' && (
+                    <PerformanceSales
+                      columns={values}
+                      currency={data.currency}
                     />
-                  )
-                }}
-              </PerformanceMetricRow>
-              <PerformanceMetricRow
-                label="Исходная цель"
-                unit="шт."
-                columns={values}
-              >
-                {(value) => value.planQuantity}
-              </PerformanceMetricRow>
-              <PerformanceMoneyRow
-                label="Плановая выручка по РРЦ"
-                columns={values}
-                currency={data.currency}
-                amount={(value) => value.planRevenueRrp}
-              />
-              <PerformanceOrders columns={values} />
-              <PerformanceSales columns={values} currency={data.currency} />
-              <PerformanceAttainment
-                columns={values}
-                currency={data.currency}
-              />
-              <PerformanceBuyout columns={values} />
-              <PerformanceForecast columns={values} />
-              <PerformanceNetForecast
-                columns={values}
-                currency={data.currency}
-              />
+                  )}
+                  <PerformanceBuyout columns={values} />
+                  <PerformanceForecast columns={values} />
+                </>
+              ) : (
+                <>
+                  <PerformanceMetricRow
+                    label={
+                      data.metric === 'retained_sales'
+                        ? 'План продаж'
+                        : 'План заказов'
+                    }
+                    unit="шт."
+                    columns={values}
+                    description={
+                      <p>
+                        Исходный утверждённый план. Изменение текущей версии не
+                        меняет базу сравнения.
+                      </p>
+                    }
+                  >
+                    {(value) => value.planQuantity}
+                  </PerformanceMetricRow>
+                  <PerformanceMoneyRow
+                    label="Плановая стоимость по РРЦ"
+                    description={
+                      <p>
+                        Стоимость планового количества по рекомендованной
+                        розничной цене. Это не прогноз выручки.
+                      </p>
+                    }
+                    columns={values}
+                    currency={data.currency}
+                    amount={(value) => value.planRevenueRrp}
+                  />
+                  <PerformanceMetricRow
+                    label={
+                      data.metric === 'retained_sales'
+                        ? 'Факт продаж'
+                        : 'Факт заказов'
+                    }
+                    unit="шт."
+                    columns={values}
+                    description={
+                      <p>
+                        {data.metric === 'retained_sales'
+                          ? 'Продажи за вычетом уже состоявшихся возвратов.'
+                          : 'Заказанные товары за вычетом отмен до передачи в доставку.'}
+                      </p>
+                    }
+                  >
+                    {(value) => value.actualGoalQuantity ?? '—'}
+                  </PerformanceMetricRow>
+                  <PerformanceMoneyRow
+                    label="Выручка за вычетом возвратов"
+                    columns={values}
+                    currency={data.currency}
+                    amount={({ cohort }) => cohort?.observedRevenue}
+                  />
+                  <PerformanceAttainment
+                    columns={values}
+                    currency={data.currency}
+                    metric={data.metric}
+                  />
+                  <PerformanceNetForecast
+                    columns={values}
+                    currency={data.currency}
+                  />
+                </>
+              )}
             </tbody>
           )
         })}

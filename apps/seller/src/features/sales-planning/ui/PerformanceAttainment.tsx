@@ -1,3 +1,4 @@
+import type { components } from '../../../api/schema'
 import { formatBasisPoints } from '../../../shared/lib/formatBasisPoints'
 import {
   formatGoalDeviation,
@@ -14,17 +15,15 @@ import {
 export function PerformanceAttainment({
   columns,
   currency,
+  metric = 'orders_excluding_pre_handover_cancellations',
 }: {
   columns: readonly PerformanceColumn[]
   currency: string
+  metric?: components['schemas']['SalesPlanPerformanceResponse']['metric']
 }) {
   return (
     <>
-      <PerformanceMetricRow
-        label="Выполнение по факту цели"
-        unit="%"
-        columns={columns}
-      >
+      <PerformanceMetricRow label="Выполнение плана" unit="%" columns={columns}>
         {(value) => (
           <PerformanceValue
             reason={
@@ -40,27 +39,41 @@ export function PerformanceAttainment({
         )}
       </PerformanceMetricRow>
       <PerformanceMetricRow
-        label="Отклонение от цели"
+        label="Отклонение от плана"
         unit="шт."
         columns={columns}
       >
         {(value) => value.quantityDeviation ?? '—'}
       </PerformanceMetricRow>
       <PerformanceMoneyRow
-        label="Отклонение выручки от плановой РРЦ"
+        label="Отклонение выручки от плановой стоимости"
+        description={
+          <p>
+            Выручка за вычетом возвратов минус плановая стоимость по РРЦ.
+            Разница включает изменения количества, цен и скидок.
+          </p>
+        }
         columns={columns}
         currency={currency}
         amount={(value) => value.revenueDeviation}
       />
       <PerformanceMetricRow
-        label="Темп метрики цели"
+        label={
+          metric === 'retained_sales'
+            ? 'Средние продажи в день'
+            : 'Средние заказы в день'
+        }
         unit="шт./день"
         columns={columns}
       >
         {(value) => value.actualSpeed?.replace('.', ',') ?? '—'}
       </PerformanceMetricRow>
       <PerformanceMetricRow
-        label="Ожидаемое количество по метрике цели"
+        label={
+          metric === 'retained_sales'
+            ? 'Прогноз продаж по заказам'
+            : 'Прогноз заказов без отмен до передачи'
+        }
         unit="шт."
         columns={columns}
       >
@@ -71,7 +84,7 @@ export function PerformanceAttainment({
         }
       </PerformanceMetricRow>
       <PerformanceMetricRow
-        label="Ожидаемое выполнение"
+        label="Прогноз выполнения плана"
         unit="%"
         columns={columns}
       >
@@ -84,7 +97,7 @@ export function PerformanceAttainment({
         }
       </PerformanceMetricRow>
       <PerformanceMetricRow
-        label="Ожидаемое отклонение от цели"
+        label="Прогноз отклонения от плана"
         unit="шт."
         columns={columns}
       >
@@ -97,13 +110,20 @@ export function PerformanceAttainment({
         }
       </PerformanceMetricRow>
       <PerformanceMetricRow
-        label="Ожидаемый темп метрики цели"
+        label={
+          metric === 'retained_sales'
+            ? 'Прогноз средних продаж в день'
+            : 'Прогноз средних заказов в день'
+        }
         unit="шт./день"
         columns={columns}
       >
         {(value) => value.expectedSpeed?.replace('.', ',') ?? '—'}
       </PerformanceMetricRow>
-      <PerformanceMetricRow label="Доступность прогноза цели" columns={columns}>
+      <PerformanceMetricRow
+        label="Статус прогноза выполнения плана"
+        columns={columns}
+      >
         {(value) =>
           value.forecastUnavailableReason == null ? (
             'Доступен'

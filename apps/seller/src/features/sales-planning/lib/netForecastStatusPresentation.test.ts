@@ -14,7 +14,7 @@ describe('net forecast status presentation', () => {
       expect(buildNetForecastStatusPresentation(value)).toEqual({
         status: 'Нет оценки',
         tone: 'warning',
-        messages: ['Продажи и выручка: Нет полных данных для нетто-прогноза.'],
+        messages: ['Продажи и выручка: Нет полных данных для прогноза продаж.'],
       })
     },
   )
@@ -58,7 +58,7 @@ describe('net forecast status presentation', () => {
     })
     expect(result.status).toBe('Частично')
     expect(result.messages[0]).toBe(
-      'Количество: История наблюдений для нетто-прогноза недоступна.',
+      'Количество: История наблюдений для прогноза продаж недоступна.',
     )
     expect(
       result.messages.some((message) => message.startsWith('Выручка:')),
@@ -71,7 +71,7 @@ describe('net forecast status presentation', () => {
       expectedNetRevenue: { minor: '01', currency: 'RUB', fractionDigits: 2 },
     })
     expect(result.status).toBe('Частично')
-    expect(result.messages[0]).toBe('Выручка: Нетто-выручка недоступна.')
+    expect(result.messages[0]).toBe('Выручка: Прогноз выручки недоступен.')
   })
 
   it('rejects malformed quantity without hiding a valid zero revenue', () => {
@@ -81,7 +81,7 @@ describe('net forecast status presentation', () => {
       expectedNetRevenue: { minor: '0', currency: 'RUB', fractionDigits: 2 },
     })
     expect(result.status).toBe('Частично')
-    expect(result.messages[0]).toBe('Количество: Нетто-прогноз недоступен.')
+    expect(result.messages[0]).toBe('Количество: Прогноз продаж недоступен.')
   })
 
   it('shows a shared pending explanation once across values and quality', () => {
@@ -127,8 +127,8 @@ describe('net forecast status presentation', () => {
       },
     })
     expect(result.messages).toEqual([
-      'Количество: История наблюдений для нетто-прогноза недоступна.',
-      'Выручка: Нет цены исходной продажи для оценки нетто-выручки.',
+      'Количество: История наблюдений для прогноза продаж недоступна.',
+      'Выручка: Нет цены исходной продажи для оценки выручки за вычетом возвратов.',
       pending,
       'Оценка по этим данным не выполнялась.',
       'Недостаточно пригодных наблюдений для оценки.',
@@ -151,7 +151,7 @@ describe('net forecast status presentation', () => {
       },
     })
     expect(result.messages).toEqual([
-      'Продажи и выручка: Нетто-прогноз недоступен.',
+      'Продажи и выручка: Прогноз продаж недоступен.',
       pending,
       'Оценка по этим данным не выполнялась.',
       'Данные оценки: неизвестная область.',

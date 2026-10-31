@@ -17,9 +17,9 @@ it('separates unknown outcome from unestimated quantity and explains the ten per
   const c = performanceFixture.skus[0]?.points[0]?.period.cohort
   if (c === undefined) throw new Error('Missing fixture')
   const html = renderToStaticMarkup(<PerformanceForecast cohort={c} />)
-  expect(html).toContain('Прогноз выкупа')
+  expect(html).toContain('Прогноз выкупленных товаров')
   expect(html).toContain('>900<')
-  expect(html).toContain('Без оценки прогноза')
+  expect(html).toContain('Товары без прогноза выкупа')
   expect(html).toContain('>20<')
   expect(html).toContain('>2<')
   const suppressed = renderToStaticMarkup(

@@ -11,7 +11,7 @@ export function PerformanceQuality({
 }) {
   return (
     <PerformanceStatus
-      label="покрытие заказов"
+      label="полнота данных о заказах"
       status={
         coverage === 'complete'
           ? 'Полностью'

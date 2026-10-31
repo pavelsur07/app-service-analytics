@@ -266,7 +266,7 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     .click()
   await expect(
     page.getByRole('heading', {
-      name: 'Сравнение с исходной целью сезона',
+      name: 'План-факт продаж',
       exact: true,
     }),
   ).toBeVisible()
@@ -292,22 +292,28 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     name: `SKU ${data.sku}`,
     exact: true,
   })
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
-  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('3')
-  await expect(metric(cell, 'Выручка по ценам продаж')).toHaveText(/^300,00$/)
-  await expect(metric(cell, 'Ожидаемые нетто-продажи')).toHaveText('—')
+  await expect(metric(cell, 'План продаж')).toHaveText('9')
+  await expect(metric(cell, 'Факт продаж')).toHaveText('3')
+  await expect(metric(cell, 'Выручка за вычетом возвратов')).toHaveText(
+    /^300,00$/,
+  )
+  await expect(metric(cell, 'Прогноз продаж за вычетом возвратов')).toHaveText(
+    '—',
+  )
   for (const label of [
-    'Ожидаемое количество по метрике цели',
-    'Ожидаемое выполнение',
-    'Ожидаемое отклонение от цели',
-    'Ожидаемый темп метрики цели',
+    'Прогноз продаж по заказам',
+    'Прогноз выполнения плана',
+    'Прогноз отклонения от плана',
+    'Прогноз средних продаж в день',
   ]) {
     await expect(metric(cell, label)).toHaveText('—')
   }
-  await expect(metric(cell, 'Ожидаемая нетто-выручка')).toHaveText('—')
+  await expect(metric(cell, 'Прогноз выручки за вычетом возвратов')).toHaveText(
+    '—',
+  )
   const summary = page
     .locator('summary')
-    .filter({ hasText: /^Методика нетто-прогноза$/ })
+    .filter({ hasText: /^Как рассчитывается прогноз продаж$/ })
   await expect(summary).toHaveCount(1)
   const methodology = summary.locator('..')
   await summary.focus()
@@ -315,7 +321,7 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await page.keyboard.press('Enter')
   await expect(methodology).toHaveAttribute('open', '')
   await expect(methodology).toContainText(
-    'Наблюдаемые продажи уже входят в него',
+    'Продажи за вычетом возвратов уже входят в него',
   )
   await expect(methodology).toContainText('Будущие заказы не учитываются')
   await expect(methodology).toContainText('60 дней от доставки')
@@ -354,7 +360,7 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   ).toHaveAttribute('aria-pressed', 'true')
   await page.getByLabel('Показать с', { exact: true }).fill(data.to)
   await page.getByRole('button', { name: 'Показать', exact: true }).click()
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
+  await expect(metric(cell, 'План продаж')).toHaveText('9')
   const sharedUrl = page.url()
   await page.reload()
   await expect(page.getByLabel('Показать с', { exact: true })).toHaveValue(
@@ -363,14 +369,14 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect(
     page.getByRole('button', { name: 'Накопительно', exact: true }),
   ).toHaveAttribute('aria-pressed', 'true')
-  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('3')
+  await expect(metric(cell, 'Факт продаж')).toHaveText('3')
   await page.goBack()
   await expect(page.getByLabel('Показать с', { exact: true })).toHaveValue(
     data.from,
   )
   await page.goForward()
   await expect(page).toHaveURL(sharedUrl)
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
+  await expect(metric(cell, 'План продаж')).toHaveText('9')
 
   await page
     .getByRole('button', { name: 'Создать новую версию', exact: true })
@@ -496,7 +502,7 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     .getByRole('button', { name: 'Выбрать весь сезон', exact: true })
     .click()
   await page.getByRole('button', { name: 'Показать', exact: true }).click()
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
+  await expect(metric(cell, 'План продаж')).toHaveText('9')
   const revised = await performance(page, data, current)
   expect(revised.baselinePlanId).toBe(baseline)
   expect(revised.skus[0]?.points[0]?.period.planQuantity).toBe(9)
@@ -541,11 +547,17 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     )
     .toBe(true)
   await page.getByRole('button', { name: 'Обновить факт', exact: true }).click()
-  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('2')
-  await expect(metric(cell, 'Выручка по ценам продаж')).toHaveText(/^200,00$/)
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
-  await expect(metric(cell, 'Ожидаемые нетто-продажи')).toHaveText('—')
-  await expect(metric(cell, 'Ожидаемая нетто-выручка')).toHaveText('—')
+  await expect(metric(cell, 'Факт продаж')).toHaveText('2')
+  await expect(metric(cell, 'Выручка за вычетом возвратов')).toHaveText(
+    /^200,00$/,
+  )
+  await expect(metric(cell, 'План продаж')).toHaveText('9')
+  await expect(metric(cell, 'Прогноз продаж за вычетом возвратов')).toHaveText(
+    '—',
+  )
+  await expect(metric(cell, 'Прогноз выручки за вычетом возвратов')).toHaveText(
+    '—',
+  )
   const returned = await performance(page, data, current)
   expect(returned.baselinePlanId).toBe(baseline)
   const goal = returned.skus[0]?.points[0]?.cumulative
@@ -598,18 +610,20 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
       .getByRole('button', { name: 'День', exact: true })
       .click()
     await page.getByRole('button', { name: 'Показать', exact: true }).click()
-    await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText(quantity)
-    await expect(metric(cell, 'Выручка по ценам продаж')).toHaveText(revenue)
-    await expect(metric(cell, 'Исходная цель')).toHaveText('3')
+    await expect(metric(cell, 'Факт продаж')).toHaveText(quantity)
+    await expect(metric(cell, 'Выручка за вычетом возвратов')).toHaveText(
+      revenue,
+    )
+    await expect(metric(cell, 'План продаж')).toHaveText('3')
   }
   await page.getByRole('button', { name: 'Накопительно', exact: true }).click()
-  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('2')
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
+  await expect(metric(cell, 'Факт продаж')).toHaveText('2')
+  await expect(metric(cell, 'План продаж')).toHaveText('9')
   await page
     .getByRole('button', { name: 'Выбрать весь сезон', exact: true })
     .click()
   await page.getByRole('button', { name: 'Показать', exact: true }).click()
-  await expect(metric(cell, 'Исходная цель')).toHaveText('9')
+  await expect(metric(cell, 'План продаж')).toHaveText('9')
 
   // The same cumulative goal was already visible for the single return day.
   // Wait for the new season response to render before installing a failure.
@@ -631,20 +645,22 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     page.getByRole('button', { name: 'Перечитать план', exact: true }),
   ).toBeVisible()
   await expect(
-    page.getByText('Ожидаемые нетто-продажи', { exact: true }),
+    page.getByText('Прогноз продаж за вычетом возвратов', { exact: true }),
   ).toHaveCount(0)
   await expect(summary).toHaveCount(0)
   await page
     .getByRole('button', { name: 'Перечитать план', exact: true })
     .click()
-  await expect(metric(cell, 'Наблюдаемые продажи')).toHaveText('2')
-  await expect(metric(cell, 'Ожидаемые нетто-продажи')).toHaveText('—')
+  await expect(metric(cell, 'Факт продаж')).toHaveText('2')
+  await expect(metric(cell, 'Прогноз продаж за вычетом возвратов')).toHaveText(
+    '—',
+  )
   await expect(summary).toHaveCount(1)
   await page.unroute(url)
-  const netGroup = metric(cell, 'Доступность нетто-прогноза')
+  const netGroup = metric(cell, 'Статус прогноза продаж')
   await netGroup
     .getByRole('button', {
-      name: 'Пояснение: доступность нетто-прогноза',
+      name: 'Пояснение: статус прогноза продаж',
       exact: true,
     })
     .click()
@@ -856,7 +872,7 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     .toBeGreaterThan(0)
   const pinnedMetric = wide
     .getByRole('rowheader')
-    .filter({ hasText: /^Исходная цель/ })
+    .filter({ hasText: /^План продаж/ })
     .first()
   const pinnedBefore = await pinnedMetric.boundingBox()
   expect(pinnedBefore).not.toBeNull()
@@ -871,25 +887,40 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await expect(
     metric(
       wide.getByRole('rowgroup', { name: `SKU ${data.sku}`, exact: true }),
-      'Исходная цель',
+      'План продаж',
     ),
   ).not.toContainText('шт.')
+  const diagnosticToggle = page.getByText(
+    'Подробности заказов, выкупа и качества данных',
+    { exact: true },
+  )
+  const diagnostics = page.getByRole('region', {
+    name: 'Подробные показатели SKU по датам',
+    exact: true,
+  })
+  await expect(diagnostics).toBeHidden()
+  await diagnosticToggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(diagnostics).toBeVisible()
   for (const mode of ['За интервал', 'Накопительно']) {
     await page.getByRole('button', { name: mode, exact: true }).click()
     const status = metric(
-      wide.getByRole('rowgroup', { name: `SKU ${data.sku}`, exact: true }),
-      'Покрытие заказов',
+      diagnostics.getByRole('rowgroup', {
+        name: `SKU ${data.sku}`,
+        exact: true,
+      }),
+      'Полнота данных о заказах',
       'first',
     )
     const info = status.getByRole('button', {
-      name: 'Пояснение: покрытие заказов',
+      name: 'Пояснение: полнота данных о заказах',
       exact: true,
     })
     const width = await status.evaluate(
       (element) => element.getBoundingClientRect().width,
     )
     expect(width).toBeLessThanOrEqual(177)
-    const before = await wide.evaluate((element) => element.scrollWidth)
+    const before = await diagnostics.evaluate((element) => element.scrollWidth)
     await expect(info).toHaveAttribute('aria-expanded', 'false')
     const descriptionId = await info.getAttribute('aria-controls')
     expect(descriptionId).not.toBeNull()
@@ -904,7 +935,9 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
         (element) => element.getBoundingClientRect().width,
       ),
     ).toBeLessThan(width)
-    expect(await wide.evaluate((element) => element.scrollWidth)).toBe(before)
+    expect(await diagnostics.evaluate((element) => element.scrollWidth)).toBe(
+      before,
+    )
     await page.keyboard.press('Space')
     await expect(info).toHaveAttribute('aria-expanded', 'false')
     await expect(explanation).toBeHidden()
@@ -929,9 +962,7 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     name: `SKU ${data.sku}`,
     exact: true,
   })
-  await expect(metric(emptyFact, 'Наблюдаемые продажи', 'first')).toHaveText(
-    '—',
-  )
+  await expect(metric(emptyFact, 'Факт продаж', 'first')).toHaveText('—')
 
   const conflict = await json<
     components['schemas']['SalesPlanCreatedResponse']
@@ -983,7 +1014,9 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   await page.goto(`/companies/${data.companyId}/sales-plans/${current}`)
   await expect(summary).toHaveCount(1)
   await expect(
-    page.getByText('Ожидаемые нетто-продажи', { exact: true }).first(),
+    page
+      .getByText('Прогноз продаж за вычетом возвратов', { exact: true })
+      .first(),
   ).toBeVisible()
   await page
     .getByRole('banner')
@@ -1004,6 +1037,6 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
   expect(other.items).toEqual([])
   await expect(summary).toHaveCount(0)
   await expect(
-    page.getByText('Ожидаемые нетто-продажи', { exact: true }),
+    page.getByText('Прогноз продаж за вычетом возвратов', { exact: true }),
   ).toHaveCount(0)
 }

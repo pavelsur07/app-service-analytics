@@ -70,9 +70,9 @@ it('displays all four literal server goal fields and keeps actual attainment sep
     '>900,000<',
     '>-100,000<',
     '>301,125<',
-    'Ожидаемое количество по метрике цели',
-    'Ожидаемое отклонение от цели',
-    'Ожидаемый темп метрики цели',
+    'Прогноз заказов без отмен до передачи',
+    'Прогноз отклонения от плана',
+    'Прогноз средних заказов в день',
   ])
     expect(html).toContain(text)
   expect(html).not.toContain('1600')

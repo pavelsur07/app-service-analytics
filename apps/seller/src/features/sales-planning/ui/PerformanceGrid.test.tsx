@@ -30,7 +30,7 @@ it.each(['period', 'cumulative'] as const)(
       (match) => match[0],
     )
     const target = rows.find((row) =>
-      /<th\b[^>]*scope="row"[^>]*>[^]*?Исходная цель/.test(row),
+      /<th\b[^>]*scope="row"[^>]*>[^]*?План заказов/.test(row),
     )
     expect(target).toBeDefined()
     expect(target).toContain('sticky left-0')
@@ -43,7 +43,7 @@ it.each(['period', 'cumulative'] as const)(
       mode === 'period' ? '1000' : '2000',
       mode === 'period' ? '1000' : '2000',
     ])
-    expect(html.match(/Исходная цель/g)).toHaveLength(1)
+    expect(html.match(/План заказов/g)).toHaveLength(1)
     expect(html).toContain('Показатель')
   },
 )
@@ -57,7 +57,7 @@ it('renders real metrics inside a captioned keyboard-scrollable table', () => {
   expect(html).toContain('scope="row"')
   expect(html).toContain('tabindex="0"')
   expect(html).toContain('SKU-1')
-  expect(html).toContain('Исходная цель')
+  expect(html).toContain('План заказов')
   expect(html).toContain('01.07–02.07')
   expect(html).toContain('>700<')
   expect(html).toContain('Только эта страница SKU')
@@ -112,10 +112,14 @@ it('keeps different currencies in separately labelled rows without rounding exac
     (match) => match[0],
   )
   const rub = rows.find(
-    (row) => row.includes('Ожидаемая нетто-выручка') && row.includes(', р.'),
+    (row) =>
+      row.includes('Прогноз выручки за вычетом возвратов') &&
+      row.includes(', р.'),
   )
   const clf = rows.find(
-    (row) => row.includes('Ожидаемая нетто-выручка') && row.includes(', CLF'),
+    (row) =>
+      row.includes('Прогноз выручки за вычетом возвратов') &&
+      row.includes(', CLF'),
   )
   const cells = (row: string | undefined) =>
     [...(row ?? '').matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/g)].map(
@@ -193,6 +197,49 @@ it('uses independent server period and cumulative net rather than visible sums',
   const hidden = renderToStaticMarkup(
     <PerformanceGrid data={netPerformanceFixture} mode="cumulative" />,
   )
-  expect(hidden).toContain('Нет полных данных для нетто-прогноза')
+  expect(hidden).toContain('Нет полных данных для прогноза продаж')
   expect(hidden).not.toContain('>90,125<')
 })
+
+it.each([
+  'retained_sales',
+  'orders_excluding_pre_handover_cancellations',
+] as const)(
+  'matches summary labels and the literal actual to the %s plan',
+  (metric) => {
+    const data = structuredClone(performanceFixture)
+    data.metric = metric
+    const value = data.skus[0]?.points[0]?.period
+    if (value == null) throw new Error('Missing fixture')
+    value.actualGoalQuantity = 123
+    const html = renderToStaticMarkup(<PerformanceGrid data={data} />)
+    const tables = [...html.matchAll(/<table\b[\s\S]*?<\/table>/g)].map(
+      (match) => match[0],
+    )
+    const main = tables[0] ?? ''
+    const diagnostics = tables[1] ?? ''
+    const sales = metric === 'retained_sales'
+    expect(main).toContain(sales ? 'План продаж' : 'План заказов')
+    expect(main).toContain(sales ? 'Факт продаж' : 'Факт заказов')
+    expect(main).toContain('>123<')
+    expect(main).toContain(
+      sales
+        ? 'Прогноз продаж по заказам'
+        : 'Прогноз заказов без отмен до передачи',
+    )
+    expect(main).toContain(
+      sales ? 'Средние продажи в день' : 'Средние заказы в день',
+    )
+    expect(main).not.toContain('Текущий процент выкупа')
+    expect(main).not.toContain('Полнота данных о заказах')
+    expect(diagnostics).toContain('Текущий процент выкупа')
+    expect(diagnostics).toContain('Полнота данных о заказах')
+    expect(html).toMatch(
+      /<details><summary[^>]*>Подробности заказов, выкупа и качества данных<\/summary>/,
+    )
+    if (sales)
+      expect(html.match(/<span>Средние продажи в день<\/span>/g)).toHaveLength(
+        1,
+      )
+  },
+)

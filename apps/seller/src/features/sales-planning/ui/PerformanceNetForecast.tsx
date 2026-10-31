@@ -18,7 +18,7 @@ export function PerformanceNetForecast({
   return (
     <>
       <PerformanceMetricRow
-        label="Ожидаемые нетто-продажи"
+        label="Прогноз продаж за вычетом возвратов"
         unit="шт."
         columns={columns}
       >
@@ -31,15 +31,12 @@ export function PerformanceNetForecast({
         }
       </PerformanceMetricRow>
       <PerformanceMoneyRow
-        label="Ожидаемая нетто-выручка"
+        label="Прогноз выручки за вычетом возвратов"
         columns={columns}
         currency={currency}
         amount={({ cohort }) => cohort?.expectedNetRevenue}
       />
-      <PerformanceMetricRow
-        label="Доступность нетто-прогноза"
-        columns={columns}
-      >
+      <PerformanceMetricRow label="Статус прогноза продаж" columns={columns}>
         {({ cohort }) => <PerformanceNetStatus cohort={cohort} />}
       </PerformanceMetricRow>
     </>
@@ -54,7 +51,7 @@ function PerformanceNetStatus({
   const { status, tone, messages } = buildNetForecastStatusPresentation(cohort)
   return (
     <PerformanceStatus
-      label="доступность нетто-прогноза"
+      label="статус прогноза продаж"
       status={status}
       tone={tone}
     >

@@ -16,7 +16,7 @@ describe('honest net methodology context', () => {
       'Публикация предварительного прогноза пока не включена',
     )
     expect(html).toContain('Оценка по этим данным не выполнялась')
-    expect(html).toContain('Наблюдаемые продажи уже входят')
+    expect(html).toContain('Продажи за вычетом возвратов уже входят')
     expect(html).toContain('Будущие заказы не учитываются')
     expect(html).not.toContain('модель обучена')
     expect(html).not.toContain('epoch')
@@ -54,7 +54,7 @@ describe('honest net methodology context', () => {
       const html = renderToStaticMarkup(
         <PerformanceNetMethodology metadata={value} />,
       )
-      expect(html).toContain('Описание методики нетто-прогноза недоступно')
+      expect(html).toContain('Описание прогноза продаж недоступно')
       expect(html).not.toContain('60 дней')
     },
   )
@@ -65,8 +65,8 @@ describe('honest net methodology context', () => {
         metadata={{ ...metadata, methodology: 'future_method' }}
       />,
     )
-    expect(html).toContain('Описание методики нетто-прогноза недоступно')
-    expect(html).not.toContain('Наблюдаемые продажи уже входят')
+    expect(html).toContain('Описание прогноза продаж недоступно')
+    expect(html).not.toContain('Продажи за вычетом возвратов уже входят')
     expect(html).not.toContain('future_method')
   })
 })

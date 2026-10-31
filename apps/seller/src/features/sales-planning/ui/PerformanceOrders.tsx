@@ -13,10 +13,13 @@ export function PerformanceOrders({
     <>
       {(
         [
-          ['Без отмен до передачи', 'effectiveOrderedQuantity'],
-          ['Всего заказали', 'rawOrderedQuantity'],
-          ['Отменили до передачи', 'preHandoverCancelledQuantity'],
-          ['Нераспознанный исход', 'unknownOutcomeQuantity'],
+          [
+            'Заказано без отмен до передачи в доставку',
+            'effectiveOrderedQuantity',
+          ],
+          ['Заказано товаров', 'rawOrderedQuantity'],
+          ['Отменено до передачи в доставку', 'preHandoverCancelledQuantity'],
+          ['Товары с неизвестным результатом заказа', 'unknownOutcomeQuantity'],
         ] as const
       ).map(([label, field]) => (
         <PerformanceMetricRow

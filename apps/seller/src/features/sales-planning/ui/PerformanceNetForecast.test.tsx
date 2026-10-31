@@ -26,10 +26,10 @@ const html = (value: Parameters<typeof PerformanceNetForecast>[0]['cohort']) =>
 describe('independent net quantity and revenue', () => {
   it.each([null, undefined])('does not invent a cohort for %s', (value) => {
     const result = html(value)
-    expect(result).toContain('Ожидаемые нетто-продажи')
-    expect(result).toContain('Ожидаемая нетто-выручка')
+    expect(result).toContain('Прогноз продаж за вычетом возвратов')
+    expect(result).toContain('Прогноз выручки за вычетом возвратов')
     expect(result.match(/>—</g)).toHaveLength(2)
-    expect(result).toContain('Нет полных данных для нетто-прогноза')
+    expect(result).toContain('Нет полных данных для прогноза продаж')
     expect(result).not.toContain('0,000')
   })
 
@@ -86,7 +86,7 @@ describe('independent net quantity and revenue', () => {
       ...cohort,
       expectedNetRevenue: { minor: '01', currency: 'RUB', fractionDigits: 2 },
     })
-    expect(invalid).toContain('Нетто-выручка недоступна.')
+    expect(invalid).toContain('Прогноз выручки недоступен.')
     expect(invalid).toContain('>90,125<')
     expect(invalid).not.toContain('0,01')
   })
@@ -164,7 +164,7 @@ it('keeps different local reasons and distinct quality information while removin
   expect(result).toMatch(/<p>Количество: История наблюдений/)
   expect(result).toMatch(/<p>Выручка: Нет цены/)
   expect(
-    result.match(/История наблюдений для нетто-прогноза недоступна/g),
+    result.match(/История наблюдений для прогноза продаж недоступна/g),
   ).toHaveLength(1)
   expect(result.match(/Нет цены исходной продажи/g)).toHaveLength(1)
   expect(result.match(/Нет полного покрытия загрузок возвратов/g)).toHaveLength(
