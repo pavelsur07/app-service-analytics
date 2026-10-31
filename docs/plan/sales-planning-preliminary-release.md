@@ -43,5 +43,35 @@ Codex CLI роли и обязательный CI. B18 — предварите�
 
 ## Итог
 
-Заполняется по фактическим проверкам/ревью/CI/production. Выпуск не означает
-завершённого анализа точности; дата его готовности не обещается.
+Предварительный выпуск выполнен 2026-10-31: [PR299](https://github.com/pavelsur07/app-service-analytics/pull/299),
+source `0b73008f09d73fe632290c739d5bd09cec919a66`, merge
+`ad8ae6e11619f278446fab22d8e2c443df090e39`. Source CI41170641206 и
+master CI/deploy41171412965 SUCCESS; production `727-ad8ae6e`.
+
+Две независимые Codex CLI роли gpt-6.1-sol для каждого пакета:17+9=26finalpaths,
+final COMPLETE0/0; полные ответы и hashes в
+[review receipt](https://github.com/pavelsur07/app-service-analytics/pull/299#issuecomment-6539390247).
+Принято0; отклонено1 предположение о callable minimatch в используемом lint rule:
+actual source и negative import-boundary smoke подтверждают new Minimatch.
+Последующие роли новых уникальных принятых0/0. Claude снят владельцем для фичи.
+
+Локально PASS: unit783, integration872(4workers), functional383, targeted48;
+static, seller/admin/extension types/lint/knip/tests/build (594/38/71),
+APItypes и полный audit, E2E7 и extension browser storage, compose4modes×7PHP.
+Ранний integration2 не прошёл resource caps; лимиты не ослаблены, repeat4 PASS.
+Audit blocker GHSA-g3hv-75wg-m249 устранён обновлением существующего transitive
+minimatch11.0.3, обязательные проверки сохранены.
+
+Публикация `observed_retention_h60_v1` включена во всех7PHP, исходный epoch
+hash сохранён. Все12сервисов running/healthy по предусмотренным healthchecks;
+seller/admin versions и реально обслуживаемый UI marker проверены.
+Реальные HTTP day/period4×200:2628.52/2257.93/1790.64/1798.26ms (<3s).
+Scope: существующий разрешённый план,1SKU; это не доказательство performance
+на максимальной нагрузке или точности. На текущем scope numeric components0,
+`source_history_unavailable`: отсутствие пригодных данных не заменено нулём.
+Временная проверочная сессия удалена; боевые планы/факты не менялись.
+
+B17 техническая приёмка и B18 предварительный выпуск выполнены в пересмотренном
+объёме. B16 остаётся отдельным исследованием issue298, quality NOT_MEASURED;
+старый registered timer inactive/disabled, artifacts сохранены. Дата готовности
+анализа точности не обещается.
