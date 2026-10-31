@@ -115,7 +115,9 @@ it('formats the exact JS-safe expected bps and explains overflow or publication 
   )
   expect(maximum).toContain('>90071992547409,91<')
   const pending = renderToStaticMarkup(<PerformanceAttainment value={value} />)
-  expect(pending).toContain('Проверка качества прогноза ещё не завершена')
+  expect(pending).toContain(
+    'Публикация предварительного прогноза пока не включена',
+  )
   const overflow = renderToStaticMarkup(
     <PerformanceAttainment
       value={{

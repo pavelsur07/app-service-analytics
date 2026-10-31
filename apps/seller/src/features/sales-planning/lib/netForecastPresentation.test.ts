@@ -31,7 +31,7 @@ describe('net forecast presentation', () => {
 
   it('explains publication pending independently of source assessment', () => {
     expect(netForecastReason('validation_pending', 'quantity')).toContain(
-      'Проверка качества прогноза ещё не завершена',
+      'Публикация предварительного прогноза пока не включена',
     )
     expect(netForecastStatus('not_assessed', 'assessment')).toBe(
       'Оценка по этим данным не выполнялась.',
@@ -69,13 +69,13 @@ describe('net forecast presentation', () => {
 
   it('never turns unfamiliar validation or assessment into success', () => {
     expect(netForecastStatus('unexpected', 'validation')).toBe(
-      'Статус проверки качества неизвестен.',
+      'Статус публикации прогноза неизвестен.',
     )
     expect(netForecastStatus('unexpected', 'assessment')).toBe(
       'Статус оценки неизвестен.',
     )
     expect(netForecastStatus('release_approved', 'validation')).toBe(
-      'Публикация численной оценки разрешена.',
+      'Предварительный прогноз. Точность ещё не проверена.',
     )
     expect(netForecastStatus('assessed', 'assessment')).toBe(
       'Оценка по этим данным выполнялась.',
@@ -110,7 +110,7 @@ describe('goal forecast presentation', () => {
       expect(goalForecastReason(reason)).not.toContain('future_t1')
     }
     expect(goalForecastReason('validation_pending')).toContain(
-      'Проверка качества',
+      'Публикация предварительного прогноза',
     )
     expect(goalForecastReason('goal_component_mismatch')).toContain(
       'противоречивы',

@@ -8,8 +8,7 @@ export function formatNetQuantity(
 }
 
 const reasons: Readonly<Record<string, string>> = {
-  validation_pending:
-    'Проверка качества прогноза ещё не завершена. Численная оценка пока не публикуется.',
+  validation_pending: 'Публикация предварительного прогноза пока не включена.',
   source_history_unavailable:
     'История наблюдений для нетто-прогноза недоступна.',
   postings_coverage_missing: 'Нет полного покрытия загрузок заказов.',
@@ -56,8 +55,8 @@ export function netForecastStatus(
   if (kind === 'validation') {
     if (status === 'validation_pending') return reasons.validation_pending ?? ''
     if (status === 'release_approved')
-      return 'Публикация численной оценки разрешена.'
-    return 'Статус проверки качества неизвестен.'
+      return 'Предварительный прогноз. Точность ещё не проверена.'
+    return 'Статус публикации прогноза неизвестен.'
   }
   if (status === 'not_assessed') return 'Оценка по этим данным не выполнялась.'
   if (status === 'assessed') return 'Оценка по этим данным выполнялась.'
