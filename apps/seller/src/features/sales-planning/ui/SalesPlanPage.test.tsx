@@ -51,7 +51,7 @@ function render(
 
 it('defaults approved to comparison while retaining a truly hidden editor subtree', () => {
   const { html } = render('approved')
-  expect(html).toContain('Сравнение с исходной целью сезона')
+  expect(html).toContain('План-факт продаж')
   expect(html).toContain('hidden="" class="hidden"')
   expect(html).toContain('Штуки текущей версии')
 })
@@ -59,7 +59,7 @@ it('defaults approved to comparison while retaining a truly hidden editor subtre
 it('keeps first drafts and closed plans out of performance requests', () => {
   for (const status of ['draft', 'cancelled', 'superseded', 'discarded']) {
     const { html, queries } = render(status)
-    expect(html).not.toContain('Сравнение с исходной целью сезона')
+    expect(html).not.toContain('План-факт продаж')
     expect(queries.some((key) => key.includes('performance'))).toBe(false)
   }
   expect(render('draft', 'two', 'one').html).not.toContain('Сезон')
@@ -73,7 +73,7 @@ it('opens revision comparison when shared URL selects that view', () => {
     '?view=compare&from=2026-07-01&to=2026-07-02&groupBy=period&mode=cumulative',
     2,
   )
-  expect(html).toContain('Сравнение с исходной целью сезона')
+  expect(html).toContain('План-факт продаж')
 })
 
 it('retains the calendar host when a trusted header reread fails', async () => {

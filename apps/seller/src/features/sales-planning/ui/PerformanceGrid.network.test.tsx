@@ -153,7 +153,7 @@ it('renders independent zero, unavailable money and hidden cumulative prefix fro
       <PerformanceGrid data={actual} mode="cumulative" />,
     )
     expect(cumulative).not.toContain('>0,000<')
-    expect(cumulative).toContain('Нет полных данных для нетто-прогноза')
+    expect(cumulative).toContain('Нет полных данных для прогноза продаж')
   } finally {
     client.clear()
   }

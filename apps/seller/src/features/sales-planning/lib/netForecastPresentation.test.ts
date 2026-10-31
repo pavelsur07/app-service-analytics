@@ -62,9 +62,11 @@ describe('net forecast presentation', () => {
     '__proto__',
   ])('gives an honest kind-specific fallback for %s', (reason) => {
     expect(netForecastReason(reason, 'quantity')).toBe(
-      'Нетто-прогноз недоступен.',
+      'Прогноз продаж недоступен.',
     )
-    expect(netForecastReason(reason, 'money')).toBe('Нетто-выручка недоступна.')
+    expect(netForecastReason(reason, 'money')).toBe(
+      'Прогноз выручки недоступен.',
+    )
   })
 
   it('never turns unfamiliar validation or assessment into success', () => {

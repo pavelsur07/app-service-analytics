@@ -50,8 +50,8 @@ it('reads shared URL period/cumulative/page and resets a stale header cursor bef
     expect(html).toContain('>2000<')
     expect(html).toContain('Окно: 2026-07-01')
     expect(html).toContain('Накопительно')
-    expect(html.match(/Методика нетто-прогноза/g)).toHaveLength(1)
-    expect(html.indexOf('Методика нетто-прогноза')).toBeLessThan(
+    expect(html.match(/Как рассчитывается прогноз продаж/g)).toHaveLength(1)
+    expect(html.indexOf('Как рассчитывается прогноз продаж')).toBeLessThan(
       html.indexOf('<table'),
     )
     if (version === 7) expect(html).toContain('К первым SKU')
@@ -109,7 +109,7 @@ it('hides cached net while a different company/version/cursor is loading', () =>
     const html = page(client, company, version, cursor)
     expect(html).toContain('Загружаем сравнение')
     expect(html).not.toContain('>90,125<')
-    expect(html).not.toContain('Методика нетто-прогноза')
+    expect(html).not.toContain('Как рассчитывается прогноз продаж')
   }
   client.clear()
 })
@@ -146,7 +146,7 @@ it.each([403, 404, 409] as const)(
     const html = page(client)
     expect(html).toContain('Перечитать план')
     expect(html).not.toContain('>90,125<')
-    expect(html).not.toContain('Методика нетто-прогноза')
+    expect(html).not.toContain('Как рассчитывается прогноз продаж')
     server.use(
       http.get(
         '/api/companies/{companyId}/sales-plans/{planId}/performance',

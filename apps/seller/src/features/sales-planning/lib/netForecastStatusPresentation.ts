@@ -28,7 +28,7 @@ export function buildNetForecastStatusPresentation(
           money.currency,
           money.fractionDigits,
         )
-  const missingCohort = 'Нет полных данных для нетто-прогноза.'
+  const missingCohort = 'Нет полных данных для прогноза продаж.'
   const quantityReason =
     quantity === '—'
       ? cohort == null

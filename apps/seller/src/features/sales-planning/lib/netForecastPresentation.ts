@@ -10,7 +10,7 @@ export function formatNetQuantity(
 const reasons: Readonly<Record<string, string>> = {
   validation_pending: 'Публикация предварительного прогноза пока не включена.',
   source_history_unavailable:
-    'История наблюдений для нетто-прогноза недоступна.',
+    'История наблюдений для прогноза продаж недоступна.',
   postings_coverage_missing: 'Нет полного покрытия загрузок заказов.',
   returns_coverage_missing: 'Нет полного покрытия загрузок возвратов.',
   delivery_observation_unknown: 'Нет подтверждённого наблюдения доставки.',
@@ -23,7 +23,8 @@ const reasons: Readonly<Record<string, string>> = {
   input_budget_exceeded: 'Превышен лимит данных для оценки.',
   query_budget_exceeded: 'Превышен лимит обработки данных для оценки.',
   valuation_unavailable: 'Оценка выручки по ценам исходных продаж недоступна.',
-  money_price_missing: 'Нет цены исходной продажи для оценки нетто-выручки.',
+  money_price_missing:
+    'Нет цены исходной продажи для оценки выручки за вычетом возвратов.',
   money_currency_missing: 'Неизвестна валюта исходной продажи.',
   money_currency_mismatch: 'В исходных продажах различаются валюты.',
   money_overflow: 'Сумма выходит за поддерживаемый диапазон оценки.',
@@ -43,8 +44,8 @@ export function netForecastReason(
       ? reasons[reason]
       : undefined) ??
     (kind === 'quantity'
-      ? 'Нетто-прогноз недоступен.'
-      : 'Нетто-выручка недоступна.')
+      ? 'Прогноз продаж недоступен.'
+      : 'Прогноз выручки недоступен.')
   )
 }
 

@@ -14,20 +14,20 @@ export function PerformanceSales({
   return (
     <>
       <PerformanceMetricRow
-        label="Наблюдаемые продажи"
+        label="Продажи за вычетом возвратов"
         unit="шт."
         columns={columns}
       >
         {({ cohort }) => cohort?.observedNetSalesQuantity ?? '—'}
       </PerformanceMetricRow>
       <PerformanceMoneyRow
-        label="Выручка по ценам продаж"
+        label="Выручка за вычетом возвратов"
         columns={columns}
         currency={currency}
         amount={({ cohort }) => cohort?.observedRevenue}
       />
       <PerformanceMetricRow
-        label="Скорость продаж"
+        label="Средние продажи в день"
         unit="шт./день"
         columns={columns}
       >

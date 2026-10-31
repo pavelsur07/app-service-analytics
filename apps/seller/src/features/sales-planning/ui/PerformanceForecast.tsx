@@ -13,7 +13,7 @@ export function PerformanceForecast({
   return (
     <>
       <PerformanceMetricRow
-        label="Прогноз выкупа"
+        label="Прогноз выкупленных товаров"
         unit="шт."
         columns={columns}
         description={
@@ -43,7 +43,7 @@ export function PerformanceForecast({
         }}
       </PerformanceMetricRow>
       <PerformanceMetricRow
-        label="Без оценки прогноза"
+        label="Товары без прогноза выкупа"
         unit="шт."
         columns={columns}
         description={
@@ -58,7 +58,7 @@ export function PerformanceForecast({
         {({ cohort }) => cohort?.unestimatedQuantity ?? '—'}
       </PerformanceMetricRow>
       <PerformanceMetricRow
-        label="Доля без оценки прогноза"
+        label="Доля товаров без прогноза выкупа"
         unit="%"
         columns={columns}
       >

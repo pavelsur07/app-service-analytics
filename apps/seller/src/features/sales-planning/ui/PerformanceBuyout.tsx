@@ -12,34 +12,34 @@ export function PerformanceBuyout({
 }) {
   return (
     <>
-      <PerformanceMetricRow label="Зрелость выкупа" columns={columns}>
+      <PerformanceMetricRow label="Статус расчёта выкупа" columns={columns}>
         {({ cohort }) =>
           cohort == null ? (
             '—'
           ) : (
             <PerformanceStatus
-              label="зрелость выкупа"
+              label="статус расчёта выкупа"
               status={
                 cohort.maturityStatus === 'mature'
-                  ? 'Зрелый'
+                  ? 'Рассчитан'
                   : 'Предварительный'
               }
               tone={cohort.maturityStatus === 'mature' ? 'neutral' : 'warning'}
             >
               <p>
                 {cohort.maturityStatus === 'mature'
-                  ? 'Созревший выкуп.'
+                  ? 'Результаты выкупа достаточно определены для расчёта фактического процента.'
                   : 'Предварительный исход: результаты заказов ещё уточняются.'}
               </p>
-              <p>Зрелость выкупа не означает завершение возвратов.</p>
+              <p>Статус расчёта выкупа не означает завершение возвратов.</p>
             </PerformanceStatus>
           )
         }
       </PerformanceMetricRow>
       {(
         [
-          ['Выкуп по известным закрытым исходам', 'knownBuyoutRateBps'],
-          ['Факт зрелого выкупа', 'actualBuyoutRateBps'],
+          ['Текущий процент выкупа', 'knownBuyoutRateBps'],
+          ['Процент выкупа по завершённым когортам', 'actualBuyoutRateBps'],
           ['Прогноз процента выкупа', 'currentProjectedBuyoutRateBps'],
         ] as const
       ).map(([label, field]) => (
@@ -57,7 +57,7 @@ export function PerformanceBuyout({
                   передачи в доставку; уже оформленные клиентские возвраты в эту
                   базу не входят. Это не доля продаж от всех заказов.
                 </p>
-                <p>Зрелость выкупа не означает завершение возвратов.</p>
+                <p>Статус расчёта выкупа не означает завершение возвратов.</p>
               </>
             ) : undefined
           }

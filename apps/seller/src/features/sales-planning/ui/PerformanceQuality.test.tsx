@@ -13,7 +13,7 @@ it.each([
       <PerformanceQuality coverage={coverage} current={false} />,
     )
     expect(html).toContain(`>${short}</span>`)
-    expect(html).toContain('aria-label="Пояснение: покрытие заказов"')
+    expect(html).toContain('aria-label="Пояснение: полнота данных о заказах"')
     expect(html).toContain('aria-expanded="false"')
     expect(html.split('hidden=""')[1]).toContain(full)
   },
