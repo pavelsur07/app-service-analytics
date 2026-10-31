@@ -649,11 +649,9 @@ export async function verifySalesPlanning(page: Page): Promise<void> {
     })
     .click()
   await expect(
-    netGroup
-      .locator('p')
-      .filter({
-        hasText: 'Публикация предварительного прогноза пока не включена',
-      }),
+    netGroup.locator('p').filter({
+      hasText: 'Публикация предварительного прогноза пока не включена',
+    }),
   ).toHaveCount(1)
   await expect(netGroup.getByText(/^Продажи и выручка:/)).toBeVisible()
   const geometry = () =>
