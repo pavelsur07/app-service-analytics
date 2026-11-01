@@ -1034,3 +1034,14 @@ packages/api-schema/
 PostgreSQL/подпись/ограниченный HTTP. Миграция 0002_catalog_cache — только технические
 метаданные. Полная реальная fixture — tests/fixtures/mpstats/ozon/categories,
 тестовый HTTP-сервер — tests/catalog_smoke_server.py (не входит в runtime).
+
+
+Этап 4 product-research-ozon: `domain/month.py` — зафиксированный календарь,
+бюджеты и проверка страниц; `collection/ports.py` и `collection/service.py` —
+оркестрация одного шага; `snapshots/manifest.py` — проверенный манифест.
+HTTP/gate — `infrastructure/mpstats_items.py`, технический журнал Psycopg —
+`infrastructure/snapshot_store.py`, неизменяемые pages/manifest — существующий
+`infrastructure/storage.py`. `0003_month_snapshots.py` — одна Alembic-миграция
+этапа; bodies/денежные показатели в БД не пишутся. Тесты месячного движка —
+`tests/unit/test_month.py`, `test_items_http.py`, `tests/integration/test_month_snapshots.py`.
+План и матрица приёмки — `docs/plan/product-research-ozon-stage4.md`.

@@ -26,3 +26,19 @@ class PageRef:
         ):
             raise ValueError("invalid_page_reference")
         return f"conwix/svc/product-research-ozon/v1/companies/{company_id}/connections/{self.connection_id}/snapshots/{self.snapshot_id}/pages/{self.page_no}/{self.sha256}.json"
+
+
+@dataclass(frozen=True)
+class ManifestRef:
+    company_id: UUID
+    connection_id: UUID
+    snapshot_id: UUID
+    sha256: str
+
+    def key(self, company_id: UUID) -> str:
+        # Apply the exact same identity/hash/scope validation as pages.
+        page = PageRef(
+            self.company_id, self.connection_id, self.snapshot_id, 0, self.sha256
+        )
+        page.key(company_id)
+        return f"conwix/svc/product-research-ozon/v1/companies/{company_id}/connections/{self.connection_id}/snapshots/{self.snapshot_id}/manifest/{self.sha256}.json"
