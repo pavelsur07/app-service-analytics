@@ -163,6 +163,8 @@ class JobLease:
     completeness_retries: int
     cursor: int
     auth_paused: bool = False
+    pending_failure: bool = False
+    unknown_outcome: bool = False
 
 
 @dataclass(frozen=True)

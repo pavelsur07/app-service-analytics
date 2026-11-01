@@ -244,6 +244,7 @@ class Snapshot:
     manifest_sha256: str | None
     manifest_size: int | None
     job_id: UUID | None = None
+    outcome_revision: int = 0
 
 
 @dataclass(frozen=True)

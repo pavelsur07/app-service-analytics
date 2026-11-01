@@ -134,6 +134,15 @@ class RunWorker:
             if lease.auth_paused:
                 # A paused source bypasses even a snapshot-level cooldown.
                 failure = CollectionFailure("authorization_failed")
+            elif lease.unknown_outcome:
+                # An expired execution with no durable outcome consumes one conservative failure.
+                failure = CollectionFailure("source_unavailable")
+            elif lease.pending_failure:
+                # A saved release was not acknowledged; apply it once before any new I/O.
+                failure = CollectionFailure(
+                    observed.error_code or "contract_violation",
+                    observed.next_attempt_at,
+                )
             elif observed.status != "ready" and self._clock() < lease.deadline:
                 try:
                     self._execute(lease)

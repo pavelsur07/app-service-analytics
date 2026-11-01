@@ -501,7 +501,12 @@ def test_parent_job_fence_is_rechecked_after_s3_write(
         observed,
         h.clock(),
     )
-    assert h.tick() and h.progress(spec)["status"] == "ready"
+    assert h.tick()
+    if boundary == "page":
+        # No committed outcome: one conservative failed step is recovered before retry.
+        assert h.progress(spec)["status"] == "running"
+        assert h.tick(60)
+    assert h.progress(spec)["status"] == "ready"
     # After page commit / manifest write the replay uses the committed cursor.
     assert h.calls == ([0, 0] if boundary == "page" else [0])
 
@@ -668,3 +673,162 @@ def test_invalid_category_is_contract_violation_not_internal_error(
         response.status_code == 422
         and response.json()["error"]["code"] == "contract_violation"
     )
+
+
+def test_crash_after_fourth_saved_failure_never_makes_fifth_request(
+    settings: Settings,
+) -> None:
+    calls = 0
+
+    def provider(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return (
+            httpx.Response(503) if calls <= 4 else httpx.Response(200, content=raw(0))
+        )
+
+    h = harness(settings, httpx.MockTransport(provider))
+    spec = h.spec(1)
+    h.submit(spec)
+    for seconds in (2, 60, 120):
+        assert h.tick(seconds)
+    h.clock.advance(240)
+    lease = h.store.claim_next_for_all_companies(h.source, 1, (h.company,), h.clock())
+    assert lease is not None and lease.network_retries == 3
+    with pytest.raises(CollectionFailure, match="source_unavailable"):
+        MonthCollector(
+            SnapshotStore(settings.database_url, lease, h.clock),
+            h.objects,
+            h.client,
+            h.clock,
+        ).step(h.company, h.source, lease.snapshot_id)
+    expire(h, lease)  # Saved release, lost job ack.
+    assert h.tick() and h.progress(spec)["status"] == "error" and calls == 4
+    assert not h.tick(1000)
+
+
+def test_old_generation_cannot_apply_terminal_failure_after_rotation(
+    settings: Settings,
+) -> None:
+    calls = 0
+    h: Harness
+
+    def provider(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 4:
+            assert h.gate.activate_generation(h.source, 2, h.clock())
+        return httpx.Response(503)
+
+    h = harness(settings, httpx.MockTransport(provider))
+    spec = h.spec(1)
+    h.submit(spec)
+    for seconds in (2, 60, 120):
+        assert h.tick(seconds)
+    h.clock.advance(240)
+    lease = h.store.claim_next_for_all_companies(h.source, 1, (h.company,), h.clock())
+    assert lease is not None
+    with pytest.raises(CollectionFailure) as error:
+        MonthCollector(
+            SnapshotStore(settings.database_url, lease, h.clock),
+            h.objects,
+            h.client,
+            h.clock,
+        ).step(h.company, h.source, lease.snapshot_id)
+    observed = h.store.state(h.company, lease)
+    decision = RetryPolicy.decide(lease, observed, error.value, h.clock())
+    assert not h.store.apply(h.company, lease, decision, observed, h.clock())
+    expire(h, lease)
+    client = GatedItems(
+        h.gate,
+        MpstatsItems(
+            TOKEN,
+            httpx.MockTransport(lambda request: httpx.Response(200, content=raw(0))),
+            h.clock,
+        ),
+        h.source,
+        2,
+        60,
+        h.clock,
+    )
+    client.activate()
+
+    def execute(new: JobLease) -> Snapshot:
+        return MonthCollector(
+            SnapshotStore(settings.database_url, new, h.clock),
+            h.objects,
+            client,
+            h.clock,
+        ).step(h.company, h.source, new.snapshot_id)
+
+    worker = RunWorker(h.store, h.source, 2, (h.company,), execute, h.clock)
+    # Rotation preserves the shared provider cooldown from the 503 response.
+    h.clock.advance(60)
+    assert worker.run_once() and h.progress(spec)["status"] == "ready"
+
+
+def test_unknown_expired_execution_consumes_budget_before_more_io(
+    settings: Settings,
+) -> None:
+    calls = 0
+
+    def provider(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return (
+            httpx.Response(503) if calls <= 4 else httpx.Response(200, content=raw(0))
+        )
+
+    h = harness(settings, httpx.MockTransport(provider))
+    spec = h.spec(1)
+    h.submit(spec)
+    for seconds in (2, 60, 120):
+        assert h.tick(seconds)
+    h.clock.advance(240)
+    lease = h.store.claim_next_for_all_companies(h.source, 1, (h.company,), h.clock())
+    assert lease is not None
+    store = SnapshotStore(settings.database_url, lease, h.clock)
+    assert store.claim(h.company, h.source, lease.snapshot_id, uuid7(), 1, h.clock())
+    with pytest.raises(CollectionFailure):
+        h.client.fetch(
+            h.company, h.source, h.store.state(h.company, lease).parameters, 0, 500
+        )
+    # Lost response/outcome: no release journal and no job acknowledgement.
+    expire(h, lease)
+    assert h.tick() and h.progress(spec)["status"] == "error" and calls == 4
+
+
+def test_unacknowledged_202_is_replayed_once_without_network_budget_charge(
+    settings: Settings,
+) -> None:
+    calls = 0
+
+    def provider(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return (
+            httpx.Response(503)
+            if calls <= 3
+            else httpx.Response(202, headers={"Retry-After": "120"})
+            if calls == 4
+            else httpx.Response(200, content=raw(0))
+        )
+
+    h = harness(settings, httpx.MockTransport(provider))
+    spec = h.spec(1)
+    h.submit(spec)
+    for seconds in (2, 60, 120):
+        assert h.tick(seconds)
+    h.clock.advance(240)
+    lease = h.store.claim_next_for_all_companies(h.source, 1, (h.company,), h.clock())
+    assert lease is not None
+    with pytest.raises(CollectionFailure, match="report_pending"):
+        MonthCollector(
+            SnapshotStore(settings.database_url, lease, h.clock),
+            h.objects,
+            h.client,
+            h.clock,
+        ).step(h.company, h.source, lease.snapshot_id)
+    expire(h, lease)
+    assert h.tick() and not h.tick(60) and calls == 4
+    assert h.tick(60) and h.progress(spec)["status"] == "ready" and calls == 5

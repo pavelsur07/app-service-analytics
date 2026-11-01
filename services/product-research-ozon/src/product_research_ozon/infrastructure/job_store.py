@@ -209,7 +209,7 @@ class JobStore:
                 (company, run_id),
             ).fetchone()
             row = db.execute(
-                """SELECT snapshot_id,deadline,network_retries,completeness_retries,retry_cursor FROM research_job
+                """SELECT snapshot_id,deadline,network_retries,completeness_retries,retry_cursor,snapshot_ack_revision,status FROM research_job
                 WHERE company_id=%s AND source_id=%s AND job_id=%s AND status IN ('queued','running')
                 AND (lease_until IS NULL OR lease_until<=clock_timestamp()) FOR UPDATE""",
                 (company, source_id, job_id),
@@ -237,11 +237,30 @@ class JobStore:
                 if restarted or snap.cursor > typed(row[4], int)
                 else typed(row[2], int)
             )
+            pending = (
+                not restarted
+                and snap.outcome_revision > typed(row[5], int)
+                and snap.error_code is not None
+            )
+            unknown = (
+                not restarted
+                and not pending
+                and row[6] == "running"
+                and snap.status == "collecting"
+                and snap.cursor == typed(row[4], int)
+            )
             owner = uuid7()
             db.execute(
-                """UPDATE research_job SET status='running',lease_id=%s,lease_until=clock_timestamp()+interval '180 seconds',last_claimed_at=clock_timestamp(),network_retries=%s,retry_cursor=%s
+                """UPDATE research_job SET status='running',lease_id=%s,lease_until=clock_timestamp()+interval '180 seconds',last_claimed_at=clock_timestamp(),network_retries=%s,retry_cursor=%s,snapshot_ack_revision=%s
                 WHERE company_id=%s AND job_id=%s""",
-                (owner, network, snap.cursor, company, job_id),
+                (
+                    owner,
+                    network,
+                    snap.cursor,
+                    0 if restarted else row[5],
+                    company,
+                    job_id,
+                ),
             )
             db.execute(
                 "UPDATE research_dispatch_turn SET last_served_at=clock_timestamp() WHERE company_id=%s AND source_id=%s",
@@ -264,6 +283,8 @@ class JobStore:
                 typed(row[3], int),
                 snap.cursor,
                 paused,
+                pending,
+                unknown,
             )
 
     @staticmethod
@@ -343,6 +364,13 @@ class JobStore:
         if company_id != lease.company_id:
             raise CollectionFailure("conflict")
         with self._db() as db:
+            # All job decisions are fenced, including terminal errors from old credentials.
+            gate = db.execute(
+                "SELECT active_generation FROM catalog_provider_gate WHERE source_id=%s FOR SHARE",
+                (lease.source_id,),
+            ).fetchone()
+            if gate is None or gate[0] != lease.generation:
+                return False
             db.execute(
                 "SELECT run_id FROM research_run WHERE company_id=%s AND run_id=%s FOR UPDATE",
                 (lease.company_id, lease.run_id),
@@ -365,12 +393,6 @@ class JobStore:
             if current != observed:
                 return False
             if decision.restart:
-                gate = db.execute(
-                    "SELECT active_generation FROM catalog_provider_gate WHERE source_id=%s FOR SHARE",
-                    (lease.source_id,),
-                ).fetchone()
-                if gate is None or gate[0] != lease.generation:
-                    return False
                 self._restart(
                     db,
                     lease.company_id,
@@ -396,7 +418,7 @@ class JobStore:
                 )
             db.execute(
                 """UPDATE research_job SET status=%s,next_attempt_at=%s,network_retries=%s,completeness_retries=%s,
-                error_code=%s,row_count=%s,lease_id=NULL,lease_until=NULL WHERE company_id=%s AND job_id=%s""",
+                error_code=%s,row_count=%s,snapshot_ack_revision=%s,lease_id=NULL,lease_until=NULL WHERE company_id=%s AND job_id=%s""",
                 (
                     decision.status,
                     decision.next_at,
@@ -406,6 +428,7 @@ class JobStore:
                     current.cursor
                     if current.total is not None and not decision.restart
                     else None,
+                    0 if decision.restart else current.outcome_revision,
                     lease.company_id,
                     lease.job_id,
                 ),

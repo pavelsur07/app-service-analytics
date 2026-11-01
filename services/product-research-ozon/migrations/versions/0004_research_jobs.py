@@ -22,6 +22,7 @@ def upgrade() -> None:
         deadline timestamptz NOT NULL, next_attempt_at timestamptz NOT NULL, last_claimed_at timestamptz NOT NULL,
         lease_id uuid, lease_until timestamptz, network_retries integer NOT NULL DEFAULT 0 CHECK(network_retries BETWEEN 0 AND 3),
         retry_cursor integer NOT NULL DEFAULT 0 CHECK(retry_cursor>=0),
+        snapshot_ack_revision bigint NOT NULL DEFAULT 0 CHECK(snapshot_ack_revision>=0),
         completeness_retries integer NOT NULL DEFAULT 0 CHECK(completeness_retries BETWEEN 0 AND 1),
         attempt_no integer NOT NULL DEFAULT 1 CHECK(attempt_no>0), row_count integer CHECK(row_count>=0), error_code varchar(32),
         PRIMARY KEY(company_id,job_id), UNIQUE(company_id,source_id,job_id), UNIQUE(company_id,run_id,month),
@@ -29,7 +30,7 @@ def upgrade() -> None:
         FOREIGN KEY(company_id,source_id,snapshot_id) REFERENCES month_snapshot(company_id,source_id,snapshot_id) DEFERRABLE INITIALLY DEFERRED,
         CHECK((lease_id IS NULL)=(lease_until IS NULL)),
         CHECK((status='error')=(error_code IS NOT NULL)))""")
-    op.execute("""ALTER TABLE month_snapshot ADD COLUMN job_id uuid,
+    op.execute("""ALTER TABLE month_snapshot ADD COLUMN outcome_revision bigint NOT NULL DEFAULT 0 CHECK(outcome_revision>=0), ADD COLUMN job_id uuid,
         ADD CONSTRAINT fk_snapshot_job FOREIGN KEY(company_id,source_id,job_id)
         REFERENCES research_job(company_id,source_id,job_id) DEFERRABLE INITIALLY DEFERRED""")
     op.execute(
@@ -47,3 +48,4 @@ def downgrade() -> None:
     op.drop_table("research_job")
     op.drop_table("research_run")
     op.drop_column("month_snapshot", "job_id")
+    op.drop_column("month_snapshot", "outcome_revision")

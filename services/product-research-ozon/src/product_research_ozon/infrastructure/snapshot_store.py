@@ -21,7 +21,7 @@ from product_research_ozon.domain.month import (
     utc_time,
 )
 
-COLUMNS = "company_id,source_id,snapshot_id,category_path,date_from,date_to,partial,max_rows,max_pages,max_bytes,generation,status,created_at,completed_at,total,cursor_row,pages,byte_size,next_attempt_at,error_code,manifest_sha256,manifest_size,job_id"
+COLUMNS = "company_id,source_id,snapshot_id,category_path,date_from,date_to,partial,max_rows,max_pages,max_bytes,generation,status,created_at,completed_at,total,cursor_row,pages,byte_size,next_attempt_at,error_code,manifest_sha256,manifest_size,job_id,outcome_revision"
 
 
 def typed[T](value: object, kind: type[T]) -> T:
@@ -59,6 +59,7 @@ def snapshot(row: tuple[object, ...]) -> Snapshot:
         optional(row[20], str),
         optional(row[21], int),
         optional(row[22], UUID),
+        typed(row[23], int),
     )
 
 
@@ -374,7 +375,7 @@ class SnapshotStore:
         with self._db() as db:
             self._job_guard(db, key)
             row = db.execute(
-                """UPDATE month_snapshot SET lease_id=NULL,lease_until=NULL,status=%s,next_attempt_at=%s,error_code=%s
+                """UPDATE month_snapshot SET lease_id=NULL,lease_until=NULL,status=%s,next_attempt_at=%s,error_code=%s,outcome_revision=outcome_revision+1
                 WHERE company_id=%s AND source_id=%s AND snapshot_id=%s AND status='collecting' AND lease_id=%s AND lease_until>clock_timestamp()
                 RETURNING snapshot_id""",
                 (
