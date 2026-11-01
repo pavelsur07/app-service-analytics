@@ -21,7 +21,7 @@ class CategoryCatalog:
         store: CatalogStore,
         source: CatalogSource,
         source_id: UUID,
-        generation: str,
+        generation: int,
         rpm: int,
         cursor: CatalogCursor,
         clock: Callable[[], datetime] = utc_now,
@@ -29,8 +29,7 @@ class CategoryCatalog:
         if (
             source_id.version != 7
             or not 1 <= rpm <= 1000
-            or not generation
-            or len(generation) > 64
+            or not 1 <= generation <= 2147483647
         ):
             raise ValueError("invalid_catalog_configuration")
         (
@@ -42,6 +41,12 @@ class CategoryCatalog:
             self._cursor,
             self._clock,
         ) = store, source, source_id, generation, rpm, cursor, clock
+
+    def activate(self) -> None:
+        if not self._store.activate_generation(
+            self._source_id, self._generation, self._clock()
+        ):
+            raise CatalogUnavailable("obsolete_generation")
 
     @property
     def source_id(self) -> UUID:
@@ -56,6 +61,8 @@ class CategoryCatalog:
     ) -> dict[str, object]:
         if company_id.version != 7 or not 1 <= limit <= 100:
             raise CatalogUnavailable("contract_violation")
+        if not self._store.generation_current(self._source_id, self._generation):
+            raise CatalogUnavailable("obsolete_generation")
         version = self._store.metadata(company_id, self._source_id)
         now = self._clock()
         if cursor is None and (version is None or not version.is_fresh(now)):
@@ -73,7 +80,12 @@ class CategoryCatalog:
                 acquired = True
                 categories = self._source.fetch()
                 version = self._store.publish(
-                    company_id, self._source_id, owner, categories, self._clock()
+                    company_id,
+                    self._source_id,
+                    owner,
+                    categories,
+                    self._clock(),
+                    self._generation,
                 )
                 emit(
                     logging.getLogger("product-research-ozon"),

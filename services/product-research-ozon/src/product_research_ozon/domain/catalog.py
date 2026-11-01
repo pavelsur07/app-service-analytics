@@ -22,6 +22,7 @@ class CatalogUnavailable(Exception):
             "lease_lost",
             "provider_paused",
             "invalid_cache",
+            "obsolete_generation",
         }
         self.code = code if code in safe_codes else "catalog_failure"
         super().__init__(self.code)

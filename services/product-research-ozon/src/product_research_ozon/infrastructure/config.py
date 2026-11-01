@@ -8,7 +8,7 @@ from uuid import UUID
 @dataclass(frozen=True)
 class CatalogSettings:
     source_id: UUID
-    generation: str
+    generation: int
     rpm: int
     token: str = field(repr=False)
     cursor_secret: str = field(repr=False)
@@ -29,7 +29,8 @@ class CatalogSettings:
             if (
                 source.version != 7
                 or str(source) != values["catalog_source_id"]
-                or not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", generation)
+                or not re.fullmatch(r"[1-9][0-9]{0,9}", generation)
+                or int(generation) > 2147483647
                 or not re.fullmatch(r"[0-9]{1,4}", raw_rpm)
                 or not 1 <= int(raw_rpm) <= 1000
             ):
@@ -40,7 +41,7 @@ class CatalogSettings:
                 raise ValueError
         except ValueError, KeyError:
             raise ValueError("invalid_catalog_configuration") from None
-        return cls(source, generation, int(raw_rpm), token, secret)
+        return cls(source, int(generation), int(raw_rpm), token, secret)
 
 
 @dataclass(frozen=True)

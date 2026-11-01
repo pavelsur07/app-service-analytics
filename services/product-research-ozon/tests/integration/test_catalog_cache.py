@@ -59,9 +59,9 @@ def catalog(
     clock: Clock,
     source: Source,
     connection: UUID | None = None,
-    generation: str = "one",
+    generation: int = 1,
 ) -> CategoryCatalog:
-    return CategoryCatalog(
+    service = CategoryCatalog(
         CatalogStore(database),
         source,
         connection or uuid7(),
@@ -70,6 +70,8 @@ def catalog(
         CatalogCursor("test-signing-secret-" + "s" * 32),
         clock,
     )
+    service.activate()
+    return service
 
 
 def test_repeat_pages_share_cache_then_expire_and_match_v1(database: str) -> None:
@@ -129,15 +131,18 @@ def test_real_concurrent_claim_and_global_provider_gate(database: str) -> None:
             )
         )
     assert sorted(claims) == [False, True]
+    assert store.activate_generation(connection, 1, now)
     with ThreadPoolExecutor(max_workers=2) as executor:
         global_claims = list(
             executor.map(
-                lambda owner: store.provider_claim(connection, owner, "one", 60, now),
+                lambda owner: store.provider_claim(connection, owner, 1, 60, now),
                 owners,
             )
         )
     assert sorted(global_claims) == [False, True]
-    assert store.provider_claim(uuid7(), uuid7(), "one", 60, now)
+    other_source = uuid7()
+    assert store.activate_generation(other_source, 1, now)
+    assert store.provider_claim(other_source, uuid7(), 1, 60, now)
 
 
 def test_lost_lease_cannot_publish_and_failure_preserves_full_generation(
@@ -167,8 +172,8 @@ def test_lost_lease_cannot_publish_and_failure_preserves_full_generation(
         )
     assert store.claim(company, connection, new, clock.now)
     with pytest.raises(CatalogUnavailable, match="lease_lost"):
-        store.publish(company, connection, old, (), clock.now)
-    store.publish(company, connection, new, (), clock.now)
+        store.publish(company, connection, old, (), clock.now, 1)
+    store.publish(company, connection, new, (), clock.now, 1)
     assert cache.page(company, 100, None)["items"] == []
 
 
@@ -183,7 +188,7 @@ def test_auth_pause_only_resets_for_rotated_generation(database: str) -> None:
     assert source.calls == 1
     source.failure = None
     assert (
-        catalog(database, clock, source, connection, "two").page(uuid7(), 100, None)[
+        catalog(database, clock, source, connection, 2).page(uuid7(), 100, None)[
             "revision"
         ]
         == 1
@@ -234,3 +239,50 @@ def test_real_internal_http_pages_and_foreign_cursor(database: str) -> None:
         assert client.get(url + "?limit=1&limit=2", headers=headers).status_code == 422
         assert client.get(url + "?unknown=true", headers=headers).status_code == 422
         assert source.calls == 1
+
+
+def test_retired_process_cannot_clear_new_generation_auth_pause(database: str) -> None:
+    clock, source, connection = Clock(), Source(), uuid7()
+    source.failure = CatalogUnavailable("authorization_failed")
+    retired = catalog(database, clock, source, connection, 1)
+    with pytest.raises(CatalogUnavailable, match="authorization_failed"):
+        retired.page(uuid7(), 100, None)
+    clock.now += timedelta(minutes=2)
+    current = catalog(database, clock, source, connection, 2)
+    with pytest.raises(CatalogUnavailable, match="authorization_failed"):
+        current.page(uuid7(), 100, None)
+    clock.now += timedelta(minutes=2)
+    with pytest.raises(CatalogUnavailable, match="obsolete_generation"):
+        retired.page(uuid7(), 100, None)
+    store = CatalogStore(database)
+    assert not store.activate_generation(connection, 1, clock.now)
+    assert not store.provider_claim(connection, uuid7(), 1, 60, clock.now)
+    assert not store.provider_claim(connection, uuid7(), 2, 60, clock.now)
+    with pytest.raises(CatalogUnavailable, match="obsolete_generation"):
+        catalog(database, clock, source, connection, 1)
+    with psycopg.connect(database) as db:
+        assert db.execute(
+            "SELECT active_generation,paused_generation FROM catalog_provider_gate WHERE source_id=%s",
+            (connection,),
+        ).fetchone() == (2, 2)
+    assert source.calls == 2
+
+
+def test_rotation_fences_inflight_publication_and_stale_auth_release(
+    database: str,
+) -> None:
+    clock, source, company, connection = Clock(), Source(), uuid7(), uuid7()
+    store = CatalogStore(database)
+    owner = uuid7()
+    assert store.activate_generation(connection, 1, clock.now)
+    assert store.claim(company, connection, owner, clock.now)
+    assert store.provider_claim(connection, owner, 1, 60, clock.now)
+    assert store.activate_generation(connection, 2, clock.now)
+    with pytest.raises(CatalogUnavailable, match="obsolete_generation"):
+        store.publish(company, connection, owner, source.values, clock.now, 1)
+    assert store.metadata(company, connection) is None
+    store.provider_release(
+        connection, owner, 1, CatalogUnavailable("authorization_failed")
+    )
+    clock.now += timedelta(seconds=2)
+    assert store.provider_claim(connection, uuid7(), 2, 60, clock.now)

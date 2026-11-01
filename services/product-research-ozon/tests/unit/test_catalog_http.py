@@ -97,7 +97,7 @@ def test_catalog_configuration_requires_opt_in_and_hides_credentials() -> None:
     values = {
         "catalog_enabled": "true",
         "catalog_source_id": str(uuid7()),
-        "catalog_generation": "one",
+        "catalog_generation": "1",
         "catalog_rpm": "60",
         "mpstats_api_token": TOKEN,
         "catalog_cursor_secret": "private-cursor-" + "c" * 32,

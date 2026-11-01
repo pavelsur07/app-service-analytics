@@ -57,6 +57,8 @@ def application() -> FastAPI:
             CatalogCursor(catalog.cursor_secret),
         )
     )
+    if service is not None:
+        service.activate()
     return create_app(
         settings, Readiness(settings, RawStorage(settings)), catalogs=service
     )

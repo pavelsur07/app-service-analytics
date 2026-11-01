@@ -22,7 +22,7 @@ def upgrade() -> None:
         FOREIGN KEY (company_id, source_id) REFERENCES catalog_state (company_id, source_id))""")
     op.execute("""CREATE TABLE catalog_provider_gate (
         source_id uuid PRIMARY KEY, lease_id uuid, lease_until timestamptz,
-        next_request_at timestamptz NOT NULL, paused_generation varchar(64))""")
+        next_request_at timestamptz NOT NULL, active_generation bigint NOT NULL CHECK (active_generation > 0), paused_generation bigint)""")
 
 
 def downgrade() -> None:

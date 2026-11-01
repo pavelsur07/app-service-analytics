@@ -48,23 +48,52 @@ class CatalogStore:
             ).fetchone()
         return row is not None
 
+    def activate_generation(
+        self, source_id: UUID, generation: int, now: datetime
+    ) -> bool:
+        """Startup fence: only a strictly newer generation can replace active credentials."""
+        with self._connect() as db:
+            row = db.execute(
+                """INSERT INTO catalog_provider_gate (source_id,active_generation,next_request_at)
+                VALUES (%s,%s,%s) ON CONFLICT (source_id) DO UPDATE
+                SET active_generation=EXCLUDED.active_generation,paused_generation=NULL
+                WHERE catalog_provider_gate.active_generation<EXCLUDED.active_generation
+                RETURNING active_generation""",
+                (source_id, generation, now),
+            ).fetchone()
+            if row is None:
+                row = db.execute(
+                    "SELECT active_generation FROM catalog_provider_gate WHERE source_id=%s LIMIT 1",
+                    (source_id,),
+                ).fetchone()
+        return row is not None and row[0] == generation
+
+    def generation_current(self, source_id: UUID, generation: int) -> bool:
+        with self._connect() as db:
+            return (
+                db.execute(
+                    "SELECT 1 FROM catalog_provider_gate WHERE source_id=%s AND active_generation=%s LIMIT 1",
+                    (source_id, generation),
+                ).fetchone()
+                is not None
+            )
+
     def provider_claim(
-        self, source_id: UUID, owner: UUID, generation: str, rpm: int, now: datetime
+        self, source_id: UUID, owner: UUID, generation: int, rpm: int, now: datetime
     ) -> bool:
         with self._connect() as db:
             row = db.execute(
-                """INSERT INTO catalog_provider_gate (source_id,lease_id,lease_until,next_request_at)
-                VALUES (%s,%s,clock_timestamp()+interval '60 seconds',%s)
-                ON CONFLICT (source_id) DO UPDATE SET lease_id=EXCLUDED.lease_id,
-                    lease_until=EXCLUDED.lease_until,next_request_at=EXCLUDED.next_request_at,paused_generation=NULL
-                WHERE (catalog_provider_gate.lease_until IS NULL OR catalog_provider_gate.lease_until<=clock_timestamp())
-                  AND catalog_provider_gate.next_request_at<=%s
-                  AND catalog_provider_gate.paused_generation IS DISTINCT FROM %s
+                """UPDATE catalog_provider_gate SET lease_id=%s,
+                lease_until=clock_timestamp()+interval '60 seconds',next_request_at=%s
+                WHERE source_id=%s AND active_generation=%s
+                  AND (lease_until IS NULL OR lease_until<=clock_timestamp())
+                  AND next_request_at<=%s AND paused_generation IS DISTINCT FROM %s
                 RETURNING lease_id""",
                 (
-                    source_id,
                     owner,
                     now + timedelta(microseconds=(60_000_000 + rpm - 1) // rpm),
+                    source_id,
+                    generation,
                     now,
                     generation,
                 ),
@@ -75,18 +104,19 @@ class CatalogStore:
         self,
         source_id: UUID,
         owner: UUID,
-        generation: str,
+        generation: int,
         failure: CatalogUnavailable | None,
     ) -> None:
         with self._connect() as db:
             db.execute(
                 """UPDATE catalog_provider_gate SET lease_id=NULL,lease_until=NULL,
                 next_request_at=GREATEST(next_request_at,COALESCE(%s,next_request_at)),
-                paused_generation=CASE WHEN %s THEN %s ELSE paused_generation END
+                paused_generation=CASE WHEN %s AND active_generation=%s THEN %s ELSE paused_generation END
                 WHERE source_id=%s AND lease_id=%s""",
                 (
                     failure.retry_at if failure else None,
                     failure is not None and failure.code == "authorization_failed",
+                    generation,
                     generation,
                     source_id,
                     owner,
@@ -121,6 +151,7 @@ class CatalogStore:
         owner: UUID,
         categories: tuple[Category, ...],
         generated_at: datetime,
+        generation: int,
     ) -> CatalogVersion:
         if len(categories) > MAX_CATEGORIES or len(
             {entry.key for entry in categories}
@@ -134,6 +165,12 @@ class CatalogStore:
             ).fetchone()
             if row is None or not isinstance(row[0], int):
                 raise CatalogUnavailable("lease_lost")
+            gate = db.execute(
+                "SELECT active_generation FROM catalog_provider_gate WHERE source_id=%s FOR SHARE",
+                (source_id,),
+            ).fetchone()
+            if gate is None or gate[0] != generation:
+                raise CatalogUnavailable("obsolete_generation")
             revision = row[0] + 1
             db.execute(
                 "DELETE FROM catalog_entry WHERE company_id=%s AND source_id=%s",

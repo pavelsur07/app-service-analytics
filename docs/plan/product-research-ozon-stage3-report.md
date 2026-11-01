@@ -70,7 +70,7 @@ TIMESTAMP(6) сохраняет точное generated_at для TTL и срав
   JSON ответа проверяется против OpenAPI, а не только freshness генератора.
 - Python `make product-research-ozon-lint product-research-ozon-vet
   product-research-ozon-architecture product-research-ozon-test`: Ruff, mypy strict,
-  import-linter и полный набор unit/contract/integration: **59 тестов, PASS**. Лог: var/product-research-ozon-stage3/python-all.log.
+  import-linter и полный набор unit/contract/integration: **61 тест, PASS**. Лог: var/product-research-ozon-stage3/python-all.log.
 - Реальные параллельные соединения: Python ThreadPoolExecutor + PostgreSQL и
   PHP два отдельных процесса с наблюдением pg_blocking_pids. По одному owner,
   проигравший не перезаписывает данные. Source/tenant scope и lost lease проверены.
@@ -114,3 +114,9 @@ Python production compose/включение, реальная квота/тар
 пользовательского UI этапа 7. Dev-сеть остаётся internal без живого egress;
 дополнительный HTTP smoke использует fixture-only сервер вне runtime image.
 Чужие B17/B18, securety_chek, temp и удаление onboarding-спецификации исключены.
+
+
+Первый независимый пакет завершён: 5A — 0, 5B — 1 уникальное принятое замечание
+о старом credential generation. Исправлены монотонная активация/claim/publication/
+release; 61 Python-тест и гейты прошли. Повторный полный rebuild Source-миграции
+и оба новых прохода ревью выполняются. [Полные заключения/разбор](product-research-ozon-stage3-review.md).

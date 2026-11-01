@@ -42,10 +42,11 @@ def main() -> None:
         CatalogStore(settings.database_url),
         FixtureSource(),
         UUID(os.environ["RESEARCH_CATALOG_SOURCE_ID"]),
-        "smoke",
+        1,
         60,
         CatalogCursor(settings.inbound_token),
     )
+    service.activate()
     app = create_app(
         settings, Readiness(settings, RawStorage(settings)), catalogs=service
     )

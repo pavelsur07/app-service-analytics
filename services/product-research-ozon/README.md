@@ -115,7 +115,7 @@ provider ID сохраняется только в техническом кэш
 |---|---|
 | Оба | RESEARCH_CATALOG_SOURCE_ID: одинаковый UUIDv7 подключения |
 | PHP | RESEARCH_SERVICE_TOKEN: Bearer направления PHP→Python, 32..256 ASCII |
-| Python | RESEARCH_CATALOG_ENABLED=true, RESEARCH_CATALOG_GENERATION, RESEARCH_CATALOG_RPM |
+| Python | RESEARCH_CATALOG_ENABLED=true, RESEARCH_CATALOG_GENERATION (возрастающее целое 1..2147483647), RESEARCH_CATALOG_RPM |
 | Python | MPSTATS_API_TOKEN: только Python; RESEARCH_CATALOG_CURSOR_SECRET: отдельный секрет подписи |
 
 Остальные RESEARCH_* конфигурации этапа 1 сохраняются. RESEARCH_INBOUND_TOKEN
@@ -131,3 +131,12 @@ production-активация/реальный тариф/квота/отдел�
 Тестовый `tests/catalog_smoke_server.py` проверяет реальный HTTP PHP→Python на
 отдельной локальной БД и фикстуре, отказывается от нетестовой БД и не входит в
 runtime image. Catalog metadata сохраняет microseconds, TTL не сдвигается чтениями.
+
+Ротация: сначала увеличить GENERATION вместе с заменой секрета, затем контролируемо
+перезапустить сервис. На startup активируется только равное/большее поколение;
+более старый процесс не может понизить active_generation. При равном поколении
+auth pause сохраняется, только строго более новое снимает её. Сохраняются RPM/
+Retry-After; публикация проверяет актуальное поколение под блокировкой. Старый
+in-flight запрос не публикует данные после активации нового поколения и не
+ставит ему паузу результатом своего отказа. Source ID не меняется при ротации
+ключа того же аккаунта; при смене аккаунта нужен новый SOURCE_ID.
