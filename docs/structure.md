@@ -45,6 +45,7 @@ app-service-analytics/
 ├── traefik/
 │   ├── dynamic.yml       dev: app/admin/lin.conwix.localhost (file provider)
 │   └── dynamic.prod.yml  prod: app/admin/lin.conwix.com, TLS, редирект с http
+├── temp/                 временные файлы
 ├── .dockerignore         контекст сборки — корень репозитория
 ├── docker/
 │   ├── nginx/
@@ -67,6 +68,8 @@ app-service-analytics/
 │   ├── adr/
 │   ├── design/           эталонные макеты дизайн-системы
 │   ├── plan/             открытые планы и справочные определения отчётов
+│   │                     product-research-ozon*.md — план, пакет этапа 0
+│   │                     и реестр A–AO; runtime пока не создан
 │   ├── task/             открытые задачи и исследования для ADR
 │   ├── superpowers/specs/  спецификация онбординга, обоснование ADR-023
 │   ├── structure.md
@@ -83,6 +86,9 @@ app-service-analytics/
 │   │                     контракты с PHP — _contracts/
 │   ├── AGENTS.md         правила всех сервисов
 │   ├── go.md             правила Go
+│   ├── python.md         правила Python (ADR-050)
+│   ├── product-research-ozon/  этап 0: правила, stage0/ (hash-lock/check.sh),
+│   │                     tests/ (офлайн-приёмка и архивы JSON/CSV); runtime ещё нет
 │   ├── _contracts/       JSON Schema контрактов сервис ↔ PHP по версиям
 │   │                     (marketplace-connections/v1, service-coverage/v1)
 │   ├── docker/postgres/  init-скрипт песочницы: роль и БД сервисов
@@ -1000,3 +1006,6 @@ packages/api-schema/
 типы относительным путём (`../../../../packages/api-schema/src/schema`),
 для чего `packages/` домонтирован в `node-seller`/`node-admin` рядом
 с `apps/`.
+
+Большие тестовые фикстуры в Codex-ревью могут идти полными hash-вложениями
+в `var/review/attachments/`, не в текстовом base85 diff; см. шаблон пакета.

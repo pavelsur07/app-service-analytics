@@ -1663,3 +1663,15 @@ backend и frontend в этом файле: ближайший к коду до�
 **Чего не делаем в сервисах:** не ходим в БД Conwix, не пишем факты,
 не держим ключи подключений вне памяти, не публикуем сервис наружу,
 не вызываем сервис синхронно из пользовательского запроса PHP.
+
+
+## Python: исследование категорий Ozon
+
+ADR-050 выделяет product-research-ozon. Правила — `services/python.md`,
+специфика — `services/product-research-ozon/AGENTS.md`. Этап 0 закрепляет
+CPython/image digest и полный hash-lock; проверка —
+`make product-research-ozon-stage0-check`. Это проверка подготовки, не runtime.
+Новых брокеров, ORM runtime и workflow-платформ не вводится.
+MPStats вызывается прямым REST: FBS=1, RUB, пустой фильтр, месяцы отдельно,
+revenue DESC/id ASC. MCP не источник побайтового REST-сырья. API CSV имеет
+49 полей, ручной — 41; это разные профили, сопоставление версионируется.

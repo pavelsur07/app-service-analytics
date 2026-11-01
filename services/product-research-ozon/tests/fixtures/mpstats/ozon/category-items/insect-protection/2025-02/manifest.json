@@ -1,0 +1,50 @@
+{
+  "captured_on": "2026-10-31",
+  "category_path": "Бытовая химия и гигиена/Бытовая химия/Защита от насекомых",
+  "date_from": "2025-02-01",
+  "date_to": "2025-02-28",
+  "currency": "RUB",
+  "rows": 62148,
+  "assets": [
+    {
+      "path": "api-fbs0-page.json",
+      "bytes": 1529074,
+      "sha256": "e34f194ba979bed80f9b3f3a7dfab3dbd7eb294a3fbf0555583c88952ea127e1"
+    },
+    {
+      "path": "api-fbs0.zip",
+      "bytes": 4605040,
+      "sha256": "12b2b4ac7a1c4c193aad6cdb0d88a4cf31fc5d93219265a370f347962577fcb1"
+    },
+    {
+      "path": "api-fbs1-page.json",
+      "bytes": 1458804,
+      "sha256": "053980b9e6865823a7e4d6537ac6039e3757e0485167044121c1e2d767eb5681"
+    },
+    {
+      "path": "api-fbs1.zip",
+      "bytes": 5493356,
+      "sha256": "42aa93a93c2ea934e7e0cc8a68d490df9a988bce62279f1b4b2f5edfc16966cd"
+    },
+    {
+      "path": "manual-fbs1.zip",
+      "bytes": 6405177,
+      "sha256": "8f2793e0691805f42581c3e27a0efb1cc7acbb1a39de8d0f3fcfbfa422eb08ff"
+    },
+    {
+      "path": "manual-previous.csv.gz",
+      "bytes": 5898468,
+      "sha256": "083330da64d2c657f38ed894f25f5acbc57b5c89e3486c555b3c398c8c4ad709"
+    }
+  ],
+  "fbs1": {
+    "sales": "1080978",
+    "revenue_rub": "596919032"
+  },
+  "fbs0": {
+    "sales": "314945",
+    "revenue_rub": "152581452"
+  },
+  "manual_previous_note": "User selected FBO+FBS, but previous file financial values match API fbs=0; cause unknown. New manual archive confirms fbs=1.",
+  "privacy_review": "Product/seller public catalogue attributes; no buyer/legal/contact keys. Source bodies exclude headers and credentials."
+}

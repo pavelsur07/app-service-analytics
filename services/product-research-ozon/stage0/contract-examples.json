@@ -1,0 +1,43 @@
+{
+  "synthetic": true,
+  "purpose": "Stage 0 examples for PHP/Python contract design; not captured MPStats responses and not a published v1 schema",
+  "provider_cases": [
+    {
+      "name": "two_pages",
+      "pages": [
+        {"startRow": 0, "endRow": 2, "total": 3, "data": [{"id": 101}, {"id": 102}]},
+        {"startRow": 2, "endRow": 3, "total": 3, "data": [{"id": 103}]}
+      ],
+      "expected": {"outcome": "ready", "rows": 3, "duplicate_ids": 0}
+    },
+    {
+      "name": "empty_category",
+      "response": {"startRow": 0, "endRow": 0, "total": 0, "data": []},
+      "expected": {"outcome": "ready", "warning": "empty_category"}
+    },
+    {
+      "name": "missing_total",
+      "response": {"data": [{"id": 101}]},
+      "expected": {"outcome": "error", "code": "contract_violation"}
+    },
+    {
+      "name": "unknown_field_is_preserved",
+      "response": {"startRow": 0, "endRow": 1, "total": 1, "data": [{"id": 101, "future_field": "keep"}]},
+      "expected": {"outcome": "ready", "preserve_unknown_fields": true}
+    },
+    {
+      "name": "credentials_rejected",
+      "http_status": 401,
+      "expected": {"outcome": "error", "code": "credentials_rejected", "pause_source_connection": true}
+    }
+  ],
+  "shared_php_python_examples": {
+    "month": {"month": "2026-01", "date_from": "2026-01-01", "date_to": "2026-01-31", "days": 31, "partial": false},
+    "invalid_month": {"month": "2026-01", "date_from": "2026-01-01", "date_to": "2026-01-31", "days": 30, "partial": false},
+    "invalid_month_expected_error": "contract_violation",
+    "states": ["queued", "running", "ready", "error"],
+    "ready_requires": ["company_id", "run_id", "snapshot_id", "row_count", "revision"],
+    "error_codes": ["contract_violation", "credentials_rejected"],
+    "stale_run_or_revision": "must_not_replace_newer_projection"
+  }
+}

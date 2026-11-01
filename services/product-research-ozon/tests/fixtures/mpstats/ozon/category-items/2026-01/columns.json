@@ -1,0 +1,247 @@
+[
+  {
+    "position": 1,
+    "csv_header": "SKU",
+    "api_field": "id"
+  },
+  {
+    "position": 2,
+    "csv_header": "Name",
+    "api_field": "name"
+  },
+  {
+    "position": 3,
+    "csv_header": "Category",
+    "api_field": "category"
+  },
+  {
+    "position": 4,
+    "csv_header": "Count of categories",
+    "api_field": "categories_count"
+  },
+  {
+    "position": 5,
+    "csv_header": "Brand",
+    "api_field": "brand"
+  },
+  {
+    "position": 6,
+    "csv_header": "Seller",
+    "api_field": "seller"
+  },
+  {
+    "position": 7,
+    "csv_header": "Stock FBO, pcs",
+    "api_field": "balance"
+  },
+  {
+    "position": 8,
+    "csv_header": "Stock FBS, pcs",
+    "api_field": "balance_fbs"
+  },
+  {
+    "position": 9,
+    "csv_header": "Comments",
+    "api_field": "comments"
+  },
+  {
+    "position": 10,
+    "csv_header": "Price, ₽",
+    "api_field": "final_price"
+  },
+  {
+    "position": 11,
+    "csv_header": "Max Price, ₽",
+    "api_field": "final_price_max"
+  },
+  {
+    "position": 12,
+    "csv_header": "Min Price, ₽",
+    "api_field": "final_price_min"
+  },
+  {
+    "position": 13,
+    "csv_header": "Avg Price, ₽",
+    "api_field": "final_price_average"
+  },
+  {
+    "position": 14,
+    "csv_header": "Median Price, ₽",
+    "api_field": "final_price_median"
+  },
+  {
+    "position": 15,
+    "csv_header": "Sales, pcs",
+    "api_field": "sales"
+  },
+  {
+    "position": 16,
+    "csv_header": "Sales per comment, pcs",
+    "api_field": "sales_per_comments"
+  },
+  {
+    "position": 17,
+    "csv_header": "Revenue, ₽",
+    "api_field": "revenue"
+  },
+  {
+    "position": 18,
+    "csv_header": "Potential Revenue, ₽",
+    "api_field": "revenue_potential"
+  },
+  {
+    "position": 19,
+    "csv_header": "Avg revenue, ₽",
+    "api_field": "revenue_average"
+  },
+  {
+    "position": 20,
+    "csv_header": "Lost Revenue, ₽",
+    "api_field": "lost_profit"
+  },
+  {
+    "position": 21,
+    "csv_header": "Lost Revenue %",
+    "api_field": "lost_profit_percent"
+  },
+  {
+    "position": 22,
+    "csv_header": "% from revenue",
+    "api_field": "percent_from_revenue"
+  },
+  {
+    "position": 23,
+    "csv_header": "Model ID",
+    "api_field": "model_id"
+  },
+  {
+    "position": 24,
+    "csv_header": "Model revenue, ₽",
+    "api_field": "model_revenue"
+  },
+  {
+    "position": 25,
+    "csv_header": "% of model revenue",
+    "api_field": "model_revenue_percent"
+  },
+  {
+    "position": 26,
+    "csv_header": "URL",
+    "api_field": "url"
+  },
+  {
+    "position": 27,
+    "csv_header": "Photo",
+    "api_field": "thumb"
+  },
+  {
+    "position": 28,
+    "csv_header": "Days in website",
+    "api_field": "days_in_site"
+  },
+  {
+    "position": 29,
+    "csv_header": "Was in stock, days",
+    "api_field": "days_in_stock"
+  },
+  {
+    "position": 30,
+    "csv_header": "Days with sales",
+    "api_field": "days_with_sales"
+  },
+  {
+    "position": 31,
+    "csv_header": "Average if in stock",
+    "api_field": "average_if_in_stock"
+  },
+  {
+    "position": 32,
+    "csv_header": "Rating",
+    "api_field": "rating"
+  },
+  {
+    "position": 33,
+    "csv_header": "Base price",
+    "api_field": "start_price"
+  },
+  {
+    "position": 34,
+    "csv_header": "Price with Ozon Card, ₽",
+    "api_field": "ozon_card_price"
+  },
+  {
+    "position": 35,
+    "csv_header": "FBS",
+    "api_field": "is_fbs"
+  },
+  {
+    "position": 36,
+    "csv_header": "Niche ID",
+    "api_field": "niche_id"
+  },
+  {
+    "position": 37,
+    "csv_header": "Position in category",
+    "api_field": "category_position"
+  },
+  {
+    "position": 38,
+    "csv_header": "Sales per day average",
+    "api_field": "sales_per_day_average"
+  },
+  {
+    "position": 39,
+    "csv_header": "Detection date",
+    "api_field": "sku_first_date"
+  },
+  {
+    "position": 40,
+    "csv_header": "Photo count",
+    "api_field": "picscount"
+  },
+  {
+    "position": 41,
+    "csv_header": "Video availability",
+    "api_field": "hasvideo"
+  },
+  {
+    "position": 42,
+    "csv_header": "Niche Name",
+    "api_field": "niche"
+  },
+  {
+    "position": 43,
+    "csv_header": "Turnover",
+    "api_field": "turnover_once"
+  },
+  {
+    "position": 44,
+    "csv_header": "Turnover, days",
+    "api_field": "turnover_days"
+  },
+  {
+    "position": 45,
+    "csv_header": "Frozen Stock, pcs",
+    "api_field": "frozen_stocks"
+  },
+  {
+    "position": 46,
+    "csv_header": "Frozen Stock Value, ₽",
+    "api_field": "frozen_stocks_cost"
+  },
+  {
+    "position": 47,
+    "csv_header": "Frozen Stock, %",
+    "api_field": "frozen_stocks_percent"
+  },
+  {
+    "position": 48,
+    "csv_header": "Count of warehouses",
+    "api_field": "warehouses_count"
+  },
+  {
+    "position": 49,
+    "csv_header": "Count of characters in name",
+    "api_field": "name_length"
+  }
+]
