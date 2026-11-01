@@ -17,6 +17,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from product_research_ozon.api import create_app
 from product_research_ozon.bootstrap import configured_settings
 from product_research_ozon.collection.service import MonthCollector
+from product_research_ozon.domain.catalog import CatalogUnavailable
 from product_research_ozon.domain.jobs import JobLease, RetryPolicy, RunSpec
 from product_research_ozon.domain.month import (
     CollectionFailure,
@@ -266,9 +267,13 @@ def test_fair_companies_and_months_and_exclusive_claims(settings: Settings) -> N
         is None
     )
     stale = replace(leases[0], owner=uuid7())
-    observed = h.store.state(stale)
+    observed = h.store.state(h.company, stale)
     assert not h.store.apply(
-        stale, RetryPolicy.decide(stale, observed, None, h.clock()), observed, h.clock()
+        h.company,
+        stale,
+        RetryPolicy.decide(stale, observed, None, h.clock()),
+        observed,
+        h.clock(),
     )
 
 
@@ -487,10 +492,14 @@ def test_parent_job_fence_is_rechecked_after_s3_write(
     )
     with pytest.raises(CollectionFailure, match="lease_lost"):
         collector.step(lease.company_id, lease.source_id, lease.snapshot_id)
-    observed = h.store.state(lease)
+    observed = h.store.state(h.company, lease)
     assert observed.status != "ready"
     assert not h.store.apply(
-        lease, RetryPolicy.decide(lease, observed, None, h.clock()), observed, h.clock()
+        h.company,
+        lease,
+        RetryPolicy.decide(lease, observed, None, h.clock()),
+        observed,
+        h.clock(),
     )
     assert h.tick() and h.progress(spec)["status"] == "ready"
     # After page commit / manifest write the replay uses the committed cursor.
@@ -567,3 +576,95 @@ def test_rotation_fences_old_worker_and_restarts_snapshot(settings: Settings) ->
     renewed = h.store.claim_next_for_all_companies(h.source, 2, (h.company,), h.clock())
     assert renewed is not None and renewed.snapshot_id != lease.snapshot_id
     assert renewed.generation == 2 and not h.store.generation_current(h.source, 1)
+
+
+def test_explicit_company_must_match_lease_before_database_access(
+    settings: Settings,
+) -> None:
+    h = harness(settings)
+    spec = h.spec(1)
+    h.submit(spec)
+    lease = h.store.claim_next_for_all_companies(h.source, 1, (h.company,), h.clock())
+    assert lease is not None
+    observed = h.store.state(h.company, lease)
+    decision = RetryPolicy.decide(lease, observed, None, h.clock())
+    for operation in (
+        lambda: h.store.state(h.other, lease),
+        lambda: h.store.apply(h.other, lease, decision, observed, h.clock()),
+        lambda: h.store.reject_run_credentials(h.other, lease, h.clock()),
+    ):
+        with pytest.raises(CollectionFailure, match="conflict"):
+            operation()
+
+
+def test_crash_after_page_commit_resets_next_page_retry_budget(
+    settings: Settings,
+) -> None:
+    calls: list[int] = []
+
+    def provider(request: httpx.Request) -> httpx.Response:
+        start = json.loads(request.content)["startRow"]
+        calls.append(start)
+        return (
+            httpx.Response(503)
+            if len(calls) in (1, 2, 3, 5)
+            else httpx.Response(200, content=raw(start, 1001))
+        )
+
+    h = harness(settings, httpx.MockTransport(provider))
+    spec = h.spec(1)
+    h.submit(spec)
+    for seconds in (2, 60, 120):
+        assert h.tick(seconds)
+    h.clock.advance(240)
+    lease = h.store.claim_next_for_all_companies(h.source, 1, (h.company,), h.clock())
+    assert lease is not None and lease.network_retries == 3
+    saved = MonthCollector(
+        SnapshotStore(settings.database_url, lease, h.clock),
+        h.objects,
+        h.client,
+        h.clock,
+    ).step(h.company, h.source, lease.snapshot_id)
+    assert saved.cursor == 500
+    expire(h, lease)  # Crash before job apply; successful page already committed.
+    assert h.tick()
+    progress = h.progress(spec)
+    months = progress["months"]
+    assert isinstance(months, list)
+    assert progress["status"] == "running" and months[0]["status"] == "queued"
+    assert h.tick(60) and h.tick() and h.progress(spec)["status"] == "ready"
+    assert calls == [0, 0, 0, 0, 500, 500, 1000]
+
+
+def test_paused_gate_finishes_already_waiting_snapshot_without_spin(
+    settings: Settings,
+) -> None:
+    h = harness(settings)
+    spec = h.spec(1)
+    h.submit(spec)
+    owner = uuid7()
+    assert h.gate.provider_claim(h.source, owner, 1, 60, h.clock())
+    assert h.tick() and h.progress(spec)["status"] == "running" and h.calls == []
+    h.gate.provider_release(
+        h.source, owner, 1, CatalogUnavailable("authorization_failed")
+    )
+    assert h.tick() and h.progress(spec)["status"] == "error" and h.calls == []
+    assert not h.tick()
+
+
+@pytest.mark.parametrize("path", [" ", "bad\x00path"])
+def test_invalid_category_is_contract_violation_not_internal_error(
+    settings: Settings, path: str
+) -> None:
+    h = harness(settings)
+    spec = h.spec(1)
+    with TestClient(create_app(settings, lambda: True, runs=h.service)) as client:
+        response = client.post(
+            f"/internal/v1/companies/{h.company}/runs",
+            json={**spec.payload(), "category_path": path},
+            headers={"Authorization": "Bearer " + settings.inbound_token},
+        )
+    assert (
+        response.status_code == 422
+        and response.json()["error"]["code"] == "contract_violation"
+    )

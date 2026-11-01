@@ -162,6 +162,7 @@ class JobLease:
     network_retries: int
     completeness_retries: int
     cursor: int
+    auth_paused: bool = False
 
 
 @dataclass(frozen=True)

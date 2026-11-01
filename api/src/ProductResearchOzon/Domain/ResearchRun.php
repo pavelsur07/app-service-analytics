@@ -14,6 +14,7 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Table(name: 'product_research_ozon_run')]
 #[ORM\UniqueConstraint(name: 'uq_research_run_request', columns: ['company_id', 'project_id', 'request_id'])]
 #[ORM\UniqueConstraint(name: 'uq_research_active_run', columns: ['company_id', 'project_id'], options: ['where' => '(finished_at IS NULL)'])]
+#[ORM\Index(name: 'idx_research_run_author', columns: ['company_id', 'created_by_user_id'])]
 #[ORM\Index(name: 'idx_research_run_project', columns: ['company_id', 'project_id', 'id'])]
 #[ORM\Index(name: 'idx_research_run_delivery', columns: ['company_id', 'next_delivery_at', 'id'], options: ['where' => '(delivered_at IS NULL)'])]
 #[ORM\Index(name: 'idx_research_run_poll', columns: ['company_id', 'next_poll_at', 'id'], options: ['where' => '((delivered_at IS NOT NULL) AND (finished_at IS NULL))'])]

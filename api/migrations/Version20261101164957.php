@@ -21,6 +21,7 @@ final class Version20261101164957 extends AbstractMigration
     {
         $this->addSql('CREATE TABLE product_research_ozon_run (company_id UUID NOT NULL, id UUID NOT NULL, source_id UUID NOT NULL, request_id UUID NOT NULL, input_hash CHAR(64) NOT NULL, payload TEXT NOT NULL, payload_hash CHAR(64) NOT NULL, created_by_user_id UUID NOT NULL, created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL, status VARCHAR(16) NOT NULL, revision INT NOT NULL, progress_hash CHAR(64) NOT NULL, delivery_attempts INT NOT NULL, next_delivery_at TIMESTAMP(6) WITH TIME ZONE NOT NULL, delivered_at TIMESTAMP(6) WITH TIME ZONE, next_poll_at TIMESTAMP(6) WITH TIME ZONE, finished_at TIMESTAMP(6) WITH TIME ZONE, lease_id UUID DEFAULT NULL, lease_until TIMESTAMP(6) WITH TIME ZONE, error_code VARCHAR(64) DEFAULT NULL, project_id UUID NOT NULL, PRIMARY KEY (company_id, id))');
         $this->addSql('CREATE INDEX IDX_8E769107979B1AD6166D1F9C ON product_research_ozon_run (company_id, project_id)');
+        $this->addSql('CREATE INDEX idx_research_run_author ON product_research_ozon_run (company_id, created_by_user_id)');
         $this->addSql('CREATE INDEX idx_research_run_project ON product_research_ozon_run (company_id, project_id, id)');
         $this->addSql('CREATE INDEX idx_research_run_delivery ON product_research_ozon_run (company_id, next_delivery_at, id) WHERE (delivered_at IS NULL)');
         $this->addSql('CREATE INDEX idx_research_run_poll ON product_research_ozon_run (company_id, next_poll_at, id) WHERE ((delivered_at IS NOT NULL) AND (finished_at IS NULL))');

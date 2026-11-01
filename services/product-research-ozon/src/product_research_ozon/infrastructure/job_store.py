@@ -209,7 +209,7 @@ class JobStore:
                 (company, run_id),
             ).fetchone()
             row = db.execute(
-                """SELECT snapshot_id,deadline,network_retries,completeness_retries FROM research_job
+                """SELECT snapshot_id,deadline,network_retries,completeness_retries,retry_cursor FROM research_job
                 WHERE company_id=%s AND source_id=%s AND job_id=%s AND status IN ('queued','running')
                 AND (lease_until IS NULL OR lease_until<=clock_timestamp()) FOR UPDATE""",
                 (company, source_id, job_id),
@@ -224,16 +224,24 @@ class JobStore:
             if snap_row is None:
                 raise CollectionFailure("conflict")
             snap = snapshot(snap_row)
-            if snap.generation != generation and snap.status != "ready":
+            restarted = snap.generation != generation and snap.status != "ready"
+            if restarted:
                 snapshot_id = self._restart(
                     db, company, source_id, job_id, snap, generation, now
                 )
                 snap = self._load_snapshot(db, company, source_id, snapshot_id)
+            # retry_cursor records the page at the last claim. An append may commit
+            # before job ack; detecting that advancement here restores the new page budget.
+            network = (
+                0
+                if restarted or snap.cursor > typed(row[4], int)
+                else typed(row[2], int)
+            )
             owner = uuid7()
             db.execute(
-                """UPDATE research_job SET status='running',lease_id=%s,lease_until=clock_timestamp()+interval '180 seconds',last_claimed_at=clock_timestamp()
+                """UPDATE research_job SET status='running',lease_id=%s,lease_until=clock_timestamp()+interval '180 seconds',last_claimed_at=clock_timestamp(),network_retries=%s,retry_cursor=%s
                 WHERE company_id=%s AND job_id=%s""",
-                (owner, company, job_id),
+                (owner, network, snap.cursor, company, job_id),
             )
             db.execute(
                 "UPDATE research_dispatch_turn SET last_served_at=clock_timestamp() WHERE company_id=%s AND source_id=%s",
@@ -252,9 +260,10 @@ class JobStore:
                 owner,
                 generation,
                 utc_time(typed(row[1], datetime)),
-                typed(row[2], int),
+                network,
                 typed(row[3], int),
                 snap.cursor,
+                paused,
             )
 
     @staticmethod
@@ -272,7 +281,9 @@ class JobStore:
             raise CollectionFailure("not_found")
         return snapshot(row)
 
-    def state(self, lease: JobLease) -> Snapshot:
+    def state(self, company_id: UUID, lease: JobLease) -> Snapshot:
+        if company_id != lease.company_id:
+            raise CollectionFailure("conflict")
         with self._db() as db:
             return self._load_snapshot(
                 db, lease.company_id, lease.source_id, lease.snapshot_id
@@ -323,11 +334,14 @@ class JobStore:
 
     def apply(
         self,
+        company_id: UUID,
         lease: JobLease,
         decision: RetryDecision,
         observed: Snapshot,
         now: datetime,
     ) -> bool:
+        if company_id != lease.company_id:
+            raise CollectionFailure("conflict")
         with self._db() as db:
             db.execute(
                 "SELECT run_id FROM research_run WHERE company_id=%s AND run_id=%s FOR UPDATE",
@@ -411,8 +425,12 @@ class JobStore:
             (company_id, run_id),
         )
 
-    def reject_run_credentials(self, lease: JobLease, now: datetime) -> bool:
+    def reject_run_credentials(
+        self, company_id: UUID, lease: JobLease, now: datetime
+    ) -> bool:
         # Bounded to this run (<=24 jobs); ready commits win over auth failure.
+        if company_id != lease.company_id:
+            raise CollectionFailure("conflict")
         with self._db() as db:
             db.execute(
                 "SELECT run_id FROM research_run WHERE company_id=%s AND run_id=%s FOR UPDATE",

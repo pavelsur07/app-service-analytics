@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from product_research_ozon.domain.catalog import utc_now
+from product_research_ozon.domain.catalog import CatalogUnavailable, utc_now
 from product_research_ozon.domain.jobs import (
     JobLease,
     RetryDecision,
@@ -33,15 +33,18 @@ class RunRepository(Protocol):
     def claim_next_for_all_companies(
         self, source_id: UUID, generation: int, allowed: tuple[UUID, ...], now: datetime
     ) -> JobLease | None: ...
-    def state(self, lease: JobLease) -> Snapshot: ...
+    def state(self, company_id: UUID, lease: JobLease) -> Snapshot: ...
     def apply(
         self,
+        company_id: UUID,
         lease: JobLease,
         decision: RetryDecision,
         observed: Snapshot,
         now: datetime,
     ) -> bool: ...
-    def reject_run_credentials(self, lease: JobLease, now: datetime) -> bool: ...
+    def reject_run_credentials(
+        self, company_id: UUID, lease: JobLease, now: datetime
+    ) -> bool: ...
     def progress(
         self, company_id: UUID, source_id: UUID, run_id: UUID
     ) -> dict[str, object]: ...
@@ -73,7 +76,7 @@ class RunService:
         self._allow(company_id)
         try:
             spec = RunSpec.from_payload(payload, self._clock())
-        except ValueError, TypeError:
+        except ValueError, TypeError, CatalogUnavailable:
             raise CollectionFailure("contract_violation") from None
         if spec.company_id != company_id or spec.source_id != self.source_id:
             raise CollectionFailure("conflict")
@@ -127,20 +130,27 @@ class RunWorker:
         failure: CollectionFailure | None = None
         terminal_error: str | None = None
         try:
-            observed = self._store.state(lease)
-            if observed.status != "ready" and self._clock() < lease.deadline:
+            observed = self._store.state(lease.company_id, lease)
+            if lease.auth_paused:
+                # A paused source bypasses even a snapshot-level cooldown.
+                failure = CollectionFailure("authorization_failed")
+            elif observed.status != "ready" and self._clock() < lease.deadline:
                 try:
                     self._execute(lease)
                 except CollectionFailure as error:
                     failure = error
-            observed = self._store.state(lease)
+            observed = self._store.state(lease.company_id, lease)
             if failure is not None and failure.code == "authorization_failed":
-                if self._store.reject_run_credentials(lease, self._clock()):
+                if self._store.reject_run_credentials(
+                    lease.company_id, lease, self._clock()
+                ):
                     return True
                 failure = CollectionFailure("obsolete_generation")
             decision = RetryPolicy.decide(lease, observed, failure, self._clock())
             terminal_error = decision.error_code
-            if not self._store.apply(lease, decision, observed, self._clock()):
+            if not self._store.apply(
+                lease.company_id, lease, decision, observed, self._clock()
+            ):
                 terminal_error = "lease_lost"
             return True
         finally:

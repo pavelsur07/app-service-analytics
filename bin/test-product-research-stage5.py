@@ -9,6 +9,7 @@ import time
 import uuid
 
 root = Path(__file__).resolve().parents[1]
+(root/'var').mkdir(exist_ok=True)
 compose = sys.argv[1:] or ['docker', 'compose']
 name = 'research-stage5-http'
 company_bytes = bytearray(uuid.uuid4().bytes)
