@@ -111,3 +111,20 @@ def test_worker_is_disabled_without_polling(settings: Settings) -> None:
     )
     assert result.returncode != 0
     assert settings.inbound_token not in result.stderr
+
+
+def test_postgres_alias_is_supported_by_migrator(settings: Settings) -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "product_research_ozon.migrate", "up"],
+        env={
+            **os.environ,
+            "RESEARCH_DATABASE_URL": settings.database_url.replace(
+                "postgresql://", "postgres://", 1
+            ),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr

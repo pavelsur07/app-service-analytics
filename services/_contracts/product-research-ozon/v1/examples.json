@@ -609,5 +609,29 @@
         "code": "method_not_allowed"
       }
     }
+  },
+  {
+    "name": "integer-json-number",
+    "definition": "run_request",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "run_id": "019a3c00-0000-7000-8000-000000000002",
+      "project_id": "019a3c00-0000-7000-8000-000000000003",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "category_path": "Одежда/Хиджабы",
+      "fbs": true,
+      "currency": "RUB",
+      "months": [
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31.0,
+          "partial": false
+        }
+      ]
+    }
   }
 ]

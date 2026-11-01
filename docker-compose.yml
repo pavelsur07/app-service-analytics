@@ -281,7 +281,7 @@ services:
       RESEARCH_INBOUND_TOKEN: "dev-php-to-research-00000000000000000000"
       RESEARCH_OUTBOUND_TOKEN: "dev-research-to-php-11111111111111111111"
       RESEARCH_S3_ENDPOINT: "http://s3:8333"
-      RESEARCH_S3_BUCKET: "conwix-research-dev"
+      RESEARCH_S3_BUCKET: "conwix-dev"
       RESEARCH_S3_ACCESS_KEY: "research-dev"
       RESEARCH_S3_SECRET_KEY: "research-dev-secret"
       RESEARCH_WORKER_ENABLED: "false"
@@ -305,7 +305,7 @@ services:
     environment:
       <<: *research-environment
       RESEARCH_DATABASE_URL: "postgresql://svc_product_research_ozon:product_research_dev@postgres:5432/product_research_ozon_test"
-      RESEARCH_S3_BUCKET: "conwix-research-test"
+      RESEARCH_S3_BUCKET: "conwix-test"
     networks: [internal]
     volumes:
       - ./services/product-research-ozon:/service:ro

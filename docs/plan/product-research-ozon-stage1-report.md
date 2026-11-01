@@ -29,12 +29,12 @@
 - Red: лишние/дублирующиеся query-параметры ошибочно давали 503; исправлено,
   тесты получили ожидаемый 422.
 - `make product-research-ozon-check`: Ruff check/format, mypy strict (23 файла),
-  2 import-linter контракта, **26 тестов** unit/contract/integration,
+  2 import-linter контракта, **27 тестов** unit/contract/integration,
   health/readiness/401/503 smoke, non-root/no-dev-tools — успешно.
   Локальный лог: var/product-research-ozon-stage1-check.log.
 - `make product-research-ozon-stage0-check`: hash-install, pip check/audit,
   imports, Ruff, mypy и 2 офлайн-эталона успешно; evidence check.EcUwEV.
-- PHP corpus: 1 тест, 108 assertions успешно, включая method_not_allowed.
+- PHP corpus: 1 тест, 112 assertions успешно, включая method_not_allowed.
 - `make lint stan deptrac structure-check` — успешно. `make api-types-check` —
   успешно, публичный API не менялся.
 - Rebuild: `make db-rebuild-check TEST_WORKERS=2` с отдельным Compose project
@@ -62,3 +62,7 @@ Production compose/секреты Python не добавлены и сервис
 Claude CLI отсутствует; обязательные 5A/5B выполняются новыми независимыми
 Codex CLI-сессиями по правилам проекта. Реквизиты и разбор будут сохранены здесь.
 Чужие локальные изменения в пакет и коммит не включаются.
+
+Исходные ревью выявили 3 замечания; все приняты, исправлены и покрыты
+регрессиями. Из-за изменения Git-снимка эти прогоны не засчитаны как финальные.
+Подробности: [журнал ревью](product-research-ozon-stage1-review.md).

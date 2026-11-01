@@ -60,7 +60,8 @@ Production compose/выкладка Python не добавлены: актива
 /health проверяет процесс; /ready проверяет БД, точную baseline-ревизию и
 HeadBucket S3, возвращая collection_enabled=false. API не применяет миграции
 при старте и не создаёт bucket. Проверка S3 требует HeadBucket наряду с правами
-на префикс. В dev SeaweedFS не проверяет credentials: границу компаний
+на префикс. Бакеты общие с монолитом: conwix-dev / conwix-test, свой только префикс.
+В dev SeaweedFS не проверяет credentials: границу компаний
 проверяет порт. Production потребует отдельного ключа префикса, общего ключа
 монолита здесь нет. [HeadBucket](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/head_bucket.html)
 не доказывает права записи; live приёмка отдельного S3-ключа — до включения.

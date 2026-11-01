@@ -11,8 +11,8 @@ def ensure_bucket() -> None:
     endpoint = os.environ["RESEARCH_S3_ENDPOINT"]
     bucket = os.environ["RESEARCH_S3_BUCKET"]
     if endpoint != "http://s3:8333" or bucket not in (
-        "conwix-research-dev",
-        "conwix-research-test",
+        "conwix-dev",
+        "conwix-test",
     ):
         raise ValueError("sandbox_only")
     client = boto3.client(

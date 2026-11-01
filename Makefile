@@ -444,7 +444,7 @@ product-research-ozon-migrations-check: ## гейт совпадения рев�
 	$(RESEARCH) run --rm --no-deps -T product-research-ozon python -m product_research_ozon.migrate check
 
 product-research-ozon-up: product-research-ozon-migrate product-research-ozon-infrastructure ## dev API без host-порта; worker выключен
-	$(RESEARCH) run --rm --no-deps -T -e RESEARCH_S3_BUCKET=conwix-research-dev product-research-ozon-dev python tests/dev_bucket.py
+	$(RESEARCH) run --rm --no-deps -T -e RESEARCH_S3_BUCKET=conwix-dev product-research-ozon-dev python tests/dev_bucket.py
 	$(RESEARCH) up -d --no-deps product-research-ozon
 
 product-research-ozon-smoke: product-research-ozon-up ## dev HTTP smoke контейнера

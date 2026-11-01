@@ -31,6 +31,14 @@ class Month(BaseModel):
     days: Annotated[int, Field(ge=1, le=31)]
     partial: bool
 
+    @field_validator("days", mode="before")
+    @classmethod
+    def integral_json_number(cls, value: object) -> object:
+        # JSON Schema integer includes 31.0; strings and booleans stay invalid.
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return value
+
     @field_validator("date_from", "date_to")
     @classmethod
     def valid_date(cls, value: str) -> str:
