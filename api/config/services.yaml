@@ -198,6 +198,11 @@ services:
     App\Ingestion\Domain\NetForwardArtifactStorage: '@App\Ingestion\Infrastructure\Storage\S3NetForwardArtifactStorage'
     App\Ingestion\Domain\NetForecastArtifactRepository: '@App\Ingestion\Infrastructure\Persistence\DbalNetForecastArtifactRepository'
 
+    App\ProductResearchOzon\Domain\ResearchRunRepository: '@App\ProductResearchOzon\Infrastructure\Repository\DoctrineResearchRunRepository'
+    App\ProductResearchOzon\Domain\RunDeliveryRepository: '@App\ProductResearchOzon\Infrastructure\Repository\DbalRunDeliveryRepository'
+    App\ProductResearchOzon\Domain\RunSource: '@App\ProductResearchOzon\Infrastructure\Api\HttpRunSource'
+    App\ProductResearchOzon\Domain\RunNotifier: '@App\ProductResearchOzon\Infrastructure\Messenger\ResearchRunNotifier'
+
     App\ProductResearchOzon\Domain\CategorySource: '@App\ProductResearchOzon\Infrastructure\Api\HttpCategorySource'
     App\ProductResearchOzon\Domain\CatalogProjectionRepository: '@App\ProductResearchOzon\Infrastructure\Repository\DbalCatalogProjectionRepository'
     App\ProductResearchOzon\Domain\ResearchProjectRepository: '@App\ProductResearchOzon\Infrastructure\Repository\DoctrineResearchProjectRepository'
@@ -214,5 +219,15 @@ services:
         arguments:
             $clock: '@App\Shared\Infrastructure\SystemClock'
     App\ProductResearchOzon\Application\SynchronizeCategoriesAction:
+        arguments:
+            $clock: '@App\Shared\Infrastructure\SystemClock'
+
+    App\ProductResearchOzon\Application\RelayResearchRunAction:
+        arguments:
+            $clock: '@App\Shared\Infrastructure\SystemClock'
+    App\ProductResearchOzon\Application\SynchronizeResearchRunAction:
+        arguments:
+            $clock: '@App\Shared\Infrastructure\SystemClock'
+    App\ProductResearchOzon\Application\ProcessResearchRunsAction:
         arguments:
             $clock: '@App\Shared\Infrastructure\SystemClock'

@@ -1,7 +1,7 @@
 # product-research-ozon
 
-Этапы 1–4: внутренний FastAPI, Alembic, отдельные dev/test БД,
-company-scoped S3-порт и выключенный worker. Основание — принятый ADR-050.
+Этапы 1–5: внутренний FastAPI, Alembic, отдельные dev/test БД,
+company-scoped S3-порт и выключенный по умолчанию worker. Основание — принятый ADR-050.
 Реализованы суточный кэш категорий, локальная проекция Symfony и движок месячного raw-снимка. Диспетчер заданий и пользовательские экраны — следующие этапы.
 
 План: [product-research-ozon](../../docs/plan/product-research-ozon.md).
@@ -53,8 +53,8 @@ PHP/Python-контрактов: пагинация, пустой ответ, о
 API слушает :8080 только в docker-сети internal (internal=true); host ports,
 роутера и egress нет. PHP подключён к этой сети для будущего фонового клиента.
 Профиль `product-research` включается явно; worker — отдельный профиль
-`product-research-worker`, по умолчанию выключен. Даже при явном старте он
-фиксирует disabled и завершает работу, а worker_enabled=true отклоняется.
+`product-research-worker`, по умолчанию выключен. Без явной collection-конфигурации он фиксирует disabled и завершает работу;
+worker_enabled=true требует валидные бюджеты и общий источник каталога.
 Production compose/выкладка Python не добавлены: активация — будущий этап.
 
 /health проверяет процесс; /ready проверяет БД, точную baseline-ревизию и
@@ -190,3 +190,54 @@ HTTP MockTransport → настоящий PostgreSQL/S3 → чтение все�
 [карте версии 0.3](../../docs/plan/product-research-ozon-columns.md);
 неэквивалентные вычисляемые поля и метаданные перечислены явно. Этап 4 не
 пересчитывает их и не подменяет исходные значения форматированием CSV.
+
+
+## Этап 5: запуски, очередь и восстановление
+
+`domain/jobs.py` — frozen input и чистая retry/deadline policy;
+`jobs/service.py` — приём и один шаг worker; `infrastructure/job_store.py` —
+атомарный run/jobs/snapshots, аренды и справедливый выбор разрешённых компаний.
+`0004_research_jobs.py` добавляет технические журналы и parent-job fencing
+месячных снимков. Run statuses: queued/running/ready/error; ready соседних месяцев
+сохраняется при ошибке. Опубликованный внутренний v1 не изменён.
+
+Входные даты фиксируются при создании Symfony run и не сдвигаются при доставке
+через полночь. Повтор POST с тем же company/run и параметрами возвращает receipt
+202 queued/revision=1; текущее состояние получают через GET. Worker не удерживает
+транзакции на I/O, ожидания хранятся в next_attempt_at. Network/5xx/временная
+инфраструктура: 3 повтора страницы, 60/120/240 секунд; ошибка полноты: одна новая
+попытка месяца. Дедлайн 24 часа. 401/403 завершает активные месяцы запуска без
+новых API; готовые снимки сохраняются. Ротация поколения ограждает старые процессы.
+
+Для явной dev-конфигурации используются `RESEARCH_COLLECTION_ENABLED=true`,
+`RESEARCH_WORKER_ENABLED=true`, `RESEARCH_MAX_ROWS`, `RESEARCH_MAX_PAGES`,
+`RESEARCH_MAX_BYTES`, `RESEARCH_ALLOWED_COMPANY_IDS` (canonical UUIDv7 через запятую).
+Нужен существующий валидный catalog source/generation/rpm и секреты только из
+защищённого окружения. Пустой allowlist закрыт. Эти параметры не являются квотой
+MPStats. В dev доступны только фикстуры/MockTransport; живой egress и production
+Python остаются этапом 8. Compose defaults и seller feature flag выключены.
+
+Symfony хранит intent/outbox одной ORM-транзакцией. После commit отправляет
+уведомление в существующий async_ingestion с TransportNamesStamp. Потерянную
+доставку восстанавливает company-scoped команда
+`app:research:process-runs <company-uuidv7> --once`; без --once цикл раз в 60 с.
+Она же поллит прогресс, сохраняет только новую согласованную revision. Команду
+нужно запускать явно для разрешённых компаний; глобальной выборки PHP нет.
+В stage 5 новый seller POST projects/{id}/runs и GET projects/{id}/runs/{runId}
+читают локальную проекцию; категории и user HTTP не вызывают Python.
+
+Перед down сделать согласованную резервную копию журналов обеих БД.
+Alembic down 0004 удаляет только run/job/turn и связь job_id: старые snapshots,
+страницы и объекты S3 сохраняются, но автоматическое восстановление очереди без
+backup невозможно. Doctrine down удаляет журналы запусков и last_run_id;
+проекты/периоды сохраняются. На production down допустим только с backup журнала
+и остановленными relay/worker. Up/down/up проверяются в локальном тестовом контуре.
+Межпроектный кэш и сводные статусы проекта — этап 6; UI — этап 7.
+
+Результат release имеет durable outcome_revision, задание хранит подтверждённую
+snapshot_ack_revision. После crash сохранённый отказ применяется один раз до
+нового I/O; 202/429 сохраняют паузу и не расходуют network budget. Счётчик подтверждённых страниц (включая пустую)
+восстанавливает бюджет новой страницы после успешного append без job ack.
+Истёкшее исполнение без достоверного исхода учитывается как один временный отказ
+до нового запроса: это консервативно ограничивает повторы, включая crash до I/O.
+Все решения apply, включая terminal error, проверяют активное поколение токена.

@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 from uuid import UUID
 
+from product_research_ozon.domain.month import CollectionLimits, identity
+
 
 @dataclass(frozen=True)
 class CatalogSettings:
@@ -45,6 +47,50 @@ class CatalogSettings:
 
 
 @dataclass(frozen=True)
+class CollectionSettings:
+    limits: CollectionLimits
+    allowed_companies: tuple[UUID, ...]
+    worker_enabled: bool
+
+    @classmethod
+    def from_mapping(
+        cls, values: Mapping[str, str], catalog: CatalogSettings | None
+    ) -> CollectionSettings | None:
+        flag = values.get("collection_enabled", "false")
+        worker = values.get("worker_enabled", "false")
+        if flag not in ("false", "true") or worker not in ("false", "true"):
+            raise ValueError("invalid_collection_configuration")
+        if flag == "false":
+            if worker != "false":
+                raise ValueError("worker_requires_collection_configuration")
+            return None
+        try:
+            if catalog is None:
+                raise ValueError
+            names = ("max_rows", "max_pages", "max_bytes")
+            if any(
+                not re.fullmatch(r"[0-9]{1,19}", values.get(name, "")) for name in names
+            ):
+                raise ValueError
+            limits = CollectionLimits(*(int(values[name]) for name in names))
+            raw = values.get("allowed_company_ids", "")
+            companies = (
+                tuple(UUID(item.strip()) for item in raw.split(",")) if raw else ()
+            )
+            if len(companies) > 1000 or len(set(companies)) != len(companies):
+                raise ValueError
+            for company, raw_id in zip(
+                companies, raw.split(",") if raw else (), strict=True
+            ):
+                identity(company)
+                if str(company) != raw_id.strip():
+                    raise ValueError
+        except ValueError, KeyError:
+            raise ValueError("invalid_collection_configuration") from None
+        return cls(limits, companies, worker == "true")
+
+
+@dataclass(frozen=True)
 class Settings:
     database_url: str = field(repr=False)
     inbound_token: str = field(repr=False)
@@ -55,6 +101,7 @@ class Settings:
     s3_secret_key: str = field(repr=False)
 
     catalog: CatalogSettings | None = None
+    collection: CollectionSettings | None = None
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> Settings:
@@ -78,8 +125,8 @@ class Settings:
             or inbound == outbound
         ):
             raise ValueError("invalid_directional_tokens")
-        if values.get("worker_enabled", "false") != "false":
-            raise ValueError("worker_not_available_in_stage1")
+        catalog = CatalogSettings.from_mapping(values)
+        collection = CollectionSettings.from_mapping(values, catalog)
         try:
             database = urlsplit(values["database_url"])
             endpoint = urlsplit(values["s3_endpoint"])
@@ -104,5 +151,6 @@ class Settings:
             raise ValueError("invalid_service_endpoint") from None
         return cls(
             **{name: values[name] for name in required},
-            catalog=CatalogSettings.from_mapping(values),
+            catalog=catalog,
+            collection=collection,
         )

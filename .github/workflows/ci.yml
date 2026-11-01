@@ -194,6 +194,9 @@ jobs:
 
       - run: make db-wait db-test-create api-migrate api-migrate-test db-schema-validate s3-bucket-create test-unit test-int test-func
 
+      - name: research cross-language fixture-only HTTP smoke
+        run: make product-research-ozon-stage5-smoke
+
   frontend:
     name: frontend
     needs: changes

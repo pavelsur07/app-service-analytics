@@ -163,7 +163,7 @@ s3-bucket-create: s3-wait ## бакеты сырья для dev и test (иде�
 # .NOTPARALLEL в начале файла.
 db-rebuild-check: down-clear up db-wait api-migrate api-migrate-test db-schema-validate test \
 	ozon-fetcher-migrate ozon-fetcher-test \
-	product-research-ozon-migrate product-research-ozon-test ## down-clear → up → migrate → schema-validate → test, то же для БД сервисов
+	product-research-ozon-migrate product-research-ozon-test product-research-ozon-stage5-smoke ## down-clear → up → migrate → schema-validate → test, то же для БД сервисов
 	@echo "db-rebuild-check: OK"
 
 # --- Тесты -------------------------------------------------------------
@@ -398,7 +398,7 @@ review: ## подготовка + Claude; REVIEW_RISK=high (по умолчан�
 # набором проверок.
 
 ci-local: structure-check stan deptrac lint front-typecheck front-lint front-knip front-test audit \
-	product-research-ozon-stage0-check product-research-ozon-check \
+	product-research-ozon-stage0-check product-research-ozon-check product-research-ozon-stage5-smoke \
 	ozon-fetcher-lint ozon-fetcher-vet ozon-fetcher-test ozon-fetcher-vulncheck \
 	api-types-check \
 	db-wait db-test-create api-migrate-test s3-bucket-create test-unit test-int test-func \
@@ -457,3 +457,7 @@ product-research-ozon-check: product-research-ozon-lint product-research-ozon-ve
 .PHONY: product-research-ozon-infrastructure
 product-research-ozon-infrastructure: product-research-ozon-db product-research-ozon-dev-build
 	$(RESEARCH_DEV) python tests/dev_wait.py
+
+.PHONY: product-research-ozon-stage5-smoke
+product-research-ozon-stage5-smoke: product-research-ozon-infrastructure ## fixture-only PHP→Python HTTP→S3→PHP (local test DBs)
+	python3 bin/test-product-research-stage5.py $(COMPOSE)

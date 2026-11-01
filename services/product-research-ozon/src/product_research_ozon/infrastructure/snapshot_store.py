@@ -1,12 +1,14 @@
 """Technical journal only; page bodies and monetary values live exclusively in S3."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import date, datetime
 from uuid import UUID
 
 import psycopg
 
+from product_research_ozon.domain.catalog import utc_now
+from product_research_ozon.domain.jobs import JobLease
 from product_research_ozon.domain.month import (
     CollectionFailure,
     CollectionLimits,
@@ -19,7 +21,7 @@ from product_research_ozon.domain.month import (
     utc_time,
 )
 
-COLUMNS = "company_id,source_id,snapshot_id,category_path,date_from,date_to,partial,max_rows,max_pages,max_bytes,generation,status,created_at,completed_at,total,cursor_row,pages,byte_size,next_attempt_at,error_code,manifest_sha256,manifest_size"
+COLUMNS = "company_id,source_id,snapshot_id,category_path,date_from,date_to,partial,max_rows,max_pages,max_bytes,generation,status,created_at,completed_at,total,cursor_row,pages,byte_size,next_attempt_at,error_code,manifest_sha256,manifest_size,job_id,outcome_revision"
 
 
 def typed[T](value: object, kind: type[T]) -> T:
@@ -56,12 +58,19 @@ def snapshot(row: tuple[object, ...]) -> Snapshot:
         optional(row[19], str),
         optional(row[20], str),
         optional(row[21], int),
+        optional(row[22], UUID),
+        typed(row[23], int),
     )
 
 
 class SnapshotStore:
-    def __init__(self, database_url: str) -> None:
-        self._url = database_url
+    def __init__(
+        self,
+        database_url: str,
+        fence: JobLease | None = None,
+        clock: Callable[[], datetime] = utc_now,
+    ) -> None:
+        self._url, self._fence, self._clock = database_url, fence, clock
 
     @contextmanager
     def _db(self) -> Iterator[psycopg.Connection[tuple[object, ...]]]:
@@ -94,7 +103,7 @@ class SnapshotStore:
         now: datetime,
     ) -> Snapshot:
         key = self._scope(company_id, source_id, snapshot_id)
-        parameters.validate_at(now)
+        parameters.validate_frozen(now)
         with self._db() as db:
             result = db.execute(
                 """INSERT INTO month_snapshot (company_id,source_id,snapshot_id,category_path,date_from,date_to,partial,max_rows,max_pages,max_bytes,generation,created_at)
@@ -154,6 +163,7 @@ class SnapshotStore:
         key = self._scope(company_id, source_id, snapshot_id)
         identity(owner)
         with self._db() as db:
+            self._job_guard(db, key)
             row = db.execute(
                 """UPDATE month_snapshot SET lease_id=%s,lease_until=clock_timestamp()+interval '120 seconds'
                 WHERE company_id=%s AND source_id=%s AND snapshot_id=%s AND generation=%s AND status='collecting'
@@ -169,6 +179,7 @@ class SnapshotStore:
         key: tuple[UUID, UUID, UUID],
         owner: UUID,
     ) -> Snapshot:
+        self._job_guard(db, key)
         row = db.execute(
             f"SELECT {COLUMNS} FROM month_snapshot WHERE company_id=%s AND source_id=%s AND snapshot_id=%s AND status='collecting' AND lease_id=%s AND lease_until>clock_timestamp() FOR UPDATE",
             (*key, owner),
@@ -183,6 +194,37 @@ class SnapshotStore:
         if gate is None or gate[0] != value.generation:
             raise CollectionFailure("obsolete_generation")
         return value
+
+    def _job_guard(
+        self, db: psycopg.Connection[tuple[object, ...]], key: tuple[UUID, UUID, UUID]
+    ) -> None:
+        # Lock order is parent job -> snapshot -> provider gate in every publication.
+        fence = self._fence
+        if fence is None:
+            row = db.execute(
+                "SELECT job_id FROM month_snapshot WHERE company_id=%s AND source_id=%s AND snapshot_id=%s LIMIT 1",
+                key,
+            ).fetchone()
+            if row is not None and row[0] is not None:
+                raise CollectionFailure("lease_lost")
+            return
+        if key != (fence.company_id, fence.source_id, fence.snapshot_id):
+            raise CollectionFailure("lease_lost")
+        row = db.execute(
+            """SELECT deadline FROM research_job WHERE company_id=%s AND source_id=%s AND job_id=%s
+            AND snapshot_id=%s AND lease_id=%s AND lease_until>clock_timestamp() AND status='running' FOR SHARE""",
+            (
+                fence.company_id,
+                fence.source_id,
+                fence.job_id,
+                fence.snapshot_id,
+                fence.owner,
+            ),
+        ).fetchone()
+        if row is None:
+            raise CollectionFailure("lease_lost")
+        if utc_time(typed(row[0], datetime)) <= self._clock():
+            raise CollectionFailure("deadline_exceeded")
 
     def append(
         self,
@@ -324,13 +366,16 @@ class SnapshotStore:
         failure: CollectionFailure | None = None,
     ) -> None:
         key = self._scope(company_id, source_id, snapshot_id)
-        deferred = failure is not None and failure.code in (
-            "rate_limited",
-            "report_pending",
+        deferred = failure is not None and (
+            failure.code in ("rate_limited", "report_pending")
+            or self._fence is not None
+            and failure.code
+            in ("source_unavailable", "storage_unavailable", "database_unavailable")
         )
         with self._db() as db:
+            self._job_guard(db, key)
             row = db.execute(
-                """UPDATE month_snapshot SET lease_id=NULL,lease_until=NULL,status=%s,next_attempt_at=%s,error_code=%s
+                """UPDATE month_snapshot SET lease_id=NULL,lease_until=NULL,status=%s,next_attempt_at=%s,error_code=%s,outcome_revision=outcome_revision+1
                 WHERE company_id=%s AND source_id=%s AND snapshot_id=%s AND status='collecting' AND lease_id=%s AND lease_until>clock_timestamp()
                 RETURNING snapshot_id""",
                 (

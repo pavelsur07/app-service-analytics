@@ -17,8 +17,10 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from product_research_ozon.catalogs.service import CategoryCatalog
 from product_research_ozon.domain.catalog import CatalogUnavailable
+from product_research_ozon.domain.month import CollectionFailure
 from product_research_ozon.infrastructure.config import Settings
 from product_research_ozon.infrastructure.observability import Event, emit
+from product_research_ozon.jobs.service import RunService
 
 UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 Identifier = Annotated[str, Field(pattern=UUID_PATTERN)]
@@ -189,6 +191,7 @@ def create_app(
     readiness: Callable[[], bool],
     logger: logging.Logger | None = None,
     catalogs: CategoryCatalog | None = None,
+    runs: RunService | None = None,
 ) -> FastAPI:
     app = FastAPI(
         docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False
@@ -224,7 +227,7 @@ def create_app(
     def ready() -> JSONResponse:
         if not readiness():
             return error("not_ready", 503)
-        return JSONResponse({"status": "ready", "collection_enabled": False})
+        return JSONResponse({"status": "ready", "collection_enabled": runs is not None})
 
     prefix = "/internal/v1/companies/{company_id}"
 
@@ -277,18 +280,55 @@ def create_app(
                 )
             return response
 
+    def run_result(operation: Callable[[], dict[str, object]]) -> JSONResponse:
+        if runs is None:
+            return error("not_available", 503)
+        try:
+            return JSONResponse(
+                operation(),
+                headers={
+                    "Cache-Control": "no-store",
+                    "X-Research-Source-Id": str(runs.source_id),
+                },
+            )
+        except CollectionFailure as failure:
+            code = (
+                failure.code
+                if failure.code in ("conflict", "not_found", "contract_violation")
+                else "not_available"
+            )
+            return error(
+                code,
+                409
+                if code == "conflict"
+                else 404
+                if code == "not_found"
+                else 422
+                if code == "contract_violation"
+                else 503,
+            )
+
     @app.post(prefix + "/runs")
     def submit(company_id: Identifier, body: RunRequest) -> JSONResponse:
         if company_id != body.company_id or not body.fbs:
             return error("contract_violation", 422)
-        return error("not_available", 503)
+        result = run_result(
+            lambda: runs.submit(UUID(company_id), body.model_dump()) if runs else {}
+        )
+        if result.status_code == 200:
+            result.status_code = 202
+        return result
 
     @app.get(prefix + "/runs/{run_id}")
     def progress(company_id: Identifier, run_id: Identifier) -> JSONResponse:
-        return error("not_available", 503)
+        return run_result(
+            lambda: runs.progress(UUID(company_id), UUID(run_id)) if runs else {}
+        )
 
     @app.get(prefix + "/snapshots/{snapshot_id}")
     def snapshot(company_id: Identifier, snapshot_id: Identifier) -> JSONResponse:
-        return error("not_available", 503)
+        return run_result(
+            lambda: runs.metadata(UUID(company_id), UUID(snapshot_id)) if runs else {}
+        )
 
     return app
