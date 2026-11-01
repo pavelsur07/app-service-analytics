@@ -1,0 +1,11 @@
+{
+  "source": "POST https://mpstats.io/api/analytics/v1/oz/category/list",
+  "capture_date": "2026-10-31",
+  "provenance": "Existing stage 0 REST capture; no new live request; full byte-preserving gzip",
+  "raw_sha256": "cd762dca57f5de7c88725ca2ea70f76e95f4b10ba7097f839d5cde2befe26d72",
+  "gzip_sha256": "78bb826a965ba67b8e81e264d2cfedaa58686a268995242a982648a99eae84ae",
+  "raw_bytes": 3674145,
+  "gzip_bytes": 472738,
+  "rows": 6567,
+  "source_id_present": false
+}

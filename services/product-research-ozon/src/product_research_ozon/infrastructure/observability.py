@@ -37,4 +37,8 @@ class SafeJsonFormatter(logging.Formatter):
 
 
 def emit(logger: logging.Logger, event: Event, level: int = logging.INFO) -> None:
-    logger.log(level, "service_event", extra={"research_event": event})
+    try:
+        logger.log(level, "service_event", extra={"research_event": event})
+    except Exception:  # noqa: BLE001 — telemetry boundary: never fail the request or print unsafe fallback details.
+        # Retrying the same logger would recurse; preserve the caller operation.
+        return

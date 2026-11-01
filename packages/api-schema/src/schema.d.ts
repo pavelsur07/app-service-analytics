@@ -884,6 +884,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/product-research-ozon/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_productresearchozon_ui_searchresearchcategories__invoke"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/sales-plans/{planId}/approve": {
         parameters: {
             query?: never;
@@ -2014,6 +2030,17 @@ export interface components {
         ProjectsResponse: {
             items: components["schemas"]["ProjectSummaryResponse"][];
             nextCursor?: string | null;
+        };
+        ResearchCategoryResponse: {
+            path: string;
+        };
+        ResearchCategoriesResponse: {
+            items: components["schemas"]["ResearchCategoryResponse"][];
+            revision: number;
+            /** Format: date-time */
+            generatedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
         };
         SalesPlanApprovedResponse: {
             id: string;
@@ -5922,6 +5949,77 @@ export interface operations {
                 };
             };
             /** @description Справочник ещё не готов */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_productresearchozon_ui_searchresearchcategories__invoke: {
+        parameters: {
+            query: {
+                /** @description Не менее трёх букв, поиск по полному пути; % и _ буквальны */
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Совпадения в полной свежей проекции */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchCategoriesResponse"];
+                };
+            };
+            /** @description Нужна seller-сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Модуль выключен */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры поиска */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Каталог ещё не получен или просрочен; дождитесь фонового обновления */
             503: {
                 headers: {
                     [name: string]: unknown;

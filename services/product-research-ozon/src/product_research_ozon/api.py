@@ -3,7 +3,8 @@ import logging
 import secrets
 import time
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime
+from math import ceil
 from typing import Annotated
 from uuid import UUID, uuid7
 
@@ -14,6 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from product_research_ozon.catalogs.service import CategoryCatalog
+from product_research_ozon.domain.catalog import CatalogUnavailable
 from product_research_ozon.infrastructure.config import Settings
 from product_research_ozon.infrastructure.observability import Event, emit
 
@@ -80,6 +83,7 @@ class Boundary:
         started = False
         failure_class: str | None = None
         trace_id = str(uuid7())
+        scope["research_trace_id"] = trace_id
         path = scope["path"]
         company_id: str | None = None
         parts = path.split("/")
@@ -184,6 +188,7 @@ def create_app(
     settings: Settings,
     readiness: Callable[[], bool],
     logger: logging.Logger | None = None,
+    catalogs: CategoryCatalog | None = None,
 ) -> FastAPI:
     app = FastAPI(
         docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False
@@ -237,7 +242,40 @@ def create_app(
             key not in ("limit", "cursor") for key, _ in params
         ):
             return error("contract_violation", 422)
-        return error("not_available", 503)
+        if catalogs is None:
+            return error("not_available", 503)
+        try:
+            return JSONResponse(
+                catalogs.page(
+                    UUID(company_id),
+                    limit,
+                    cursor,
+                    request.scope.get("research_trace_id"),
+                ),
+                headers={
+                    "Cache-Control": "no-store",
+                    "X-Research-Source-Id": str(catalogs.source_id),
+                },
+            )
+        except CatalogUnavailable as failure:
+            code = (
+                failure.code
+                if failure.code in ("conflict", "contract_violation")
+                else "not_available"
+            )
+            response = error(
+                code,
+                409
+                if code == "conflict"
+                else 422
+                if code == "contract_violation"
+                else 503,
+            )
+            if failure.retry_at is not None:
+                response.headers["Retry-After"] = str(
+                    max(0, ceil((failure.retry_at - datetime.now(UTC)).total_seconds()))
+                )
+            return response
 
     @app.post(prefix + "/runs")
     def submit(company_id: Identifier, body: RunRequest) -> JSONResponse:

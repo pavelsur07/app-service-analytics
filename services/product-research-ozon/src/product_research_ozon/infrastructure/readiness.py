@@ -4,7 +4,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from product_research_ozon.infrastructure.config import Settings
 from product_research_ozon.infrastructure.storage import RawStorage
 
-REVISION = "0001_baseline"
+REVISION = "0002_catalog_cache"
 
 
 class Readiness:
