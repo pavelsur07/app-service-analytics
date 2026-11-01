@@ -1,7 +1,7 @@
 # product-research-ozon — отчёт этапа 3
 
-Статус: реализация и локальная приёмка выполнены; независимое ревью и доставка
-проверяются. Основание: [план/матрица](product-research-ozon-stage3.md).
+Статус: завершён 01.11.2026; код объединён, миграция Symfony применена,
+production-выкладка и smoke успешны. Модуль остаётся за закрытым флагом. Основание: [план/матрица](product-research-ozon-stage3.md).
 
 ## Результат
 
@@ -70,17 +70,18 @@ TIMESTAMP(6) сохраняет точное generated_at для TTL и срав
   JSON ответа проверяется против OpenAPI, а не только freshness генератора.
 - Python `make product-research-ozon-lint product-research-ozon-vet
   product-research-ozon-architecture product-research-ozon-test`: Ruff, mypy strict,
-  import-linter и полный набор unit/contract/integration: **61 тест, PASS**. Лог: var/product-research-ozon-stage3/python-all.log.
+  import-linter и полный набор unit/contract/integration: **61 тест, PASS**. Лог: var/product-research-ozon-stage3/python-generation-gates.log.
 - Реальные параллельные соединения: Python ThreadPoolExecutor + PostgreSQL и
   PHP два отдельных процесса с наблюдением pg_blocking_pids. По одному owner,
   проигравший не перезаписывает данные. Source/tenant scope и lost lease проверены.
 - Полный `make db-rebuild-check TEST_WORKERS=2 COMPOSE='docker compose -p
   research-stage3-rebuild -f .../docker-compose.yml -f .../rebuild.override.yml'`:
-  PASS — **807 unit / 9134 assertions, 889 integration / 23308, 419 functional /
-  4129**, затем Go-гейты и 58 Python-тестов. Отдельные PostgreSQL/S3/Go тома,
+  PASS — **807 unit / 9134 assertions, 889 integration / 23318, 419 functional /
+  4129**, затем Go-гейты и **61 Python-тест**. Отдельные PostgreSQL/S3/Go тома,
   сброшены только host ports отдельного проекта; рабочие dev-тома сохранены.
-  Лог: var/product-research-ozon-stage3/rebuild.log. После него добавлен только
-  fail-soft telemetry guard с отдельным Red/Green и повтором Python-гейтов.
+  Повтор выполнен после итогового исправления generation fencing и изменения
+  новой Alembic-миграции до merge. Лог:
+  var/product-research-ozon-stage3/rebuild-generation.log.
 - Fixture: полный исходный ответ этапа 0, 6567 строк, sha256 gzip/оригинала и
   provenance в tests/fixtures/mpstats/ozon/categories/manifest.json. Новых live
   запросов не было; ID категорий в проверенном ответе отсутствует.
@@ -94,7 +95,10 @@ TIMESTAMP(6) сохраняет точное generated_at для TTL и срав
   синхронизации, поиск «хидж» вернул полный целевой путь, revision=1. Проверено
   количество строк локальной проекции. Лог: var/product-research-ozon-stage3/graph-smoke.log.
   Сервер отсутствует в runtime image, принимает только собственную test-БД;
-  egress не включался, live MPStats не вызывался.
+  egress не включался, live MPStats не вызывался. При первом повторе после
+  rebuild тестовый вызов опередил запуск Uvicorn и получил unavailable.
+  Локальный orchestration-скрипт дополнен `docker compose up --wait`; повтор
+  после готовности API успешен. Продуктовый код после итогового ревью не менялся.
 - На той же локальной app_test создан синтетический проект. Cache migration
   down оставил проект, up восстановил кэш, schema validation PASS; synthetic
   cleanup после up. Лог: var/product-research-ozon-stage3/migration-check.log.
@@ -102,11 +106,46 @@ TIMESTAMP(6) сохраняет точное generated_at для TTL и срав
 
 ## Приёмка и доставка
 
-G01–G05 подтверждены тестами, rebuild, совместным smoke и миграционным циклом.
-G06 требует независимого ревью, G07–G08 —
-CI/merge/разрешённой миграции Symfony/production smoke и постоянных результатов.
-Ревью Claude при недоступности заменяется двумя новыми сессиями Codex CLI 5A/5B,
-как установлено владельцем; локальная самопроверка заменой не является.
+G01–G06 подтверждены тестами, rebuild, совместным smoke, миграционным циклом
+и завершённым независимым ревью. CI итоговой ветки
+[41300037206](https://github.com/pavelsur07/app-service-analytics/actions/runs/41300037206)
+успешен по всему diff: backend/frontend/services, contract/audit и E2E.
+Код объединён через [PR #307](https://github.com/pavelsur07/app-service-analytics/pull/307),
+merge commit `da8eb2ac137536df02d18dd4e126402ef086d318`.
+Штатный deploy gate остановил первую попытку на одной новой миграции.
+Через `conwix-prod`, `/opt/conwix`, в новом образе сначала проверен точный
+APP_SOURCE_COMMIT, затем отдельным шагом выполнена только
+`doctrine:migrations:execute --up --no-interaction
+DoctrineMigrations\Version20261101093709`. Результат: одна миграция / шесть SQL,
+успех. `doctrine:migrations:up-to-date` и `doctrine:schema:validate` успешны;
+существующие Doctrine deprecation notices не являются ошибкой проверки.
+Лог: var/product-research-ozon-stage3/production-migration.log.
+Перезапущен только failed deploy job, успешные проверки не заменены новым прогоном.
+[Master CI / deploy 41301054303](https://github.com/pavelsur07/app-service-analytics/actions/runs/41301054303)
+после отдельной миграции и повторного deploy успешен, образ **751-da8eb2a**.
+Production smoke:
+
+- APP_SOURCE_COMMIT точно совпал с `da8eb2ac137536df02d18dd4e126402ef086d318`.
+- У всех семи реально разрешённых контроллеров флаг false; прямой вызов поиска
+  даёт 404 feature_disabled до чтения данных, без записей.
+- Публичный `/api/seller/ping`: версия 751-da8eb2a; новый categories endpoint
+  без seller-сессии возвращает 401 (проверен валидный UUIDv7 маршрута).
+- Все 12 контейнеров running; у заданных healthcheck состояние healthy.
+  Первая проверка увидела ozon-fetcher в starting; повтор после готовности
+  прошёл. Отсутствующий healthcheck у traefik/worker-freshness не объявлен healthy.
+
+Лог: var/product-research-ozon-stage3/production-smoke-da8eb2a.log.
+G01–G08 закрыты; постоянные результаты сохранены в этом отчёте и отчёте ревью.
+Финальная правка только Markdown не требует нового независимого ревью
+по порогу AGENTS.md; кодовый пакет и проверки не меняются.
+
+Claude CLI отсутствует. Выполнены четыре новые независимые сессии Codex CLI
+(5A/5B исходного и итогового пакетов). Первые проходы: 5A — 0; 5B — 1 уникальное
+принятое замечание о защите поколения ключа. Исправлены монотонная активация,
+claim/publication/release; отдельный Red воспроизведён на старом коде, Green —
+на новом. Итоговые 5A и 5B complete, дополнительно принятых — 0 и 0,
+отклонённых — 0. Полные JSON, hash пакетов и разбор сохранены в
+[отчёте ревью](product-research-ozon-stage3-review.md), а не только в var/review.
 
 В production поставляется Symfony за закрытым PRODUCT_RESEARCH_OZON_ENABLED.
 Python production compose/включение, реальная квота/тариф/egress и отдельные S3-права
@@ -114,9 +153,3 @@ Python production compose/включение, реальная квота/тар
 пользовательского UI этапа 7. Dev-сеть остаётся internal без живого egress;
 дополнительный HTTP smoke использует fixture-only сервер вне runtime image.
 Чужие B17/B18, securety_chek, temp и удаление onboarding-спецификации исключены.
-
-
-Первый независимый пакет завершён: 5A — 0, 5B — 1 уникальное принятое замечание
-о старом credential generation. Исправлены монотонная активация/claim/publication/
-release; 61 Python-тест и гейты прошли. Повторный полный rebuild Source-миграции
-и оба новых прохода ревью выполняются. [Полные заключения/разбор](product-research-ozon-stage3-review.md).
