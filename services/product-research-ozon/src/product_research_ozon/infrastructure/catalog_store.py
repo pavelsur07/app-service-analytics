@@ -100,6 +100,25 @@ class CatalogStore:
             ).fetchone()
         return row is not None
 
+    def provider_status(
+        self, source_id: UUID, generation: int
+    ) -> tuple[str, datetime | None]:
+        """Shared server credential scope (ADR-050), never company data."""
+        with self._connect() as db:
+            row = db.execute(
+                """SELECT active_generation, paused_generation,
+                GREATEST(next_request_at, COALESCE(lease_until,clock_timestamp()),clock_timestamp()+interval '1 second')
+                FROM catalog_provider_gate WHERE source_id=%s LIMIT 1""",
+                (source_id,),
+            ).fetchone()
+        if row is None or row[0] != generation:
+            return "obsolete_generation", None
+        if row[1] == generation:
+            return "authorization_failed", None
+        if not isinstance(row[2], datetime):
+            return "source_unavailable", None
+        return "rate_limited", row[2]
+
     def provider_release(
         self,
         source_id: UUID,

@@ -25,3 +25,10 @@ name = "Infrastructure не зависит от HTTP и wiring"
 type = "forbidden"
 source_modules = ["product_research_ozon.infrastructure"]
 forbidden_modules = ["product_research_ozon.api", "product_research_ozon.bootstrap", "sqlalchemy"]
+
+[[tool.importlinter.contracts]]
+name = "Сбор и публикация не зависят от SDK и SQL адаптеров"
+type = "forbidden"
+source_modules = ["product_research_ozon.collection", "product_research_ozon.snapshots"]
+forbidden_modules = ["product_research_ozon.api", "product_research_ozon.bootstrap", "product_research_ozon.infrastructure", "httpx", "fastapi", "psycopg", "boto3", "sqlalchemy"]
+ignore_imports = ["product_research_ozon.collection.service -> product_research_ozon.infrastructure.observability"]
