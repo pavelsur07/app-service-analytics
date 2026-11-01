@@ -804,6 +804,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/product-research-ozon/projects/{projectId}/periods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_app_productresearchozon_ui_addresearchperiods__invoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/product-research-ozon/projects/{projectId}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_app_productresearchozon_ui_copyresearchproject__invoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/product-research-ozon/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_productresearchozon_ui_listresearchprojects__invoke"];
+        put?: never;
+        post: operations["post_app_productresearchozon_ui_createresearchproject__invoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/product-research-ozon/projects/{projectId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_productresearchozon_ui_getresearchproject__invoke"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/product-research-ozon/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_app_productresearchozon_ui_previewresearch__invoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/sales-plans/{planId}/approve": {
         parameters: {
             query?: never;
@@ -1881,6 +1961,58 @@ export interface components {
         };
         TrackedSkuListResponse: {
             items: string[];
+            nextCursor?: string | null;
+        };
+        PeriodResponse: {
+            fromMonth: string;
+            toMonth: string;
+            name: string;
+        };
+        MonthResponse: {
+            month: string;
+            dateFrom: string;
+            dateTo: string;
+            days: number;
+            partial: boolean;
+        };
+        PreviewResponse: {
+            periods: components["schemas"]["PeriodResponse"][];
+            months: components["schemas"]["MonthResponse"][];
+            monthCount: number;
+            summary: string;
+            calendarDate: string;
+            timezone: string;
+            suggestedName?: string | null;
+        };
+        ProjectResponse: {
+            id: string;
+            categoryPath: string;
+            categoryRevision: number;
+            name: string;
+            comment: string;
+            includeCurrentMonth: boolean;
+            periodCount: number;
+            version: number;
+            createdByUserId: string;
+            createdAt: string;
+            updatedAt: string;
+            status: string;
+            fbs: boolean;
+            currency: string;
+            /** @default null */
+            preview: components["schemas"]["PreviewResponse"] | null;
+        };
+        ProjectSummaryResponse: {
+            id: string;
+            categoryPath: string;
+            name: string;
+            periodCount: number;
+            version: number;
+            createdAt: string;
+            status: string;
+        };
+        ProjectsResponse: {
+            items: components["schemas"]["ProjectSummaryResponse"][];
             nextCursor?: string | null;
         };
         SalesPlanApprovedResponse: {
@@ -5178,6 +5310,619 @@ export interface operations {
             };
             /** @description Этот артикул компания не отслеживает */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_app_productresearchozon_ui_addresearchperiods__invoke: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    periods: {
+                        fromMonth: string;
+                        toMonth: string;
+                        name?: string;
+                    }[];
+                    expectedVersion: number;
+                    /** Format: date */
+                    previewCalendarDate: string;
+                    includeCurrentMonth?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Черновик проекта */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Нет seller-сессии */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Модуль выключен или проект отсутствует */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Версия или дата предпросмотра устарели */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные поля/периоды/категория */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Справочник ещё не готов */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_app_productresearchozon_ui_copyresearchproject__invoke: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expectedVersion: number;
+                    /** Format: date */
+                    previewCalendarDate: string;
+                    overrides?: {
+                        categoryPath?: string;
+                        periods?: {
+                            fromMonth: string;
+                            toMonth: string;
+                            name?: string;
+                        }[];
+                        shortcut?: {
+                            /** @enum {string} */
+                            kind: "last_closed_months";
+                            /** @enum {integer} */
+                            months: 3 | 6 | 12;
+                        } | {
+                            /** @enum {string} */
+                            kind: "previous_year";
+                            period: {
+                                fromMonth: string;
+                                toMonth: string;
+                                name?: string;
+                            };
+                        };
+                        includeCurrentMonth?: boolean;
+                        name?: string;
+                        comment?: string;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Черновик проекта */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Нет seller-сессии */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Модуль выключен или проект отсутствует */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Версия или дата предпросмотра устарели */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные поля/периоды/категория */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Справочник ещё не готов */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_productresearchozon_ui_listresearchprojects__invoke: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Страница проектов */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectsResponse"];
+                };
+            };
+            /** @description Нет seller-сессии */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Модуль выключен или проект отсутствует */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Версия или дата предпросмотра устарели */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные поля/периоды/категория */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Справочник ещё не готов */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_app_productresearchozon_ui_createresearchproject__invoke: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    categoryPath: string;
+                    periods?: {
+                        fromMonth: string;
+                        toMonth: string;
+                        name?: string;
+                    }[];
+                    shortcut?: {
+                        /** @enum {string} */
+                        kind: "last_closed_months";
+                        /** @enum {integer} */
+                        months: 3 | 6 | 12;
+                    } | {
+                        /** @enum {string} */
+                        kind: "previous_year";
+                        period: {
+                            fromMonth: string;
+                            toMonth: string;
+                            name?: string;
+                        };
+                    };
+                    includeCurrentMonth?: boolean;
+                    name?: string;
+                    comment?: string;
+                    /** Format: date */
+                    previewCalendarDate: string;
+                } & (unknown | unknown);
+            };
+        };
+        responses: {
+            /** @description Черновик проекта */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Нет seller-сессии */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Модуль выключен или проект отсутствует */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Версия или дата предпросмотра устарели */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные поля/периоды/категория */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Справочник ещё не готов */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_productresearchozon_ui_getresearchproject__invoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Проект и текущий предпросмотр */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Нет seller-сессии */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Модуль выключен или проект отсутствует */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Версия или дата предпросмотра устарели */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные поля/периоды/категория */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Справочник ещё не готов */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_app_productresearchozon_ui_previewresearch__invoke: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    periods?: {
+                        fromMonth: string;
+                        toMonth: string;
+                        name?: string;
+                    }[];
+                    shortcut?: {
+                        /** @enum {string} */
+                        kind: "last_closed_months";
+                        /** @enum {integer} */
+                        months: 3 | 6 | 12;
+                    } | {
+                        /** @enum {string} */
+                        kind: "previous_year";
+                        period: {
+                            fromMonth: string;
+                            toMonth: string;
+                            name?: string;
+                        };
+                    };
+                    includeCurrentMonth?: boolean;
+                    categoryPath?: string;
+                } & (unknown | unknown);
+            };
+        };
+        responses: {
+            /** @description Календарный предпросмотр; suggestedName без категории null */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewResponse"];
+                };
+            };
+            /** @description Нет seller-сессии */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Модуль выключен или проект отсутствует */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Версия или дата предпросмотра устарели */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные поля/периоды/категория */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Справочник ещё не готов */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

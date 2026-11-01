@@ -4566,6 +4566,1163 @@
                 ]
             }
         },
+        "/api/companies/{companyId}/product-research-ozon/projects/{projectId}/periods": {
+            "post": {
+                "operationId": "post_app_productresearchozon_ui_addresearchperiods__invoke",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "periods",
+                                    "expectedVersion",
+                                    "previewCalendarDate"
+                                ],
+                                "properties": {
+                                    "periods": {
+                                        "type": "array",
+                                        "items": {
+                                            "required": [
+                                                "fromMonth",
+                                                "toMonth"
+                                            ],
+                                            "properties": {
+                                                "fromMonth": {
+                                                    "type": "string",
+                                                    "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                },
+                                                "toMonth": {
+                                                    "type": "string",
+                                                    "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "maxLength": 100
+                                                }
+                                            },
+                                            "type": "object",
+                                            "additionalProperties": false
+                                        },
+                                        "maxItems": 24,
+                                        "minItems": 1
+                                    },
+                                    "expectedVersion": {
+                                        "type": "integer",
+                                        "maximum": 2147483647,
+                                        "minimum": 1
+                                    },
+                                    "previewCalendarDate": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "includeCurrentMonth": {
+                                        "type": "boolean"
+                                    }
+                                },
+                                "type": "object",
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "\u0427\u0435\u0440\u043d\u043e\u0432\u0438\u043a \u043f\u0440\u043e\u0435\u043a\u0442\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "\u041d\u0435\u0442 seller-\u0441\u0435\u0441\u0441\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u0440\u043e\u0435\u043a\u0442 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u0412\u0435\u0440\u0441\u0438\u044f \u0438\u043b\u0438 \u0434\u0430\u0442\u0430 \u043f\u0440\u0435\u0434\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430 \u0443\u0441\u0442\u0430\u0440\u0435\u043b\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u043e\u043b\u044f/\u043f\u0435\u0440\u0438\u043e\u0434\u044b/\u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a \u0435\u0449\u0451 \u043d\u0435 \u0433\u043e\u0442\u043e\u0432",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/product-research-ozon/projects/{projectId}/copy": {
+            "post": {
+                "operationId": "post_app_productresearchozon_ui_copyresearchproject__invoke",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "expectedVersion",
+                                    "previewCalendarDate"
+                                ],
+                                "properties": {
+                                    "expectedVersion": {
+                                        "type": "integer",
+                                        "maximum": 2147483647,
+                                        "minimum": 1
+                                    },
+                                    "previewCalendarDate": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "overrides": {
+                                        "properties": {
+                                            "categoryPath": {
+                                                "type": "string",
+                                                "maxLength": 2048,
+                                                "minLength": 1
+                                            },
+                                            "periods": {
+                                                "type": "array",
+                                                "items": {
+                                                    "required": [
+                                                        "fromMonth",
+                                                        "toMonth"
+                                                    ],
+                                                    "properties": {
+                                                        "fromMonth": {
+                                                            "type": "string",
+                                                            "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                        },
+                                                        "toMonth": {
+                                                            "type": "string",
+                                                            "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                        },
+                                                        "name": {
+                                                            "type": "string",
+                                                            "maxLength": 100
+                                                        }
+                                                    },
+                                                    "type": "object",
+                                                    "additionalProperties": false
+                                                },
+                                                "maxItems": 24,
+                                                "minItems": 1
+                                            },
+                                            "shortcut": {
+                                                "oneOf": [
+                                                    {
+                                                        "required": [
+                                                            "kind",
+                                                            "months"
+                                                        ],
+                                                        "properties": {
+                                                            "kind": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "last_closed_months"
+                                                                ]
+                                                            },
+                                                            "months": {
+                                                                "type": "integer",
+                                                                "enum": [
+                                                                    3,
+                                                                    6,
+                                                                    12
+                                                                ]
+                                                            }
+                                                        },
+                                                        "type": "object",
+                                                        "additionalProperties": false
+                                                    },
+                                                    {
+                                                        "required": [
+                                                            "kind",
+                                                            "period"
+                                                        ],
+                                                        "properties": {
+                                                            "kind": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "previous_year"
+                                                                ]
+                                                            },
+                                                            "period": {
+                                                                "required": [
+                                                                    "fromMonth",
+                                                                    "toMonth"
+                                                                ],
+                                                                "properties": {
+                                                                    "fromMonth": {
+                                                                        "type": "string",
+                                                                        "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                                    },
+                                                                    "toMonth": {
+                                                                        "type": "string",
+                                                                        "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string",
+                                                                        "maxLength": 100
+                                                                    }
+                                                                },
+                                                                "type": "object",
+                                                                "additionalProperties": false
+                                                            }
+                                                        },
+                                                        "type": "object",
+                                                        "additionalProperties": false
+                                                    }
+                                                ]
+                                            },
+                                            "includeCurrentMonth": {
+                                                "type": "boolean"
+                                            },
+                                            "name": {
+                                                "type": "string",
+                                                "maxLength": 200
+                                            },
+                                            "comment": {
+                                                "type": "string",
+                                                "maxLength": 2000
+                                            }
+                                        },
+                                        "type": "object",
+                                        "not": {
+                                            "schema": "CopyResearchProjectController",
+                                            "required": [
+                                                "periods",
+                                                "shortcut"
+                                            ]
+                                        },
+                                        "additionalProperties": false
+                                    }
+                                },
+                                "type": "object",
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "\u0427\u0435\u0440\u043d\u043e\u0432\u0438\u043a \u043f\u0440\u043e\u0435\u043a\u0442\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "\u041d\u0435\u0442 seller-\u0441\u0435\u0441\u0441\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u0440\u043e\u0435\u043a\u0442 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u0412\u0435\u0440\u0441\u0438\u044f \u0438\u043b\u0438 \u0434\u0430\u0442\u0430 \u043f\u0440\u0435\u0434\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430 \u0443\u0441\u0442\u0430\u0440\u0435\u043b\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u043e\u043b\u044f/\u043f\u0435\u0440\u0438\u043e\u0434\u044b/\u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a \u0435\u0449\u0451 \u043d\u0435 \u0433\u043e\u0442\u043e\u0432",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/product-research-ozon/projects": {
+            "get": {
+                "operationId": "get_app_productresearchozon_ui_listresearchprojects__invoke",
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 200,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u0421\u0442\u0440\u0430\u043d\u0438\u0446\u0430 \u043f\u0440\u043e\u0435\u043a\u0442\u043e\u0432",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "\u041d\u0435\u0442 seller-\u0441\u0435\u0441\u0441\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u0440\u043e\u0435\u043a\u0442 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u0412\u0435\u0440\u0441\u0438\u044f \u0438\u043b\u0438 \u0434\u0430\u0442\u0430 \u043f\u0440\u0435\u0434\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430 \u0443\u0441\u0442\u0430\u0440\u0435\u043b\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u043e\u043b\u044f/\u043f\u0435\u0440\u0438\u043e\u0434\u044b/\u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a \u0435\u0449\u0451 \u043d\u0435 \u0433\u043e\u0442\u043e\u0432",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "operationId": "post_app_productresearchozon_ui_createresearchproject__invoke",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "categoryPath",
+                                    "previewCalendarDate"
+                                ],
+                                "properties": {
+                                    "categoryPath": {
+                                        "type": "string",
+                                        "maxLength": 2048,
+                                        "minLength": 1
+                                    },
+                                    "periods": {
+                                        "type": "array",
+                                        "items": {
+                                            "required": [
+                                                "fromMonth",
+                                                "toMonth"
+                                            ],
+                                            "properties": {
+                                                "fromMonth": {
+                                                    "type": "string",
+                                                    "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                },
+                                                "toMonth": {
+                                                    "type": "string",
+                                                    "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "maxLength": 100
+                                                }
+                                            },
+                                            "type": "object",
+                                            "additionalProperties": false
+                                        },
+                                        "maxItems": 24,
+                                        "minItems": 1
+                                    },
+                                    "shortcut": {
+                                        "oneOf": [
+                                            {
+                                                "required": [
+                                                    "kind",
+                                                    "months"
+                                                ],
+                                                "properties": {
+                                                    "kind": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "last_closed_months"
+                                                        ]
+                                                    },
+                                                    "months": {
+                                                        "type": "integer",
+                                                        "enum": [
+                                                            3,
+                                                            6,
+                                                            12
+                                                        ]
+                                                    }
+                                                },
+                                                "type": "object",
+                                                "additionalProperties": false
+                                            },
+                                            {
+                                                "required": [
+                                                    "kind",
+                                                    "period"
+                                                ],
+                                                "properties": {
+                                                    "kind": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "previous_year"
+                                                        ]
+                                                    },
+                                                    "period": {
+                                                        "required": [
+                                                            "fromMonth",
+                                                            "toMonth"
+                                                        ],
+                                                        "properties": {
+                                                            "fromMonth": {
+                                                                "type": "string",
+                                                                "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                            },
+                                                            "toMonth": {
+                                                                "type": "string",
+                                                                "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                            },
+                                                            "name": {
+                                                                "type": "string",
+                                                                "maxLength": 100
+                                                            }
+                                                        },
+                                                        "type": "object",
+                                                        "additionalProperties": false
+                                                    }
+                                                },
+                                                "type": "object",
+                                                "additionalProperties": false
+                                            }
+                                        ]
+                                    },
+                                    "includeCurrentMonth": {
+                                        "type": "boolean"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 200
+                                    },
+                                    "comment": {
+                                        "type": "string",
+                                        "maxLength": 2000
+                                    },
+                                    "previewCalendarDate": {
+                                        "type": "string",
+                                        "format": "date"
+                                    }
+                                },
+                                "type": "object",
+                                "oneOf": [
+                                    {
+                                        "required": [
+                                            "periods"
+                                        ],
+                                        "not": {
+                                            "schema": "CreateResearchProjectController",
+                                            "required": [
+                                                "shortcut"
+                                            ]
+                                        }
+                                    },
+                                    {
+                                        "required": [
+                                            "shortcut"
+                                        ],
+                                        "not": {
+                                            "schema": "CreateResearchProjectController",
+                                            "required": [
+                                                "periods"
+                                            ]
+                                        }
+                                    }
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "\u0427\u0435\u0440\u043d\u043e\u0432\u0438\u043a \u043f\u0440\u043e\u0435\u043a\u0442\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "\u041d\u0435\u0442 seller-\u0441\u0435\u0441\u0441\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u0440\u043e\u0435\u043a\u0442 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u0412\u0435\u0440\u0441\u0438\u044f \u0438\u043b\u0438 \u0434\u0430\u0442\u0430 \u043f\u0440\u0435\u0434\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430 \u0443\u0441\u0442\u0430\u0440\u0435\u043b\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u043e\u043b\u044f/\u043f\u0435\u0440\u0438\u043e\u0434\u044b/\u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a \u0435\u0449\u0451 \u043d\u0435 \u0433\u043e\u0442\u043e\u0432",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/product-research-ozon/projects/{projectId}": {
+            "get": {
+                "operationId": "get_app_productresearchozon_ui_getresearchproject__invoke",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u041f\u0440\u043e\u0435\u043a\u0442 \u0438 \u0442\u0435\u043a\u0443\u0449\u0438\u0439 \u043f\u0440\u0435\u0434\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "\u041d\u0435\u0442 seller-\u0441\u0435\u0441\u0441\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u0440\u043e\u0435\u043a\u0442 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u0412\u0435\u0440\u0441\u0438\u044f \u0438\u043b\u0438 \u0434\u0430\u0442\u0430 \u043f\u0440\u0435\u0434\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430 \u0443\u0441\u0442\u0430\u0440\u0435\u043b\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u043e\u043b\u044f/\u043f\u0435\u0440\u0438\u043e\u0434\u044b/\u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a \u0435\u0449\u0451 \u043d\u0435 \u0433\u043e\u0442\u043e\u0432",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/product-research-ozon/preview": {
+            "post": {
+                "operationId": "post_app_productresearchozon_ui_previewresearch__invoke",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [],
+                                "properties": {
+                                    "periods": {
+                                        "type": "array",
+                                        "items": {
+                                            "required": [
+                                                "fromMonth",
+                                                "toMonth"
+                                            ],
+                                            "properties": {
+                                                "fromMonth": {
+                                                    "type": "string",
+                                                    "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                },
+                                                "toMonth": {
+                                                    "type": "string",
+                                                    "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "maxLength": 100
+                                                }
+                                            },
+                                            "type": "object",
+                                            "additionalProperties": false
+                                        },
+                                        "maxItems": 24,
+                                        "minItems": 1
+                                    },
+                                    "shortcut": {
+                                        "oneOf": [
+                                            {
+                                                "required": [
+                                                    "kind",
+                                                    "months"
+                                                ],
+                                                "properties": {
+                                                    "kind": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "last_closed_months"
+                                                        ]
+                                                    },
+                                                    "months": {
+                                                        "type": "integer",
+                                                        "enum": [
+                                                            3,
+                                                            6,
+                                                            12
+                                                        ]
+                                                    }
+                                                },
+                                                "type": "object",
+                                                "additionalProperties": false
+                                            },
+                                            {
+                                                "required": [
+                                                    "kind",
+                                                    "period"
+                                                ],
+                                                "properties": {
+                                                    "kind": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "previous_year"
+                                                        ]
+                                                    },
+                                                    "period": {
+                                                        "required": [
+                                                            "fromMonth",
+                                                            "toMonth"
+                                                        ],
+                                                        "properties": {
+                                                            "fromMonth": {
+                                                                "type": "string",
+                                                                "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                            },
+                                                            "toMonth": {
+                                                                "type": "string",
+                                                                "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+                                                            },
+                                                            "name": {
+                                                                "type": "string",
+                                                                "maxLength": 100
+                                                            }
+                                                        },
+                                                        "type": "object",
+                                                        "additionalProperties": false
+                                                    }
+                                                },
+                                                "type": "object",
+                                                "additionalProperties": false
+                                            }
+                                        ]
+                                    },
+                                    "includeCurrentMonth": {
+                                        "type": "boolean"
+                                    },
+                                    "categoryPath": {
+                                        "type": "string",
+                                        "maxLength": 2048,
+                                        "minLength": 1
+                                    }
+                                },
+                                "type": "object",
+                                "oneOf": [
+                                    {
+                                        "required": [
+                                            "periods"
+                                        ],
+                                        "not": {
+                                            "schema": "PreviewResearchController",
+                                            "required": [
+                                                "shortcut"
+                                            ]
+                                        }
+                                    },
+                                    {
+                                        "required": [
+                                            "shortcut"
+                                        ],
+                                        "not": {
+                                            "schema": "PreviewResearchController",
+                                            "required": [
+                                                "periods"
+                                            ]
+                                        }
+                                    }
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "\u041a\u0430\u043b\u0435\u043d\u0434\u0430\u0440\u043d\u044b\u0439 \u043f\u0440\u0435\u0434\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440; suggestedName \u0431\u0435\u0437 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438 null",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PreviewResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "\u041d\u0435\u0442 seller-\u0441\u0435\u0441\u0441\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u0440\u043e\u0435\u043a\u0442 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u0412\u0435\u0440\u0441\u0438\u044f \u0438\u043b\u0438 \u0434\u0430\u0442\u0430 \u043f\u0440\u0435\u0434\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0430 \u0443\u0441\u0442\u0430\u0440\u0435\u043b\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u043e\u043b\u044f/\u043f\u0435\u0440\u0438\u043e\u0434\u044b/\u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a \u0435\u0449\u0451 \u043d\u0435 \u0433\u043e\u0442\u043e\u0432",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/companies/{companyId}/sales-plans/{planId}/approve": {
             "post": {
                 "operationId": "post_sales_planning_plan_approve",
@@ -9337,6 +10494,218 @@
                         "type": "array",
                         "items": {
                             "type": "string"
+                        }
+                    },
+                    "nextCursor": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "PeriodResponse": {
+                "required": [
+                    "fromMonth",
+                    "toMonth",
+                    "name"
+                ],
+                "properties": {
+                    "fromMonth": {
+                        "type": "string"
+                    },
+                    "toMonth": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "MonthResponse": {
+                "required": [
+                    "month",
+                    "dateFrom",
+                    "dateTo",
+                    "days",
+                    "partial"
+                ],
+                "properties": {
+                    "month": {
+                        "type": "string"
+                    },
+                    "dateFrom": {
+                        "type": "string"
+                    },
+                    "dateTo": {
+                        "type": "string"
+                    },
+                    "days": {
+                        "type": "integer"
+                    },
+                    "partial": {
+                        "type": "boolean"
+                    }
+                },
+                "type": "object"
+            },
+            "PreviewResponse": {
+                "required": [
+                    "periods",
+                    "months",
+                    "monthCount",
+                    "summary",
+                    "calendarDate",
+                    "timezone"
+                ],
+                "properties": {
+                    "periods": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PeriodResponse"
+                        }
+                    },
+                    "months": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MonthResponse"
+                        }
+                    },
+                    "monthCount": {
+                        "type": "integer"
+                    },
+                    "summary": {
+                        "type": "string"
+                    },
+                    "calendarDate": {
+                        "type": "string"
+                    },
+                    "timezone": {
+                        "type": "string"
+                    },
+                    "suggestedName": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "ProjectResponse": {
+                "required": [
+                    "id",
+                    "categoryPath",
+                    "categoryRevision",
+                    "name",
+                    "comment",
+                    "includeCurrentMonth",
+                    "periodCount",
+                    "version",
+                    "createdByUserId",
+                    "createdAt",
+                    "updatedAt",
+                    "status",
+                    "fbs",
+                    "currency"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "categoryPath": {
+                        "type": "string"
+                    },
+                    "categoryRevision": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "comment": {
+                        "type": "string"
+                    },
+                    "includeCurrentMonth": {
+                        "type": "boolean"
+                    },
+                    "periodCount": {
+                        "type": "integer"
+                    },
+                    "version": {
+                        "type": "integer"
+                    },
+                    "createdByUserId": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string"
+                    },
+                    "updatedAt": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "fbs": {
+                        "type": "boolean"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "preview": {
+                        "nullable": true,
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/PreviewResponse"
+                            }
+                        ],
+                        "default": null
+                    }
+                },
+                "type": "object"
+            },
+            "ProjectSummaryResponse": {
+                "required": [
+                    "id",
+                    "categoryPath",
+                    "name",
+                    "periodCount",
+                    "version",
+                    "createdAt",
+                    "status"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "categoryPath": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "periodCount": {
+                        "type": "integer"
+                    },
+                    "version": {
+                        "type": "integer"
+                    },
+                    "createdAt": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ProjectsResponse": {
+                "required": [
+                    "items"
+                ],
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ProjectSummaryResponse"
                         }
                     },
                     "nextCursor": {

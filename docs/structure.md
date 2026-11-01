@@ -228,7 +228,8 @@ api/
 │   ├── Ingestion/
 │   ├── PriceMonitoring/
 │   ├── Links/
-│   └── SalesPlanning/
+│   ├── SalesPlanning/
+│   └── ProductResearchOzon/
 ├── tests/
 ├── var/                  всё, что порождается прогонами
 │   ├── cache/            Symfony (dev, test, prod)
@@ -397,6 +398,16 @@ ValueObject описывает проверенный непрерывный cap
 передаёт config через общий PHP environment; явно подтверждённый cutover
 не равен включению численного прогноза. Private manifests и quality rollout
 остаются последующими B15/B16/B17 задачами.
+
+`ProductResearchOzon` (ADR-050, этап 2) хранит только человеческие черновики
+и именованные диапазоны. Domain — календарь и агрегат, Application —
+транзакционные create/add/copy, Repository — ORM и блокировки шапки, Query —
+company-scoped DBAL-чтение и keyset. Ui содержит шесть seller-контроллеров,
+строгий parser и Response DTO. Каталог подключается через CategoryLookup;
+до этапа 3 production-адаптер отвечает catalog_not_ready, HTTP закрыт
+PRODUCT_RESEARCH_OZON_ENABLED=false по умолчанию. Python из этих запросов
+не вызывается. Тестовые Fake/Builder и concurrent-research.php находятся
+в tests/Support; script отказывает вне app_test[N] и на несинтетической компании.
 
 ### Внутри модуля
 

@@ -114,10 +114,11 @@ api-console: ## произвольная консольная команда: ma
 
 # --- База ------------------------------------------------------------------
 
+# TCP excludes the temporary Unix-socket-only initdb server on a fresh volume.
 db-wait: ## ожидание готовности Postgres
 	@echo "Ожидание Postgres..."
 	@for i in $$(seq 1 30); do \
-		$(COMPOSE) exec -T postgres pg_isready -U $(DB_USER) >/dev/null 2>&1 && exit 0; \
+		$(COMPOSE) exec -T postgres pg_isready -h 127.0.0.1 -U $(DB_USER) >/dev/null 2>&1 && exit 0; \
 		sleep 1; \
 	done; \
 	echo "Postgres не готов за 30с" >&2; exit 1
