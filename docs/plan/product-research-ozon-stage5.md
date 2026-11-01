@@ -1,6 +1,6 @@
 # product-research-ozon — этап 5: доставка, повторы и восстановление
 
-Дата: 01.11.2026. Статус: реализация. Основание: ADR-050, этапы 1–4 приняты.
+Дата: 01.11.2026. Статус: завершён. Основание: ADR-050, этапы 1–4 приняты.
 
 ## Результат и границы
 
@@ -140,11 +140,14 @@ ORM start/idempotency/активный run, Messenger notification после co
 
 ## Чек-лист готовности
 
-- [ ] G01: план, чистая политика, frozen dates и retry budget проверены TDD.
-- [ ] G02: admission/очередь/worker/Python v1 завершены, legacy тесты проходят.
-- [ ] G03: Symfony outbox/relay/poll/API и дозагрузка проверены.
-- [ ] G04: изоляция, конкуренция/fencing/crash и auth pause проверены настоящими БД/S3.
-- [ ] G05: сквозной fixture-only HTTP smoke, контракты и OpenAPI/TS успешны.
-- [ ] G06: все гейты, миграции и полный fresh rebuild зелёные до ревью.
-- [ ] G07: независимые ревью complete, все принятые замечания исправлены/перепроверены.
-- [ ] G08: весь CI diff зелёный, merge/разрешённая миграция/deploy/smoke и постоянный отчёт подтверждены.
+- [x] G01: план, чистая политика, frozen dates и retry budget проверены TDD.
+- [x] G02: admission/очередь/worker/Python v1 завершены, legacy тесты проходят.
+- [x] G03: Symfony outbox/relay/poll/API и дозагрузка проверены.
+- [x] G04: изоляция, конкуренция/fencing/crash и auth pause проверены настоящими БД/S3.
+- [x] G05: сквозной fixture-only HTTP smoke, контракты и OpenAPI/TS успешны.
+- [x] G06: все гейты, миграции и полный fresh rebuild зелёные до ревью.
+- [x] G07: независимые ревью complete, все принятые замечания исправлены/перепроверены.
+- [x] G08: весь CI diff зелёный, merge/разрешённая миграция/deploy/smoke и постоянный отчёт подтверждены.
+
+Завершён 01.11.2026: [отчёт приёмки](product-research-ozon-stage5-report.md),
+[полные заключения](product-research-ozon-stage5-review.md), код PR #311.
