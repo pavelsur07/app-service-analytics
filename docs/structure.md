@@ -399,13 +399,13 @@ ValueObject описывает проверенный непрерывный cap
 не равен включению численного прогноза. Private manifests и quality rollout
 остаются последующими B15/B16/B17 задачами.
 
-`ProductResearchOzon` (ADR-050, этап 2) хранит только человеческие черновики
+`ProductResearchOzon` (ADR-050, этапы 2–3) хранит человеческие черновики
 и именованные диапазоны. Domain — календарь и агрегат, Application —
 транзакционные create/add/copy, Repository — ORM и блокировки шапки, Query —
-company-scoped DBAL-чтение и keyset. Ui содержит шесть seller-контроллеров,
-строгий parser и Response DTO. Каталог подключается через CategoryLookup;
-до этапа 3 production-адаптер отвечает catalog_not_ready, HTTP закрыт
-PRODUCT_RESEARCH_OZON_ENABLED=false по умолчанию. Python из этих запросов
+company-scoped DBAL-чтение и keyset. Ui содержит seller-контроллеры проекта и поиска категорий,
+строгий parser и Response DTO. CategoryLookup читает только актуальную локальную
+проекцию; неполученный/просроченный каталог отвечает catalog_not_ready. HTTP закрыт
+PRODUCT_RESEARCH_OZON_ENABLED=false по умолчанию до контролируемого включения. Python из этих запросов
 не вызывается. Тестовые Fake/Builder и concurrent-research.php находятся
 в tests/Support; script отказывает вне app_test[N] и на несинтетической компании.
 
@@ -1021,3 +1021,16 @@ packages/api-schema/
 
 Большие тестовые фикстуры в Codex-ревью могут идти полными hash-вложениями
 в `var/review/attachments/`, не в текстовом base85 diff; см. шаблон пакета.
+
+
+Этап 3 product-research-ozon: в `api/src/ProductResearchOzon/Domain/ValueObject/`
+находятся неизменяемые значения каталога; `Infrastructure/Query/CatalogQuery`
+возвращает DBAL QueryBuilder, `Repository/DbalCatalogProjectionRepository`
+публикует производную проекцию, `Api/HttpCategorySource` — только фоновый клиент.
+`Ui/Command/SynchronizeCategoriesCommand` принимает явную компанию; seller
+`SearchResearchCategoriesController` обращается только к локальному поиску.
+В Python `catalogs/service.py` оркестрирует кэш, `domain/catalog.py` задаёт DTO/TTL,
+`infrastructure/catalog_store.py`, `catalog_cursor.py`, `mpstats_catalog.py` содержат
+PostgreSQL/подпись/ограниченный HTTP. Миграция 0002_catalog_cache — только технические
+метаданные. Полная реальная fixture — tests/fixtures/mpstats/ozon/categories,
+тестовый HTTP-сервер — tests/catalog_smoke_server.py (не входит в runtime).

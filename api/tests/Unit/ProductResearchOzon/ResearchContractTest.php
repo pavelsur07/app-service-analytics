@@ -24,6 +24,20 @@ final class ResearchContractTest extends TestCase
         self::assertTrue(new Validator()->validate($payload, $schema)->isValid(), 'Serialized month must satisfy the actual public schema, not just generator freshness');
     }
 
+    public function testSerializedCategorySearchMatchesPublicOpenApi(): void
+    {
+        $raw = file_get_contents('/var/www/packages/api-schema/openapi.json');
+        self::assertIsString($raw);
+        /** @var \stdClass $schema */
+        $schema = json_decode($raw, flags: \JSON_THROW_ON_ERROR);
+        $schema->{'$schema'} = 'https://json-schema.org/draft/2020-12/schema';
+        $schema->{'$ref'} = '#/components/schemas/ResearchCategoriesResponse';
+        $result = new \App\ProductResearchOzon\Domain\ValueObject\CatalogSearchResult(new \App\ProductResearchOzon\Domain\ValueObject\CatalogMetadata(7, new \DateTimeImmutable('2026-11-01T10:00:00.123456Z')), ['Аксессуары/Хиджабы']);
+        $response = new \App\ProductResearchOzon\Ui\Response\ResearchCategoriesResponse($result);
+        $payload = json_decode(json_encode($response, \JSON_THROW_ON_ERROR), flags: \JSON_THROW_ON_ERROR);
+        self::assertTrue(new Validator()->validate($payload, $schema)->isValid());
+    }
+
     public function testCalendarMonthsMatchPublishedServiceContract(): void
     {
         $raw = file_get_contents('/var/www/services/_contracts/product-research-ozon/v1/schema.json');

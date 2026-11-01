@@ -62,6 +62,14 @@ final class ResearchConcurrencyTest extends KernelTestCase
         self::assertSame(1, $this->db->fetchOne('SELECT COUNT(*) FROM audit_record WHERE company_id = :id', ['id' => $company]));
     }
 
+    public function testCatalogClaimsWaitOnRealConnectionsAndOnlyOneWins(): void
+    {
+        [$company, $id] = $this->seed();
+        [$first, $second] = $this->race($company, $id, 'catalog_claim', 'catalog_claim');
+        self::assertSame('ok', $first['outcome']);
+        self::assertSame('busy', $second['outcome']);
+    }
+
     public function testCopyAndAddUseOneCoherentSourceInBothOrders(): void
     {
         [$company, $id] = $this->seed();

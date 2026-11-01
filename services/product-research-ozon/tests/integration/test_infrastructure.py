@@ -14,7 +14,7 @@ from product_research_ozon.api import create_app
 from product_research_ozon.bootstrap import configured_settings
 from product_research_ozon.domain.storage import PageRef
 from product_research_ozon.infrastructure.config import Settings
-from product_research_ozon.infrastructure.readiness import Readiness
+from product_research_ozon.infrastructure.readiness import REVISION, Readiness
 from product_research_ozon.infrastructure.storage import RawStorage
 
 
@@ -75,7 +75,7 @@ def test_readiness_checks_db_revision_and_storage(settings: Settings) -> None:
                 assert client.get("/ready").status_code == 503
             finally:
                 connection.execute(
-                    "UPDATE alembic_version SET version_num = '0001_baseline'"
+                    "UPDATE alembic_version SET version_num = %s", (REVISION,)
                 )
     values = {name: getattr(settings, name) for name in settings.__dataclass_fields__}
     broken_db = Settings.from_mapping(

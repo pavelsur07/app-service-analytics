@@ -1,6 +1,46 @@
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
+from uuid import UUID
+
+
+@dataclass(frozen=True)
+class CatalogSettings:
+    source_id: UUID
+    generation: str
+    rpm: int
+    token: str = field(repr=False)
+    cursor_secret: str = field(repr=False)
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, str]) -> CatalogSettings | None:
+        flag = values.get("catalog_enabled", "false")
+        if flag == "false":
+            return None
+        if flag != "true":
+            raise ValueError("invalid_catalog_configuration")
+        try:
+            source = UUID(values["catalog_source_id"])
+            generation = values["catalog_generation"]
+            raw_rpm = values["catalog_rpm"]
+            token = values["mpstats_api_token"]
+            secret = values["catalog_cursor_secret"]
+            if (
+                source.version != 7
+                or str(source) != values["catalog_source_id"]
+                or not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", generation)
+                or not re.fullmatch(r"[0-9]{1,4}", raw_rpm)
+                or not 1 <= int(raw_rpm) <= 1000
+            ):
+                raise ValueError
+            if any(
+                not re.fullmatch(r"[!-~]{32,512}", value) for value in (token, secret)
+            ):
+                raise ValueError
+        except ValueError, KeyError:
+            raise ValueError("invalid_catalog_configuration") from None
+        return cls(source, generation, int(raw_rpm), token, secret)
 
 
 @dataclass(frozen=True)
@@ -12,6 +52,8 @@ class Settings:
     s3_bucket: str
     s3_access_key: str = field(repr=False)
     s3_secret_key: str = field(repr=False)
+
+    catalog: CatalogSettings | None = None
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> Settings:
@@ -29,10 +71,7 @@ class Settings:
         inbound, outbound = values["inbound_token"], values["outbound_token"]
         if (
             any(
-                len(token) < 32
-                or len(token) > 256
-                or not token.isascii()
-                or any(c.isspace() for c in token)
+                not re.fullmatch(r"[!-~]{32,256}", token)
                 for token in (inbound, outbound)
             )
             or inbound == outbound
@@ -62,4 +101,7 @@ class Settings:
                 raise ValueError
         except ValueError:
             raise ValueError("invalid_service_endpoint") from None
-        return cls(**{name: values[name] for name in required})
+        return cls(
+            **{name: values[name] for name in required},
+            catalog=CatalogSettings.from_mapping(values),
+        )

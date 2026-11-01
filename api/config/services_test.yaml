@@ -34,3 +34,17 @@ services:
         autowire: true
         arguments:
             $clock: '@App\Tests\Support\Fake\ResearchClock'
+
+    App\ProductResearchOzon\Infrastructure\DatabaseCategoryLookup:
+        public: true
+        autowire: true
+        arguments:
+            $clock: '@App\Tests\Support\Fake\ResearchClock'
+    App\ProductResearchOzon\Application\SearchResearchCategoriesAction:
+        autowire: true
+        arguments:
+            $clock: '@App\Tests\Support\Fake\ResearchClock'
+    App\ProductResearchOzon\Application\SynchronizeCategoriesAction:
+        autowire: true
+        arguments:
+            $clock: '@App\Tests\Support\Fake\ResearchClock'

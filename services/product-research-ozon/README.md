@@ -1,8 +1,8 @@
 # product-research-ozon
 
-Этап 1: внутренний FastAPI-каркас, baseline Alembic, отдельные dev/test БД,
+Этапы 1–3: внутренний FastAPI, Alembic, отдельные dev/test БД,
 company-scoped S3-порт и выключенный worker. Основание — принятый ADR-050.
-Загрузка MPStats, задания и пользовательские экраны ещё не реализованы.
+Реализован суточный кэш категорий и локальная проекция Symfony. Загрузка товаров, задания и пользовательские экраны — следующие этапы.
 
 План: [product-research-ozon](../../docs/plan/product-research-ozon.md).
 Проверка API: [отчёт REST](../../docs/plan/product-research-ozon-rest-check.md).
@@ -87,3 +87,47 @@ jsonschema, не отключая mypy. Их сигнатуры проверяю
 библиотек и traceback не выводятся, остаются severity/class и безопасные поля.
 Uvicorn access log и доверие proxy headers отключены. 503 not_ready — warning,
 а не ошибка трекера. Трекер ещё не подключён; stderr — JSON.
+
+
+## Этап 3: каталог без повторного запроса на каждый поиск
+
+План и приёмка: [этап 3](../../docs/plan/product-research-ozon-stage3.md).
+Кэш PostgreSQL изолирован по company_id/source_connection_id, TTL — 24 часа.
+Поиск seller читает только полную локальную проекцию Symfony. Фоновая команда:
+
+```sh
+docker compose exec -T php-cli php bin/console app:research:sync-categories COMPANY_UUID_V7 --once
+# Без --once: отдельный фоновый цикл, --interval=60; одна явно разрешённая компания.
+```
+
+До TTL команда не вызывает Python. После TTL Python также проверяет собственный
+кэш и обращается к MPStats только при необходимости. Lease/fencing защищает
+одновременное обновление, общий gate ограничивает серверный токен. 429 уважает
+Retry-After, 401/403 ставит паузу credential generation. Секреты/тела не логируются.
+Путь — исходный name целиком, стабильного ID в проверенном ответе нет; возможный
+provider ID сохраняется только в техническом кэше Python. Метрики из ответа
+не записываются. Схема БД сервиса теперь 0002_catalog_cache; down удаляет только
+производный каталог, не человеческие проекты/месячные снимки.
+
+Конфигурация для будущего контролируемого включения (не реальные значения):
+
+| Компонент | Переменные |
+|---|---|
+| Оба | RESEARCH_CATALOG_SOURCE_ID: одинаковый UUIDv7 подключения |
+| PHP | RESEARCH_SERVICE_TOKEN: Bearer направления PHP→Python, 32..256 ASCII |
+| Python | RESEARCH_CATALOG_ENABLED=true, RESEARCH_CATALOG_GENERATION, RESEARCH_CATALOG_RPM |
+| Python | MPSTATS_API_TOKEN: только Python; RESEARCH_CATALOG_CURSOR_SECRET: отдельный секрет подписи |
+
+Остальные RESEARCH_* конфигурации этапа 1 сохраняются. RESEARCH_INBOUND_TOKEN
+Python должен соответствовать RESEARCH_SERVICE_TOKEN PHP. Успешная выдача
+проверяется по X-Research-Source-Id; несовпадение запрещает публикацию в PHP.
+Смена аккаунта источника требует нового SOURCE_ID, ротация ключа того же аккаунта —
+нового GENERATION. Старый процесс не снимает паузу нового поколения.
+
+Каталог выключен по умолчанию. Dev-сеть остаётся internal без живого egress;
+production-активация/реальный тариф/квота/отдельные S3-права — этап 8. В этом этапе
+не утверждается live-приёмка MPStats. Тесты используют сохранённый ответ этапа 0;
+контрольные суммы/разрешение публикации — в fixtures/mpstats/ozon/categories.
+Тестовый `tests/catalog_smoke_server.py` проверяет реальный HTTP PHP→Python на
+отдельной локальной БД и фикстуре, отказывается от нетестовой БД и не входит в
+runtime image. Catalog metadata сохраняет microseconds, TTL не сдвигается чтениями.

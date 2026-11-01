@@ -228,3 +228,15 @@ def test_errors_use_contract_and_request_has_deadline() -> None:
             ).json()["error"]["code"]
             == "method_not_allowed"
         )
+
+
+def test_telemetry_failure_does_not_break_successful_response() -> None:
+    class BrokenHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            del record
+            raise RuntimeError("telemetry-only-private-detail")
+
+    logger = logging.getLogger("test-broken-telemetry")
+    logger.addHandler(BrokenHandler())
+    with TestClient(create_app(settings(), lambda: True, logger)) as client:
+        assert client.get("/health").status_code == 200

@@ -7,6 +7,7 @@ use App\ProductResearchOzon\Application\AddPeriodsInput;
 use App\ProductResearchOzon\Application\AddResearchPeriodsAction;
 use App\ProductResearchOzon\Application\CopyProjectInput;
 use App\ProductResearchOzon\Application\CopyResearchProjectAction;
+use App\ProductResearchOzon\Domain\CatalogProjectionRepository;
 use App\ProductResearchOzon\Domain\PeriodRange;
 use App\ProductResearchOzon\Domain\ResearchProblem;
 use App\ProductResearchOzon\Domain\ResearchProjectRepository;
@@ -67,6 +68,8 @@ try {
     $categories->publish($company, ['Одежда/Хиджабы']);
     if ('cleanup' === $request['operation']) {
         $db->transactional(static function () use ($db, $company): void {
+            $db->executeStatement('DELETE FROM product_research_ozon_category WHERE company_id=:id AND source_connection_id=:id', ['id' => $company]);
+            $db->executeStatement('DELETE FROM product_research_ozon_catalog WHERE company_id=:id AND source_connection_id=:id', ['id' => $company]);
             $db->executeStatement('DELETE FROM product_research_ozon_period WHERE company_id = :id', ['id' => $company]);
             $db->executeStatement('DELETE FROM product_research_ozon_project WHERE company_id = :id', ['id' => $company]);
             $db->executeStatement("DELETE FROM audit_record WHERE company_id = :id AND action LIKE 'product_research_ozon.%'", ['id' => $company]);
@@ -78,7 +81,7 @@ try {
     } else {
         $id = $request['id'] ?? null;
         $version = $request['version'] ?? null;
-        if (!is_string($id) || !Uuid::isValid($id) || !is_int($version) || $version < 1 || !in_array($request['operation'], ['add', 'copy'], true)) {
+        if (!is_string($id) || !Uuid::isValid($id) || !is_int($version) || $version < 1 || !in_array($request['operation'], ['add', 'copy', 'catalog_claim'], true)) {
             throw new RuntimeException('invalid_test_operation');
         }
         $held = true === ($request['hold'] ?? false);
@@ -87,7 +90,22 @@ try {
         }
         researchEvent(['event' => 'started', 'pid' => $db->fetchOne('SELECT pg_backend_pid()')]);
         try {
-            if ('add' === $request['operation']) {
+            $outcome = 'ok';
+            $result = null;
+            $resultId = $id;
+            $resultVersion = $version;
+            if ('catalog_claim' === $request['operation']) {
+                if (false === $db->fetchOne('SELECT id FROM product_research_ozon_project WHERE company_id=:company AND id=:id AND name=:marker', ['company' => $company, 'id' => $id, 'marker' => $marker])) {
+                    throw new RuntimeException('missing_synthetic_project');
+                }
+                $cache = $container->get(CatalogProjectionRepository::class);
+                if (!$cache instanceof CatalogProjectionRepository) {
+                    throw new RuntimeException('missing_catalog_repository');
+                }
+                $outcome = $cache->claim($company, $company, Uuid::v7()->toRfc4122(), new DateTimeImmutable('now', new DateTimeZone('UTC'))) ? 'ok' : 'busy';
+                $resultId = $id;
+                $resultVersion = $version;
+            } elseif ('add' === $request['operation']) {
                 $action = $container->get(AddResearchPeriodsAction::class);
                 if (!$action instanceof AddResearchPeriodsAction) {
                     throw new RuntimeException('missing_action');
@@ -100,14 +118,18 @@ try {
                 }
                 $result = $action($company, $id, new CopyProjectInput($version, '2026-04-15'), Uuid::v7()->toRfc4122());
             }
-            researchEvent(['event' => 'prepared', 'id' => $result->project->id()->toRfc4122()]);
+            if (null !== $result) {
+                $resultId = $result->project->id()->toRfc4122();
+                $resultVersion = $result->project->version();
+            }
+            researchEvent(['event' => 'prepared', 'id' => $resultId]);
             if ($held) {
                 if ("release\n" !== fgets(\STDIN)) {
                     throw new RuntimeException('missing_release');
                 }
                 $db->commit();
             }
-            researchEvent(['event' => 'result', 'outcome' => 'ok', 'id' => $result->project->id()->toRfc4122(), 'version' => $result->project->version()]);
+            researchEvent(['event' => 'result', 'outcome' => $outcome, 'id' => $resultId, 'version' => $resultVersion]);
         } catch (ResearchProblem $problem) {
             researchEvent(['event' => 'result', 'outcome' => $problem->reason]);
         }
