@@ -65,7 +65,7 @@
 ## Архитектура и данные
 
 - Backend: PHP 8.4, Symfony 7.4, Doctrine, PostgreSQL. Модули:
-  `Shared`, `Identity`, `Ingestion`, `PriceMonitoring`, `Links`, `SalesPlanning`.
+  `Shared`, `Identity`, `Ingestion`, `PriceMonitoring`, `Links`, `SalesPlanning`, `ProductResearchOzon`.
 - Соблюдать слои `Domain`, `Application`, `Infrastructure`, `Ui` и зависимости
   из Deptrac. Межмодульный доступ — через разрешённые Facade; новые связи требуют ADR.
 - Чтения данных компании явно принимают `companyId`; company-scoped методы

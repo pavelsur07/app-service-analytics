@@ -23,3 +23,14 @@ services:
 
     Psr\Clock\ClockInterface:
         alias: App\Tests\Support\Fake\MutableMfaClock
+
+    App\Tests\Support\Fake\ResearchClock:
+        public: true
+    App\Tests\Support\Fake\ResearchCategories:
+        public: true
+    App\ProductResearchOzon\Domain\CategoryLookup:
+        alias: App\Tests\Support\Fake\ResearchCategories
+    App\ProductResearchOzon\Application\ResearchPreparation:
+        autowire: true
+        arguments:
+            $clock: '@App\Tests\Support\Fake\ResearchClock'

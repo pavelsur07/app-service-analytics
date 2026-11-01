@@ -14,13 +14,13 @@ unexpected=""
 for entry in src/*; do
     name="$(basename "$entry")"
     case "$name" in
-        Shared|Identity|Ingestion|PriceMonitoring|Links|SalesPlanning|Kernel.php) ;;
+        Shared|Identity|Ingestion|PriceMonitoring|Links|SalesPlanning|ProductResearchOzon|Kernel.php) ;;
         *) unexpected="$unexpected $name" ;;
     esac
 done
 
 if [ -n "$unexpected" ]; then
-    echo "api/src/ содержит лишнее (не Shared/Identity/Ingestion/PriceMonitoring/Links/SalesPlanning/Kernel.php):" >&2
+    echo "api/src/ содержит лишнее (не Shared/Identity/Ingestion/PriceMonitoring/Links/SalesPlanning/ProductResearchOzon/Kernel.php):" >&2
     for name in $unexpected; do
         echo "  - $name" >&2
     done
@@ -28,4 +28,4 @@ if [ -n "$unexpected" ]; then
     exit 1
 fi
 
-echo "OK: api/src/ содержит только Shared, Identity, Ingestion, PriceMonitoring, Links, SalesPlanning, Kernel.php"
+echo "OK: api/src/ содержит только Shared, Identity, Ingestion, PriceMonitoring, Links, SalesPlanning, ProductResearchOzon, Kernel.php"

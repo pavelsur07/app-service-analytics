@@ -349,6 +349,19 @@ return static function (DeptracConfig $config): void {
                 DirectoryConfig::create('src/SalesPlanning/Ui/.*'),
             ),
 
+            $researchDomain = Layer::withName('ProductResearchOzonDomain')->collectors(
+                DirectoryConfig::create('src/ProductResearchOzon/Domain/.*'),
+            ),
+            $researchApplication = Layer::withName('ProductResearchOzonApplication')->collectors(
+                DirectoryConfig::create('src/ProductResearchOzon/Application/.*'),
+            ),
+            $researchInfrastructure = Layer::withName('ProductResearchOzonInfrastructure')->collectors(
+                DirectoryConfig::create('src/ProductResearchOzon/Infrastructure/.*'),
+            ),
+            $researchUi = Layer::withName('ProductResearchOzonUi')->collectors(
+                DirectoryConfig::create('src/ProductResearchOzon/Ui/.*'),
+            ),
+
             // Внешние библиотеки — не наши модули, но зависимость на них
             // реальна и должна быть покрыта правилом, а не висеть Uncovered.
             $brickMoney = Layer::withName('BrickMoney')->collectors(
@@ -558,6 +571,12 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($priceMonitoringApplication)->accesses($priceMonitoringDomain, $priceMonitoringInfrastructure, $identityFacade, $ingestionFacade, $sharedApplication, $sharedDomain, $symfonyUid),
             Ruleset::forLayer($priceMonitoringInfrastructure)->accesses($priceMonitoringDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($priceMonitoringDomain)->accesses($sharedDomain, $symfonyUid),
+
+            // ADR-050: исследование рынка, без связей с Ingestion/SalesPlanning.
+            Ruleset::forLayer($researchUi)->accesses($researchApplication, $researchDomain, $researchInfrastructure, $sharedUi, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($researchApplication)->accesses($researchDomain, $researchInfrastructure, $identityFacade, $sharedDomain, $sharedApplication, $symfonyUid),
+            Ruleset::forLayer($researchInfrastructure)->accesses($researchDomain, $sharedDomain, $sharedInfrastructure, $symfonyUid),
+            Ruleset::forLayer($researchDomain)->accesses($sharedDomain, $symfonyUid),
 
             // SalesPlanning — ниже Ingestion и Identity (ADR-040 п. 2).
             // Ui границу модуля не пересекает даже через Facade, как

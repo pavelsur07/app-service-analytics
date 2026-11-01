@@ -84,6 +84,8 @@ Links         короткие ссылки для собственных кам
               переходов; публичный redirect остаётся частью монолита (ADR-022).
 SalesPlanning план продаж по SKU и дням: штуки и РРЦ, версии,
               утверждение (ADR-040). Ingestion читает только через Facade.
+ProductResearchOzon черновики исследования категорий, периоды и календарь (ADR-050);
+              до каталога seller-сценарий закрыт feature flag.
 ```
 
 Новый модуль создаётся, когда появляется задача, которую некуда положить,
@@ -97,12 +99,13 @@ ADR-044), с PHP он говорит только по контрактам
 Первый — `ozon-fetcher`: набирает raw-ответы Ozon параллельно загрузке PHP.
 Новый сервис — тот же порядок, что у модуля: задача и ADR.
 `product-research-ozon` (ADR-050): этап 0 содержит стек и фикстуры, этап 1 —
-защищённый dev-каркас Python. Загрузка и модуль ProductResearchOzon создаются
-в следующих этапах, не заранее.
+защищённый dev-каркас Python, этап 2 — модуль ProductResearchOzon с черновиками.
+Каталог, загрузка и UI создаются в следующих этапах, не заранее.
 
 **Зависимости строго вниз.** Ingestion → Identity → Shared;
 PriceMonitoring → Identity → Shared; Links → Identity → Shared;
-SalesPlanning → Identity → Shared. SalesPlanning читает Ingestion
+SalesPlanning → Identity → Shared; ProductResearchOzon → Identity → Shared
+(ADR-050; только существующий IdentityFacade для аудита). SalesPlanning читает Ingestion
 только через его Facade: каталог SKU (ADR-040).
 PriceMonitoring читает Ingestion
 только через его Facade и только на чтение экрана СПП (ADR-016);

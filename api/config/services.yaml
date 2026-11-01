@@ -7,6 +7,7 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    research.enabled_default: 'false'
     app.version: '%env(APP_VERSION)%'
     app.source_commit: '%env(default:net_forecast.source_commit_default:APP_SOURCE_COMMIT)%'
     net_forecast.source_commit_default: ''
@@ -19,6 +20,7 @@ services:
         autowire: true      # Automatically injects dependencies in your services.
         autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
         bind:
+            bool $researchEnabled: '%env(bool:default:research.enabled_default:PRODUCT_RESEARCH_OZON_ENABLED)%'
             string $alertEmail: '%env(ALERT_EMAIL)%'
             string $linksPublicBaseUrl: '%env(LINKS_PUBLIC_BASE_URL)%'
             string $mailerDsn: '%env(MAILER_DSN)%'
@@ -191,3 +193,10 @@ services:
             $s3: '@net_forward.s3_client'
     App\Ingestion\Domain\NetForwardArtifactStorage: '@App\Ingestion\Infrastructure\Storage\S3NetForwardArtifactStorage'
     App\Ingestion\Domain\NetForecastArtifactRepository: '@App\Ingestion\Infrastructure\Persistence\DbalNetForecastArtifactRepository'
+
+    App\ProductResearchOzon\Domain\ResearchProjectRepository: '@App\ProductResearchOzon\Infrastructure\Repository\DoctrineResearchProjectRepository'
+    App\ProductResearchOzon\Domain\CategoryLookup: '@App\ProductResearchOzon\Infrastructure\UnavailableCategoryLookup'
+
+    App\ProductResearchOzon\Application\ResearchPreparation:
+        arguments:
+            $clock: '@App\Shared\Infrastructure\SystemClock'
