@@ -1,110 +1,145 @@
 # product-research-ozon — отчёт этапа 4
 
-Дата: 01.11.2026. Статус: реализация/основная локальная приёмка выполнены,
-окончательный полный rebuild успешен; повторное независимое ревью и доставка выполняются.
-Основание: [подробный план и матрица](product-research-ozon-stage4.md), ADR-050.
+Дата: 01.11.2026. Статус: завершён; код объединён, приёмка и независимое ревью
+успешны, штатная production-выкладка и smoke подтверждены. Python остаётся выключен до этапа 8.
+Основание: [план и матрица](product-research-ozon-stage4.md), ADR-050.
 
 ## Результат
 
-MonthCollector реализует start/step/read для одной категории и календарного
-месяца. Один step — не больше одного запроса страницы; нет sleep или сетевого
-I/O внутри SQL-транзакции. Существующий общий provider gate защищает и items:
-квота/одновременность/Retry-After/auth pause/монотонная credential generation.
-202/429 сохраняют ожидание; политика повторов и диспетчер — этап 5.
+MonthCollector реализует start/step/read одной категории и календарного месяца.
+Один step получает не больше одной страницы по 500 строк; курсор сохраняется,
+ожидание лимита возвращает управление. Sleep и сетевого I/O в SQL-транзакции нет.
+FBS=1, RUB, пустой filterModel, revenue DESC/id ASC. Текущий месяц — только явно,
+до вчера по Europe/Moscow; даты и число дней зафиксированы в снимке.
 
-Исходные JSON bytes не сериализуются повторно. Parser читает числовые значения
-через Decimal, проверяет границы/total/уникальные положительные SKU и отвергает
-дубли ключей JSON/нечисловые константы/oversize. Нулевые продажи и остатки,
-неизвестные поля и все исходные значения остаются в S3. PostgreSQL хранит только
-технический журнал: фиксированные даты/категорию/FBS/RUB/profile version,
-бюджеты/курсоры/счётчики, checksum/размеры и временные ID проверки полноты.
-SKU-проверка пакетная с UNIQUE в БД, удаляется после завершения.
+Исходные JSON bytes не сериализуются повторно. Сохраняются все строки/поля,
+включая неизвестные поля, нулевые продажи и остатки. Parser проверяет границы,
+точную длину, неизменный total, положительные SKU и уникальность; числа разбирает
+через Decimal без float. DecimalException, дубли JSON keys, nonstandard constants,
+oversize и некорректные страницы становятся безопасным отказом, а не ready.
 
-S3 If-None-Match:*; успешная запись и конфликт повтора проверяются чтением байтов.
-S3-страница предшествует DB-регистрации, manifest — атомарному ready. Fencing
-повторно проверяет аренду и generation при регистрации и публикации. Сбой до
-commit не публикует ready; потерянный ответ после успешного commit оставляет
-готовый результат, который повторный step читает без нового MPStats-запроса.
+S3-страница предшествует DB-регистрации, S3-манифест — атомарной публикации ready.
+If-None-Match:* и перечитывание bytes/checksum защищают неизменяемость и повтор.
+DB lease/CAS и generation fencing повторно проверяются при регистрации/публикации.
+Межстраничные SKU проверяются пакетно через UNIQUE, временные ключи удаляются
+при завершении. Сбой до commit не публикует ready; потерянный ответ после
+успешного commit восстанавливается чтением готового результата без нового API.
 
-Чтение принимает company/source/snapshot/page, ищет scoped запись, пересобирает
-S3-ссылку и проверяет size/hash. Входных готовых ключей нет. Манифест сверяется
-с журналом и фиксированными параметрами. Подтверждённый total=0 — готовый снимок
-с предупреждением empty_category_or_renamed; ошибка источника не становится пустым успехом.
+Общий provider gate защищает токен, одновременность, RPM, Retry-After и auth pause.
+202/429 сохраняют next_attempt_at; старое поколение ключа не публикует результат.
+Журнал содержит безопасные статусы/ID/длительность: deferred — WARNING, error —
+ERROR; сбой logging не ломает шаг. Токен только в заголовке HTTP-адаптера.
 
-## Проверки и TDD
+Чтение принимает company/source/snapshot/page и пересобирает S3-ссылки из scoped
+DB-записей, проверяет размер/hash. Манифест сверяется с журналом/параметрами.
+Время технических событий и serialization нормализованы в aware UTC независимо
+от SQL-session TimeZone. Бизнес-календарь остаётся Europe/Moscow.
+Total=0 — готовый снимок с предупреждением empty_category_or_renamed;
+ошибка источника не выдаётся за пустой успешный отчёт.
 
-Итог после исправлений ревью: **119 Python-тестов PASS**, Ruff/mypy strict/
-import-linter PASS (review-fix-gates.log). Runtime smoke обновлённого образа PASS
-(review-fix-smoke.log). Полный свежий rebuild окончательного кода успешен:
-**807 unit /9134 assertions, 889 integration /23326, 419 functional /4129**, Go
-и **119 Python**; строка db-rebuild-check: OK в rebuild-reviewed.log.
-Разное число assertions в параллельных PHP-прогонах связано с polling-проверками;
-число тестов и состав набора не сокращались.
+## Подтверждённая приёмка
 
-- Начальный Red: domain/month отсутствовал — ModuleNotFoundError. Затем 17 unit
-  проверок календаря/полноты/bytes/Decimal/бюджетов Green. Логи domain-red.log,
-  domain-green.log в var/product-research-ozon-stage4/.
-- Клиент: точные query/body/sort, секрет только в заголовке; 202/429 и оба формата
-  Retry-After от времени ответа; 401/403, сеть/5xx/redirect/oversize; total deadline
-  включает trickle body. Ошибки только безопасными кодами.
-- Полный Python-набор: 114 PASS (до добавления отдельного migration preservation
-  теста); Ruff/mypy strict/import-linter PASS. Лог python-gates.log.
-- Дополнительный M01: down до 0002 оставляет каталог и S3 bytes, up/check
-  восстанавливают схему; журнал снимков удаляется согласно документированному
-  down. Лог migration-check.log. Итоговая схема с дополнительными constraints
-  FBS/RUB/profile version перепроверяется в fresh rebuild.
-- После окончательной правки: `make product-research-ozon-lint
-  product-research-ozon-vet product-research-ozon-architecture
-  product-research-ozon-smoke` PASS; health/readiness/auth/unavailable, runtime
-  UID10001 и отсутствие инструментов разработки проверены. Лог final-gates-smoke.log.
-- Полный месячный путь: 102 страницы через HTTP MockTransport → реальные PostgreSQL/S3
-  → чтение всех страниц. **50702 SKU; 3541442 продаж; 5172621135 RUB точно**.
-  Все bytes/SHA-256 совпали, 62 поля в каждой строке, нулевые продажи сохранены;
-  после последней страницы лишнего запроса нет. Лог integration-green.log.
-- Повторы, настоящие конкурирующие SQL claims, lost lease, generation rotation
-  после запроса и после manifest write, межстраничные дубли, ошибки S3/DB,
-  потерянный commit ack, corruption/missing object, tenant/source scope,
-  ошибка logging проверены. Никаких live MPStats-запросов.
-- Дополнительный офлайн-прогон `python -m unittest discover -s tests
-  -p test_stage0_fixtures.py`: **2 PASS**. Подтверждены полный январь/API CSV
-  и ручной февраль/FBS=1; карта 41 колонки версии 0.3 не менялась.
-  Лог fixture-regression.log; известные отличия вычисляемых полей не скрываются.
+| Проверка | Результат |
+|---|---|
+| Полный Python-набор после исправлений | **119 PASS** |
+| Ruff / mypy strict / import-linter | PASS, без baseline/ослабления правил |
+| Runtime smoke обновлённого образа | health/readiness/auth/unavailable PASS; UID10001, инструментов dev нет |
+| Полный fresh db-rebuild-check окончательного кода, TEST_WORKERS=4 | **807 unit /9134 assertions; 889 integration /23326; 419 functional /4129; Go; 119 Python; OK** |
+| Офлайн-регрессия исходных fixture/CSV | **2 PASS**, без live MPStats |
+| Полный месяц через HTTP MockTransport → настоящие PostgreSQL/S3 → чтение | **102 страницы, 50702 SKU, 133878270 исходных bytes, все SHA-256 совпали** |
+| Точные контрольные суммы показателей | **3541442 продаж, 5172621135 RUB**, без float |
+| Сохранение схемы/строк | 62 поля в каждой строке, товары с нулевыми продажами сохранены |
+| M01: down до 0002 / up / check | Каталог и S3 bytes сохранены; новая схема восстановлена |
 
-## Гейты и доставка — выполняются
+Реальные PostgreSQL/S3 тестируют конкурентные claims, lost lease и generation
+после запроса/после manifest write, дубли SKU, обрыв между страницами, ошибки
+S3/DB, commit ack loss, corruption/missing object, company/source scope,
+неизменность предыдущих страниц и повтор ready без нового запроса.
+В памяти только текущая страница и ограниченные метаданные манифеста.
 
-Полный изолированный rebuild: проект research-stage4-rebuild, отдельные
-PostgreSQL/S3/Go volumes, host ports сброшены. Основные dev-тома сохранены.
-Первая попытка остановилась до тестов на недоступности метаданных composer:2
-в Docker Hub (network unreachable); повтор после проверки реестра выполняется.
-Логи rebuild.log и rebuild-retry.log. Второй прогон дошёл до существующего
-PHP integration-набора: 889 тестов, 3 ошибки и 10 отказов Ingestion/SalesPlanning,
-включая ресурсные бюджеты. Отдельный прогон трёх затронутых классов прошёл:
-67 тестов / 1192 assertions (baseline-focused.log). PHP-код не изменён;
-причина общего прогона не объявляется доказанной. Полный повтор с TEST_WORKERS=4 успешен: **807 unit /9134 assertions,
-889 integration /23333, 419 functional /4129, Go и 115 Python**.
-Лог rebuild-final.log, строка db-rebuild-check: OK; лимиты/утверждения не менялись.
-После трёх исправлений кода полный fresh rebuild повторён и успешен:
-rebuild-reviewed.log, 119 Python, остальные окончательные числа приведены выше.
+Все 41 колонки ручного CSV сопоставлены в
+[карте 0.3](product-research-ozon-columns.md); API CSV 49 и REST 62 — отдельные
+профили. Полный январь/API CSV и ручной февраль/FBS=1 перепроверены офлайн.
+Известные отличия percent_from_revenue и части вычисляемых полей/метаданных
+перечислены в исходных отчётах; stage 4 их не пересчитывает и не скрывает.
 
-Claude CLI отсутствует; независимое ревью выполняется новыми сессиями Codex CLI
-5A/5B по процедуре владельца. Первый пакет: 5A — 2 принятых, 5B дополнительно — 2;
-отклонённых нет. Три исправления кода (severity, DecimalException, UTC) подтверждены
-четырьмя новыми Red/Green cases. Принято также замечание о преждевременном ревью
-до полного rebuild. Полные заключения и разбор — в
-[отчёте ревью](product-research-ozon-stage4-review.md). Финальные проверки завершены; новый пакет передаётся
-с их фактическими результатами. До complete review и зелёного CI merge не выполняется.
+Воспроизводимые команды и локальные логи var/product-research-ozon-stage4/:
 
-## Границы результата
+- `make product-research-ozon-lint product-research-ozon-vet
+  product-research-ozon-architecture product-research-ozon-test` — review-fix-gates.log.
+- `make product-research-ozon-smoke` — review-fix-smoke.log.
+- `make db-rebuild-check TEST_WORKERS=4 COMPOSE='docker compose -p
+  research-stage4-rebuild -f .../docker-compose.yml -f .../rebuild.override.yml'`
+  — rebuild-reviewed.log. Проверены отдельные local PostgreSQL/S3/Go volumes
+  и отсутствие host ports; рабочие dev-тома сохранены. Изолированные контейнеры
+  после проверки остановлены, тома не удалены.
+- `python -m unittest discover -s tests -p test_stage0_fixtures.py` в dev-контейнере
+  — fixture-regression.log.
 
-Runs/snapshots HTTP v1 остаются not_available, worker и collection readiness
-выключены. Symfony/API-схема/UI не меняются; новых зависимостей или транспортов нет.
-Python production compose/миграция/включение — этап 8; в этом этапе не заявляется
-живая загрузка MPStats на production. Исполняется код одного месяца, не диспетчер
-проекта и не кэш закрытых месяцев (этапы 5/6).
+## TDD, повторы и независимое ревью
+
+Начальный Red — отсутствующий domain/month; 17 pure tests затем Green.
+Четыре regression cases замечаний (DecimalException, WARNING, ERROR, PostgreSQL
+TimeZone=Europe/Moscow) сначала упали, после исправлений прошли: review-red.log
+и review-green.log. Полный набор и fresh rebuild повторены после исправлений.
+
+Ранние прогоны не скрываются: первый rebuild остановился до тестов на Docker Hub
+metadata network failure. Второй с TEST_WORKERS=2 дал в существующем PHP integration
+3 ошибки/10 отказов Ingestion/SalesPlanning, включая resource budgets. Отдельный
+baseline трёх классов — 67/1192 PASS; два полных повтора с четырьмя процессами
+успешны (115 Python до исправлений, 119 после). Причина первого общего отказа
+не объявляется доказанной; код/лимиты/утверждения не ослаблялись.
+
+Claude CLI отсутствует; выполнены четыре новые независимые сессии Codex CLI
+0.166.0, gpt-6.1-sol/high. Первый пакет: 5A — 2 принятых; 5B дополнительно — 2.
+Три исправления кода и одно признанное процессное нарушение: первое ревью
+отправлено до завершения rebuild. Новый пакет подготовлен только после успешного
+fresh rebuild окончательного кода. Итоговые 5A/5B complete без новых findings,
+rule gaps или nitpicks; дополнительно принятых 0/0, отклонённых 0.
+Полные JSON, hashes и разбор — в [отчёте ревью](product-research-ozon-stage4-review.md).
+Ревьюеры тесты не запускали; локальные прогоны и CI — отдельные доказательства.
+
+## Доставка
+
+Код объединён через [PR #309](https://github.com/pavelsur07/app-service-analytics/pull/309),
+merge `d1737a8b3ddbe4798cb53d5968a70e37d19a903d`.
+Итоговый [CI ветки 41319838686](https://github.com/pavelsur07/app-service-analytics/actions/runs/41319838686)
+успешен по всему diff ветки: services, contract/audit и E2E; backend/frontend
+штатно skipped по фильтрам, их локальный полный rebuild выполнен отдельно.
+[Master CI/deploy 41320437973](https://github.com/pavelsur07/app-service-analytics/actions/runs/41320437973)
+успешен; образ **757-d1737a8**, новых Symfony-миграций не было.
+Production smoke:
+
+- APP_SOURCE_COMMIT точно совпал с d1737a8b3ddbe4798cb53d5968a70e37d19a903d.
+- У семи реально разрешённых контроллеров флаг false; прямой categories guard
+  вернул 404 feature_disabled до чтения данных, без записей.
+- Публичный seller ping вернул версию 757-d1737a8; categories без seller-сессии
+  с валидным UUIDv7 маршрута вернул 401.
+- Все 12 контейнеров running; заданные healthcheck healthy. Первая проверка
+  увидела ozon-fetcher в starting; повтор после готовности успешен.
+  Отсутствующие healthcheck не объявляются healthy.
+
+Лог: var/product-research-ozon-stage4/production-smoke-d1737a8.log.
+Python production-сервис/его новая БД не активировались; Alembic применяется
+при контролируемом включении этапа 8. Это проверка штатной доставки при закрытом
+флаге, а не live-приёмка MPStats. G01–G08 закрыты; постоянные заключения и
+результаты сохранены в документах этапа. Финальное изменение только Markdown
+не требует нового независимого ревью по порогу AGENTS.md.
+
+## Границы и ограничения
 
 Одна новая Alembic-миграция 0003_month_snapshots; старые не переписаны.
-Down оставляет каталог/S3, но удаляет технический журнал снимков; до production
-отката требуется backup/export журнала для сохранения raw-связей. Политика
-orphan GC/retention и реальные бюджеты обязательны до активации этапа 8;
-автоматическое удаление/повтор ошибок в этот этап не добавлены.
+PostgreSQL содержит только технический журнал/метаданные, тела/суммы остаются S3.
+Down сохраняет каталог/S3, но удаляет журнал снимков: до production-отката
+требуется backup/export журнала для сохранения связей с raw.
+
+Диспетчер/retry budget/outbox — этап 5, месячный cache — 6, UI — 7,
+production Python/его миграция/реальная квота/egress/отдельные S3-права — этап 8.
+Runs/snapshots HTTP остаются not_available; worker и collection readiness
+выключены. Контракт v1, Symfony и публичные API-схемы не менялись.
+Технический rows/pages/bytes бюджет задаётся явно и не объявляется квотой MPStats.
+Orphan-объекты не публикуются/не считаются кэшем; автоматического GC нет.
+Политики восстановления/retention/бюджетов обязательны до включения этапа 8.
+Проверки counts/ID не доказывают snapshot isolation изменяемого источника.
+Живая загрузка MPStats в production в этом этапе не заявляется.
 Чужие B17/B18, securety_chek, temp и удаление onboarding-спецификации исключены.
