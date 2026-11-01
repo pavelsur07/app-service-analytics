@@ -57,11 +57,11 @@ PRODUCT_RESEARCH_OZON_ENABLED имеет server default false: авторизо�
 - Red/Green календаря: без классов тесты падали; затем 15 unit/35 assertions
   подтвердили периоды, пересечения, високосность, shortcuts и Moscow-boundary.
 - `phpunit tests/Unit/ProductResearchOzon tests/Integration/ProductResearchOzon
-  tests/Functional/ProductResearchOzon`: **51 тест / 496 assertions**, успешно.
+  tests/Functional/ProductResearchOzon`: **54 теста / 522 assertions**, успешно.
   Есть реальные процессы/соединения с подтверждённым pg_blocking_pids ожиданием,
   оба порядка copy/add, rollback после flush, valid extension token, CSRF,
   blocked/чужие компании, flag=false, body/cursor limits и ошибки категорий.
-  Лог: var/product-research-stage2-tests.log.
+  Лог: var/product-research-ozon-stage2/review-green.log.
 - `make lint stan deptrac structure-check api-types-check`: успешно.
   PHPStan baseline не расширен. OpenAPI/TS изменены только генераторами.
 - `make db-schema-validate`: dev/test mapping и схемы совпадают.
@@ -70,9 +70,14 @@ PRODUCT_RESEARCH_OZON_ENABLED имеет server default false: авторизо�
   гейты Go и 27 тестов Python. Проект research-stage2-rebuild, порты reset, собственные PG/S3/Go
   volumes; текущие dev-тома не удаляются. Лог: var/product-research-ozon-stage2/rebuild.log.
 
+После замечаний ревью добавлены индекс автора, отдельный Builder периода,
+QueryBuilder-контракт и before/after аудит. Реальный MonthResponse проверяется
+против OpenAPI, файлы схемы доступны тестам через read-only volume.
+Повторный полный rebuild обновлённой миграции выполняется.
+
 ## Обязательное ревью и доставка
 
-Claude CLI проверяется перед ревью; при недоступности применяются две новые
+Claude CLI недоступен (нет исполняемого файла); применяются две новые
 сессии Codex CLI 5A/5B по полному пакету с моделью из артефактов CLI. Результат,
 разбор, уникальные новые замечания и реквизиты будут записаны здесь.
 До complete ревью и зелёного обязательного CI merge не допускается.
@@ -86,3 +91,5 @@ securety_chek, temp и удаление спецификации онборди�
 `down`; после cleanup проверены empty down/up и schema validation. Результат:
 var/product-research-ozon-stage2/migration-check.txt. Свежий rebuild действительно
 пересоздал только тома research-stage2-rebuild; исходный сбой TCP не засчитан.
+
+Разбор первого пакета и полные заключения: [ревью этапа](product-research-ozon-stage2-review.md).

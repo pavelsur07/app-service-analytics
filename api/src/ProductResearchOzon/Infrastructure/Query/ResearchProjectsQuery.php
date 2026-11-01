@@ -6,6 +6,7 @@ namespace App\ProductResearchOzon\Infrastructure\Query;
 
 use App\ProductResearchOzon\Domain\PeriodRange;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Query\QueryBuilder;
 
 final readonly class ResearchProjectsQuery
 {
@@ -17,27 +18,44 @@ final readonly class ResearchProjectsQuery
     {
     }
 
-    /** @return list<ResearchProjectRow> */
-    public function page(string $companyId, ?string $cursor, int $limit): array
+    public function page(string $companyId, ?string $cursor, int $limit): QueryBuilder
     {
         if ($limit < 1 || $limit > self::MaxLimit) {
             throw new \InvalidArgumentException('invalid_limit');
         }
-        $parameters = ['company' => $companyId];
-        $where = '';
+        $query = $this->db->createQueryBuilder()
+            ->select('id', 'category_path', 'name', 'period_count', 'version', 'created_at')
+            ->from('product_research_ozon_project')
+            ->where('company_id = :company')->setParameter('company', $companyId)
+            ->orderBy('id', 'DESC')->setMaxResults($limit + 1);
         if (null !== $cursor) {
-            $where = ' AND id < :cursor';
-            $parameters['cursor'] = $cursor;
+            $query->andWhere('id < :cursor')->setParameter('cursor', $cursor);
         }
-        $rows = $this->db->fetchAllAssociative('SELECT '.self::Columns.", '' AS comment FROM product_research_ozon_project WHERE company_id = :company".$where.' ORDER BY id DESC LIMIT '.($limit + 1), $parameters);
 
-        return array_map(self::map(...), $rows);
+        return $query;
     }
 
-    public function detail(string $companyId, string $projectId): ?ResearchProjectView
+    public function detail(string $companyId, string $projectId): QueryBuilder
     {
-        $columns = implode(', ', array_map(static fn (string $column): string => 'p.'.trim($column), explode(',', self::Columns)));
-        $rows = $this->db->fetchAllAssociative('SELECT '.$columns.', p.comment, r.from_month, r.to_month, r.name AS period_name FROM product_research_ozon_project p JOIN product_research_ozon_period r ON r.company_id = p.company_id AND r.project_id = p.id WHERE p.company_id = :company AND p.id = :id ORDER BY r.position LIMIT 24', ['company' => $companyId, 'id' => $projectId]);
+        $columns = array_map(static fn (string $column): string => 'p.'.trim($column), explode(',', self::Columns));
+
+        return $this->db->createQueryBuilder()->select(...[...$columns, 'p.comment', 'r.from_month', 'r.to_month', 'r.name AS period_name'])
+            ->from('product_research_ozon_project', 'p')
+            ->innerJoin('p', 'product_research_ozon_period', 'r', 'r.company_id = p.company_id AND r.project_id = p.id')
+            ->where('p.company_id = :company')->andWhere('p.id = :id')
+            ->setParameter('company', $companyId)->setParameter('id', $projectId)
+            ->orderBy('r.position')->setMaxResults(24);
+    }
+
+    /** @param array<string, mixed> $row */
+    public static function mapSummary(array $row): ResearchProjectSummaryRow
+    {
+        return new ResearchProjectSummaryRow(self::text($row, 'id'), self::text($row, 'category_path'), self::text($row, 'name'), self::integer($row, 'period_count'), self::integer($row, 'version'), self::text($row, 'created_at'));
+    }
+
+    /** @param list<array<string, mixed>> $rows */
+    public static function mapDetail(array $rows): ?ResearchProjectView
+    {
         if ([] === $rows) {
             return null;
         }

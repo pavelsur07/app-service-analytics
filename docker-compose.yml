@@ -83,6 +83,7 @@ services:
       # Контракты сервисов (services/AGENTS.md §3): PHP-тест проверяет свой
       # ответ по их schema.json. Только чтение — источник один, в services/.
       - ./services/_contracts:/var/www/services/_contracts:ro
+      - ./packages/api-schema:/var/www/packages/api-schema:ro
     command: ["tail", "-f", "/dev/null"]
 
   postgres:

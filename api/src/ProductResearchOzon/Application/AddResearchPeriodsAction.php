@@ -34,11 +34,18 @@ final readonly class AddResearchPeriodsAction
             if ([] === $new && $flag === $project->includeCurrentMonth()) {
                 return new ProjectMutationResult($project, $preview);
             }
+            $previousValue = self::auditValue($old, $project->includeCurrentMonth());
             $project->recordPeriodsChanged(\count($preview->periods), $flag, $at);
             $this->projects->append($project, $new, \count($old));
-            $this->identity->recordAuditEntry($companyId, $actor, 'product_research_ozon.periods_added', $projectId, null, json_encode(['addedPeriods' => \count($new), 'monthCount' => \count($preview->months)], \JSON_THROW_ON_ERROR));
+            $this->identity->recordAuditEntry($companyId, $actor, 'product_research_ozon.periods_added', $projectId, $previousValue, self::auditValue($preview->periods, $flag));
 
             return new ProjectMutationResult($project, $preview);
         });
+    }
+
+    /** @param list<PeriodRange> $periods */
+    private static function auditValue(array $periods, bool $includeCurrentMonth): string
+    {
+        return json_encode(['includeCurrentMonth' => $includeCurrentMonth, 'periods' => array_map(static fn (PeriodRange $period): array => ['fromMonth' => $period->fromMonth, 'toMonth' => $period->toMonth, 'name' => $period->name], $periods)], \JSON_THROW_ON_ERROR);
     }
 }

@@ -36,7 +36,7 @@ final class GetResearchProjectController extends ResearchController
     public function __invoke(string $companyId, string $projectId, Request $request): JsonResponse
     {
         return $this->respond($request, function () use ($companyId, $projectId): JsonResponse {
-            $view = $this->query->detail($companyId, $projectId) ?? throw new ResearchProblem('project_not_found');
+            $view = ResearchProjectsQuery::mapDetail($this->query->detail($companyId, $projectId)->executeQuery()->fetchAllAssociative()) ?? throw new ResearchProblem('project_not_found');
             $preview = $this->prepare->preview(new CalendarSelection($view->periods), $view->project->includeCurrentMonth, $this->prepare->now());
 
             return new JsonResponse(new ProjectResponse($view->project, new PreviewResponse($preview, $view->project->categoryPath)));

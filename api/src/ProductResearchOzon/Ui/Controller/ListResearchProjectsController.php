@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\ProductResearchOzon\Ui\Controller;
 
-use App\ProductResearchOzon\Infrastructure\Query\ResearchProjectRow;
 use App\ProductResearchOzon\Infrastructure\Query\ResearchProjectsQuery;
+use App\ProductResearchOzon\Infrastructure\Query\ResearchProjectSummaryRow;
 use App\ProductResearchOzon\Ui\Request\ResearchRequest;
 use App\ProductResearchOzon\Ui\Response\ProjectsResponse;
 use App\ProductResearchOzon\Ui\Response\ProjectSummaryResponse;
@@ -48,12 +48,12 @@ final class ListResearchProjectsController extends ResearchController
             if (null !== $cursor && (!\is_string($cursor) || !Uuid::isValid($cursor))) {
                 throw new \InvalidArgumentException('invalid_cursor');
             }
-            $rows = $this->query->page($companyId, $cursor, $limit);
+            $rows = array_map(ResearchProjectsQuery::mapSummary(...), $this->query->page($companyId, $cursor, $limit)->executeQuery()->fetchAllAssociative());
             $more = \count($rows) > $limit;
             $rows = \array_slice($rows, 0, $limit);
             $next = $more && [] !== $rows ? $rows[\count($rows) - 1]->id : null;
 
-            return new JsonResponse(new ProjectsResponse(array_map(static fn (ResearchProjectRow $row): ProjectSummaryResponse => new ProjectSummaryResponse($row), $rows), $next));
+            return new JsonResponse(new ProjectsResponse(array_map(static fn (ResearchProjectSummaryRow $row): ProjectSummaryResponse => new ProjectSummaryResponse($row), $rows), $next));
         });
     }
 }

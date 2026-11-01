@@ -14,12 +14,12 @@ final readonly class MonthResponse
     public int $days;
     public bool $partial;
 
-    public function __construct(MonthSlice $month)
+    public function __construct(MonthSlice $slice)
     {
-        $this->month = $month->month;
-        $this->dateFrom = $month->dateFrom;
-        $this->dateTo = $month->dateTo;
-        $this->days = $month->days;
-        $this->partial = $month->partial;
+        $this->month = $slice->month;
+        $this->dateFrom = $slice->dateFrom;
+        $this->dateTo = $slice->dateTo;
+        $this->days = $slice->days;
+        $this->partial = $slice->partial;
     }
 }

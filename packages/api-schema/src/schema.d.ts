@@ -1968,15 +1968,8 @@ export interface components {
             toMonth: string;
             name: string;
         };
-        MonthSlice: {
-            month: string;
-            dateFrom: string;
-            dateTo: string;
-            days: number;
-            partial: boolean;
-        };
         MonthResponse: {
-            month: components["schemas"]["MonthSlice"];
+            month: string;
             dateFrom: string;
             dateTo: string;
             days: number;

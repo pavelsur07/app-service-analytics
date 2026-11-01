@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\ProductResearchOzon\Ui\Response;
 
-use App\ProductResearchOzon\Infrastructure\Query\ResearchProjectRow;
+use App\ProductResearchOzon\Infrastructure\Query\ResearchProjectSummaryRow;
 
 final readonly class ProjectSummaryResponse
 {
@@ -16,7 +16,7 @@ final readonly class ProjectSummaryResponse
     public string $createdAt;
     public string $status;
 
-    public function __construct(ResearchProjectRow $row)
+    public function __construct(ResearchProjectSummaryRow $row)
     {
         $this->id = $row->id;
         $this->categoryPath = $row->categoryPath;

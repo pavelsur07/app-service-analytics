@@ -10,6 +10,7 @@ use Symfony\Component\Uid\Uuid;
 /** Private mapped fields support ORM refresh under row locks; mutations stay explicit. */
 #[ORM\Entity]
 #[ORM\Table(name: 'product_research_ozon_project')]
+#[ORM\Index(name: 'idx_research_project_author', columns: ['company_id', 'created_by_user_id'])]
 class ResearchProject
 {
     #[ORM\Id]

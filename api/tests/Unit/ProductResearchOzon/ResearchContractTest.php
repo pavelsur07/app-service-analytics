@@ -11,6 +11,19 @@ use PHPUnit\Framework\TestCase;
 
 final class ResearchContractTest extends TestCase
 {
+    public function testSerializedMonthMatchesPublicOpenApi(): void
+    {
+        $raw = file_get_contents('/var/www/packages/api-schema/openapi.json');
+        self::assertIsString($raw);
+        /** @var \stdClass $schema */
+        $schema = json_decode($raw, flags: \JSON_THROW_ON_ERROR);
+        $schema->{'$schema'} = 'https://json-schema.org/draft/2020-12/schema';
+        $schema->{'$ref'} = '#/components/schemas/MonthResponse';
+        $response = new \App\ProductResearchOzon\Ui\Response\MonthResponse(new \App\ProductResearchOzon\Domain\MonthSlice('2026-01', '2026-01-01', '2026-01-31', 31, false));
+        $payload = json_decode(json_encode($response, \JSON_THROW_ON_ERROR), flags: \JSON_THROW_ON_ERROR);
+        self::assertTrue(new Validator()->validate($payload, $schema)->isValid(), 'Serialized month must satisfy the actual public schema, not just generator freshness');
+    }
+
     public function testCalendarMonthsMatchPublishedServiceContract(): void
     {
         $raw = file_get_contents('/var/www/services/_contracts/product-research-ozon/v1/schema.json');

@@ -15,18 +15,34 @@ use App\ProductResearchOzon\Domain\PeriodRange;
 use App\ProductResearchOzon\Domain\ResearchProblem;
 use App\ProductResearchOzon\Domain\ResearchProjectRepository;
 use App\ProductResearchOzon\Infrastructure\Query\ResearchProjectsQuery;
+use App\Tests\Support\Builder\ResearchPeriodBuilder;
 use App\Tests\Support\Builder\ResearchProjectBuilder;
 use App\Tests\Support\Fake\ResearchCategories;
 use App\Tests\Support\ProductResearchOzon\ResearchServices;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
 
 final class ResearchProjectsTest extends KernelTestCase
 {
     use ResearchServices;
+
+    public function testPeriodBuilderPersistsEntityWithCompanyScopedProject(): void
+    {
+        self::bootKernel();
+        $em = self::service(EntityManagerInterface::class);
+        $project = ResearchProjectBuilder::aProject()->build();
+        $em->persist($project);
+        $range = new PeriodRange('2025-11', '2026-02', 'Сезон');
+        $period = ResearchPeriodBuilder::aPeriod()->withProject($project)->withRange($range)->persistWith($em);
+        self::assertSame($range->key(), $period->range()->key());
+        $view = ResearchProjectsQuery::mapDetail(self::service(ResearchProjectsQuery::class)->detail($project->companyId()->toRfc4122(), $project->id()->toRfc4122())->executeQuery()->fetchAllAssociative());
+        self::assertNotNull($view);
+        self::assertSame($range->key(), $view->periods[0]->key());
+    }
 
     public function testCreateAddNoopCopyAndAuditAreAtomic(): void
     {
@@ -39,7 +55,7 @@ final class ResearchProjectsTest extends KernelTestCase
         $result = $create($company, new CreateProjectInput('Одежда/Хиджабы', new CalendarSelection([new PeriodRange('2026-01', '2026-03')]), false, '2026-04-15'), $actor);
         $id = $result->project->id()->toRfc4122();
         $query = self::service(ResearchProjectsQuery::class);
-        $view = $query->detail($company, $id);
+        $view = ResearchProjectsQuery::mapDetail($query->detail($company, $id)->executeQuery()->fetchAllAssociative());
         self::assertNotNull($view);
         self::assertSame($actor, $view->project->createdByUserId);
         self::assertSame('Хиджабы · янв–мар 2026', $view->project->name);
@@ -57,12 +73,12 @@ final class ResearchProjectsTest extends KernelTestCase
         $copied = $copy($company, $id, new CopyProjectInput(2, '2026-04-15', 'Другая категория', 'Копия'), $nextActor);
         self::assertNotEquals($id, $copied->project->id()->toRfc4122());
         self::assertSame(1, $copied->project->version());
-        $copiedView = $query->detail($company, $copied->project->id()->toRfc4122());
+        $copiedView = ResearchProjectsQuery::mapDetail($query->detail($company, $copied->project->id()->toRfc4122())->executeQuery()->fetchAllAssociative());
         self::assertNotNull($copiedView);
         self::assertSame($nextActor, $copiedView->project->createdByUserId);
         self::assertCount(2, $copiedView->periods);
         self::assertSame('Другая категория', $copiedView->project->categoryPath);
-        self::assertSame('Хиджабы · янв–мар 2026', $query->detail($company, $id)?->project->name);
+        self::assertSame('Хиджабы · янв–мар 2026', ResearchProjectsQuery::mapDetail($query->detail($company, $id)->executeQuery()->fetchAllAssociative())?->project->name);
         $db = self::service(Connection::class);
         self::assertSame(3, $db->fetchOne('SELECT COUNT(*) FROM audit_record WHERE company_id = :company', ['company' => $company]));
         foreach ($db->fetchFirstColumn('SELECT new_value FROM audit_record WHERE company_id = :company', ['company' => $company]) as $value) {
@@ -80,15 +96,15 @@ final class ResearchProjectsTest extends KernelTestCase
         $first = ResearchProjectBuilder::aProject()->withCompanyId($company)->persistWith($repository);
         $second = ResearchProjectBuilder::aProject()->withCompanyId($company)->persistWith($repository);
         $foreign = ResearchProjectBuilder::aProject()->persistWith($repository);
-        self::assertNull($query->detail($company->toRfc4122(), $foreign->id()->toRfc4122()));
-        $rows = $query->page($company->toRfc4122(), null, 1);
+        self::assertNull(ResearchProjectsQuery::mapDetail($query->detail($company->toRfc4122(), $foreign->id()->toRfc4122())->executeQuery()->fetchAllAssociative()));
+        $rows = array_map(ResearchProjectsQuery::mapSummary(...), $query->page($company->toRfc4122(), null, 1)->executeQuery()->fetchAllAssociative());
         self::assertCount(2, $rows);
         self::assertSame($second->id()->toRfc4122(), $rows[0]->id);
         ResearchProjectBuilder::aProject()->withCompanyId($company)->persistWith($repository);
-        $rows = $query->page($company->toRfc4122(), $second->id()->toRfc4122(), 1);
+        $rows = array_map(ResearchProjectsQuery::mapSummary(...), $query->page($company->toRfc4122(), $second->id()->toRfc4122(), 1)->executeQuery()->fetchAllAssociative());
         self::assertCount(1, $rows);
         self::assertSame($first->id()->toRfc4122(), $rows[0]->id);
-        self::assertSame([], $query->page(Uuid::v7()->toRfc4122(), $foreign->id()->toRfc4122(), 50));
+        self::assertSame([], array_map(ResearchProjectsQuery::mapSummary(...), $query->page(Uuid::v7()->toRfc4122(), $foreign->id()->toRfc4122(), 50)->executeQuery()->fetchAllAssociative()));
     }
 
     public function testStalePreviewAndInvalidCategoryDoNotWrite(): void
@@ -105,7 +121,7 @@ final class ResearchProjectsTest extends KernelTestCase
                 self::assertInstanceOf($exception, $error);
             }
         }
-        self::assertSame([], self::service(ResearchProjectsQuery::class)->page($company, null, 50));
+        self::assertSame([], array_map(ResearchProjectsQuery::mapSummary(...), self::service(ResearchProjectsQuery::class)->page($company, null, 50)->executeQuery()->fetchAllAssociative()));
     }
 
     public function testFailureAfterFlushRollsBackProjectPeriodsAndAudit(): void
@@ -118,16 +134,39 @@ final class ResearchProjectsTest extends KernelTestCase
             $repository->transactional(static function () use ($repository, $project, $company): void {
                 $repository->add($project, [new PeriodRange('2026-01', '2026-01')]);
                 self::service(\App\Identity\Application\Facade\IdentityFacade::class)->recordAuditEntry($company, Uuid::v7()->toRfc4122(), 'product_research_ozon.project_created', $project->id()->toRfc4122(), null, '{}');
-                self::service(\Doctrine\ORM\EntityManagerInterface::class)->flush();
+                self::service(EntityManagerInterface::class)->flush();
                 throw new \RuntimeException('synthetic_failure');
             });
         } catch (\RuntimeException $failure) {
             self::assertSame('synthetic_failure', $failure->getMessage());
         }
-        self::assertNull(self::service(ResearchProjectsQuery::class)->detail($company, $project->id()->toRfc4122()));
+        self::assertNull(ResearchProjectsQuery::mapDetail(self::service(ResearchProjectsQuery::class)->detail($company, $project->id()->toRfc4122())->executeQuery()->fetchAllAssociative()));
         foreach (['product_research_ozon_project', 'product_research_ozon_period', 'audit_record'] as $table) {
             self::assertSame(0, self::service(Connection::class)->fetchOne('SELECT COUNT(*) FROM '.$table.' WHERE company_id = :company', ['company' => $company]));
         }
+    }
+
+    public function testFlagOnlyChangesHaveBeforeAndAfterAuditValues(): void
+    {
+        self::bootKernel();
+        $project = ResearchProjectBuilder::aProject()->persistWith(self::service(ResearchProjectRepository::class));
+        $company = $project->companyId()->toRfc4122();
+        $id = $project->id()->toRfc4122();
+        $action = self::service(AddResearchPeriodsAction::class);
+        foreach ([[1, true], [2, false]] as [$version, $flag]) {
+            $action($company, $id, new AddPeriodsInput([new PeriodRange('2026-01', '2026-03', 'Весна')], $version, '2026-04-15', $flag), Uuid::v7()->toRfc4122());
+            $row = self::service(Connection::class)->fetchAssociative('SELECT previous_value, new_value FROM audit_record WHERE company_id = :company AND subject_id = :project ORDER BY id DESC LIMIT 1', ['company' => $company, 'project' => $id]);
+            self::assertIsArray($row);
+            self::assertIsString($row['previous_value']);
+            self::assertIsString($row['new_value']);
+            $before = json_decode($row['previous_value'], true, flags: \JSON_THROW_ON_ERROR);
+            $after = json_decode($row['new_value'], true, flags: \JSON_THROW_ON_ERROR);
+            self::assertIsArray($before);
+            self::assertIsArray($after);
+            self::assertSame(!$flag, $before['includeCurrentMonth']);
+            self::assertSame($flag, $after['includeCurrentMonth']);
+        }
+        self::assertSame(1, ResearchProjectsQuery::mapDetail(self::service(ResearchProjectsQuery::class)->detail($company, $id)->executeQuery()->fetchAllAssociative())?->project->periodCount);
     }
 
     public function testForeignKeyRejectsCrossCompanyPeriod(): void

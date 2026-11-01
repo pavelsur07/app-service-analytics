@@ -10522,33 +10522,6 @@
                 },
                 "type": "object"
             },
-            "MonthSlice": {
-                "required": [
-                    "month",
-                    "dateFrom",
-                    "dateTo",
-                    "days",
-                    "partial"
-                ],
-                "properties": {
-                    "month": {
-                        "type": "string"
-                    },
-                    "dateFrom": {
-                        "type": "string"
-                    },
-                    "dateTo": {
-                        "type": "string"
-                    },
-                    "days": {
-                        "type": "integer"
-                    },
-                    "partial": {
-                        "type": "boolean"
-                    }
-                },
-                "type": "object"
-            },
             "MonthResponse": {
                 "required": [
                     "month",
@@ -10559,7 +10532,7 @@
                 ],
                 "properties": {
                     "month": {
-                        "$ref": "#/components/schemas/MonthSlice"
+                        "type": "string"
                     },
                     "dateFrom": {
                         "type": "string"

@@ -54,7 +54,7 @@ final class ResearchConcurrencyTest extends KernelTestCase
         [$won, $lost] = $this->race($company, $id, 'add', 'add');
         self::assertSame('ok', $won['outcome']);
         self::assertSame('version_conflict', $lost['outcome']);
-        $view = self::service(ResearchProjectsQuery::class)->detail($company, $id);
+        $view = ResearchProjectsQuery::mapDetail(self::service(ResearchProjectsQuery::class)->detail($company, $id)->executeQuery()->fetchAllAssociative());
         self::assertNotNull($view);
         self::assertSame(2, $view->project->version);
         self::assertSame(2, $view->project->periodCount);
@@ -69,10 +69,10 @@ final class ResearchConcurrencyTest extends KernelTestCase
         self::assertSame('ok', $copied['outcome']);
         self::assertSame('ok', $added['outcome']);
         self::assertIsString($copied['id']);
-        $view = self::service(ResearchProjectsQuery::class)->detail($company, $copied['id']);
+        $view = ResearchProjectsQuery::mapDetail(self::service(ResearchProjectsQuery::class)->detail($company, $copied['id'])->executeQuery()->fetchAllAssociative());
         self::assertNotNull($view);
         self::assertCount(1, $view->periods);
-        self::assertSame(2, self::service(ResearchProjectsQuery::class)->detail($company, $id)?->project->periodCount);
+        self::assertSame(2, ResearchProjectsQuery::mapDetail(self::service(ResearchProjectsQuery::class)->detail($company, $id)->executeQuery()->fetchAllAssociative())?->project->periodCount);
         [$company, $id] = $this->seed();
         [$added, $copied] = $this->race($company, $id, 'add', 'copy');
         self::assertSame('ok', $added['outcome']);
