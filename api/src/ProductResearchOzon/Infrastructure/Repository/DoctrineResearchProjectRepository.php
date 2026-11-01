@@ -46,6 +46,18 @@ final readonly class DoctrineResearchProjectRepository implements ResearchProjec
         return $project;
     }
 
+    public function lockedForRun(string $companyId, string $projectId): ResearchProject
+    {
+        $project = $this->em->createQuery('SELECT p FROM '.ResearchProject::class.' p WHERE p.companyId = :company AND p.id = :id')
+            ->setParameter('company', $companyId)->setParameter('id', $projectId)->setMaxResults(1)
+            ->setLockMode(LockMode::PESSIMISTIC_WRITE)->setHint(Query::HINT_REFRESH, true)->getOneOrNullResult();
+        if (!$project instanceof ResearchProject) {
+            throw new ResearchProblem('project_not_found');
+        }
+
+        return $project;
+    }
+
     public function periods(string $companyId, string $projectId): array
     {
         /** @var list<ResearchPeriod> $rows */

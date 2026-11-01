@@ -5474,6 +5474,82 @@
                 }
             }
         },
+        "/api/companies/{companyId}/product-research-ozon/projects/{projectId}/runs/{runId}": {
+            "get": {
+                "operationId": "get_app_productresearchozon_ui_getresearchrun__invoke",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "runId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u041b\u043e\u043a\u0430\u043b\u044c\u043d\u0430\u044f \u043f\u0440\u043e\u0435\u043a\u0446\u0438\u044f \u043f\u0440\u043e\u0433\u0440\u0435\u0441\u0441\u0430 \u0437\u0430\u043f\u0443\u0441\u043a\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RunResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "\u041d\u0435\u0442 seller-\u0441\u0435\u0441\u0441\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u0437\u0430\u043f\u0443\u0441\u043a \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/companies/{companyId}/product-research-ozon/preview": {
             "post": {
                 "operationId": "post_app_productresearchozon_ui_previewresearch__invoke",
@@ -5811,6 +5887,155 @@
                     },
                     "503": {
                         "description": "\u041a\u0430\u0442\u0430\u043b\u043e\u0433 \u0435\u0449\u0451 \u043d\u0435 \u043f\u043e\u043b\u0443\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u0440\u043e\u0441\u0440\u043e\u0447\u0435\u043d; \u0434\u043e\u0436\u0434\u0438\u0442\u0435\u0441\u044c \u0444\u043e\u043d\u043e\u0432\u043e\u0433\u043e \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/product-research-ozon/projects/{projectId}/runs": {
+            "post": {
+                "operationId": "post_app_productresearchozon_ui_startresearchrun__invoke",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    },
+                    {
+                        "name": "X-Conwix-Request",
+                        "in": "header",
+                        "description": "Session request protection. Origin must match this application; non-empty bodies require application/json.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1"
+                            ]
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "requestId",
+                                    "expectedVersion",
+                                    "previewCalendarDate"
+                                ],
+                                "properties": {
+                                    "requestId": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "expectedVersion": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "previewCalendarDate": {
+                                        "type": "string",
+                                        "format": "date"
+                                    }
+                                },
+                                "type": "object",
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "\u0417\u0430\u043f\u0443\u0441\u043a \u0441\u043e\u0445\u0440\u0430\u043d\u0451\u043d; \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0430 \u0438 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0430 \u0432\u044b\u043f\u043e\u043b\u043d\u044f\u044e\u0442\u0441\u044f \u0444\u043e\u043d\u043e\u0432\u043e",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RunResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "\u041d\u0435\u0442 seller-\u0441\u0435\u0441\u0441\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u0440\u043e\u0435\u043a\u0442 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u0423\u0441\u0442\u0430\u0440\u0435\u0432\u0448\u0430\u044f \u0432\u0435\u0440\u0441\u0438\u044f/\u043f\u0440\u0435\u0434\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440, \u043a\u043e\u043d\u0444\u043b\u0438\u043a\u0442 requestId \u0438\u043b\u0438 \u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0439 \u0437\u0430\u043f\u0443\u0441\u043a",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 \u0437\u0430\u043f\u0440\u043e\u0441 \u0438\u043b\u0438 \u0432\u0441\u0435 \u043c\u0435\u0441\u044f\u0446\u044b \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d\u044b",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a \u043d\u0435 \u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043d",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "415": {
+                        "description": "Non-empty request body requires application/json.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -10810,6 +11035,83 @@
                     "nextCursor": {
                         "type": "string",
                         "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "RunMonthResponse": {
+                "required": [
+                    "period",
+                    "status"
+                ],
+                "properties": {
+                    "period": {
+                        "$ref": "#/components/schemas/MonthResponse"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "queued",
+                            "running",
+                            "ready",
+                            "error"
+                        ]
+                    },
+                    "snapshotId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "rowCount": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "errorCode": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "RunResponse": {
+                "required": [
+                    "id",
+                    "projectId",
+                    "status",
+                    "revision",
+                    "delivered",
+                    "createdAt",
+                    "months"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "projectId": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "queued",
+                            "running",
+                            "ready",
+                            "error"
+                        ]
+                    },
+                    "revision": {
+                        "type": "integer"
+                    },
+                    "delivered": {
+                        "type": "boolean"
+                    },
+                    "createdAt": {
+                        "type": "string"
+                    },
+                    "months": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RunMonthResponse"
+                        }
                     }
                 },
                 "type": "object"

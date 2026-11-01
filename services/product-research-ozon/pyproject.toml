@@ -32,3 +32,11 @@ type = "forbidden"
 source_modules = ["product_research_ozon.collection", "product_research_ozon.snapshots"]
 forbidden_modules = ["product_research_ozon.api", "product_research_ozon.bootstrap", "product_research_ozon.infrastructure", "httpx", "fastapi", "psycopg", "boto3", "sqlalchemy"]
 ignore_imports = ["product_research_ozon.collection.service -> product_research_ozon.infrastructure.observability"]
+
+
+[[tool.importlinter.contracts]]
+name = "Оркестрация заданий без HTTP/SQL SDK"
+type = "forbidden"
+source_modules = ["product_research_ozon.jobs"]
+forbidden_modules = ["product_research_ozon.api", "product_research_ozon.bootstrap", "product_research_ozon.infrastructure", "httpx", "fastapi", "psycopg", "boto3", "sqlalchemy"]
+ignore_imports = ["product_research_ozon.jobs.service -> product_research_ozon.infrastructure.observability"]

@@ -97,11 +97,11 @@ final class ResearchProjectsControllerTest extends SessionWebTestCase
         $foreign = CompanyBuilder::aCompany()->persistWith(self::service(CompanyRepository::class));
         $project = ResearchProjectBuilder::aProject()->withCompanyId($foreign->id())->persistWith(self::service(ResearchProjectRepository::class));
         $foreignBase = $this->base($foreign->id()->toRfc4122());
-        foreach (['/preview', '/projects', '/projects/'.$project->id()->toRfc4122().'/periods', '/projects/'.$project->id()->toRfc4122().'/copy'] as $suffix) {
+        foreach (['/preview', '/projects', '/projects/'.$project->id()->toRfc4122().'/periods', '/projects/'.$project->id()->toRfc4122().'/copy', '/projects/'.$project->id()->toRfc4122().'/runs'] as $suffix) {
             $this->post($client, $foreignBase.$suffix, []);
             self::assertSame(403, $client->getResponse()->getStatusCode());
         }
-        foreach (['/projects', '/projects/'.$project->id()->toRfc4122()] as $suffix) {
+        foreach (['/projects', '/projects/'.$project->id()->toRfc4122(), '/projects/'.$project->id()->toRfc4122().'/runs/'.Uuid::v7()->toRfc4122()] as $suffix) {
             $client->request('GET', $foreignBase.$suffix);
             self::assertSame(403, $client->getResponse()->getStatusCode());
         }
@@ -155,12 +155,12 @@ final class ResearchProjectsControllerTest extends SessionWebTestCase
         [$client, $company] = $this->fixture();
         $base = $this->base($company);
         $id = Uuid::v7()->toRfc4122();
-        foreach (['/preview', '/projects', '/projects/'.$id.'/periods', '/projects/'.$id.'/copy'] as $suffix) {
+        foreach (['/preview', '/projects', '/projects/'.$id.'/periods', '/projects/'.$id.'/copy', '/projects/'.$id.'/runs'] as $suffix) {
             $this->post($client, $base.$suffix, []);
             self::assertSame(404, $client->getResponse()->getStatusCode());
             self::assertSame('feature_disabled', $this->json($client)['code']);
         }
-        foreach (['/projects', '/projects/'.$id] as $suffix) {
+        foreach (['/projects', '/projects/'.$id, '/projects/'.$id.'/runs/'.Uuid::v7()->toRfc4122()] as $suffix) {
             $client->request('GET', $base.$suffix);
             self::assertSame(404, $client->getResponse()->getStatusCode());
         }
@@ -172,6 +172,10 @@ final class ResearchProjectsControllerTest extends SessionWebTestCase
         $path = $this->base(Uuid::v7()->toRfc4122()).'/projects';
         foreach ([[], ['HTTP_AUTHORIZATION' => 'Bearer test-extension-token']] as $headers) {
             $client->request('GET', $path, server: $headers);
+            self::assertSame(401, $client->getResponse()->getStatusCode());
+            $client->request('POST', $path.'/'.Uuid::v7()->toRfc4122().'/runs', server: $headers);
+            self::assertSame(401, $client->getResponse()->getStatusCode());
+            $client->request('GET', $path.'/'.Uuid::v7()->toRfc4122().'/runs/'.Uuid::v7()->toRfc4122(), server: $headers);
             self::assertSame(401, $client->getResponse()->getStatusCode());
         }
     }
@@ -318,7 +322,41 @@ final class ResearchProjectsControllerTest extends SessionWebTestCase
         yield ['add'];
     }
 
-    /** @return array{KernelBrowser,string} */
+    public function testRunEndpointsPersistWithoutSynchronousServiceCallAndKeepFrozenMonths(): void
+    {
+        [$client, $company] = $this->fixture();
+        self::getContainer()->set(\App\ProductResearchOzon\Infrastructure\Config\CatalogContext::class, new \App\ProductResearchOzon\Infrastructure\Config\CatalogContext(Uuid::v7()->toRfc4122()));
+        $project = ResearchProjectBuilder::aProject()->withCompanyId(Uuid::fromString($company))->persistWith(self::service(ResearchProjectRepository::class));
+        $base = $this->base($company).'/projects/'.$project->id()->toRfc4122();
+        $input = ['requestId' => Uuid::v7()->toRfc4122(), 'expectedVersion' => 1, 'previewCalendarDate' => '2026-04-15'];
+        $this->post($client, $base.'/runs', $input);
+        self::assertSame(202, $client->getResponse()->getStatusCode(), (string) $client->getResponse()->getContent());
+        $first = $this->json($client);
+        self::assertSame('queued', $first['status']);
+        self::assertFalse($first['delivered']);
+        $run = $first['id'];
+        self::assertIsString($run);
+        $transport = self::getContainer()->get('messenger.transport.async_ingestion');
+        self::assertInstanceOf(\Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport::class, $transport);
+        self::assertCount(1, $transport->getSent());
+        $client->request('GET', $base.'/runs/'.$run);
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+        self::assertSame($first, $this->json($client));
+        $this->post($client, $base.'/periods', ['periods' => [['fromMonth' => '2025-01', 'toMonth' => '2025-01']], 'expectedVersion' => 2, 'previewCalendarDate' => '2026-04-15']);
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+        $client->request('GET', $base.'/runs/'.$run);
+        self::assertSame($first, $this->json($client));
+        self::service(ResearchClock::class)->freeze('2026-04-16T09:00:00Z');
+        $this->post($client, $base.'/runs', $input);
+        self::assertSame(202, $client->getResponse()->getStatusCode());
+        self::assertSame($first, $this->json($client));
+        $this->post($client, $base.'/runs', [...$input, 'unknown' => true]);
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        $client->request('GET', $this->base($company).'/projects/'.Uuid::v7()->toRfc4122().'/runs/'.$run);
+        self::assertSame(404, $client->getResponse()->getStatusCode());
+    }
+
+    /** @return array{KernelBrowser, string} */
     private function fixture(): array
     {
         $client = self::createClient();

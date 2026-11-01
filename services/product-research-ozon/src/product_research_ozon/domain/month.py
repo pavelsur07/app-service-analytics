@@ -34,6 +34,9 @@ class CollectionFailure(Exception):
             "storage_unavailable",
             "corrupt_raw",
             "database_unavailable",
+            "deadline_exceeded",
+            "contract_violation",
+            "not_available",
         }
         self.code = code if code in allowed else "source_unavailable"
         self.retry_at = retry_at
@@ -133,6 +136,12 @@ class MonthParameters:
             self.partial,
         ):
             raise ValueError("invalid_month_dates")
+
+    def validate_frozen(self, now: datetime) -> None:
+        # PHP fixes dates before delivery; a delayed partial slice must not expand.
+        today = utc_time(now).astimezone(ZoneInfo("Europe/Moscow")).date()
+        if self.date_to >= today:
+            raise ValueError("future_month")
 
 
 @dataclass(frozen=True)
@@ -234,6 +243,7 @@ class Snapshot:
     error_code: str | None
     manifest_sha256: str | None
     manifest_size: int | None
+    job_id: UUID | None = None
 
 
 @dataclass(frozen=True)

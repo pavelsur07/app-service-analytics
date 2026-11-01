@@ -356,7 +356,14 @@ return static function (DeptracConfig $config): void {
                 DirectoryConfig::create('src/ProductResearchOzon/Application/.*'),
             ),
             $researchInfrastructure = Layer::withName('ProductResearchOzonInfrastructure')->collectors(
-                DirectoryConfig::create('src/ProductResearchOzon/Infrastructure/.*'),
+                BoolConfig::create(
+                    must: [DirectoryConfig::create('src/ProductResearchOzon/Infrastructure/.*')],
+                    mustNot: [ClassLikeConfig::create('^App\\ProductResearchOzon\\Infrastructure\\Messenger\\(ResearchRunNotifier|RelayResearchRunHandler)$')],
+                ),
+            ),
+            // Only these two framework adapters may dispatch/receive existing Messenger messages.
+            $researchMessenger = Layer::withName('ProductResearchOzonMessenger')->collectors(
+                ClassLikeConfig::create('^App\\ProductResearchOzon\\Infrastructure\\Messenger\\(ResearchRunNotifier|RelayResearchRunHandler)$'),
             ),
             $researchUi = Layer::withName('ProductResearchOzonUi')->collectors(
                 DirectoryConfig::create('src/ProductResearchOzon/Ui/.*'),
@@ -575,6 +582,7 @@ return static function (DeptracConfig $config): void {
             // ADR-050: исследование рынка, без связей с Ingestion/SalesPlanning.
             Ruleset::forLayer($researchUi)->accesses($researchApplication, $researchDomain, $researchInfrastructure, $sharedUi, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
             Ruleset::forLayer($researchApplication)->accesses($researchDomain, $researchInfrastructure, $identityFacade, $sharedDomain, $sharedApplication, $symfonyUid),
+            Ruleset::forLayer($researchMessenger)->accesses($researchApplication, $researchDomain, $symfonyComponent),
             Ruleset::forLayer($researchInfrastructure)->accesses($researchDomain, $sharedDomain, $sharedInfrastructure, $symfonyUid),
             Ruleset::forLayer($researchDomain)->accesses($sharedDomain, $symfonyUid),
 

@@ -15,6 +15,8 @@ interface ResearchProjectRepository
 
     public function locked(string $companyId, string $projectId, int $expectedVersion, bool $forCopy = false): ResearchProject;
 
+    public function lockedForRun(string $companyId, string $projectId): ResearchProject;
+
     /** @return list<PeriodRange> */
     public function periods(string $companyId, string $projectId): array;
 

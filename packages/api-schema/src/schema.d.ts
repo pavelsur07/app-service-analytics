@@ -868,6 +868,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/product-research-ozon/projects/{projectId}/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_productresearchozon_ui_getresearchrun__invoke"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/product-research-ozon/preview": {
         parameters: {
             query?: never;
@@ -894,6 +910,22 @@ export interface paths {
         get: operations["get_app_productresearchozon_ui_searchresearchcategories__invoke"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/product-research-ozon/projects/{projectId}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_app_productresearchozon_ui_startresearchrun__invoke"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2030,6 +2062,24 @@ export interface components {
         ProjectsResponse: {
             items: components["schemas"]["ProjectSummaryResponse"][];
             nextCursor?: string | null;
+        };
+        RunMonthResponse: {
+            period: components["schemas"]["MonthResponse"];
+            /** @enum {string} */
+            status: "queued" | "running" | "ready" | "error";
+            snapshotId?: string | null;
+            rowCount?: number | null;
+            errorCode?: string | null;
+        };
+        RunResponse: {
+            id: string;
+            projectId: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "ready" | "error";
+            revision: number;
+            delivered: boolean;
+            createdAt: string;
+            months: components["schemas"]["RunMonthResponse"][];
         };
         ResearchCategoryResponse: {
             path: string;
@@ -5845,6 +5895,57 @@ export interface operations {
             };
         };
     };
+    get_app_productresearchozon_ui_getresearchrun__invoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+                projectId: string;
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Локальная проекция прогресса запуска */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunResponse"];
+                };
+            };
+            /** @description Нет seller-сессии */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Модуль выключен или запуск отсутствует */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     post_app_productresearchozon_ui_previewresearch__invoke: {
         parameters: {
             query?: never;
@@ -6020,6 +6121,105 @@ export interface operations {
                 };
             };
             /** @description Каталог ещё не получен или просрочен; дождитесь фонового обновления */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_app_productresearchozon_ui_startresearchrun__invoke: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    requestId: string;
+                    expectedVersion: number;
+                    /** Format: date */
+                    previewCalendarDate: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Запуск сохранён; доставка и загрузка выполняются фоново */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunResponse"];
+                };
+            };
+            /** @description Нет seller-сессии */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Модуль выключен или проект отсутствует */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Устаревшая версия/предпросмотр, конфликт requestId или активный запуск */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверный запрос или все месяцы загружены */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Источник не настроен */
             503: {
                 headers: {
                     [name: string]: unknown;

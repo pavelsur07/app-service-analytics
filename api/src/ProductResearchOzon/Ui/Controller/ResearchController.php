@@ -31,9 +31,10 @@ abstract class ResearchController
             return $operation();
         } catch (ResearchProblem $problem) {
             $status = match ($problem->reason) {
-                'feature_disabled', 'project_not_found' => 404,
+                'feature_disabled', 'project_not_found', 'run_not_found' => 404,
                 'access_denied' => 403,
-                'version_conflict', 'preview_outdated' => 409,
+                'version_conflict', 'preview_outdated', 'idempotency_conflict' => 409,
+                'no_months_to_load' => 422,
                 'catalog_not_ready' => 503,
                 default => 500,
             };

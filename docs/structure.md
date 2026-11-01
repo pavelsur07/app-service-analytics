@@ -1045,3 +1045,17 @@ HTTP/gate — `infrastructure/mpstats_items.py`, технический журн
 этапа; bodies/денежные показатели в БД не пишутся. Тесты месячного движка —
 `tests/unit/test_month.py`, `test_items_http.py`, `tests/integration/test_month_snapshots.py`.
 План и матрица приёмки — `docs/plan/product-research-ozon-stage4.md`.
+
+
+Этап 5 product-research-ozon: `domain/jobs.py` — frozen run и RetryPolicy,
+`jobs/service.py` — admission/worker, `infrastructure/job_store.py` — company/source
+очередь; `0004_research_jobs.py` — run/job/turn и fencing родительского задания.
+Symfony `ResearchRun`/`ResearchRunMonth` описывают immutable intent/outbox и локальную
+проекцию. `Application/StartResearchRunAction`, relay/sync/process actions,
+`Infrastructure/Query/ResearchRunsQuery`, `Repository/DbalRunDeliveryRepository`,
+`Api/HttpRunSource` и два точных `Infrastructure/Messenger` адаптера замыкают путь.
+Для этих двух адаптеров Deptrac отдельно разрешает Symfony Messenger/Application,
+не расширяя разрешения остальных Infrastructure-классов. `Ui/Controller` содержит
+start/get run, `Ui/Command/ProcessResearchRunsCommand` — company-scoped repair/poll.
+Run/RunMonth Builder находятся в `api/tests/Support/Builder`; планы и постоянные
+отчёты — `docs/plan/product-research-ozon-stage5*`.

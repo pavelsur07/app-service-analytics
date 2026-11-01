@@ -39,6 +39,8 @@ class ResearchProject
     private \DateTimeImmutable $updatedAt;
     #[ORM\Column]
     private int $periodCount;
+    #[ORM\Column(type: 'uuid', nullable: true)]
+    private ?Uuid $lastRunId = null;
     #[ORM\Version]
     #[ORM\Column(type: 'integer')]
     private int $version = 1;
@@ -71,6 +73,12 @@ class ResearchProject
         // Count/flag force a dirty header even when the controlled clock is unchanged.
         $this->periodCount = $count;
         $this->includeCurrentMonth = $includeCurrentMonth;
+        $this->updatedAt = $at->setTimezone(new \DateTimeZone('UTC'));
+    }
+
+    public function recordRunRequested(Uuid $runId, \DateTimeImmutable $at): void
+    {
+        $this->lastRunId = $runId;
         $this->updatedAt = $at->setTimezone(new \DateTimeZone('UTC'));
     }
 
