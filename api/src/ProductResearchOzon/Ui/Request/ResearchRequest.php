@@ -147,7 +147,7 @@ final class ResearchRequest
     private static function text(array $input, string $key, int $max, bool $allowEmpty = false): string
     {
         $value = $input[$key] ?? null;
-        if (!\is_string($value) || mb_strlen($value) > $max || (!$allowEmpty && '' === trim($value))) {
+        if (!\is_string($value) || str_contains($value, "\0") || mb_strlen($value) > $max || (!$allowEmpty && '' === trim($value))) {
             throw new \InvalidArgumentException('invalid_request');
         }
 

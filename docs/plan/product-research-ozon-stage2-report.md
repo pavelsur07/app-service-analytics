@@ -57,23 +57,26 @@ PRODUCT_RESEARCH_OZON_ENABLED имеет server default false: авторизо�
 - Red/Green календаря: без классов тесты падали; затем 15 unit/35 assertions
   подтвердили периоды, пересечения, високосность, shortcuts и Moscow-boundary.
 - `phpunit tests/Unit/ProductResearchOzon tests/Integration/ProductResearchOzon
-  tests/Functional/ProductResearchOzon`: **54 теста / 522 assertions**, успешно.
+  tests/Functional/ProductResearchOzon`: **57 тестов / 576 assertions**, успешно.
   Есть реальные процессы/соединения с подтверждённым pg_blocking_pids ожиданием,
   оба порядка copy/add, rollback после flush, valid extension token, CSRF,
   blocked/чужие компании, flag=false, body/cursor limits и ошибки категорий.
-  Лог: var/product-research-ozon-stage2/review-green.log.
+  Лог: var/product-research-ozon-stage2/final-green.log.
 - `make lint stan deptrac structure-check api-types-check`: успешно.
   PHPStan baseline не расширен. OpenAPI/TS изменены только генераторами.
 - `make db-schema-validate`: dev/test mapping и схемы совпадают.
-- Полный isolated `db-rebuild-check`: **OK** — 800 unit / 9113 assertions,
-  881 integration / 23185 assertions, 409 functional / 3952 assertions; затем
+- Полный isolated `db-rebuild-check`: **OK** — 801 unit / 9115 assertions,
+  883 integration / 23231 assertions, 409 functional / 3952 assertions; затем
   гейты Go и 27 тестов Python. Проект research-stage2-rebuild, порты reset, собственные PG/S3/Go
-  volumes; текущие dev-тома не удаляются. Лог: var/product-research-ozon-stage2/rebuild.log.
+  volumes; текущие dev-тома не удаляются. Лог: var/product-research-ozon-stage2/rebuild-review.log.
 
 После замечаний ревью добавлены индекс автора, отдельный Builder периода,
 QueryBuilder-контракт и before/after аудит. Реальный MonthResponse проверяется
 против OpenAPI, файлы схемы доступны тестам через read-only volume.
-Повторный полный rebuild обновлённой миграции выполняется.
+Повторный полный rebuild обновлённой миграции завершён успешно.
+После второго ревью запрещён NUL в текстах; три HTTP-регрессии проверяют
+отказ до записи. Замечание о base32/base58 cursor отклонено по установленному
+коду Symfony и фактическому HTTP 422. Ожидается финальное повторное ревью.
 
 ## Обязательное ревью и доставка
 

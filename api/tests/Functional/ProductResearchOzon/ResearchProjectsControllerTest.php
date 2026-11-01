@@ -217,7 +217,7 @@ final class ResearchProjectsControllerTest extends SessionWebTestCase
             $client->request('POST', $base.'/projects', server: ['CONTENT_TYPE' => 'application/json'], content: $body);
             self::assertSame(422, $client->getResponse()->getStatusCode());
         }
-        foreach (['limit=0', 'limit=201', 'cursor[]=bad', 'token=not-a-filter'] as $query) {
+        foreach (['limit=0', 'limit=201', 'cursor[]=bad', 'cursor=00000000000000000000000000', 'cursor=1111111111111111111111', 'token=not-a-filter'] as $query) {
             $client->request('GET', $base.'/projects?'.$query);
             self::assertSame(422, $client->getResponse()->getStatusCode());
         }
@@ -281,6 +281,41 @@ final class ResearchProjectsControllerTest extends SessionWebTestCase
         yield ['periods', '[{"fromMonth":"2026-01-01","toMonth":"2026-02"}]'];
         yield ['shortcut', '{"kind":"last_closed_months","months":3}'];
         yield ['previewCalendarDate', '"2026-02-30"'];
+    }
+
+    #[DataProvider('nullByteOperations')]
+    public function testNullBytesReturn422WithoutWrites(string $operation): void
+    {
+        [$client, $company] = $this->fixture();
+        $base = $this->base($company).'/projects';
+        $this->post($client, $base, $this->valid());
+        self::assertSame(201, $client->getResponse()->getStatusCode());
+        $id = $this->json($client)['id'];
+        self::assertIsString($id);
+        $db = self::service(\Doctrine\DBAL\Connection::class);
+        $before = $db->fetchOne('SELECT COUNT(*) FROM audit_record WHERE company_id = :company', ['company' => $company]);
+        $common = ['expectedVersion' => 1, 'previewCalendarDate' => '2026-04-15'];
+        [$suffix, $body] = match ($operation) {
+            'create' => ['', [...$this->valid(), 'comment' => "\0"]],
+            'copy' => ['/'.$id.'/copy', [...$common, 'overrides' => ['name' => "bad\0name"]]],
+            'add' => ['/'.$id.'/periods', [...$common, 'periods' => [['fromMonth' => '2026-01', 'toMonth' => '2026-02', 'name' => "bad\0period"]]]],
+            default => throw new \LogicException('invalid_test_case'),
+        };
+        $this->post($client, $base.$suffix, $body);
+        self::assertSame(422, $client->getResponse()->getStatusCode());
+        self::assertSame($before, $db->fetchOne('SELECT COUNT(*) FROM audit_record WHERE company_id = :company', ['company' => $company]));
+        self::assertSame(1, $db->fetchOne('SELECT COUNT(*) FROM product_research_ozon_project WHERE company_id = :company', ['company' => $company]));
+        $client->request('GET', $base.'/'.$id);
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+        self::assertSame(1, $this->json($client)['version']);
+    }
+
+    /** @return iterable<array{string}> */
+    public static function nullByteOperations(): iterable
+    {
+        yield ['create'];
+        yield ['copy'];
+        yield ['add'];
     }
 
     /** @return array{KernelBrowser,string} */
