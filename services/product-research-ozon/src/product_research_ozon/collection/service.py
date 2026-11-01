@@ -150,6 +150,11 @@ class MonthCollector:
                     error_class=error_code,
                     duration_ms=(time.monotonic_ns() - started) // 1000000,
                 ),
+                logging.WARNING
+                if outcome == "deferred"
+                else logging.ERROR
+                if outcome == "error"
+                else logging.INFO,
             )
 
     def read_manifest(

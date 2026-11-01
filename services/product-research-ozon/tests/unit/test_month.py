@@ -88,3 +88,11 @@ def test_empty_category_and_bounds() -> None:
         parse_page(b"x" * (16 * 1024 * 1024 + 1), 0, 500)
     with pytest.raises(ValueError):
         CollectionLimits(0, 1, 1024)
+
+
+def test_decimal_exponent_overflow_is_an_invalid_source_not_an_unhandled_error() -> (
+    None
+):
+    raw = b'{"startRow":0,"endRow":1,"total":1,"data":[{"id":1,"revenue":1e999999999999999999999}]}'
+    with pytest.raises(CollectionFailure, match="invalid_source"):
+        parse_page(raw, 0, 500)

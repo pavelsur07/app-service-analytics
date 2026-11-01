@@ -16,6 +16,7 @@ from product_research_ozon.domain.month import (
     SourcePage,
     StoredPage,
     identity,
+    utc_time,
 )
 
 COLUMNS = "company_id,source_id,snapshot_id,category_path,date_from,date_to,partial,max_rows,max_pages,max_bytes,generation,status,created_at,completed_at,total,cursor_row,pages,byte_size,next_attempt_at,error_code,manifest_sha256,manifest_size"
@@ -45,13 +46,13 @@ def snapshot(row: tuple[object, ...]) -> Snapshot:
         CollectionLimits(typed(row[7], int), typed(row[8], int), typed(row[9], int)),
         typed(row[10], int),
         SnapshotStatus(typed(row[11], str)),
-        typed(row[12], datetime),
-        optional(row[13], datetime),
+        utc_time(typed(row[12], datetime)),
+        None if row[13] is None else utc_time(typed(row[13], datetime)),
         optional(row[14], int),
         typed(row[15], int),
         typed(row[16], int),
         typed(row[17], int),
-        optional(row[18], datetime),
+        None if row[18] is None else utc_time(typed(row[18], datetime)),
         optional(row[19], str),
         optional(row[20], str),
         optional(row[21], int),
@@ -68,7 +69,7 @@ class SnapshotStore:
             with psycopg.connect(
                 self._url,
                 connect_timeout=2,
-                options="-c statement_timeout=5000 -c lock_timeout=1000",
+                options="-c statement_timeout=5000 -c lock_timeout=1000 -c timezone=UTC",
             ) as db:
                 yield db
         except psycopg.Error:

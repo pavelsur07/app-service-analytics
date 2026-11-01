@@ -665,3 +665,58 @@ def test_cache_migration_down_up_preserves_catalog_and_raw_objects(
     assert h.gate.metadata(h.company, h.source) == version
     with pytest.raises(CollectionFailure, match="not_found"):
         h.store.get(h.company, h.source, value.snapshot_id)
+
+
+@pytest.mark.parametrize("status,level", [(429, logging.WARNING), (401, logging.ERROR)])
+def test_wait_and_failure_events_have_required_severity(
+    settings: Settings, caplog: pytest.LogCaptureFixture, status: int, level: int
+) -> None:
+    from product_research_ozon.infrastructure.observability import Event
+
+    h = harness(
+        settings,
+        lambda request: httpx.Response(
+            status, headers={"Retry-After": "60"}, content=TOKEN.encode()
+        ),
+    )
+    with (
+        caplog.at_level(logging.DEBUG, logger="product-research-ozon"),
+        pytest.raises(CollectionFailure),
+    ):
+        h.step(h.start())
+    events = [
+        record
+        for record in caplog.records
+        if isinstance(getattr(record, "research_event", None), Event)
+    ]
+    assert len(events) == 1 and events[0].levelno == level
+    assert TOKEN not in caplog.text
+
+
+def test_manifest_round_trip_is_independent_of_sql_session_timezone(
+    settings: Settings,
+) -> None:
+    from contextlib import contextmanager
+
+    class MoscowStore(SnapshotStore):
+        @contextmanager
+        def _db(self) -> Iterator[psycopg.Connection[tuple[object, ...]]]:
+            with super()._db() as db:
+                db.execute("SET TIME ZONE 'Europe/Moscow'")
+                yield db
+
+    h = harness(settings, total=1)
+    h.store = MoscowStore(settings.database_url)
+    h.collector = MonthCollector(h.store, h.raw, h.source_client, h.clock)
+    done = h.step(h.start())
+    assert done.status == SnapshotStatus.READY
+    manifest = json.loads(
+        h.collector.read_manifest(h.company, h.source, done.snapshot_id)
+    )
+    assert manifest["created_at"].endswith("+00:00") and manifest[
+        "completed_at"
+    ].endswith("+00:00")
+    assert done.created_at.utcoffset() == timedelta(0)
+    assert done.completed_at is not None and done.completed_at.utcoffset() == timedelta(
+        0
+    )

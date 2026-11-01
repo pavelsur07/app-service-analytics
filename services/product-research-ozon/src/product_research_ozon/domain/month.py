@@ -4,8 +4,8 @@ import calendar
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
-from decimal import Decimal
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal, DecimalException
 from enum import StrEnum
 from typing import Never
 from uuid import UUID
@@ -43,6 +43,12 @@ class CollectionFailure(Exception):
 def identity(value: UUID) -> None:
     if not isinstance(value, UUID) or value.version != 7:
         raise ValueError("invalid_identity")
+
+
+def utc_time(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        raise ValueError("invalid_event_time")
+    return value.astimezone(UTC)
 
 
 @dataclass(frozen=True)
@@ -199,7 +205,7 @@ def parse_page(body: bytes, start: int, end: int) -> SourcePage:
         if len(ids) != len(set(ids)):
             raise ValueError
         return SourcePage(body, start, actual_end, total, tuple(ids))
-    except ValueError, TypeError, UnicodeError, RecursionError:
+    except ValueError, TypeError, UnicodeError, RecursionError, DecimalException:
         raise CollectionFailure("invalid_source") from None
 
 

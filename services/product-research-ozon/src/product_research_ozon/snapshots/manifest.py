@@ -6,6 +6,7 @@ from product_research_ozon.domain.month import (
     CollectionFailure,
     Snapshot,
     StoredPage,
+    utc_time,
 )
 
 
@@ -54,8 +55,8 @@ def manifest_body(
                 {"colId": "id", "sort": "asc"},
             ],
             "credential_generation": value.generation,
-            "created_at": value.created_at.isoformat(),
-            "completed_at": completed_at.isoformat(),
+            "created_at": utc_time(value.created_at).isoformat(),
+            "completed_at": utc_time(completed_at).isoformat(),
             "display_name": f"{parameters.category_path.rsplit('/', 1)[-1]}_{parameters.date_from:%d.%m.%Y}-{parameters.date_to:%d.%m.%Y}",
             "rows": value.cursor,
             "total": value.total,
