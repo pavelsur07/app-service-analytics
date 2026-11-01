@@ -1,0 +1,637 @@
+[
+  {
+    "name": "run",
+    "definition": "run_request",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "run_id": "019a3c00-0000-7000-8000-000000000002",
+      "project_id": "019a3c00-0000-7000-8000-000000000003",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "category_path": "Одежда/Хиджабы",
+      "fbs": true,
+      "currency": "RUB",
+      "months": [
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "accepted",
+    "definition": "run_accepted",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "run_id": "019a3c00-0000-7000-8000-000000000002",
+      "status": "queued",
+      "revision": 1
+    }
+  },
+  {
+    "name": "progress",
+    "definition": "run_progress",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "run_id": "019a3c00-0000-7000-8000-000000000002",
+      "status": "ready",
+      "revision": 3,
+      "months": [
+        {
+          "period": {
+            "month": "2026-01",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "days": 31,
+            "partial": false
+          },
+          "status": "ready",
+          "snapshot_id": "019a3c00-0000-7000-8000-000000000005",
+          "row_count": 120,
+          "error_code": null
+        }
+      ]
+    }
+  },
+  {
+    "name": "categories-query",
+    "definition": "categories_request",
+    "valid": true,
+    "payload": {
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "limit": 100,
+      "cursor": null
+    }
+  },
+  {
+    "name": "categories",
+    "definition": "categories_response",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "revision": 1,
+      "generated_at": "2026-11-01T00:00:00Z",
+      "items": [
+        {
+          "path": "Одежда/Хиджабы"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "snapshot",
+    "definition": "snapshot_metadata",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "snapshot_id": "019a3c00-0000-7000-8000-000000000005",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "period": {
+        "month": "2026-01",
+        "date_from": "2026-01-01",
+        "date_to": "2026-01-31",
+        "days": 31,
+        "partial": false
+      },
+      "category_path": "Одежда/Хиджабы",
+      "fbs": true,
+      "currency": "RUB",
+      "status": "ready",
+      "row_count": 120,
+      "total": 120,
+      "page_count": 1,
+      "created_at": "2026-11-01T00:00:00Z"
+    }
+  },
+  {
+    "name": "error-unauthorized",
+    "definition": "error",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "error": {
+        "code": "unauthorized"
+      }
+    }
+  },
+  {
+    "name": "error-contract_violation",
+    "definition": "error",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "error": {
+        "code": "contract_violation"
+      }
+    }
+  },
+  {
+    "name": "error-payload_too_large",
+    "definition": "error",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "error": {
+        "code": "payload_too_large"
+      }
+    }
+  },
+  {
+    "name": "error-not_ready",
+    "definition": "error",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "error": {
+        "code": "not_ready"
+      }
+    }
+  },
+  {
+    "name": "error-not_available",
+    "definition": "error",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "error": {
+        "code": "not_available"
+      }
+    }
+  },
+  {
+    "name": "error-not_found",
+    "definition": "error",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "error": {
+        "code": "not_found"
+      }
+    }
+  },
+  {
+    "name": "error-conflict",
+    "definition": "error",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "error": {
+        "code": "conflict"
+      }
+    }
+  },
+  {
+    "name": "error-internal_error",
+    "definition": "error",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "error": {
+        "code": "internal_error"
+      }
+    }
+  },
+  {
+    "name": "extra-secret",
+    "definition": "run_request",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "run_id": "019a3c00-0000-7000-8000-000000000002",
+      "project_id": "019a3c00-0000-7000-8000-000000000003",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "category_path": "Одежда/Хиджабы",
+      "fbs": true,
+      "currency": "RUB",
+      "months": [
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        }
+      ],
+      "token": "not-allowed"
+    }
+  },
+  {
+    "name": "missing-company",
+    "definition": "run_request",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "run_id": "019a3c00-0000-7000-8000-000000000002",
+      "project_id": "019a3c00-0000-7000-8000-000000000003",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "category_path": "Одежда/Хиджабы",
+      "fbs": true,
+      "currency": "RUB",
+      "months": [
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-uuid",
+    "definition": "run_request",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "run_id": "other-company",
+      "project_id": "019a3c00-0000-7000-8000-000000000003",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "category_path": "Одежда/Хиджабы",
+      "fbs": true,
+      "currency": "RUB",
+      "months": [
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "fbs-off",
+    "definition": "run_request",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "run_id": "019a3c00-0000-7000-8000-000000000002",
+      "project_id": "019a3c00-0000-7000-8000-000000000003",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "category_path": "Одежда/Хиджабы",
+      "fbs": false,
+      "currency": "RUB",
+      "months": [
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "string-boolean",
+    "definition": "run_request",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "run_id": "019a3c00-0000-7000-8000-000000000002",
+      "project_id": "019a3c00-0000-7000-8000-000000000003",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "category_path": "Одежда/Хиджабы",
+      "fbs": "true",
+      "currency": "RUB",
+      "months": [
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "too-many-months",
+    "definition": "run_request",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "run_id": "019a3c00-0000-7000-8000-000000000002",
+      "project_id": "019a3c00-0000-7000-8000-000000000003",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "category_path": "Одежда/Хиджабы",
+      "fbs": true,
+      "currency": "RUB",
+      "months": [
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        },
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31,
+          "partial": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-date",
+    "definition": "run_request",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "run_id": "019a3c00-0000-7000-8000-000000000002",
+      "project_id": "019a3c00-0000-7000-8000-000000000003",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "category_path": "Одежда/Хиджабы",
+      "fbs": true,
+      "currency": "RUB",
+      "months": [
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-02-30",
+          "days": 31,
+          "partial": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-limit",
+    "definition": "categories_request",
+    "valid": false,
+    "payload": {
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "limit": 101,
+      "cursor": null
+    }
+  },
+  {
+    "name": "url-cursor",
+    "definition": "categories_request",
+    "valid": false,
+    "payload": {
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "limit": 10,
+      "cursor": "http://evil"
+    }
+  },
+  {
+    "name": "raw-in-response",
+    "definition": "snapshot_metadata",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "snapshot_id": "019a3c00-0000-7000-8000-000000000005",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "period": {
+        "month": "2026-01",
+        "date_from": "2026-01-01",
+        "date_to": "2026-01-31",
+        "days": 31,
+        "partial": false
+      },
+      "category_path": "Одежда/Хиджабы",
+      "fbs": true,
+      "currency": "RUB",
+      "status": "ready",
+      "row_count": 120,
+      "total": 120,
+      "page_count": 1,
+      "created_at": "2026-11-01T00:00:00Z",
+      "raw": {
+        "revenue": 100
+      }
+    }
+  },
+  {
+    "name": "error-request-timeout",
+    "definition": "error",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "error": {
+        "code": "request_timeout"
+      }
+    }
+  },
+  {
+    "name": "error-method",
+    "definition": "error",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "error": {
+        "code": "method_not_allowed"
+      }
+    }
+  },
+  {
+    "name": "integer-json-number",
+    "definition": "run_request",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a3c00-0000-7000-8000-000000000001",
+      "run_id": "019a3c00-0000-7000-8000-000000000002",
+      "project_id": "019a3c00-0000-7000-8000-000000000003",
+      "source_connection_id": "019a3c00-0000-7000-8000-000000000004",
+      "category_path": "Одежда/Хиджабы",
+      "fbs": true,
+      "currency": "RUB",
+      "months": [
+        {
+          "month": "2026-01",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "days": 31.0,
+          "partial": false
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,436 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conwix.com/contracts/product-research-ozon/v1/schema.json",
+  "title": "Product research Ozon internal v1",
+  "$defs": {
+    "month": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "month",
+        "date_from",
+        "date_to",
+        "days",
+        "partial"
+      ],
+      "properties": {
+        "month": {
+          "type": "string",
+          "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])$"
+        },
+        "date_from": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])-01$"
+        },
+        "date_to": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+        },
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31
+        },
+        "partial": {
+          "type": "boolean"
+        }
+      }
+    },
+    "run_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "company_id",
+        "run_id",
+        "project_id",
+        "source_connection_id",
+        "category_path",
+        "fbs",
+        "currency",
+        "months"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "company_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "source_connection_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "category_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "fbs": {
+          "const": true
+        },
+        "currency": {
+          "const": "RUB"
+        },
+        "months": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/month"
+          },
+          "maxItems": 24,
+          "minItems": 1
+        }
+      }
+    },
+    "run_accepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "company_id",
+        "run_id",
+        "status",
+        "revision"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "company_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "status": {
+          "const": "queued"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "run_progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "company_id",
+        "run_id",
+        "status",
+        "revision",
+        "months"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "company_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "running",
+            "ready",
+            "error"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "months": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "period",
+              "status",
+              "snapshot_id",
+              "row_count",
+              "error_code"
+            ],
+            "properties": {
+              "period": {
+                "$ref": "#/$defs/month"
+              },
+              "status": {
+                "enum": [
+                  "queued",
+                  "running",
+                  "ready",
+                  "error"
+                ]
+              },
+              "snapshot_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "row_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "error_code": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  null,
+                  "contract_violation",
+                  "credentials_rejected",
+                  "retry_exhausted",
+                  "incomplete_snapshot",
+                  "deadline_exceeded"
+                ]
+              }
+            }
+          },
+          "maxItems": 24
+        }
+      }
+    },
+    "categories_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "company_id",
+        "limit",
+        "cursor"
+      ],
+      "properties": {
+        "company_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 256
+        }
+      }
+    },
+    "categories_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "company_id",
+        "revision",
+        "generated_at",
+        "items",
+        "next_cursor"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "company_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              }
+            }
+          },
+          "maxItems": 100
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256,
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        }
+      }
+    },
+    "snapshot_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "company_id",
+        "snapshot_id",
+        "source_connection_id",
+        "period",
+        "category_path",
+        "fbs",
+        "currency",
+        "status",
+        "row_count",
+        "total",
+        "page_count",
+        "created_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "company_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "snapshot_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "source_connection_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "period": {
+          "$ref": "#/$defs/month"
+        },
+        "category_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "fbs": {
+          "const": true
+        },
+        "currency": {
+          "const": "RUB"
+        },
+        "status": {
+          "const": "ready"
+        },
+        "row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "page_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "error"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code"
+          ],
+          "properties": {
+            "code": {
+              "enum": [
+                "unauthorized",
+                "contract_violation",
+                "payload_too_large",
+                "not_ready",
+                "not_available",
+                "not_found",
+                "conflict",
+                "internal_error",
+                "request_timeout",
+                "method_not_allowed"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/run_request"
+    },
+    {
+      "$ref": "#/$defs/run_accepted"
+    },
+    {
+      "$ref": "#/$defs/run_progress"
+    },
+    {
+      "$ref": "#/$defs/categories_request"
+    },
+    {
+      "$ref": "#/$defs/categories_response"
+    },
+    {
+      "$ref": "#/$defs/snapshot_metadata"
+    },
+    {
+      "$ref": "#/$defs/error"
+    }
+  ]
+}

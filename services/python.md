@@ -41,6 +41,6 @@
 проверяет imports/pip check/audit, затем с отключённой сетью запускает
 Ruff, mypy strict и офлайн-тесты эталонов. Результаты — в var, не исходники.
 
-Следующие этапы добавляют отдельные lint/typecheck/architecture/test/audit/
-migrate/migrations-check цели, CI и настоящие integration-тесты. Этап 0
+Этап 1 добавляет отдельные lint/vet/architecture/test/audit/migrate/
+migrations-check цели, CI и настоящие integration-тесты. Этап 0
 не считается доказательством готовности worker, HTTP API или БД сервиса.
