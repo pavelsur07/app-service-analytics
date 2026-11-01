@@ -51,6 +51,8 @@ class ReviewWorkflowTest(unittest.TestCase):
         model = '''#!/usr/bin/env python3
 import json, os, re, sys, time
 args=sys.argv[1:]
+if os.environ.get('ARG_CAPTURE'):
+    open(os.environ['ARG_CAPTURE'], 'w').write(json.dumps(args))
 s=open(os.environ['REQUEST_CAPTURE'], 'w', encoding='utf-8')
 request=sys.stdin.buffer.read().decode('utf-8'); s.write(request); s.close()
 mode=os.environ.get('MODEL_MODE', 'complete')
@@ -108,6 +110,23 @@ else:
     def package(self):
         return self.root / 'var/review' / (self.root / 'var/review/current').read_text().strip()
 
+    def test_codex_auto_review_keeps_readonly_and_records_approval_mode(self):
+        self.make('review-prepare')
+        capture = self.root / 'var/args.json'
+        self.make('review-codex', REVIEW_CODEX_AUTO_REVIEW='1', ARG_CAPTURE=str(capture))
+        args = json.loads(capture.read_text())
+        self.assertEqual(args[args.index('--sandbox') + 1], 'read-only')
+        self.assertIn('approval_policy="on-request"', args)
+        self.assertIn('approvals_reviewer="auto_review"', args)
+        self.assertNotIn('--dangerously-bypass-approvals-and-sandbox', args)
+        meta = json.loads(self.runs()[0].read_text())
+        self.assertEqual(meta['codex_approval_reviewer'], 'auto_review')
+        self.assertIn('точной команды чтения', (self.root / 'var/request-captured').read_text())
+
+    def test_codex_auto_review_rejects_unknown_configuration(self):
+        self.make('review-prepare')
+        self.make('review-codex', success=False, REVIEW_CODEX_AUTO_REVIEW='typo')
+
     def test_fixture_attachments_preserve_bytes_and_reject_corruption(self):
         path = 'services/example/tests/fixtures/month.zip'
         fixture = self.root / path
@@ -127,6 +146,42 @@ else:
         blob.chmod(0o644)
         blob.write_bytes(b'corrupt')
         self.make('review-codex', success=False)
+
+    def test_fixture_attachment_does_not_dereference_symlink_target(self):
+        path = 'services/example/tests/fixtures/export.zip'
+        fixture = self.root / path
+        fixture.parent.mkdir(parents=True)
+        private = self.root / 'private-export'
+        raw = b'not-selected-private-content' * 2000
+        private.write_bytes(raw)
+        fixture.symlink_to(private)
+        (self.root / 'var/paths').write_text(path + '\n')
+        self.make('review-prepare', REVIEW_FIXTURE_ATTACHMENTS='1')
+        package = (self.package() / 'package.md').read_text()
+        self.assertIn('120000', package)
+        self.assertFalse((self.root / 'var/review/attachments' / hashlib.sha256(raw).hexdigest()).exists())
+
+    def test_fixture_attachment_mode_change_invalidates_snapshot(self):
+        path = 'services/example/tests/fixtures/export.zip'
+        fixture = self.root / path
+        fixture.parent.mkdir(parents=True)
+        fixture.write_bytes(b'x' * 40000)
+        fixture.chmod(0o644)
+        (self.root / 'var/paths').write_text(path + '\n')
+        self.make('review-prepare', REVIEW_FIXTURE_ATTACHMENTS='1')
+        fixture.chmod(0o755)
+        self.make('review-codex', success=False)
+
+    def test_markdown_symlink_is_not_expanded_as_full_text(self):
+        path = 'services/example/tests/fixtures/README.md'
+        fixture = self.root / path
+        fixture.parent.mkdir(parents=True)
+        private = self.root / 'private-markdown'
+        private.write_text('private-not-selected\n' * 2000)
+        fixture.symlink_to(private)
+        (self.root / 'var/paths').write_text(path + '\n')
+        self.make('review-prepare', REVIEW_FIXTURE_ATTACHMENTS='1')
+        self.assertNotIn('private-not-selected', (self.package() / 'package.md').read_text())
 
     def test_fixture_attachments_do_not_hide_source_and_detect_changed_input(self):
         path = 'services/example/tests/fixtures/page.json'

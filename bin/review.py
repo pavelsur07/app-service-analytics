@@ -160,18 +160,22 @@ def snapshot(inputs):
         attached = []
         textual = []
         for path in paths:
-            file = ROOT / path
-            if (inputs.get('fixture_attachments') and '/tests/fixtures/' in ('/' + path).lower()
-                    and file.is_file() and file.stat().st_size > 32768):
-                item = {'path': path, 'after': fixture_attachment(file.read_bytes())}
-                try:
-                    old = git('show', base + ':' + path)
-                except subprocess.CalledProcessError:
-                    old = None
-                item['before'] = fixture_attachment(old) if old is not None else None
-                attached.append(item)
-            else:
-                textual.append(path)
+            if inputs.get('fixture_attachments') and '/tests/fixtures/' in ('/' + path).lower():
+                entry = git('ls-files', '--stage', '-z', '--', path, env=env).decode('utf-8')
+                fields = entry.split('\t', 1)[0].split() if entry else []
+                # Read the selected Git blob, never the working-tree symlink target.
+                if fields and fields[0] in ('100644', '100755'):
+                    raw = git('cat-file', 'blob', fields[1])
+                    if len(raw) > 32768:
+                        item = {'path': path,
+                                'after': dict(fixture_attachment(raw), mode=fields[0])}
+                        old_entry = git('ls-tree', '-z', base, '--', path).decode('utf-8')
+                        old_fields = old_entry.split('\t', 1)[0].split() if old_entry else []
+                        item['before'] = (dict(fixture_attachment(git('cat-file', 'blob', old_fields[2])),
+                                               mode=old_fields[0]) if old_fields else None)
+                        attached.append(item)
+                        continue
+            textual.append(path)
         diff = (git('diff', '--cached', '--no-ext-diff', '--no-textconv', '--no-renames',
                     '--binary', base, '--', *textual, env=env).decode('utf-8') if textual else '')
         if attached:
@@ -197,7 +201,7 @@ def full_text(inputs):
         if not path.endswith('.md') or path in already:
             continue
         file = ROOT / path
-        if not file.is_file():  # удалённый файл виден только дифом
+        if file.is_symlink() or not file.is_file():  # ссылка/удаление видны только дифом
             continue
         size = file.stat().st_size
         if size > cap:
@@ -497,8 +501,17 @@ def run_once(role, directory=None):
     timeout = int(os.environ.get('REVIEW_TIMEOUT', '900'))
     if not 1 <= timeout <= 900:
         raise ValueError('REVIEW_TIMEOUT должен быть от 1 до 900 секунд')
+    auto_review = os.environ.get('REVIEW_CODEX_AUTO_REVIEW', '0')
+    if auto_review not in ('0', '1'):
+        raise ValueError('REVIEW_CODEX_AUTO_REVIEW: только 0 или 1')
     request = (package.decode('utf-8') + '\n' + section(template, ROLES[role]) + '\n' + section(template, '6')
                + f'\nPACKAGE_SHA256: {sha}\n')
+    if role != 'claude' and auto_review == '1':
+        request += ('\nНе изменяй файлы и не используй сеть. Если sandbox не запускается, '
+                    'можно запросить штатную эскалацию только для точной команды чтения '
+                    'пакета/вложений. Разрешение проверяет auto_review. Не отключай sandbox '
+                    'и не эскалируй запись или сеть. При отказе или невозможности чтения '
+                    'верни incomplete.\n')
     runs = REVIEW / 'runs'
     runs.mkdir(exist_ok=True)
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
@@ -520,6 +533,10 @@ def run_once(role, directory=None):
     else:
         meta.update(models_reported=None, model_note='Модель из метаданных Codex не извлекалась; см. stdout.txt и stderr.txt')
         command = ['codex', 'exec', '--skip-git-repo-check', '--sandbox', 'read-only', '-o', str(out / 'response.txt'), '-']
+        meta['codex_approval_reviewer'] = 'auto_review' if auto_review == '1' else 'default'
+        if auto_review == '1':
+            command[-1:-1] = ['-c', 'approval_policy="on-request"',
+                             '-c', 'approvals_reviewer="auto_review"']
     try:
         # GNU timeout terminates the process group, including CLI helper processes.
         # Both CLIs start outside the checkout: no implicit project instructions from ancestors.
