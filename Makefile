@@ -161,7 +161,8 @@ s3-bucket-create: s3-wait ## бакеты сырья для dev и test (иде�
 # Порядок задан списком зависимостей; он соблюдается благодаря
 # .NOTPARALLEL в начале файла.
 db-rebuild-check: down-clear up db-wait api-migrate api-migrate-test db-schema-validate test \
-	ozon-fetcher-migrate ozon-fetcher-test ## down-clear → up → migrate → schema-validate → test, то же для БД сервисов
+	ozon-fetcher-migrate ozon-fetcher-test \
+	product-research-ozon-migrate product-research-ozon-test ## down-clear → up → migrate → schema-validate → test, то же для БД сервисов
 	@echo "db-rebuild-check: OK"
 
 # --- Тесты -------------------------------------------------------------
@@ -396,9 +397,62 @@ review: ## подготовка + Claude; REVIEW_RISK=high (по умолчан�
 # набором проверок.
 
 ci-local: structure-check stan deptrac lint front-typecheck front-lint front-knip front-test audit \
-	product-research-ozon-stage0-check \
+	product-research-ozon-stage0-check product-research-ozon-check \
 	ozon-fetcher-lint ozon-fetcher-vet ozon-fetcher-test ozon-fetcher-vulncheck \
 	api-types-check \
 	db-wait db-test-create api-migrate-test s3-bucket-create test-unit test-int test-func \
 	front-build test-e2e ## всё, что прогоняет конвейер Stage 4, одной командой
 	@echo "ci-local: все проверки пройдены."
+
+# Python research: only sandbox; runtime stays off in production during stage 1.
+RESEARCH := $(COMPOSE) --profile product-research
+RESEARCH_DEV := $(RESEARCH) run --rm --no-deps -T product-research-ozon-dev
+
+.PHONY: product-research-ozon-build product-research-ozon-dev-build product-research-ozon-db product-research-ozon-lint product-research-ozon-vet product-research-ozon-architecture product-research-ozon-test product-research-ozon-audit product-research-ozon-migrate product-research-ozon-migrations-check product-research-ozon-up product-research-ozon-smoke product-research-ozon-check
+
+product-research-ozon-build: ## runtime и dev образы Python
+	$(RESEARCH) build product-research-ozon product-research-ozon-dev
+
+product-research-ozon-dev-build:
+	$(RESEARCH) build product-research-ozon-dev
+
+product-research-ozon-db: db-wait ## свои роль/БД и HBA только в локальном postgres
+	$(COMPOSE) up -d postgres s3
+	$(MAKE) db-wait
+	$(COMPOSE) exec -T postgres psql -q -v ON_ERROR_STOP=1 -U $(DB_USER) -d $(DB_NAME) < services/docker/postgres/init/03-product-research-ozon.sql
+	$(COMPOSE) exec -T postgres sh -e < services/docker/postgres/init/04-product-research-ozon-hba.sh
+
+product-research-ozon-lint: product-research-ozon-dev-build ## Ruff code/format без исключений области
+	$(RESEARCH_DEV) python -m ruff check --no-cache src tests migrations typings
+	$(RESEARCH_DEV) python -m ruff format --check --no-cache src tests migrations typings
+
+product-research-ozon-vet: product-research-ozon-dev-build ## mypy strict
+	$(RESEARCH_DEV) python -m mypy --cache-dir=/tmp/mypy
+
+product-research-ozon-architecture: product-research-ozon-dev-build ## границы импортов
+	$(RESEARCH_DEV) lint-imports --no-cache
+
+product-research-ozon-test: product-research-ozon-infrastructure ## unit/contract/integration, без внешней сети
+	$(RESEARCH_DEV) python -m pytest -p no:cacheprovider tests/unit tests/integration -v
+
+product-research-ozon-audit: product-research-ozon-stage0-check ## hash-lock и аудит из этапа 0
+
+product-research-ozon-migrate: product-research-ozon-db product-research-ozon-build ## явная миграция dev БД, не при старте
+	$(RESEARCH) run --rm --no-deps -T product-research-ozon python -m product_research_ozon.migrate up
+
+product-research-ozon-migrations-check: ## гейт совпадения ревизии dev БД
+	$(RESEARCH) run --rm --no-deps -T product-research-ozon python -m product_research_ozon.migrate check
+
+product-research-ozon-up: product-research-ozon-migrate product-research-ozon-infrastructure ## dev API без host-порта; worker выключен
+	$(RESEARCH) run --rm --no-deps -T -e RESEARCH_S3_BUCKET=conwix-research-dev product-research-ozon-dev python tests/dev_bucket.py
+	$(RESEARCH) up -d --no-deps product-research-ozon
+
+product-research-ozon-smoke: product-research-ozon-up ## dev HTTP smoke контейнера
+	$(RESEARCH_DEV) python tests/smoke.py
+	$(RESEARCH) run --rm --no-deps -T product-research-ozon python -c 'import importlib.util, os; assert os.getuid() == 10001; assert all(importlib.util.find_spec(name) is None for name in ("pytest", "ruff", "mypy"))'
+
+product-research-ozon-check: product-research-ozon-lint product-research-ozon-vet product-research-ozon-architecture product-research-ozon-test product-research-ozon-smoke ## все гейты этапа 1 (audit — stage0-check)
+
+.PHONY: product-research-ozon-infrastructure
+product-research-ozon-infrastructure: product-research-ozon-db product-research-ozon-dev-build
+	$(RESEARCH_DEV) python tests/dev_wait.py

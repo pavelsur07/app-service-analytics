@@ -96,8 +96,9 @@ ADR-044), с PHP он говорит только по контрактам
 не видит; чем в них исполняются правила этого файла — `services/AGENTS.md`.
 Первый — `ozon-fetcher`: набирает raw-ответы Ozon параллельно загрузке PHP.
 Новый сервис — тот же порядок, что у модуля: задача и ADR.
-`product-research-ozon` (ADR-050): этап 0 содержит стек и фикстуры; runtime
-и модуль ProductResearchOzon создаются в следующих этапах, не заранее.
+`product-research-ozon` (ADR-050): этап 0 содержит стек и фикстуры, этап 1 —
+защищённый dev-каркас Python. Загрузка и модуль ProductResearchOzon создаются
+в следующих этапах, не заранее.
 
 **Зависимости строго вниз.** Ingestion → Identity → Shared;
 PriceMonitoring → Identity → Shared; Links → Identity → Shared;

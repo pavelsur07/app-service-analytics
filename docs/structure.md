@@ -69,7 +69,7 @@ app-service-analytics/
 │   ├── design/           эталонные макеты дизайн-системы
 │   ├── plan/             открытые планы и справочные определения отчётов
 │   │                     product-research-ozon*.md — план, пакет этапа 0
-│   │                     и реестр A–AO; runtime пока не создан
+│   │                     и реестр A–AO; этап 1 — инфраструктурный каркас
 │   ├── task/             открытые задачи и исследования для ADR
 │   ├── superpowers/specs/  спецификация онбординга, обоснование ADR-023
 │   ├── structure.md
@@ -87,10 +87,11 @@ app-service-analytics/
 │   ├── AGENTS.md         правила всех сервисов
 │   ├── go.md             правила Go
 │   ├── python.md         правила Python (ADR-050)
-│   ├── product-research-ozon/  этап 0: правила, stage0/ (hash-lock/check.sh),
-│   │                     tests/ (офлайн-приёмка и архивы JSON/CSV); runtime ещё нет
+│   ├── product-research-ozon/  Python: src/product_research_ozon/ (HTTP, domain, infrastructure),
+│   │                     docker/, migrations/ (Alembic), typings/, tests/;
+│   │                     stage0/ (hash-lock/check.sh и офлайн-эталоны)
 │   ├── _contracts/       JSON Schema контрактов сервис ↔ PHP по версиям
-│   │                     (marketplace-connections/v1, service-coverage/v1)
+│   │                     (marketplace-connections/v1, service-coverage/v1, product-research-ozon/v1)
 │   ├── docker/postgres/  init-скрипт песочницы: роль и БД сервисов
 │   │                     на общем контейнере postgres
 │   └── ozon-fetcher/     загрузка raw Ozon (Go): cmd/ — wiring,

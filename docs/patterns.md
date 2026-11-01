@@ -1670,7 +1670,8 @@ backend и frontend в этом файле: ближайший к коду до�
 ADR-050 выделяет product-research-ozon. Правила — `services/python.md`,
 специфика — `services/product-research-ozon/AGENTS.md`. Этап 0 закрепляет
 CPython/image digest и полный hash-lock; проверка —
-`make product-research-ozon-stage0-check`. Это проверка подготовки, не runtime.
+`make product-research-ozon-stage0-check`. Это проверка подготовки; `make product-research-ozon-check` проверяет
+каркас этапа 1: HTTP trust boundary, БД/S3, миграции и импорты.
 Новых брокеров, ORM runtime и workflow-платформ не вводится.
 MPStats вызывается прямым REST: FBS=1, RUB, пустой фильтр, месяцы отдельно,
 revenue DESC/id ASC. MCP не источник побайтового REST-сырья. API CSV имеет
