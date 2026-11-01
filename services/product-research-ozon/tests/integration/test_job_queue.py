@@ -832,3 +832,79 @@ def test_unacknowledged_202_is_replayed_once_without_network_budget_charge(
     expire(h, lease)
     assert h.tick() and not h.tick(60) and calls == 4
     assert h.tick(60) and h.progress(spec)["status"] == "ready" and calls == 5
+
+
+def test_successful_empty_page_commit_survives_crash_with_exhausted_previous_budget(
+    settings: Settings,
+) -> None:
+    calls = 0
+
+    def provider(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return (
+            httpx.Response(503)
+            if calls <= 3
+            else httpx.Response(200, content=raw(0, 0))
+        )
+
+    h = harness(settings, httpx.MockTransport(provider))
+    spec = h.spec(1)
+    h.submit(spec)
+    for seconds in (2, 60, 120):
+        assert h.tick(seconds)
+    h.clock.advance(240)
+    lease = h.store.claim_next_for_all_companies(h.source, 1, (h.company,), h.clock())
+    assert lease is not None
+
+    class CrashManifest(RawStorage):
+        def save_manifest(
+            self, company_id: UUID, ref: ManifestRef, body: bytes
+        ) -> None:
+            raise RuntimeError("simulated_process_exit")
+
+    with pytest.raises(RuntimeError, match="simulated_process_exit"):
+        MonthCollector(
+            SnapshotStore(settings.database_url, lease, h.clock),
+            CrashManifest(settings),
+            h.client,
+            h.clock,
+        ).step(h.company, h.source, lease.snapshot_id)
+    saved = h.store.state(h.company, lease)
+    assert saved.pages == 1 and saved.cursor == 0 and saved.total == 0
+    expire(h, lease)
+    assert h.tick() and h.progress(spec)["status"] == "ready" and calls == 4
+
+
+def test_persistent_manifest_failure_has_exactly_three_retries(
+    settings: Settings,
+) -> None:
+    h = harness(settings)
+    spec = h.spec(1)
+    h.submit(spec)
+    writes = 0
+
+    class FailingManifest(RawStorage):
+        def save_manifest(
+            self, company_id: UUID, ref: ManifestRef, body: bytes
+        ) -> None:
+            nonlocal writes
+            writes += 1
+            raise CollectionFailure("storage_unavailable")
+
+    objects = FailingManifest(settings)
+
+    def execute(lease: JobLease) -> Snapshot:
+        return MonthCollector(
+            SnapshotStore(settings.database_url, lease, h.clock),
+            objects,
+            h.client,
+            h.clock,
+        ).step(h.company, h.source, lease.snapshot_id)
+
+    worker = RunWorker(h.store, h.source, 1, (h.company,), execute, h.clock)
+    for seconds in (2, 60, 120, 240):
+        h.clock.advance(seconds)
+        assert worker.run_once()
+    assert h.progress(spec)["status"] == "error" and writes == 4 and h.calls == [0]
+    assert not worker.run_once()

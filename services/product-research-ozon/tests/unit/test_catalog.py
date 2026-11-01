@@ -82,7 +82,8 @@ def test_cursor_binds_company_connection_revision_and_deadline() -> None:
     ]:
         with pytest.raises(CatalogUnavailable, match="conflict"):
             cursor.decode(token, target_company, target_source, revision, at)
-    for invalid in ["", "%%%bad", token[:-1], token[:-2] + "AA"]:
+    replacement = "AA" if token[-2:] != "AA" else "BA"
+    for invalid in ["", "%%%bad", token[:-1], token[:-2] + replacement]:
         with pytest.raises(CatalogUnavailable, match="conflict"):
             cursor.decode(invalid, company, source, 7, NOW)
 

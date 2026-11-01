@@ -165,6 +165,7 @@ class JobLease:
     auth_paused: bool = False
     pending_failure: bool = False
     unknown_outcome: bool = False
+    pages: int = 0
 
 
 @dataclass(frozen=True)
@@ -203,8 +204,8 @@ class RetryPolicy:
         if failure is None:
             return RetryDecision(
                 "queued",
-                now if snapshot.cursor > lease.cursor else now + timedelta(seconds=1),
-                0 if snapshot.cursor > lease.cursor else network,
+                now if snapshot.pages > lease.pages else now + timedelta(seconds=1),
+                0 if snapshot.pages > lease.pages else network,
                 complete,
             )
         code = failure.code
@@ -220,7 +221,7 @@ class RetryPolicy:
             "storage_unavailable",
             "database_unavailable",
         ):
-            if snapshot.cursor > lease.cursor:
+            if snapshot.pages > lease.pages:
                 network = 0
             if network >= 3:
                 return RetryDecision(

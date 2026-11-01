@@ -21,7 +21,7 @@ def upgrade() -> None:
         status varchar(16) NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','ready','error')),
         deadline timestamptz NOT NULL, next_attempt_at timestamptz NOT NULL, last_claimed_at timestamptz NOT NULL,
         lease_id uuid, lease_until timestamptz, network_retries integer NOT NULL DEFAULT 0 CHECK(network_retries BETWEEN 0 AND 3),
-        retry_cursor integer NOT NULL DEFAULT 0 CHECK(retry_cursor>=0),
+        retry_page integer NOT NULL DEFAULT 0 CHECK(retry_page>=0),
         snapshot_ack_revision bigint NOT NULL DEFAULT 0 CHECK(snapshot_ack_revision>=0),
         completeness_retries integer NOT NULL DEFAULT 0 CHECK(completeness_retries BETWEEN 0 AND 1),
         attempt_no integer NOT NULL DEFAULT 1 CHECK(attempt_no>0), row_count integer CHECK(row_count>=0), error_code varchar(32),

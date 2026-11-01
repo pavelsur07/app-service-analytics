@@ -209,7 +209,7 @@ class JobStore:
                 (company, run_id),
             ).fetchone()
             row = db.execute(
-                """SELECT snapshot_id,deadline,network_retries,completeness_retries,retry_cursor,snapshot_ack_revision,status FROM research_job
+                """SELECT snapshot_id,deadline,network_retries,completeness_retries,retry_page,snapshot_ack_revision,status FROM research_job
                 WHERE company_id=%s AND source_id=%s AND job_id=%s AND status IN ('queued','running')
                 AND (lease_until IS NULL OR lease_until<=clock_timestamp()) FOR UPDATE""",
                 (company, source_id, job_id),
@@ -230,11 +230,11 @@ class JobStore:
                     db, company, source_id, job_id, snap, generation, now
                 )
                 snap = self._load_snapshot(db, company, source_id, snapshot_id)
-            # retry_cursor records the page at the last claim. An append may commit
+            # retry_page records committed page count, including a successful empty page. An append may commit
             # before job ack; detecting that advancement here restores the new page budget.
             network = (
                 0
-                if restarted or snap.cursor > typed(row[4], int)
+                if restarted or snap.pages > typed(row[4], int)
                 else typed(row[2], int)
             )
             pending = (
@@ -247,16 +247,16 @@ class JobStore:
                 and not pending
                 and row[6] == "running"
                 and snap.status == "collecting"
-                and snap.cursor == typed(row[4], int)
+                and snap.pages == typed(row[4], int)
             )
             owner = uuid7()
             db.execute(
-                """UPDATE research_job SET status='running',lease_id=%s,lease_until=clock_timestamp()+interval '180 seconds',last_claimed_at=clock_timestamp(),network_retries=%s,retry_cursor=%s,snapshot_ack_revision=%s
+                """UPDATE research_job SET status='running',lease_id=%s,lease_until=clock_timestamp()+interval '180 seconds',last_claimed_at=clock_timestamp(),network_retries=%s,retry_page=%s,snapshot_ack_revision=%s
                 WHERE company_id=%s AND job_id=%s""",
                 (
                     owner,
                     network,
-                    snap.cursor,
+                    snap.pages,
                     0 if restarted else row[5],
                     company,
                     job_id,
@@ -285,6 +285,7 @@ class JobStore:
                 paused,
                 pending,
                 unknown,
+                pages=snap.pages,
             )
 
     @staticmethod
@@ -418,7 +419,7 @@ class JobStore:
                 )
             db.execute(
                 """UPDATE research_job SET status=%s,next_attempt_at=%s,network_retries=%s,completeness_retries=%s,
-                error_code=%s,row_count=%s,snapshot_ack_revision=%s,lease_id=NULL,lease_until=NULL WHERE company_id=%s AND job_id=%s""",
+                error_code=%s,row_count=%s,snapshot_ack_revision=%s,retry_page=%s,lease_id=NULL,lease_until=NULL WHERE company_id=%s AND job_id=%s""",
                 (
                     decision.status,
                     decision.next_at,
@@ -429,6 +430,7 @@ class JobStore:
                     if current.total is not None and not decision.restart
                     else None,
                     0 if decision.restart else current.outcome_revision,
+                    0 if decision.restart else current.pages,
                     lease.company_id,
                     lease.job_id,
                 ),
