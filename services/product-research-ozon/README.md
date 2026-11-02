@@ -284,3 +284,8 @@ Doctrine `Version20261102033959` down удаляет только новые т�
 legacy backfill использует последнюю дату изменения проекта в Europe/Moscow.
 Production Python/egress/реальные ключи и активация модуля — этап 8;
 feature flag остаётся выключенным.
+
+Legacy API-ready jobs этапа 5 не имеют известного used_at: v2 возвращает null,
+PHP сохраняет null. Новые API/cache jobs записывают точное время принятия;
+origin=cache всегда требует used_at. Неизвестное прошлое время не восстанавливается
+из collected_at.

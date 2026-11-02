@@ -600,7 +600,7 @@ class JobStore:
                     if ready
                     else None,
                     used_at=utc_time(typed(row[12], datetime)).isoformat()
-                    if ready
+                    if ready and row[12] is not None
                     else None,
                 )
         return {

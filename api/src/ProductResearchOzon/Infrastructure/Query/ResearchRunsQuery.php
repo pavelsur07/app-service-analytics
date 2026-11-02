@@ -71,7 +71,7 @@ final readonly class ResearchRunsQuery
             if (!\is_bool($row['partial']) || !\is_int($row['days']) || (null !== $row['row_count'] && !\is_int($row['row_count']))) {
                 throw new \UnexpectedValueException('invalid_run_row');
             }
-            $months[] = new RunMonthState(new MonthSlice(self::text($row, 'month'), self::text($row, 'date_from'), self::text($row, 'date_to'), $row['days'], $row['partial']), self::text($row, 'status'), self::nullableText($row, 'snapshot_id'), $row['row_count'], self::nullableText($row, 'error_code'), null === $row['origin'] ? null : new RunProvenance(self::text($row, 'origin'), new \DateTimeImmutable(self::text($row, 'collected_at')), new \DateTimeImmutable(self::text($row, 'used_at'))));
+            $months[] = new RunMonthState(new MonthSlice(self::text($row, 'month'), self::text($row, 'date_from'), self::text($row, 'date_to'), $row['days'], $row['partial']), self::text($row, 'status'), self::nullableText($row, 'snapshot_id'), $row['row_count'], self::nullableText($row, 'error_code'), null === $row['origin'] ? null : new RunProvenance(self::text($row, 'origin'), new \DateTimeImmutable(self::text($row, 'collected_at')), null === $row['used_at'] ? null : new \DateTimeImmutable(self::text($row, 'used_at'))));
         }
         if (!\is_int($first['revision'])) {
             throw new \UnexpectedValueException('invalid_run_row');

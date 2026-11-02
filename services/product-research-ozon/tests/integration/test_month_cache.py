@@ -349,6 +349,12 @@ def test_ready_snapshot_from_before_cache_migration_is_reused(
             "DELETE FROM month_cache_slot WHERE company_id=%s AND source_id=%s",
             (h.company, h.source),
         )
+        db.execute(
+            "UPDATE research_job SET used_at=NULL WHERE company_id=%s AND run_id=%s",
+            (h.company, first.run_id),
+        )
+    legacy = h.service.progress(h.company, first.run_id, True)["months"]
+    assert isinstance(legacy, list) and legacy[0]["used_at"] is None
     second = h.spec(1)
     h.submit(second)
     assert h.tick()

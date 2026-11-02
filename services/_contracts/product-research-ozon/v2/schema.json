@@ -184,7 +184,10 @@
                       "type": "string"
                     },
                     "used_at": {
-                      "type": "string"
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   }
                 },
@@ -198,6 +201,22 @@
                     },
                     "used_at": {
                       "type": "null"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "origin": {
+                      "const": "cache"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "used_at": {
+                      "type": "string"
                     }
                   }
                 }

@@ -55,10 +55,10 @@ final readonly class HttpRunSource implements RunSource
                 }
                 $provenance = null;
                 if ('ready' === $month->status) {
-                    if (!\is_string($month->origin) || !\is_string($month->collected_at) || !\is_string($month->used_at)) {
+                    if (!\is_string($month->origin) || !\is_string($month->collected_at) || (null !== $month->used_at && !\is_string($month->used_at))) {
                         throw new RunSyncFailure('invalid_run_response');
                     }
-                    $provenance = new RunProvenance($month->origin, self::timestamp($month->collected_at), self::timestamp($month->used_at));
+                    $provenance = new RunProvenance($month->origin, self::timestamp($month->collected_at), null === $month->used_at ? null : self::timestamp($month->used_at));
                 } elseif (null !== $month->origin || null !== $month->collected_at || null !== $month->used_at) {
                     throw new RunSyncFailure('invalid_run_response');
                 }

@@ -274,6 +274,7 @@ final class ResearchRunsTest extends KernelTestCase
         $this->finish($company, $retry->progress->runId, $source, $ready);
         self::service(Connection::class)->executeStatement('UPDATE product_research_ozon_run SET progress_format=1 WHERE company_id=? AND id=?', [$company, $retry->progress->runId]);
         $enriched = array_map(static fn (RunMonthState $m): RunMonthState => new RunMonthState($m->period, $m->status, $m->snapshotId, $m->rowCount, null, new \App\ProductResearchOzon\Domain\ValueObject\RunProvenance('cache', new \DateTimeImmutable('2026-04-01T00:00:00Z'), new \DateTimeImmutable('2026-04-15T09:00:00Z'))), $ready);
+        $enriched[1] = new RunMonthState($ready[1]->period, 'ready', $ready[1]->snapshotId, $ready[1]->rowCount, null, new \App\ProductResearchOzon\Domain\ValueObject\RunProvenance('api', new \DateTimeImmutable('2026-04-01T00:00:00Z'), null));
         $remote = new \App\Tests\Support\Fake\ResearchRunSource(new RunProgress($company, $retry->progress->runId, $source, 'ready', 9, $enriched));
         $reconcile = new \App\ProductResearchOzon\Application\ReconcileResearchRunsAction(self::service(ResearchRunsQuery::class), new \App\ProductResearchOzon\Application\SynchronizeResearchRunAction(self::service(RunDeliveryRepository::class), $remote, self::service(ResearchClock::class)));
         $foreign = $reconcile(Uuid::v7()->toRfc4122(), null, 1);
@@ -287,6 +288,10 @@ final class ResearchRunsTest extends KernelTestCase
         self::assertSame(0, $reconcile($company, $result->nextCursor, 1)->attempted);
         self::assertSame(0, $reconcile($company, $view->progress->runId, 1)->failed);
         self::assertSame('cache', (self::service(GetResearchRunAction::class))($company, $id, $retry->progress->runId)->progress->months[0]->provenance?->origin);
+        $unknown = (self::service(GetResearchRunAction::class))($company, $id, $retry->progress->runId)->progress->months[1]->provenance;
+        self::assertNotNull($unknown);
+        self::assertSame('api', $unknown->origin);
+        self::assertNull($unknown->usedAt);
         // Stale upstream does not overwrite enriched terminal state.
         $remote->result = new RunProgress($company, $retry->progress->runId, $source, 'queued', 1, $retry->progress->months);
         self::assertSame(0, $reconcile($company, $view->progress->runId, 1)->failed);

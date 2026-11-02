@@ -11,8 +11,7 @@ depends_on = None
 def upgrade() -> None:
     op.execute("""ALTER TABLE research_job ADD COLUMN origin varchar(8) NOT NULL DEFAULT 'api' CHECK(origin IN ('api','cache')),
         ADD COLUMN used_at timestamptz""")
-    op.execute("""UPDATE research_job j SET used_at=s.completed_at FROM month_snapshot s
-        WHERE j.company_id=s.company_id AND j.source_id=s.source_id AND j.snapshot_id=s.snapshot_id AND j.status='ready'""")
+    # Stage 5 did not record job acceptance time; retain NULL rather than infer it.
     op.execute("""CREATE INDEX ix_month_snapshot_legacy_cache ON month_snapshot(company_id,source_id,date_from,date_to)
         WHERE status='ready' AND NOT partial""")
     op.execute("""CREATE TABLE month_cache_slot (

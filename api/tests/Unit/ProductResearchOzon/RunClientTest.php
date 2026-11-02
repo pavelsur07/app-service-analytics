@@ -73,6 +73,9 @@ final class RunClientTest extends TestCase
         $make = fn (array $payload): HttpRunSource => new HttpRunSource(new MockHttpClient($this->response($payload, $source)), str_repeat('t', 40), new CatalogContext($source));
         $result = $make($body)->progress($company, $id, $source);
         self::assertSame('2026-04-15T09:00:00.000000+00:00', $result->months[0]->provenance?->payload()['collected_at']);
+        $legacy = $make([...$body, 'months' => [[...$month, 'origin' => 'api', 'used_at' => null]]])->progress($company, $id, $source);
+        self::assertNotNull($legacy->months[0]->provenance);
+        self::assertNull($legacy->months[0]->provenance->usedAt);
         foreach ([['origin' => 'foreign'], ['collected_at' => '2026-02-31T00:00:00Z'], ['origin' => null], ['used_at' => '2026-04-01T00:00:00Z'], ['used_at' => null], ['origin' => 'api', 'collected_at' => 1]] as $invalid) {
             try {
                 $make([...$body, 'months' => [[...$month, ...$invalid]]])->progress($company, $id, $source);
