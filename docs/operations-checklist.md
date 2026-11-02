@@ -734,9 +734,10 @@ Protocol, private manifest, receipts и artifacts сохранены. Перез
 
 ## product-research-ozon — этап 8
 
-Состояние: подготовка. Research production API/worker не включены. Предыдущий
-этап7 подтвердил Symfony/UI за false флагом, а не готовность live MPStats.
-[План/TDD](plan/product-research-ozon-stage8.md).
+Состояние: этап 8 закрыт как разработка по решению владельца от 02.11.2026.
+Операционные условия ниже перенесены в [этап 9](plan/product-research-ozon-stage9.md)
+без отметки PASS. Research production API/worker не включены.
+[Принятая разработка/TDD](plan/product-research-ozon-stage8.md).
 
 ### Гейты до включения
 

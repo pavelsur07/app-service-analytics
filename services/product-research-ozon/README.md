@@ -1,6 +1,6 @@
 # product-research-ozon
 
-Этапы 1–7: внутренний FastAPI, Alembic, отдельные dev/test БД,
+Этапы 1–8 (разработка): внутренний FastAPI, Alembic, отдельные dev/test БД,
 company-scoped S3-порт и выключенный по умолчанию worker. Основание — принятый ADR-050.
 Реализованы суточный кэш категорий, локальная проекция Symfony и движок месячного raw-снимка. Диспетчер заданий и пользовательские экраны реализованы; production-активация ещё закрыта.
 
@@ -126,7 +126,8 @@ Python должен соответствовать RESEARCH_SERVICE_TOKEN PHP. �
 нового GENERATION. Старый процесс не снимает паузу нового поколения.
 
 Каталог выключен по умолчанию. Dev-сеть остаётся internal без живого egress;
-production-активация/реальный тариф/квота/отдельные S3-права — этап 8. В этом этапе
+production-активация/реальный тариф/квота/отдельные S3-права — этап 9
+(разработка этапа 8 закрыта по решению владельца от 02.11.2026). В этом этапе
 не утверждается live-приёмка MPStats. Тесты используют сохранённый ответ этапа 0;
 контрольные суммы/разрешение публикации — в fixtures/mpstats/ozon/categories.
 Тестовый `tests/catalog_smoke_server.py` проверяет реальный HTTP PHP→Python на
@@ -283,7 +284,7 @@ Doctrine `Version20261102033959` down удаляет только новые т�
 при возврате вперёд потребности пересчитываются миграцией из intent, provenance
 восстанавливается сверкой. Для точного исторического partial нужен backup:
 legacy backfill использует последнюю дату изменения проекта в Europe/Moscow.
-Production Python/egress/реальные ключи и активация модуля — этап 8;
+Production Python/egress/реальные ключи и активация модуля — этап 9;
 feature flag остаётся выключенным.
 
 Legacy API-ready jobs этапа 5 не имеют известного used_at: v2 возвращает null,
@@ -291,9 +292,10 @@ PHP сохраняет null. Новые API/cache jobs записывают то
 origin=cache всегда требует used_at. Неизвестное прошлое время не восстанавливается
 из collected_at.
 
-## Этап 8: подготовка эксплуатации, включение пока закрыто
+## Этап 8 закрыт как разработка; включение — этап 9
 
-[План и незакрытые условия](../../docs/plan/product-research-ozon-stage8.md),
+[Принятая разработка](../../docs/plan/product-research-ozon-stage8.md),
+[открытый план включения](../../docs/plan/product-research-ozon-stage9.md),
 [операционный runbook](../../docs/operations-checklist.md#product-research-ozon--этап-8).
 Production topology — отдельный `docker-compose.research.prod.yml`, default
 без сервисов. Master CI публикует runtime image с immutable version/source;
