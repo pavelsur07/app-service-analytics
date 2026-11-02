@@ -17,7 +17,7 @@ use Symfony\Component\Uid\Uuid;
 
 final class RunClientTest extends TestCase
 {
-    public function testProducedIntentAndConsumedReceiptProgressMatchImmutableV1(): void
+    public function testV1AdmissionAndV2ProgressKeepCorePayloadCompatible(): void
     {
         $run = ResearchRunBuilder::aRun()->build();
         $company = $run->companyId()->toRfc4122();
@@ -32,11 +32,16 @@ final class RunClientTest extends TestCase
         $receipt = ['schema_version' => '1', 'company_id' => $company, 'run_id' => $id, 'status' => 'queued', 'revision' => 1];
         $progress = [...$receipt, 'months' => [['period' => ['month' => '2026-01', 'date_from' => '2026-01-01', 'date_to' => '2026-01-31', 'days' => 31, 'partial' => false], 'status' => 'queued', 'snapshot_id' => null, 'row_count' => null, 'error_code' => null]]];
         $post = $this->response($receipt, $sourceId, 202);
-        $get = $this->response($progress, $sourceId);
+        $v2 = [...$progress, 'schema_version' => '2', 'months' => [array_merge($progress['months'][0], ['origin' => null, 'collected_at' => null, 'used_at' => null])]];
+        $v2Schema = json_decode((string) file_get_contents('/var/www/services/_contracts/product-research-ozon/v2/schema.json'), flags: \JSON_THROW_ON_ERROR);
+        self::assertInstanceOf(\stdClass::class, $v2Schema);
+        self::assertTrue(new Validator()->validate(json_decode(json_encode($v2, \JSON_THROW_ON_ERROR), flags: \JSON_THROW_ON_ERROR), $v2Schema)->isValid());
+        $get = $this->response($v2, $sourceId);
         $client = new HttpRunSource(new MockHttpClient([$post, $get]), str_repeat('t', 40), new CatalogContext($sourceId));
         $client->submit($company, new RunDelivery($company, $id, $run->projectId()->toRfc4122(), $sourceId, $run->payload(), hash('sha256', $run->payload()), 1));
         self::assertSame($progress, $client->progress($company, $id, $sourceId)->payload());
         self::assertSame('POST', $post->getRequestMethod());
+        self::assertStringContainsString('/internal/v2/', $get->getRequestUrl());
         self::assertSame($run->payload(), $post->getRequestOptions()['body']);
         self::assertSame(0, $get->getRequestOptions()['max_redirects']);
     }
@@ -53,6 +58,30 @@ final class RunClientTest extends TestCase
                 self::fail('invalid progress accepted');
             } catch (RunSyncFailure $error) {
                 self::assertStringNotContainsString('private', $error->getMessage());
+            }
+        }
+    }
+
+    public function testReadyProvenanceIsValidatedAndNormalised(): void
+    {
+        $run = ResearchRunBuilder::aRun()->build();
+        $company = $run->companyId()->toRfc4122();
+        $id = $run->id()->toRfc4122();
+        $source = $run->sourceId()->toRfc4122();
+        $month = ['period' => ['month' => '2026-01', 'date_from' => '2026-01-01', 'date_to' => '2026-01-31', 'days' => 31, 'partial' => false], 'status' => 'ready', 'snapshot_id' => Uuid::v7()->toRfc4122(), 'row_count' => 0, 'error_code' => null, 'origin' => 'cache', 'collected_at' => '2026-04-15T12:00:00+03:00', 'used_at' => '2026-04-15T09:01:00Z'];
+        $body = ['schema_version' => '2', 'company_id' => $company, 'run_id' => $id, 'status' => 'ready', 'revision' => 9, 'months' => [$month]];
+        $make = fn (array $payload): HttpRunSource => new HttpRunSource(new MockHttpClient($this->response($payload, $source)), str_repeat('t', 40), new CatalogContext($source));
+        $result = $make($body)->progress($company, $id, $source);
+        self::assertSame('2026-04-15T09:00:00.000000+00:00', $result->months[0]->provenance?->payload()['collected_at']);
+        $legacy = $make([...$body, 'months' => [[...$month, 'origin' => 'api', 'used_at' => null]]])->progress($company, $id, $source);
+        self::assertNotNull($legacy->months[0]->provenance);
+        self::assertNull($legacy->months[0]->provenance->usedAt);
+        foreach ([['origin' => 'foreign'], ['collected_at' => '2026-02-31T00:00:00Z'], ['origin' => null], ['used_at' => '2026-04-01T00:00:00Z'], ['used_at' => null], ['origin' => 'api', 'collected_at' => 1]] as $invalid) {
+            try {
+                $make([...$body, 'months' => [[...$month, ...$invalid]]])->progress($company, $id, $source);
+                self::fail('untrusted metadata accepted');
+            } catch (RunSyncFailure $error) {
+                self::assertSame('invalid_run_response', $error->reason);
             }
         }
     }

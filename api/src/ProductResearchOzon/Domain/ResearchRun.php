@@ -67,6 +67,9 @@ class ResearchRun
     #[ORM\Column(length: 64, nullable: true)]
     private ?string $errorCode = null;
 
+    #[ORM\Column(options: ['default' => 1])]
+    private int $progressFormat = 2;
+
     /** @param list<MonthSlice> $months */
     public function __construct(ResearchProject $project, Uuid $source, Uuid $requestId, string $inputHash, array $months, Uuid $actor, \DateTimeImmutable $at)
     {

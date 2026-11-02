@@ -39,6 +39,13 @@ class ResearchRunMonth
     #[ORM\Column(length: 32, nullable: true)]
     private ?string $errorCode = null;
 
+    #[ORM\Column(length: 8, nullable: true)]
+    private ?string $origin = null;
+    #[ORM\Column(type: 'datetimetz_immutable', nullable: true, columnDefinition: 'TIMESTAMP(6) WITH TIME ZONE')]
+    private ?\DateTimeImmutable $collectedAt = null;
+    #[ORM\Column(type: 'datetimetz_immutable', nullable: true, columnDefinition: 'TIMESTAMP(6) WITH TIME ZONE')]
+    private ?\DateTimeImmutable $usedAt = null;
+
     public function __construct(ResearchRun $run, MonthSlice $month)
     {
         new RunMonthState($month, 'queued', null, null, null);

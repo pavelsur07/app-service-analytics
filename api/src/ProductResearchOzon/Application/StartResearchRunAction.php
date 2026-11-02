@@ -61,6 +61,7 @@ final readonly class StartResearchRunAction
             }
             $run = new ResearchRun($project, Uuid::fromString($source), Uuid::fromString($requestId), $hash, $months, Uuid::fromString($actor), $at);
             $this->runs->add($run, $months);
+            $project->freezeRequirements($preview->months);
             $project->recordRunRequested($run->id(), $at);
             $this->identity->recordAuditEntry($companyId, $actor, 'product_research_ozon.run_requested', $run->id()->toRfc4122(), null, json_encode(['monthCount' => \count($months)], \JSON_THROW_ON_ERROR));
 

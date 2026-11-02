@@ -2044,7 +2044,8 @@ export interface components {
             createdByUserId: string;
             createdAt: string;
             updatedAt: string;
-            status: string;
+            /** @enum {string} */
+            status: "draft" | "loading" | "loaded" | "partially_loaded" | "error";
             fbs: boolean;
             currency: string;
             /** @default null */
@@ -2057,7 +2058,8 @@ export interface components {
             periodCount: number;
             version: number;
             createdAt: string;
-            status: string;
+            /** @enum {string} */
+            status: "draft" | "loading" | "loaded" | "partially_loaded" | "error";
         };
         ProjectsResponse: {
             items: components["schemas"]["ProjectSummaryResponse"][];
@@ -2070,6 +2072,12 @@ export interface components {
             snapshotId?: string | null;
             rowCount?: number | null;
             errorCode?: string | null;
+            /** @enum {string|null} */
+            origin?: "api" | "cache" | null;
+            /** Format: date-time */
+            collectedAt?: string | null;
+            /** Format: date-time */
+            usedAt?: string | null;
         };
         RunResponse: {
             id: string;

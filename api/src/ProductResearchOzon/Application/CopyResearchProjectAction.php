@@ -30,6 +30,7 @@ final readonly class CopyResearchProjectAction
                 $name = $preview->suggestedName($category->path);
             }
             $copy = new ResearchProject(Uuid::fromString($companyId), $category, $name, $input->comment ?? $source->comment(), $flag, Uuid::fromString($actor), $at, \count($preview->periods));
+            $copy->freezeRequirements($preview->months);
             $this->projects->add($copy, $preview->periods);
             $this->identity->recordAuditEntry($companyId, $actor, 'product_research_ozon.project_copied', $copy->id()->toRfc4122(), null, json_encode(['sourceId' => $projectId], \JSON_THROW_ON_ERROR));
 

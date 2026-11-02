@@ -64,9 +64,9 @@ class RunRequest(BaseModel):
     months: Annotated[list[Month], Field(min_length=1, max_length=24)]
 
 
-def error(code: str, status: int) -> JSONResponse:
+def error(code: str, status: int, version: str = "1") -> JSONResponse:
     return JSONResponse(
-        {"schema_version": "1", "error": {"code": code}},
+        {"schema_version": version, "error": {"code": code}},
         status_code=status,
         headers={"Cache-Control": "no-store"},
     )
@@ -87,9 +87,15 @@ class Boundary:
         trace_id = str(uuid7())
         scope["research_trace_id"] = trace_id
         path = scope["path"]
+        version = "2" if path.startswith("/internal/v2/") else "1"
         company_id: str | None = None
         parts = path.split("/")
-        if len(parts) > 4 and parts[1:4] == ["internal", "v1", "companies"]:
+        if (
+            len(parts) > 4
+            and parts[1] == "internal"
+            and parts[2] in ("v1", "v2")
+            and parts[3] == "companies"
+        ):
             try:
                 candidate = UUID(parts[4])
                 if candidate.version == 7:
@@ -118,7 +124,9 @@ class Boundary:
                 if len(auth) != 1 or not secrets.compare_digest(
                     auth[0], b"Bearer " + self.token
                 ):
-                    await error("unauthorized", 401)(scope, receive, traced_send)
+                    await error("unauthorized", 401, version)(
+                        scope, receive, traced_send
+                    )
                     return
                 body = bytearray()
                 async with asyncio.timeout(5):
@@ -128,7 +136,7 @@ class Boundary:
                             return
                         body.extend(message.get("body", b""))
                         if len(body) > 65536:
-                            await error("payload_too_large", 413)(
+                            await error("payload_too_large", 413, version)(
                                 scope, receive, traced_send
                             )
                             return
@@ -152,11 +160,13 @@ class Boundary:
                 await self.app(scope, receive, traced_send)
         except TimeoutError:
             if not started:
-                await error("request_timeout", 408)(scope, receive, traced_send)
+                await error("request_timeout", 408, version)(
+                    scope, receive, traced_send
+                )
         except Exception as failure:  # noqa: BLE001 — HTTP trust boundary: traceback may expose credentials; emit only class.
             failure_class = type(failure).__name__
             if not started:
-                await error("internal_error", 500)(scope, receive, traced_send)
+                await error("internal_error", 500, version)(scope, receive, traced_send)
         finally:
             level = (
                 logging.WARNING
@@ -211,13 +221,18 @@ def create_app(
             if exc.status_code == 405
             else "contract_violation",
             exc.status_code,
+            "2" if request.url.path.startswith("/internal/v2/") else "1",
         )
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        return error("contract_violation", 422)
+        return error(
+            "contract_violation",
+            422,
+            "2" if request.url.path.startswith("/internal/v2/") else "1",
+        )
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -280,9 +295,11 @@ def create_app(
                 )
             return response
 
-    def run_result(operation: Callable[[], dict[str, object]]) -> JSONResponse:
+    def run_result(
+        operation: Callable[[], dict[str, object]], version: str = "1"
+    ) -> JSONResponse:
         if runs is None:
-            return error("not_available", 503)
+            return error("not_available", 503, version)
         try:
             return JSONResponse(
                 operation(),
@@ -306,6 +323,7 @@ def create_app(
                 else 422
                 if code == "contract_violation"
                 else 503,
+                version,
             )
 
     @app.post(prefix + "/runs")
@@ -329,6 +347,13 @@ def create_app(
     def snapshot(company_id: Identifier, snapshot_id: Identifier) -> JSONResponse:
         return run_result(
             lambda: runs.metadata(UUID(company_id), UUID(snapshot_id)) if runs else {}
+        )
+
+    @app.get("/internal/v2/companies/{company_id}/runs/{run_id}")
+    def progress_v2(company_id: Identifier, run_id: Identifier) -> JSONResponse:
+        return run_result(
+            lambda: runs.progress(UUID(company_id), UUID(run_id), True) if runs else {},
+            "2",
         )
 
     return app

@@ -36,6 +36,7 @@ final readonly class AddResearchPeriodsAction
             }
             $previousValue = self::auditValue($old, $project->includeCurrentMonth());
             $project->recordPeriodsChanged(\count($preview->periods), $flag, $at);
+            $project->freezeRequirements($preview->months);
             $this->projects->append($project, $new, \count($old));
             $this->identity->recordAuditEntry($companyId, $actor, 'product_research_ozon.periods_added', $projectId, $previousValue, self::auditValue($preview->periods, $flag));
 

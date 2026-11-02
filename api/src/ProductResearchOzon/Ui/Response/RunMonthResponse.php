@@ -16,6 +16,13 @@ final readonly class RunMonthResponse
     public ?int $rowCount;
     public ?string $errorCode;
 
+    #[OA\Property(enum: ['api', 'cache'], nullable: true)]
+    public ?string $origin;
+    #[OA\Property(format: 'date-time', nullable: true)]
+    public ?string $collectedAt;
+    #[OA\Property(format: 'date-time', nullable: true)]
+    public ?string $usedAt;
+
     public function __construct(RunMonthState $month)
     {
         $this->period = new MonthResponse($month->period);
@@ -23,5 +30,9 @@ final readonly class RunMonthResponse
         $this->snapshotId = $month->snapshotId;
         $this->rowCount = $month->rowCount;
         $this->errorCode = $month->errorCode;
+        $metadata = $month->provenance?->payload();
+        $this->origin = $metadata['origin'] ?? null;
+        $this->collectedAt = $metadata['collected_at'] ?? null;
+        $this->usedAt = $metadata['used_at'] ?? null;
     }
 }

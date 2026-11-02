@@ -1059,3 +1059,14 @@ Symfony `ResearchRun`/`ResearchRunMonth` описывают immutable intent/out
 start/get run, `Ui/Command/ProcessResearchRunsCommand` — company-scoped repair/poll.
 Run/RunMonth Builder находятся в `api/tests/Support/Builder`; планы и постоянные
 отчёты — `docs/plan/product-research-ozon-stage5*`.
+
+
+Этап 6 product-research-ozon: `domain/month_cache.py` определяет semantic key,
+`infrastructure/month_cache.py` координирует cache slot через UNIQUE + row lock.
+`0005_month_cache.py` добавляет slot и даты использования. Read-only progress v2
+описан в `services/_contracts/product-research-ozon/v2/`; admission остаётся v1.
+Symfony `RunProvenance` хранит origin/collected/used, `ProjectStatusSql` вычисляет
+статус одним SQL по frozen требованиям и локальным run-month проекциям.
+`ReconcileResearchRunsAction`/`ReconcileResearchRunsCommand` восстанавливают
+доставленные, включая завершённые, runs keyset-порцией одной компании.
+План/приёмка — `docs/plan/product-research-ozon-stage6.md`.

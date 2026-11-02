@@ -8,7 +8,7 @@ use App\ProductResearchOzon\Domain\MonthSlice;
 
 final readonly class RunMonthState
 {
-    public function __construct(public MonthSlice $period, public string $status, public ?string $snapshotId, public ?int $rowCount, public ?string $errorCode)
+    public function __construct(public MonthSlice $period, public string $status, public ?string $snapshotId, public ?int $rowCount, public ?string $errorCode, public ?RunProvenance $provenance = null)
     {
         $from = \DateTimeImmutable::createFromFormat('!Y-m-d', $period->dateFrom, new \DateTimeZone('UTC'));
         $fromErrors = \DateTimeImmutable::getLastErrors();
@@ -20,7 +20,7 @@ final readonly class RunMonthState
             || (null !== $snapshotId && !RunProgress::validId($snapshotId))
             || !\in_array($errorCode, [null, 'contract_violation', 'credentials_rejected', 'retry_exhausted', 'incomplete_snapshot', 'deadline_exceeded'], true)
             || ('ready' === $status && (null === $snapshotId || null === $rowCount || null !== $errorCode))
-            || ('error' === $status) !== (null !== $errorCode)) {
+            || ('error' === $status) !== (null !== $errorCode) || (null !== $provenance && 'ready' !== $status)) {
             throw new \InvalidArgumentException('invalid_run_progress');
         }
     }

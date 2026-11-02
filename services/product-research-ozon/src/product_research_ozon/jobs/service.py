@@ -46,7 +46,7 @@ class RunRepository(Protocol):
         self, company_id: UUID, lease: JobLease, now: datetime
     ) -> bool: ...
     def progress(
-        self, company_id: UUID, source_id: UUID, run_id: UUID
+        self, company_id: UUID, source_id: UUID, run_id: UUID, enriched: bool = False
     ) -> dict[str, object]: ...
     def metadata(
         self, company_id: UUID, source_id: UUID, snapshot_id: UUID
@@ -84,9 +84,11 @@ class RunService:
             company_id, spec, self._limits, self._generation, self._clock()
         )
 
-    def progress(self, company_id: UUID, run_id: UUID) -> dict[str, object]:
+    def progress(
+        self, company_id: UUID, run_id: UUID, enriched: bool = False
+    ) -> dict[str, object]:
         self._allow(company_id)
-        return self._store.progress(company_id, self.source_id, run_id)
+        return self._store.progress(company_id, self.source_id, run_id, enriched)
 
     def metadata(self, company_id: UUID, snapshot_id: UUID) -> dict[str, object]:
         self._allow(company_id)
@@ -143,7 +145,7 @@ class RunWorker:
                     observed.error_code or "contract_violation",
                     observed.next_attempt_at,
                 )
-            elif observed.status != "ready" and self._clock() < lease.deadline:
+            elif observed.status == "collecting" and self._clock() < lease.deadline:
                 try:
                     self._execute(lease)
                 except CollectionFailure as error:

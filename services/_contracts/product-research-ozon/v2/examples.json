@@ -1,0 +1,302 @@
+[
+  {
+    "name": "ready-api",
+    "valid": true,
+    "payload": {
+      "schema_version": "2",
+      "company_id": "019a0000-0000-7000-8000-000000000001",
+      "run_id": "019a0000-0000-7000-8000-000000000002",
+      "status": "ready",
+      "revision": 7,
+      "months": [
+        {
+          "period": {
+            "month": "2026-01",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "days": 31,
+            "partial": false
+          },
+          "status": "ready",
+          "snapshot_id": "019a0000-0000-7000-8000-000000000003",
+          "row_count": 1,
+          "error_code": null,
+          "origin": "api",
+          "collected_at": "2026-04-01T00:00:00+00:00",
+          "used_at": "2026-04-02T00:00:00+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "name": "ready-cache",
+    "valid": true,
+    "payload": {
+      "schema_version": "2",
+      "company_id": "019a0000-0000-7000-8000-000000000001",
+      "run_id": "019a0000-0000-7000-8000-000000000002",
+      "status": "ready",
+      "revision": 7,
+      "months": [
+        {
+          "period": {
+            "month": "2026-01",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "days": 31,
+            "partial": false
+          },
+          "status": "ready",
+          "snapshot_id": "019a0000-0000-7000-8000-000000000003",
+          "row_count": 1,
+          "error_code": null,
+          "origin": "cache",
+          "collected_at": "2026-04-01T00:00:00+00:00",
+          "used_at": "2026-04-02T00:00:00+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "name": "queued",
+    "valid": true,
+    "payload": {
+      "schema_version": "2",
+      "company_id": "019a0000-0000-7000-8000-000000000001",
+      "run_id": "019a0000-0000-7000-8000-000000000002",
+      "status": "queued",
+      "revision": 7,
+      "months": [
+        {
+          "period": {
+            "month": "2026-01",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "days": 31,
+            "partial": false
+          },
+          "status": "queued",
+          "snapshot_id": null,
+          "row_count": null,
+          "error_code": null,
+          "origin": null,
+          "collected_at": null,
+          "used_at": null
+        }
+      ]
+    }
+  },
+  {
+    "name": "missing-origin",
+    "valid": false,
+    "payload": {
+      "schema_version": "2",
+      "company_id": "019a0000-0000-7000-8000-000000000001",
+      "run_id": "019a0000-0000-7000-8000-000000000002",
+      "status": "ready",
+      "revision": 7,
+      "months": [
+        {
+          "period": {
+            "month": "2026-01",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "days": 31,
+            "partial": false
+          },
+          "status": "ready",
+          "snapshot_id": "019a0000-0000-7000-8000-000000000003",
+          "row_count": 1,
+          "error_code": null,
+          "collected_at": "2026-04-01T00:00:00+00:00",
+          "used_at": "2026-04-02T00:00:00+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "name": "bad-origin",
+    "valid": false,
+    "payload": {
+      "schema_version": "2",
+      "company_id": "019a0000-0000-7000-8000-000000000001",
+      "run_id": "019a0000-0000-7000-8000-000000000002",
+      "status": "ready",
+      "revision": 7,
+      "months": [
+        {
+          "period": {
+            "month": "2026-01",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "days": 31,
+            "partial": false
+          },
+          "status": "ready",
+          "snapshot_id": "019a0000-0000-7000-8000-000000000003",
+          "row_count": 1,
+          "error_code": null,
+          "origin": "shared",
+          "collected_at": "2026-04-01T00:00:00+00:00",
+          "used_at": "2026-04-02T00:00:00+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "name": "missing-dates",
+    "valid": false,
+    "payload": {
+      "schema_version": "2",
+      "company_id": "019a0000-0000-7000-8000-000000000001",
+      "run_id": "019a0000-0000-7000-8000-000000000002",
+      "status": "ready",
+      "revision": 7,
+      "months": [
+        {
+          "period": {
+            "month": "2026-01",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "days": 31,
+            "partial": false
+          },
+          "status": "ready",
+          "snapshot_id": "019a0000-0000-7000-8000-000000000003",
+          "row_count": 1,
+          "error_code": null,
+          "origin": "api",
+          "collected_at": null,
+          "used_at": "2026-04-02T00:00:00+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-date",
+    "valid": false,
+    "payload": {
+      "schema_version": "2",
+      "company_id": "019a0000-0000-7000-8000-000000000001",
+      "run_id": "019a0000-0000-7000-8000-000000000002",
+      "status": "ready",
+      "revision": 7,
+      "months": [
+        {
+          "period": {
+            "month": "2026-01",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "days": 31,
+            "partial": false
+          },
+          "status": "ready",
+          "snapshot_id": "019a0000-0000-7000-8000-000000000003",
+          "row_count": 1,
+          "error_code": null,
+          "origin": "api",
+          "collected_at": "2026-02-31T00:00:00Z",
+          "used_at": "2026-04-02T00:00:00+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "name": "extra-key",
+    "valid": false,
+    "payload": {
+      "schema_version": "2",
+      "company_id": "019a0000-0000-7000-8000-000000000001",
+      "run_id": "019a0000-0000-7000-8000-000000000002",
+      "status": "ready",
+      "revision": 7,
+      "months": [
+        {
+          "period": {
+            "month": "2026-01",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "days": 31,
+            "partial": false
+          },
+          "status": "ready",
+          "snapshot_id": "019a0000-0000-7000-8000-000000000003",
+          "row_count": 1,
+          "error_code": null,
+          "origin": "api",
+          "collected_at": "2026-04-01T00:00:00+00:00",
+          "used_at": "2026-04-02T00:00:00+00:00"
+        }
+      ],
+      "raw": "forbidden"
+    }
+  },
+  {
+    "name": "pending-with-provenance",
+    "valid": false,
+    "payload": {
+      "schema_version": "2",
+      "company_id": "019a0000-0000-7000-8000-000000000001",
+      "run_id": "019a0000-0000-7000-8000-000000000002",
+      "status": "running",
+      "revision": 7,
+      "months": [
+        {
+          "period": {
+            "month": "2026-01",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "days": 31,
+            "partial": false
+          },
+          "status": "running",
+          "snapshot_id": null,
+          "row_count": null,
+          "error_code": null,
+          "origin": "api",
+          "collected_at": "2026-04-01T00:00:00+00:00",
+          "used_at": "2026-04-02T00:00:00+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "name": "safe-error",
+    "valid": true,
+    "payload": {
+      "schema_version": "2",
+      "error": {
+        "code": "not_available"
+      }
+    }
+  },
+  {
+    "name": "legacy-api-unknown-use-time",
+    "valid": true,
+    "payload": {
+      "schema_version": "2",
+      "company_id": "019a0000-0000-7000-8000-000000000001",
+      "run_id": "019a0000-0000-7000-8000-000000000002",
+      "status": "ready",
+      "revision": 7,
+      "months": [
+        {
+          "period": {
+            "month": "2026-01",
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "days": 31,
+            "partial": false
+          },
+          "status": "ready",
+          "snapshot_id": "019a0000-0000-7000-8000-000000000003",
+          "row_count": 1,
+          "error_code": null,
+          "origin": "api",
+          "collected_at": "2026-04-01T00:00:00+00:00",
+          "used_at": null
+        }
+      ]
+    }
+  }
+]
