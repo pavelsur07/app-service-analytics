@@ -295,6 +295,7 @@ final class ResearchRunsTest extends KernelTestCase
         self::assertSame(1, $reconcile($company, $view->progress->runId, 1)->failed);
         $this->assertProjectStatus($company, $id, 'loaded');
     }
+
     public function testReconciliationCannotReopenTerminalError(): void
     {
         [$project, $source, $start] = $this->fixture();
@@ -309,5 +310,4 @@ final class ResearchRunsTest extends KernelTestCase
         $next = $start($company, $project->id()->toRfc4122(), Uuid::v7()->toRfc4122(), 2, '2026-04-15', Uuid::v7()->toRfc4122());
         self::assertNotSame($view->progress->runId, $next->progress->runId);
     }
-
 }
