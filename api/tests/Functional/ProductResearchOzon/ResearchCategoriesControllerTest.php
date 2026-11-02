@@ -166,6 +166,7 @@ final class ResearchCategoriesControllerTest extends SessionWebTestCase
         $_ENV['PRODUCT_RESEARCH_OZON_ENABLED'] = $_SERVER['PRODUCT_RESEARCH_OZON_ENABLED'] = '0';
         self::ensureKernelShutdown();
         $client = self::createClient();
+        self::getContainer()->set(\App\ProductResearchOzon\Infrastructure\Config\ResearchRollout::class, new \App\ProductResearchOzon\Infrastructure\Config\ResearchRollout($this->company->id()->toRfc4122()));
         $client->loginUser($this->member, 'api');
         $client->request('GET', $this->url($company));
         self::assertSame(404, $client->getResponse()->getStatusCode());
@@ -203,6 +204,7 @@ final class ResearchCategoriesControllerTest extends SessionWebTestCase
         $this->company = CompanyBuilder::aCompany()->persistWith(self::service(CompanyRepository::class));
         $this->member = UserBuilder::aUser()->persistWith(self::service(DoctrineUserRepository::class));
         CompanyMemberBuilder::aCompanyMember()->withCompany($this->company)->withUser($this->member)->persistWith(self::service(CompanyRepository::class), self::service(DoctrineUserRepository::class), self::service(DoctrineCompanyMemberRepository::class));
+        self::getContainer()->set(\App\ProductResearchOzon\Infrastructure\Config\ResearchRollout::class, new \App\ProductResearchOzon\Infrastructure\Config\ResearchRollout($this->company->id()->toRfc4122()));
         $client->loginUser($this->member, 'api');
 
         return [$client, $this->company->id()->toRfc4122()];

@@ -8,6 +8,7 @@
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
     research.enabled_default: 'false'
+    research.allowed_company_ids_default: ''
     research.catalog_source_default: ''
     research.service_token_default: ''
     app.version: '%env(APP_VERSION)%'
@@ -24,6 +25,7 @@ services:
         bind:
             string $researchCatalogSourceId: '%env(default:research.catalog_source_default:RESEARCH_CATALOG_SOURCE_ID)%'
             string $researchServiceToken: '%env(default:research.service_token_default:RESEARCH_SERVICE_TOKEN)%'
+            string $researchAllowedCompanyIds: '%env(default:research.allowed_company_ids_default:RESEARCH_ALLOWED_COMPANY_IDS)%'
             bool $researchEnabled: '%env(bool:default:research.enabled_default:PRODUCT_RESEARCH_OZON_ENABLED)%'
             string $alertEmail: '%env(ALERT_EMAIL)%'
             string $linksPublicBaseUrl: '%env(LINKS_PUBLIC_BASE_URL)%'

@@ -10,7 +10,7 @@ matches() {
 
 # Эти пути определяют, как выполняются проверки, поэтому всегда включают
 # обе половины конвейера. Сам классификатор тоже не может фильтровать себя.
-everything='^(\.github/|Makefile|docker-compose\.yml|docker-compose\.prod\.yml|docker/|api/migrations/|bin/ci-classify-paths$)'
+everything='^(\.github/|Makefile|docker-compose\.yml|docker-compose\.prod\.yml|docker-compose\.research\.prod\.yml|docker/|api/migrations/|bin/ci-classify-paths$)'
 
 if [[ -z "$changed" ]] || matches "$everything"; then
     backend=true

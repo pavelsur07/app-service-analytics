@@ -461,3 +461,11 @@ product-research-ozon-infrastructure: product-research-ozon-db product-research-
 .PHONY: product-research-ozon-stage5-smoke
 product-research-ozon-stage5-smoke: product-research-ozon-infrastructure ## fixture-only PHP→Python HTTP→S3→PHP (local test DBs)
 	python3 bin/test-product-research-stage5.py $(COMPOSE)
+
+.PHONY: product-research-ozon-recovery-check
+product-research-ozon-recovery-check: ## disposable local pg_dump/pg_restore and exact raw recovery; main dev volumes preserved
+	python3 bin/test-product-research-recovery.py
+
+.PHONY: product-research-ozon-prod-config-check
+product-research-ozon-prod-config-check: ## parse opt-in production stack without secrets or startup
+	python3 bin/tests/product-research-prod-config.test.py

@@ -226,18 +226,21 @@ def test_atomic_http_admission_idempotency_and_real_progress_contract(
     assert h.calls == [0, 0]
 
 
-def test_concurrent_accepts_produce_one_run_and_job_set(settings: Settings) -> None:
+@pytest.mark.parametrize("workers", [2, 8])
+def test_concurrent_accepts_produce_one_run_and_job_set(
+    settings: Settings, workers: int
+) -> None:
     h = harness(settings)
     spec = h.spec()
-    barrier = Barrier(2)
+    barrier = Barrier(workers)
 
     def submit(index: int) -> dict[str, object]:
         barrier.wait(timeout=5)
         return h.submit(spec)
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        receipts = list(pool.map(submit, (1, 2)))
-    assert receipts[0] == receipts[1]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        receipts = list(pool.map(submit, range(workers)))
+    assert all(receipt == receipts[0] for receipt in receipts)
     with psycopg.connect(settings.database_url) as db:
         jobs = db.execute(
             "SELECT job_id FROM research_job WHERE company_id=%s AND run_id=%s LIMIT 25",

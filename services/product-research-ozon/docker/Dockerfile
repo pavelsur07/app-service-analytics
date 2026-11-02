@@ -8,6 +8,9 @@ USER 10001:10001
 CMD ["python", "-m", "uvicorn", "product_research_ozon.bootstrap:application", "--factory", "--host", "0.0.0.0", "--port", "8080", "--no-access-log", "--no-proxy-headers", "--log-config", "/service/logging.json"]
 
 FROM python@sha256:516b51cb9db2ef061e465c803e50f64361b82cefd91e525b889b967b83e83527 AS runtime
+ARG APP_VERSION=dev
+ARG APP_SOURCE_COMMIT=unknown
+ENV APP_VERSION=$APP_VERSION APP_SOURCE_COMMIT=$APP_SOURCE_COMMIT
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/service/src
 WORKDIR /service
 COPY requirements-runtime.lock /tmp/requirements.lock

@@ -13,6 +13,8 @@ app-service-analytics/
 ├── Makefile              оркестрация Docker и вызов composer-/npm-скриптов;
 │                         `make` без аргументов — список целей
 ├── docker-compose.yml    dev-окружение
+├── docker-compose.research.prod.yml  отдельный opt-in research stack, profile research;
+│                         не запускается основным deploy, секреты вне Git
 ├── docker-compose.prod.yml  описание prod-топологии: Traefik, nginx,
 │                         веб и два воркера из одного образа, Redis;
 │                         не выкладка
@@ -1085,3 +1087,19 @@ frozen requirements/latest attempts одной MVCC-командой до 24 с�
 Миграций/изменений Python или пакета общих UI нет; план/TDD —
 `docs/plan/product-research-ozon-stage7.md`, browser-fixture —
 `apps/seller/tests/e2e/product-research.fixture.ts` (только test).
+
+Этап 8 product-research-ozon (подготовка, live-включение ещё закрыто):
+`Infrastructure/Config/ResearchRollout.php` и `Ui/EventListener/ResearchRolloutSubscriber.php`
+ограничивают research HTTP единым company allowlist; availability учитывает его
+независимо от общего флага. Python `infrastructure/diagnostics.py` читает sample
+последних <=200 jobs одной company/source без full-table aggregate;
+`snapshot_audit.py` проверяет scoped manifest/pages/hash; `operations.py` даёт
+явный CLI без MPStats и записи данных. `tests/recovery_fixture.py` и
+`bin/test-product-research-recovery.py` проверяют настоящий pg_dump/pg_restore
+в случайном одноразовом local Compose проекте. Основной dev не перезаписывается.
+`docker-compose.research.prod.yml` — отдельная, выключенная по умолчанию
+production-заготовка API/worker, не продолжение автоматической выкладки Conwix.
+Runtime image публикуется только master CI с тем же immutable tag/source SHA.
+`bin/tests/product-research-prod-config.test.py` проверяет topology без запуска.
+[План этапа8](plan/product-research-ozon-stage8.md),
+[операционные гейты](operations-checklist.md#product-research-ozon--этап-8).

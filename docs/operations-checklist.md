@@ -731,3 +731,103 @@ manifest, S3 objects и DB anchors. При несовместимости pinned
 Protocol, private manifest, receipts и artifacts сохранены. Перезапуск старого
 исследования не является условием выпуска; актуальность модели/протокола
 проверяется в issue после стабилизации.
+
+## product-research-ozon — этап 8
+
+Состояние: подготовка. Research production API/worker не включены. Предыдущий
+этап7 подтвердил Symfony/UI за false флагом, а не готовность live MPStats.
+[План/TDD](plan/product-research-ozon-stage8.md).
+
+### Гейты до включения
+
+- [ ] Известны pilot company UUIDv7, действующий тариф, подтверждённые RPM/API
+  quota и бюджеты rows/pages/bytes. Технические настройки не называют квотой.
+- [ ] Production MPStats secret настроен в защищённом окружении сервиса;
+  GitHub secret и старый тестовый токен не доказывают валидность доступа.
+- [ ] Отдельные S3 credentials на research prefix, own DB role/HBA, два разных
+  service tokens >=32 символов. Ключ PHP/ozon-fetcher повторно не используется.
+- [ ] Проверены ограничение объёма/уведомления, current/noncurrent retention
+  используемых объектов и восстановимые резервные копии обеих БД.
+- [ ] Standalone stack подключён к штатному обновлению образов, миграционному
+  gate и общему контролю готовности; только после этого допустима активация.
+- [ ] Операторская сверка MPStats/CSV отдельно от фикстур; подтверждены параметры
+  FBS/RUB/периоды и ограничения схемы41 manual /49 API CSV /62 REST полей.
+- [ ] CI/независимое ревью зелёные, pilot ready/cache и отказ остальным компаниям
+  проверены на production; до этого глобальный флаг false.
+
+### Topology и конфигурация
+
+`docker-compose.research.prod.yml` — отдельный opt-in стек `conwix-research`.
+Default config содержит0 сервисов. Явный profile research описывает API/worker,
+без ports, с UID10001, read-only root и tmpfs, internal+egress сетью, journald,
+healthchecks. Memory ceiling256MiB — технический настраиваемый предел контейнера,
+не гарантия допустимого размера категории и не тарифный лимит провайдера.
+Это заготовка: основной `.github/workflows/ci.yml` публикует runtime image,
+но не запускает/не обновляет этот отдельный стек. Применение профиля до всех
+гейтов запрещено; отсутствие секретов не заменяется общими credentials.
+
+Файл production-секретов — вне Git, например `/opt/conwix/research.env`, mode0600.
+Нужны RESEARCH_DATABASE_URL собственной БД, INBOUND/OUTBOUND_TOKEN,
+S3_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY, CATALOG_SOURCE_ID/GENERATION/RPM,
+CATALOG_CURSOR_SECRET, MPSTATS_API_TOKEN, COLLECTION_ENABLED/WORKER_ENABLED,
+ALLOWED_COMPANY_IDS и MAX_ROWS/MAX_PAGES/MAX_BYTES (RESEARCH_ префикс, кроме токена MPStats).
+Catalog/collection/worker включаются только явно. Source ID UUIDv7 стабилен;
+поколение повышается при ротации, raw прошлых поколений не переписывается.
+
+В `.env` Conwix задаются только PRODUCT_RESEARCH_OZON_ENABLED,
+RESEARCH_ALLOWED_COMPANY_IDS, RESEARCH_CATALOG_SOURCE_ID и RESEARCH_SERVICE_TOKEN.
+MPStats/S3 secrets Python туда не копируются. Allowlist одинаковый в PHP/Python,
+пустой список закрыт; membership/extension scope проверяются независимо.
+Публичный `/api/internal/` остаётся404; Python в browser не проксируется.
+
+### Остановка, backup, восстановление
+
+1. Зафиксировать source/image/schema revisions и company scope в защищённом receipt.
+   Выключить общий PHP флаг и поступление новых заданий. Остановить company
+   process-runs/sync-categories и Python worker, дождаться завершения текущей
+   ограниченной страницы. Не останавливать чужие воркеры Conwix.
+2. Сохранить защищённые логические дампы Conwix и `product_research_ozon`
+   вместе с ролями/HBA/config и master-key backup. Dump обеих БД делается при
+   остановленных research writers: outbox/run и service snapshot links связаны.
+   Для service DB использовать pg_dump custom format, проверять код выхода,
+   размер и checksum. Реквизиты передавать через защищённое окружение/stdin,
+   не argv/логи. Копия на том же хосте не заменяет внешнюю резервную копию.
+3. Восстанавливать сначала в отдельный закрытый PostgreSQL/schema environment.
+   Роль имеет доступ только к своей БД; pg_restore --exit-on-error. Проверить
+   точную Alembic revision, запрет подключения service role к Conwix и локальную
+   целостность PHP. Не выполнять destructive restore поверх production.
+4. По выбранным company/source/snapshot выполнить verify-snapshot CLI: manifest,
+   страницы, SHA-256, размеры и totals должны совпасть с восстановленным журналом.
+   Сырьё читается из сохранённого S3-префикса без повторного MPStats.
+   Убедиться в отказе чужим company/source. Затем сверить PHP projection из
+   разрешённых runs, фиксируя attempted/failed/keyset cursor.
+5. Включить сервисы только после успешной проверки и настроенной ротации;
+   если требуется rollback схемы, сначала сохранить оба журнала и остановить
+   writers. Down удаляет технические связи, S3 сам не удаляется; без backup
+   такой rollback не считается восстановлением.
+
+`make product-research-ozon-recovery-check` воспроизводит service часть:
+отдельные случайные source/restore PostgreSQL и S3, synthetic501 rows,
+2pages, cache reuse, dump/restore, exact audit и tenant denial. Ни основной
+sandbox, ни production БД не перезаписываются. Это проверка механизма, а не
+доказательство production RPO/RTO, внешнего backup или восстановления Conwix.
+
+### Retention, диагностика и откат
+
+Current objects проектов сохраняются весь срок проекта (ADR-050); общий90-day
+TTL ozon-fetcher сюда не переносится. Orphan/unpublished объекты пока сохраняются:
+автоматического GC/expiration нет. Перед включением проверить фактические правила
+всего бакета и исключить broad lifecycle, затрагивающий research prefix.
+Это условие не помечено выполненным без чтения и проверки конфигурации S3.
+
+Diagnostics CLI читает sample последних <=200 jobs одной company/source:
+queued/running/ready/errors, api_ready/cache_ready, credential errors, overdue,
+oldest_active_seconds, truncated. Это не полный суточный показатель, не API quota
+и не счётчик физического объёма S3. Исчерпание выбранного sample видно явно.
+Оповещения о задержке/ошибках/объёме требуют реального канала доставки и проверки;
+наличие JSON-отчёта не означает, что оповещения настроены.
+
+Откат включения: сначала PRODUCT_RESEARCH_OZON_ENABLED=false и остановка
+research relay/worker, затем остановка только отдельного research stack.
+Проекты, журналы и S3 сохраняются. `down --volumes` для production не использовать.
+Остановка контейнера без выключения разрешающего флага не является полным откатом.

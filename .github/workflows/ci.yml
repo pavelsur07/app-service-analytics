@@ -537,7 +537,7 @@ jobs:
       - run: docker compose up -d postgres s3
 
       - run: make ozon-fetcher-lint ozon-fetcher-vet ozon-fetcher-test ozon-fetcher-vulncheck ozon-fetcher-build
-      - run: make product-research-ozon-stage0-check product-research-ozon-check
+      - run: make product-research-ozon-stage0-check product-research-ozon-check product-research-ozon-recovery-check product-research-ozon-prod-config-check
 
   image:
     name: сборка и публикация образа
@@ -602,6 +602,20 @@ jobs:
           # на сервере проверял бы неизвестный флаг.
           docker run --rm "$image" -h 2>&1 | grep -q -- '-migrations-check' \
             || { echo "в образе ozon-fetcher нет флага -migrations-check" >&2; exit 1; }
+          docker push "$image"
+
+      # ADR-050: publish immutable runtime even while the optional production stack is off.
+      # MPStats/S3 secrets never enter the build or fixture jobs.
+      - name: образ product-research-ozon
+        run: |
+          set -eu
+          image="ghcr.io/${{ github.repository }}/product-research-ozon:${{ steps.tag.outputs.tag }}"
+          docker build --target runtime -f services/product-research-ozon/docker/Dockerfile \
+            --build-arg APP_VERSION='${{ steps.tag.outputs.tag }}' \
+            --build-arg APP_SOURCE_COMMIT='${{ github.sha }}' \
+            -t "$image" services/product-research-ozon
+          docker run --rm "$image" python -c 'import importlib.util,os; assert os.getuid()==10001; assert all(importlib.util.find_spec(n) is None for n in ("pytest","ruff","mypy")); assert os.environ["APP_SOURCE_COMMIT"]=="${{ github.sha }}"'
+          docker run --rm "$image" python -m product_research_ozon.operations --help >/dev/null
           docker push "$image"
 
       # Явная проверка того, что --target выбран верно: dev-стадия

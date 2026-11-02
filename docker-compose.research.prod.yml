@@ -1,0 +1,56 @@
+# Standalone, opt-in research stack. Does not alter the current Conwix deployment.
+# Start only after the stage8 release gates; secrets live outside Git.
+name: conwix-research
+x-research: &research
+  image: ${RESEARCH_IMAGE:-ghcr.io/pavelsur07/app-service-analytics/product-research-ozon:unconfigured}
+  profiles: [research]
+  restart: unless-stopped
+  init: true
+  user: "10001:10001"
+  read_only: true
+  tmpfs: ["/tmp:size=16m,mode=1777"]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  mem_limit: ${RESEARCH_MEMORY_LIMIT:-256m}
+  stop_grace_period: 60s
+  env_file:
+    - path: ${RESEARCH_ENV_FILE:-/opt/conwix/research.env}
+      required: false
+  networks: [internal, egress]
+  dns: [77.88.8.8, 1.1.1.1]
+  labels:
+    traefik.enable: "false"
+  logging:
+    driver: journald
+    options:
+      tag: "{{.Name}}"
+
+services:
+  product-research-ozon:
+    <<: *research
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ready', timeout=5)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 20s
+  product-research-ozon-worker:
+    <<: *research
+    command: [python, -m, product_research_ozon.worker]
+    depends_on:
+      product-research-ozon:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from product_research_ozon.bootstrap import configured_settings; from product_research_ozon.infrastructure.readiness import Readiness; from product_research_ozon.infrastructure.storage import RawStorage; s=configured_settings(); raise SystemExit(0 if s.collection is not None and s.collection.worker_enabled and Readiness(s, RawStorage(s))() else 1)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 20s
+
+networks:
+  internal:
+    external: true
+    name: ${CONWIX_INTERNAL_NETWORK:-conwix_internal}
+  egress:
+    external: true
+    name: ${CONWIX_EGRESS_NETWORK:-conwix_egress}

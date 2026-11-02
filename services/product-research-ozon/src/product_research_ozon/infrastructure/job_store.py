@@ -88,7 +88,7 @@ class JobStore:
                 raise CollectionFailure("obsolete_generation")
             inserted = db.execute(
                 """INSERT INTO research_run(company_id,run_id,source_id,project_id,request_hash,request_payload,created_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(company_id,run_id) DO NOTHING RETURNING run_id""",
+                VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING RETURNING run_id""",
                 (
                     company_id,
                     spec.run_id,
