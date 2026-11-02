@@ -746,8 +746,9 @@ Protocol, private manifest, receipts и artifacts сохранены. Перез
   quota и бюджеты rows/pages/bytes. Технические настройки не называют квотой.
 - [ ] Production MPStats secret настроен в защищённом окружении сервиса;
   GitHub secret и старый тестовый токен не доказывают валидность доступа.
-- [ ] Отдельные S3 credentials на research prefix, own DB role/HBA, два разных
-  service tokens >=32 символов. Ключ PHP/ozon-fetcher повторно не используется.
+- [ ] Существующие S3 credentials переданы из защищённой конфигурации деплоя
+  по решению владельца 02.11.2026 (ADR-050); own DB role/HBA и два разных
+  service tokens >=32 символов. IAM-изоляции общего ключа нет; порт scoped.
 - [ ] Проверены ограничение объёма/уведомления, current/noncurrent retention
   используемых объектов и восстановимые резервные копии обеих БД.
 - [ ] Standalone stack подключён к штатному обновлению образов, миграционному
@@ -769,7 +770,8 @@ healthchecks. Memory ceiling256MiB — технический настраива
 pull immutable image → provision DB/HBA → source/revision check → up --wait.
 Миграции не применяются автоматически; до up их применяют отдельным шагом.
 При false стек останавливается без удаления БД/S3; ошибка определения флага
-останавливает deploy. Отсутствие секретов не заменяется общими credentials.
+останавливает deploy. При отсутствии S3 secret запуск закрыт; фиктивные значения
+не подставляются. Для research используются существующие реквизиты деплоя.
 
 Закрытый инфраструктурный запуск без MPStats: в `research.env` задать
 `RESEARCH_WORKER_STANDBY=true`, `RESEARCH_CATALOG_ENABLED=false`,
@@ -782,15 +784,22 @@ process-runs/sync-categories не запускаются. Это не выпол
 Бакет — существующий бакет сырья Conwix; новый не создаётся. Research пишет
 только в `conwix/svc/product-research-ozon/v1/`, ключ собирает сервис.
 Readiness делает ограниченный ListObjectsV2 этого префикса (MaxKeys=1),
-не требует просмотра корня бакета. Отдельный S3-пользователь/ключ обязателен;
-при отсутствии возможности ограничить prefix издержка фиксируется отдельно.
+не требует просмотра корня бакета. По уточнению владельца от 02.11.2026
+`docker-compose.research.prod.yml` передаёт текущие `RAW_STORAGE_ENDPOINT/BUCKET/
+ACCESS_KEY/SECRET_KEY` как `RESEARCH_S3_*`. Новые S3-ключи для MVP не требуются.
+Общий ключ имеет доступ шире префикса: IAM-изоляции нет, граница держится
+company-scoped портом и проверкой сформированных ключей. Отдельный ключ остаётся
+последующим усилением. Ротация требует обновления PHP/ozon-fetcher/research;
+после изменения секрета пересоздать контейнеры и проверить ready.
 Не применять публичные Allow-политики и не заменять политики всего бакета.
 
 Файл production-секретов — вне Git, например `/opt/conwix/research.env`, mode0600.
 Нужны RESEARCH_DATABASE_URL собственной БД, INBOUND/OUTBOUND_TOKEN,
-S3_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY, CATALOG_SOURCE_ID/GENERATION/RPM,
+CATALOG_SOURCE_ID/GENERATION/RPM,
 CATALOG_CURSOR_SECRET, MPSTATS_API_TOKEN, COLLECTION_ENABLED/WORKER_ENABLED,
 ALLOWED_COMPANY_IDS и MAX_ROWS/MAX_PAGES/MAX_BYTES (RESEARCH_ префикс, кроме токена MPStats).
+S3_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY поступают через явный Compose environment
+из существующих RAW_STORAGE_* и перекрывают старые S3-строки research.env.
 Catalog/collection/worker включаются только явно. Source ID UUIDv7 стабилен;
 поколение повышается при ротации, raw прошлых поколений не переписывается.
 
@@ -811,7 +820,10 @@ sh research/product-research-ozon-compose.sh up -d --wait --wait-timeout 120
 
 В `.env` Conwix задаются только PRODUCT_RESEARCH_OZON_ENABLED,
 RESEARCH_ALLOWED_COMPANY_IDS, RESEARCH_CATALOG_SOURCE_ID и RESEARCH_SERVICE_TOKEN.
-MPStats/S3 secrets Python туда не копируются. Allowlist одинаковый в PHP/Python,
+MPStats secret Python туда не копируется. RAW_STORAGE_* уже находятся в
+защищённом окружении основного деплоя и передаются research напрямую;
+`docker compose config`/environment с настоящими значениями не публиковать.
+Allowlist одинаковый в PHP/Python,
 пустой список закрыт; membership/extension scope проверяются независимо.
 Публичный `/api/internal/` остаётся404; Python в browser не проксируется.
 
