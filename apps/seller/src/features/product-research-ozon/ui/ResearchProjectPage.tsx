@@ -39,6 +39,7 @@ function Project({
     versionSynced,
     loading,
     partial,
+    needsReload,
     available,
     doStart,
   } = useResearchProject(companyId, projectId)
@@ -122,10 +123,12 @@ function Project({
                   ? 'Подтвердить запуск'
                   : state?.status === 'loaded' && partial
                     ? 'Обновить текущий месяц'
-                    : state?.status === 'partially_loaded' ||
-                        state?.status === 'error'
-                      ? 'Дозагрузить неудачные и новые месяцы'
-                      : 'Загрузить'}
+                    : state?.status === 'loaded' && needsReload
+                      ? 'Дозагрузить полный месяц'
+                      : state?.status === 'partially_loaded' ||
+                          state?.status === 'error'
+                        ? 'Дозагрузить неудачные и новые месяцы'
+                        : 'Загрузить'}
             </Button>
             <Button
               type="button"
@@ -162,7 +165,7 @@ function Project({
               проекту позже.
             </p>
           )}
-          {state?.status === 'loaded' && !partial && (
+          {state?.status === 'loaded' && !needsReload && (
             <p className="text-sm text-positive-text">
               Все выбранные месяцы загружены.
             </p>

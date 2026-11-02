@@ -80,6 +80,8 @@ export function useProgress(
         deadline,
       ),
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 }
 export function useCategories(companyId: string, text: string) {

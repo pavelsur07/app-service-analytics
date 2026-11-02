@@ -64,6 +64,7 @@ export async function researchFixture(
   page: Page,
   company: string,
   partialFailure = false,
+  formerPartial = false,
 ) {
   let project: Project | null = null
   let progress: Progress | null = null
@@ -80,6 +81,53 @@ export async function researchFixture(
   let lostOnce = false
   let retryIntent: unknown = null
   let activeMonths: Month[] = []
+  let failProgressOnce = false
+  if (formerPartial) {
+    const full = {
+      month: '2026-04',
+      dateFrom: '2026-04-01',
+      dateTo: '2026-04-30',
+      days: 30,
+      partial: false,
+    }
+    project = {
+      id: uuid(1),
+      categoryPath: path,
+      name: 'Апрельский сезон',
+      categoryRevision: 1,
+      comment: '',
+      includeCurrentMonth: true,
+      periodCount: 1,
+      version: 2,
+      createdByUserId: uuid(5),
+      createdAt: stamp,
+      updatedAt: stamp,
+      status: 'loaded',
+      fbs: true,
+      currency: 'RUB',
+      preview: {
+        ...preview([2026]),
+        periods: [{ fromMonth: '2026-04', toMonth: '2026-04', name: '' }],
+        months: [full],
+        monthCount: 1,
+        calendarDate: '2026-05-01',
+      },
+    }
+    progress = {
+      projectId: project.id,
+      version: 2,
+      status: 'loaded',
+      lastRunId: uuid(11),
+      runRevision: 9,
+      months: [
+        {
+          ...ready(month(2026, 4)),
+          period: { ...full, dateTo: '2026-04-14', days: 14, partial: true },
+        },
+      ],
+    }
+    generation = 1
+  }
   await page.route(
     '**/api/companies/*/product-research-ozon/**',
     async (route) => {
@@ -191,6 +239,14 @@ export async function researchFixture(
         return send({ ...project, status: progress.status })
       if (suffix === `/projects/${project.id}/progress`) {
         progressReads++
+        if (failProgressOnce) {
+          failProgressOnce = false
+          return route.fulfill({
+            status: 503,
+            contentType: 'text/html',
+            body: '<h1>Proxy unavailable</h1>',
+          })
+        }
         if (progress.status === 'loading') {
           waitingReads++
           if (waitingReads >= 2 && !completionHeld) {
@@ -224,14 +280,23 @@ export async function researchFixture(
         expect(body.requestId).toMatch(
           /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
         )
-        expect(body.previewCalendarDate).toBe('2026-04-15')
+        expect(body.previewCalendarDate).toBe(
+          formerPartial ? '2026-05-01' : '2026-04-15',
+        )
         if (retryIntent !== null) expect(body).toEqual(retryIntent)
         else {
           expect(body.expectedVersion).toBe(project.version)
           generation++
           project = { ...project, version: project.version + 1 }
           waitingReads = 0
-          activeMonths = progress.months
+          activeMonths = (
+            formerPartial
+              ? (project.preview?.months ?? []).map((period): Month => ({
+                  ...month(2026, 4),
+                  period,
+                }))
+              : progress.months
+          )
             .filter((m) => m.status !== 'ready')
             .map((m) => ({ ...m, status: 'queued', errorCode: null }))
           progress = {
@@ -240,11 +305,13 @@ export async function researchFixture(
             version: project.version,
             lastRunId: uuid(10 + generation),
             runRevision: 1,
-            months: progress.months.map((m) =>
-              m.status === 'ready'
-                ? m
-                : { ...m, status: 'queued', errorCode: null },
-            ),
+            months: formerPartial
+              ? activeMonths
+              : progress.months.map((m) =>
+                  m.status === 'ready'
+                    ? m
+                    : { ...m, status: 'queued', errorCode: null },
+                ),
           }
         }
         if (partialFailure && generation === 2 && !lostOnce) {
@@ -315,6 +382,9 @@ export async function researchFixture(
     },
   )
   return {
+    failProgress: () => {
+      failProgressOnce = true
+    },
     loseCreateReply: () => {
       loseCreateReply = true
     },

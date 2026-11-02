@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createCompanyApiClient } from '../../../api/companyClient'
-import { POLL_WINDOW, startInput, uncertainWrite } from '../lib/research'
+import {
+  loadRequired,
+  POLL_WINDOW,
+  startInput,
+  uncertainWrite,
+} from '../lib/research'
 import { projectPath, researchKey, useProgress, useProject } from './queries'
 import type { Run, StartInput } from './types'
 
@@ -35,7 +40,7 @@ export function useResearchProject(companyId: string, projectId: string) {
   const resume = () => {
     setPaused(false)
     setDeadline(Date.now() + POLL_WINDOW)
-    void progress.refetch()
+    void Promise.all([progress.refetch(), project.refetch()])
   }
   const start = useMutation({
     mutationFn: (input: StartInput) =>
@@ -123,11 +128,12 @@ export function useResearchProject(companyId: string, projectId: string) {
     state !== undefined && state.version === project.data?.version
   const loading = state?.status === 'loading'
   const partial = project.data?.preview?.months.some((m) => m.partial) ?? false
+  const needsReload = loadRequired(state, project.data?.preview)
   const available =
     state !== undefined &&
     versionSynced &&
     !loading &&
-    (state.status !== 'loaded' || partial)
+    (state.status !== 'loaded' || needsReload)
   const doStart = () => {
     const metadata = project.data
     if (
@@ -163,6 +169,7 @@ export function useResearchProject(companyId: string, projectId: string) {
     versionSynced,
     loading,
     partial,
+    needsReload,
     available,
     doStart,
   }

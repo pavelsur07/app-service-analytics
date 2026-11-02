@@ -246,4 +246,70 @@ test.describe('product research Ozon — UI с синтетическим исс
     await expect(page.getByText('Черновик', { exact: true })).toBeVisible()
     expect(fixture.creates()).toBe(1)
   })
+  test('закрывшийся месяц дозагружается из неполного среза в полный', async ({
+    page,
+  }) => {
+    const fixture = await researchFixture(page, company ?? '', false, true)
+    await openResearch(page)
+    await page.clock.setFixedTime(new Date('2026-05-01T09:00:00Z'))
+    await page
+      .getByRole('link', { name: 'Апрельский сезон', exact: true })
+      .click()
+    await expect(page.getByText(/2026-04-01.*2026-04-14/)).toBeVisible()
+    const load = page.getByRole('button', {
+      name: /^(Загрузить|Дозагрузить полный месяц)$/,
+    })
+    await expect(load).toBeEnabled()
+    await expect(page.getByText('Все выбранные месяцы загружены.')).toHaveCount(
+      0,
+    )
+    await load.click()
+    await expect(page.getByText(/2026-04-01.*2026-04-30/)).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(page.getByText('Все выбранные месяцы загружены.')).toBeVisible(
+      { timeout: 20_000 },
+    )
+    expect(fixture.starts()).toBe(1)
+  })
+
+  test('ошибка прогресса не возобновляет polling при focus/reconnect без ручного повтора', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const fixture = await researchFixture(page, company ?? '')
+    fixture.hold()
+    await openResearch(page)
+    await createResearch(page)
+    await page.getByRole('button', { name: 'Загрузить', exact: true }).click()
+    await expect(page.getByText('Загрузка', { exact: true })).toBeVisible()
+    fixture.failProgress()
+    await expect(page.getByText(/Обновление не подтверждено/)).toBeVisible({
+      timeout: 15_000,
+    })
+    const reads = fixture.reads()
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'hidden',
+      })
+      window.dispatchEvent(new Event('visibilitychange'))
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'visible',
+      })
+      window.dispatchEvent(new Event('visibilitychange'))
+      Reflect.deleteProperty(document, 'visibilityState')
+      window.dispatchEvent(new Event('offline'))
+      window.dispatchEvent(new Event('online'))
+    })
+    await page.waitForTimeout(5500)
+    expect(fixture.reads()).toBe(reads)
+    await expect(page.getByText(/Обновление не подтверждено/)).toBeVisible()
+    fixture.release()
+    await page.getByRole('button', { name: 'Повторить', exact: true }).click()
+    await expect(page.getByText('Готово 3 из 3 мес.')).toBeVisible({
+      timeout: 20_000,
+    })
+  })
 })

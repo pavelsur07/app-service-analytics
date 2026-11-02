@@ -1,5 +1,29 @@
 import { ApiError } from '../../../api/ApiError'
-import type { ProjectMonth, ProjectProgress, StartInput } from '../model/types'
+import type {
+  Preview,
+  ProjectMonth,
+  ProjectProgress,
+  StartInput,
+} from '../model/types'
+
+export function loadRequired(
+  state: ProjectProgress | undefined,
+  preview: Preview | null | undefined,
+): boolean {
+  return (
+    preview?.months.some((target) => {
+      if (target.partial) return true
+      const saved = state?.months.find((m) => m.period.month === target.month)
+      return (
+        saved?.status !== 'ready' ||
+        saved.period.dateFrom !== target.dateFrom ||
+        saved.period.dateTo !== target.dateTo ||
+        saved.period.partial !== target.partial ||
+        saved.period.days !== target.days
+      )
+    }) ?? false
+  )
+}
 
 export function categoryCanSearch(text: string): boolean {
   return text.length <= 200 && (text.match(/\p{L}/gu)?.length ?? 0) >= 3
