@@ -202,4 +202,94 @@ final class ResearchRunsTest extends KernelTestCase
         self::assertSame(2, $remote->submissions);
         self::assertSame('ready', (self::service(GetResearchRunAction::class))($company, $project->id()->toRfc4122(), $view->progress->runId)->progress->status);
     }
+
+    private function assertProjectStatus(string $company, string $id, string $expected): void
+    {
+        $query = self::service(\App\ProductResearchOzon\Infrastructure\Query\ResearchProjectsQuery::class);
+        self::assertSame($expected, $query->state($company, $id)->executeQuery()->fetchOne());
+        $detail = $query::mapDetail($query->detail($company, $id)->executeQuery()->fetchAllAssociative());
+        self::assertNotNull($detail);
+        self::assertSame($expected, $detail->project->status);
+        $rows = $query->page($company, null, 10)->executeQuery()->fetchAllAssociative();
+        self::assertSame($expected, $query::mapSummary($rows[0])->status);
+    }
+
+    /** @param list<RunMonthState> $months */
+    private function finish(string $company, string $run, string $source, array $months, int $revision = 9): void
+    {
+        $repo = self::service(RunDeliveryRepository::class);
+        $owner = Uuid::v7()->toRfc4122();
+        $at = new \DateTimeImmutable('2026-04-15T09:00:01Z');
+        if (null !== $repo->claimDelivery($company, $run, $owner, $at)) {
+            self::assertTrue($repo->delivered($company, $run, $owner, $at));
+        }
+        self::assertSame($source, $repo->claimPoll($company, $run, $owner, $at, true));
+        $ready = array_all($months, static fn (RunMonthState $month): bool => 'ready' === $month->status);
+        self::assertTrue($repo->apply($company, $run, $owner, new RunProgress($company, $run, $source, $ready ? 'ready' : 'error', $revision, $months), $at));
+    }
+
+    public function testStatusesTrackAddedRequirementAndPartialRefreshWithoutLosingHistory(): void
+    {
+        [$project, $source, $start] = $this->fixture();
+        $company = $project->companyId()->toRfc4122();
+        $id = $project->id()->toRfc4122();
+        $actor = Uuid::v7()->toRfc4122();
+        $this->assertProjectStatus($company, $id, 'draft');
+        $view = $start($company, $id, Uuid::v7()->toRfc4122(), 1, '2026-04-15', $actor);
+        $this->assertProjectStatus($company, $id, 'loading');
+        $added = (self::service(\App\ProductResearchOzon\Application\AddResearchPeriodsAction::class))($company, $id, new \App\ProductResearchOzon\Application\AddPeriodsInput([new \App\ProductResearchOzon\Domain\PeriodRange('2026-04', '2026-04')], 2, '2026-04-15', true), $actor);
+        $this->assertProjectStatus($company, $id, 'loading');
+        $ready = array_map(static fn (RunMonthState $m): RunMonthState => new RunMonthState($m->period, 'ready', Uuid::v7()->toRfc4122(), 1, null, new \App\ProductResearchOzon\Domain\ValueObject\RunProvenance('api', new \DateTimeImmutable('2026-04-15T08:00:00Z'), new \DateTimeImmutable('2026-04-15T09:00:00Z'))), $view->progress->months);
+        $this->finish($company, $view->progress->runId, $source, $ready);
+        $this->assertProjectStatus($company, $id, 'partially_loaded');
+        $retry = $start($company, $id, Uuid::v7()->toRfc4122(), $added->project->version(), '2026-04-15', $actor);
+        self::assertCount(1, $retry->progress->months);
+        $partial = new RunMonthState($retry->progress->months[0]->period, 'ready', Uuid::v7()->toRfc4122(), 0, null);
+        $this->finish($company, $retry->progress->runId, $source, [$partial]);
+        $this->assertProjectStatus($company, $id, 'loaded');
+        // A new partial attempt supersedes its earlier ready coverage, but keeps history.
+        $refresh = $start($company, $id, Uuid::v7()->toRfc4122(), $project->version(), '2026-04-15', $actor);
+        $this->finish($company, $refresh->progress->runId, $source, [new RunMonthState($refresh->progress->months[0]->period, 'error', null, null, 'retry_exhausted')]);
+        $this->assertProjectStatus($company, $id, 'partially_loaded');
+        self::assertSame($partial->snapshotId, (self::service(GetResearchRunAction::class))($company, $id, $retry->progress->runId)->progress->months[0]->snapshotId);
+        // A delayed repeat of the older success cannot cover the latest failed attempt.
+        $this->finish($company, $retry->progress->runId, $source, [$partial]);
+        $this->assertProjectStatus($company, $id, 'partially_loaded');
+        $stored = (self::service(GetResearchRunAction::class))($company, $id, $view->progress->runId)->progress->months[0]->provenance;
+        self::assertSame($ready[0]->provenance?->payload(), $stored?->payload());
+        self::assertFalse(self::service(\App\ProductResearchOzon\Infrastructure\Query\ResearchProjectsQuery::class)->state(Uuid::v7()->toRfc4122(), $id)->executeQuery()->fetchOne());
+    }
+
+    public function testAllFailedIsErrorAndFinishedLegacyReconciliationEnrichesSameRevision(): void
+    {
+        [$project, $source, $start] = $this->fixture();
+        $company = $project->companyId()->toRfc4122();
+        $id = $project->id()->toRfc4122();
+        $view = $start($company, $id, Uuid::v7()->toRfc4122(), 1, '2026-04-15', Uuid::v7()->toRfc4122());
+        $failed = array_map(static fn (RunMonthState $m): RunMonthState => new RunMonthState($m->period, 'error', null, null, 'retry_exhausted'), $view->progress->months);
+        $this->finish($company, $view->progress->runId, $source, $failed);
+        $this->assertProjectStatus($company, $id, 'error');
+        $retry = $start($company, $id, Uuid::v7()->toRfc4122(), 2, '2026-04-15', Uuid::v7()->toRfc4122());
+        $ready = array_map(static fn (RunMonthState $m): RunMonthState => new RunMonthState($m->period, 'ready', Uuid::v7()->toRfc4122(), 1, null), $retry->progress->months);
+        $this->finish($company, $retry->progress->runId, $source, $ready);
+        self::service(Connection::class)->executeStatement('UPDATE product_research_ozon_run SET progress_format=1 WHERE company_id=? AND id=?', [$company, $retry->progress->runId]);
+        $enriched = array_map(static fn (RunMonthState $m): RunMonthState => new RunMonthState($m->period, $m->status, $m->snapshotId, $m->rowCount, null, new \App\ProductResearchOzon\Domain\ValueObject\RunProvenance('cache', new \DateTimeImmutable('2026-04-01T00:00:00Z'), new \DateTimeImmutable('2026-04-15T09:00:00Z'))), $ready);
+        $remote = new \App\Tests\Support\Fake\ResearchRunSource(new RunProgress($company, $retry->progress->runId, $source, 'ready', 9, $enriched));
+        $reconcile = new \App\ProductResearchOzon\Application\ReconcileResearchRunsAction(self::service(ResearchRunsQuery::class), new \App\ProductResearchOzon\Application\SynchronizeResearchRunAction(self::service(RunDeliveryRepository::class), $remote, self::service(ResearchClock::class)));
+        $foreign = $reconcile(Uuid::v7()->toRfc4122(), null, 1);
+        self::assertSame(0, $foreign->attempted);
+        $result = $reconcile($company, $view->progress->runId, 1);
+        self::assertSame(0, $result->failed);
+        self::assertSame($retry->progress->runId, $result->nextCursor);
+        self::assertSame(0, $reconcile($company, $result->nextCursor, 1)->attempted);
+        self::assertSame(0, $reconcile($company, $view->progress->runId, 1)->failed);
+        self::assertSame('cache', (self::service(GetResearchRunAction::class))($company, $id, $retry->progress->runId)->progress->months[0]->provenance?->origin);
+        // Stale upstream does not overwrite enriched terminal state.
+        $remote->result = new RunProgress($company, $retry->progress->runId, $source, 'queued', 1, $retry->progress->months);
+        self::assertSame(0, $reconcile($company, $view->progress->runId, 1)->failed);
+        $this->assertProjectStatus($company, $id, 'loaded');
+        $remote->result = new RunProgress($company, $retry->progress->runId, Uuid::v7()->toRfc4122(), 'ready', 10, $enriched);
+        self::assertSame(1, $reconcile($company, $view->progress->runId, 1)->failed);
+        $this->assertProjectStatus($company, $id, 'loaded');
+    }
 }

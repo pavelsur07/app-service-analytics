@@ -10966,7 +10966,14 @@
                         "type": "string"
                     },
                     "status": {
-                        "type": "string"
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "loading",
+                            "loaded",
+                            "partially_loaded",
+                            "error"
+                        ]
                     },
                     "fbs": {
                         "type": "boolean"
@@ -11016,7 +11023,14 @@
                         "type": "string"
                     },
                     "status": {
-                        "type": "string"
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "loading",
+                            "loaded",
+                            "partially_loaded",
+                            "error"
+                        ]
                     }
                 },
                 "type": "object"
@@ -11067,6 +11081,24 @@
                     },
                     "errorCode": {
                         "type": "string",
+                        "nullable": true
+                    },
+                    "origin": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                            "api",
+                            "cache"
+                        ]
+                    },
+                    "collectedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "usedAt": {
+                        "type": "string",
+                        "format": "date-time",
                         "nullable": true
                     }
                 },

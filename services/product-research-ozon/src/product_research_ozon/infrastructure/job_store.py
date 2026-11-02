@@ -21,6 +21,7 @@ from product_research_ozon.domain.month import (
     Snapshot,
     utc_time,
 )
+from product_research_ozon.infrastructure.month_cache import resolve
 from product_research_ozon.infrastructure.snapshot_store import COLUMNS, snapshot, typed
 
 
@@ -224,6 +225,44 @@ class JobStore:
             if snap_row is None:
                 raise CollectionFailure("conflict")
             snap = snapshot(snap_row)
+            cache_origin, cached = (
+                resolve(
+                    company,
+                    db,
+                    source_id,
+                    job_id,
+                    snap,
+                    utc_time(typed(row[1], datetime)),
+                )
+                if snap.status != "ready"
+                else ("api", snap)
+            )
+            if (
+                cache_origin == "wait"
+                and now < utc_time(typed(row[1], datetime))
+                and not paused
+            ):
+                db.execute(
+                    "UPDATE research_job SET status='queued',next_attempt_at=%s,last_claimed_at=clock_timestamp(),lease_id=NULL,lease_until=NULL WHERE company_id=%s AND job_id=%s",
+                    (now + timedelta(seconds=1), company, job_id),
+                )
+                db.execute(
+                    "UPDATE research_dispatch_turn SET last_served_at=clock_timestamp() WHERE company_id=%s AND source_id=%s",
+                    (company, source_id),
+                )
+                return None
+            if cache_origin == "cache":
+                db.execute(
+                    "UPDATE research_job SET snapshot_id=%s,origin='cache' WHERE company_id=%s AND job_id=%s",
+                    (cached.snapshot_id, company, job_id),
+                )
+                snap, snapshot_id = cached, cached.snapshot_id
+            elif cache_origin == "budget":
+                db.execute(
+                    "UPDATE month_snapshot SET status='error',error_code='budget_exceeded' WHERE company_id=%s AND source_id=%s AND snapshot_id=%s",
+                    (company, source_id, snapshot_id),
+                )
+                snap = self._load_snapshot(db, company, source_id, snapshot_id)
             restarted = snap.generation != generation and snap.status != "ready"
             if restarted:
                 snapshot_id = self._restart(
@@ -419,7 +458,7 @@ class JobStore:
                 )
             db.execute(
                 """UPDATE research_job SET status=%s,next_attempt_at=%s,network_retries=%s,completeness_retries=%s,
-                error_code=%s,row_count=%s,snapshot_ack_revision=%s,retry_page=%s,lease_id=NULL,lease_until=NULL WHERE company_id=%s AND job_id=%s""",
+                error_code=%s,row_count=%s,snapshot_ack_revision=%s,retry_page=%s,used_at=%s,lease_id=NULL,lease_until=NULL WHERE company_id=%s AND job_id=%s""",
                 (
                     decision.status,
                     decision.next_at,
@@ -431,6 +470,7 @@ class JobStore:
                     else None,
                     0 if decision.restart else current.outcome_revision,
                     0 if decision.restart else current.pages,
+                    now if decision.status == "ready" else None,
                     lease.company_id,
                     lease.job_id,
                 ),
@@ -496,10 +536,10 @@ class JobStore:
             db.execute(
                 """UPDATE research_job j SET status=CASE WHEN s.status='ready' AND s.completed_at<j.deadline THEN 'ready' ELSE 'error' END,
                 error_code=CASE WHEN s.status='ready' AND s.completed_at<j.deadline THEN NULL ELSE 'credentials_rejected' END,
-                row_count=CASE WHEN s.status='ready' THEN s.cursor_row ELSE j.row_count END,lease_id=NULL,lease_until=NULL
+                row_count=CASE WHEN s.status='ready' THEN s.cursor_row ELSE j.row_count END,used_at=CASE WHEN s.status='ready' AND s.completed_at<j.deadline THEN COALESCE(j.used_at,%s) ELSE NULL END,lease_id=NULL,lease_until=NULL
                 FROM month_snapshot s WHERE j.company_id=%s AND j.source_id=%s AND j.run_id=%s AND j.status IN ('queued','running')
                 AND s.company_id=j.company_id AND s.source_id=j.source_id AND s.snapshot_id=j.snapshot_id""",
-                (lease.company_id, lease.source_id, lease.run_id),
+                (now, lease.company_id, lease.source_id, lease.run_id),
             )
             db.execute(
                 """UPDATE month_snapshot s SET status='error',lease_id=NULL,lease_until=NULL,error_code='authorization_failed'
@@ -516,11 +556,11 @@ class JobStore:
         return True
 
     def progress(
-        self, company_id: UUID, source_id: UUID, run_id: UUID
+        self, company_id: UUID, source_id: UUID, run_id: UUID, enriched: bool = False
     ) -> dict[str, object]:
         with self._db() as db:
             rows = db.execute(
-                """SELECT r.revision,r.status,j.status,j.row_count,j.error_code,j.snapshot_id,s.category_path,s.date_from,s.date_to,s.partial
+                """SELECT r.revision,r.status,j.status,j.row_count,j.error_code,j.snapshot_id,s.category_path,s.date_from,s.date_to,s.partial,j.origin,s.completed_at,j.used_at
                 FROM research_run r JOIN research_job j ON j.company_id=r.company_id AND j.run_id=r.run_id
                 JOIN month_snapshot s ON s.company_id=j.company_id AND s.source_id=j.source_id AND s.snapshot_id=j.snapshot_id
                 WHERE r.company_id=%s AND r.source_id=%s AND r.run_id=%s ORDER BY j.month LIMIT 25""",
@@ -547,8 +587,20 @@ class JobStore:
                     "snapshot_id": str(row[5]) if row[2] == "ready" else None,
                 }
             )
+        if enriched:
+            for item, row in zip(months, rows, strict=True):
+                ready = row[2] == "ready"
+                item.update(
+                    origin=row[10] if ready else None,
+                    collected_at=utc_time(typed(row[11], datetime)).isoformat()
+                    if ready
+                    else None,
+                    used_at=utc_time(typed(row[12], datetime)).isoformat()
+                    if ready
+                    else None,
+                )
         return {
-            "schema_version": "1",
+            "schema_version": "2" if enriched else "1",
             "company_id": str(company_id),
             "run_id": str(run_id),
             "revision": rows[0][0],

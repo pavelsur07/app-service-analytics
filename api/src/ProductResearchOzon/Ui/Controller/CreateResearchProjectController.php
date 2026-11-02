@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\ProductResearchOzon\Ui\Controller;
 
 use App\ProductResearchOzon\Application\CreateResearchProjectAction;
+use App\ProductResearchOzon\Infrastructure\Query\ResearchProjectsQuery;
 use App\ProductResearchOzon\Ui\Request\ResearchRequest;
 use App\ProductResearchOzon\Ui\Response\ProjectResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
@@ -18,7 +19,7 @@ use Symfony\Component\Routing\Requirement\Requirement;
 #[Route('/api/companies/{companyId}/product-research-ozon/projects', requirements: ['companyId' => Requirement::UUID], methods: ['POST'])]
 final class CreateResearchProjectController extends ResearchController
 {
-    public function __construct(bool $researchEnabled, private readonly CreateResearchProjectAction $action)
+    public function __construct(bool $researchEnabled, private readonly CreateResearchProjectAction $action, private readonly ResearchProjectsQuery $projects)
     {
         parent::__construct($researchEnabled);
     }
@@ -36,7 +37,7 @@ final class CreateResearchProjectController extends ResearchController
         return $this->respond($request, function () use ($companyId, $request): JsonResponse {
             $result = ($this->action)($companyId, ResearchRequest::create($request->getContent()), $this->actor($request));
 
-            return new JsonResponse(ProjectResponse::mutation($result), 201);
+            return new JsonResponse(ProjectResponse::mutation($result, ResearchProjectsQuery::mapStatus($this->projects->state($companyId, $result->project->id()->toRfc4122())->executeQuery()->fetchOne())), 201);
         });
     }
 }

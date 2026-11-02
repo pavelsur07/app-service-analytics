@@ -6,6 +6,7 @@ namespace App\ProductResearchOzon\Ui\Response;
 
 use App\ProductResearchOzon\Application\ProjectMutationResult;
 use App\ProductResearchOzon\Infrastructure\Query\ResearchProjectRow;
+use OpenApi\Attributes as OA;
 
 final readonly class ProjectResponse
 {
@@ -20,6 +21,7 @@ final readonly class ProjectResponse
     public string $createdByUserId;
     public string $createdAt;
     public string $updatedAt;
+    #[OA\Property(enum: ['draft', 'loading', 'loaded', 'partially_loaded', 'error'])]
     public string $status;
     public bool $fbs;
     public string $currency;
@@ -37,15 +39,15 @@ final readonly class ProjectResponse
         $this->createdByUserId = $row->createdByUserId;
         $this->createdAt = (new \DateTimeImmutable($row->createdAt))->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM);
         $this->updatedAt = (new \DateTimeImmutable($row->updatedAt))->setTimezone(new \DateTimeZone('UTC'))->format(\DATE_ATOM);
-        $this->status = 'draft';
+        $this->status = $row->status;
         $this->fbs = true;
         $this->currency = 'RUB';
     }
 
-    public static function mutation(ProjectMutationResult $result): self
+    public static function mutation(ProjectMutationResult $result, string $status = 'draft'): self
     {
         $p = $result->project;
-        $row = new ResearchProjectRow($p->id()->toRfc4122(), $p->categoryPath(), $p->categoryRevision(), $p->name(), $p->comment(), $p->includeCurrentMonth(), $p->periodCount(), $p->version(), $p->createdByUserId()->toRfc4122(), $p->createdAt()->format(\DATE_ATOM), $p->updatedAt()->format(\DATE_ATOM));
+        $row = new ResearchProjectRow($p->id()->toRfc4122(), $p->categoryPath(), $p->categoryRevision(), $p->name(), $p->comment(), $p->includeCurrentMonth(), $p->periodCount(), $p->version(), $p->createdByUserId()->toRfc4122(), $p->createdAt()->format(\DATE_ATOM), $p->updatedAt()->format(\DATE_ATOM), $status);
 
         return new self($row, new PreviewResponse($result->preview, $p->categoryPath()));
     }

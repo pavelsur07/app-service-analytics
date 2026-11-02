@@ -41,6 +41,19 @@ class ResearchProject
     private int $periodCount;
     #[ORM\Column(type: 'uuid', nullable: true)]
     private ?Uuid $lastRunId = null;
+    /** @var list<array{month: string, date_from: string, date_to: string, days: int, partial: bool}> */
+    #[ORM\Column(type: 'json', options: ['jsonb' => true, 'default' => '[]'])]
+    private array $requirements = [];
+
+    /** @param list<MonthSlice> $months */
+    public function freezeRequirements(array $months): void
+    {
+        if ([] === $months || \count($months) > 24) {
+            throw new \InvalidArgumentException('month_limit');
+        }
+        $this->requirements = array_map(static fn (MonthSlice $month): array => ['month' => $month->month, 'date_from' => $month->dateFrom, 'date_to' => $month->dateTo, 'days' => $month->days, 'partial' => $month->partial], $months);
+    }
+
     #[ORM\Version]
     #[ORM\Column(type: 'integer')]
     private int $version = 1;

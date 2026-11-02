@@ -13,7 +13,7 @@ interface RunDeliveryRepository
 
     public function delivered(string $companyId, string $runId, string $owner, \DateTimeImmutable $at): bool;
 
-    public function claimPoll(string $companyId, string $runId, string $owner, \DateTimeImmutable $at): ?string;
+    public function claimPoll(string $companyId, string $runId, string $owner, \DateTimeImmutable $at, bool $repair = false): ?string;
 
     public function apply(string $companyId, string $runId, string $owner, RunProgress $progress, \DateTimeImmutable $at): bool;
 

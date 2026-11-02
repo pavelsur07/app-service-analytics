@@ -32,3 +32,10 @@
 - Технические бюджеты передаются явно, не выдаются за квоту провайдера.
   Существующие страницы/манифесты неизменяемы; чужой company/source/snapshot
   не раскрывает raw. После down сохранять backup журнала, иначе теряются связи с S3.
+
+- Этап 6: closed cache slot scoped company/source + semantic MonthCacheKey,
+  конкурент ждёт active owner без I/O, ready reuse учитывает новые budgets.
+  Слот указывает на job, поэтому restart/rotation не оставляют старый snapshot.
+  Partial всегда новый. Admission/catalog/snapshots — v1, enriched progress —
+  read-only v2; v1 schema/examples заморожены. collected_at исходного snapshot
+  отдельно от used_at текущего job. Python production остаётся этапом 8.

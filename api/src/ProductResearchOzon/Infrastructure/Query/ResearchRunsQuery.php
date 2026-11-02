@@ -7,6 +7,7 @@ namespace App\ProductResearchOzon\Infrastructure\Query;
 use App\ProductResearchOzon\Domain\MonthSlice;
 use App\ProductResearchOzon\Domain\ValueObject\RunMonthState;
 use App\ProductResearchOzon\Domain\ValueObject\RunProgress;
+use App\ProductResearchOzon\Domain\ValueObject\RunProvenance;
 use App\ProductResearchOzon\Domain\ValueObject\RunView;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Query\QueryBuilder;
@@ -19,7 +20,7 @@ final readonly class ResearchRunsQuery
 
     public function detail(string $companyId, string $projectId, string $runId): QueryBuilder
     {
-        return $this->db->createQueryBuilder()->select('r.company_id', 'r.id', 'r.project_id', 'r.source_id', 'r.status AS run_status', 'r.revision', 'r.created_at', 'r.delivered_at', 'm.month', 'm.date_from', 'm.date_to', 'm.days', 'm.partial', 'm.status', 'm.snapshot_id', 'm.row_count', 'm.error_code')
+        return $this->db->createQueryBuilder()->select('r.company_id', 'r.id', 'r.project_id', 'r.source_id', 'r.status AS run_status', 'r.revision', 'r.created_at', 'r.delivered_at', 'm.month', 'm.date_from', 'm.date_to', 'm.days', 'm.partial', 'm.status', 'm.snapshot_id', 'm.row_count', 'm.error_code', 'm.origin', 'm.collected_at', 'm.used_at')
             ->from('product_research_ozon_run', 'r')->innerJoin('r', 'product_research_ozon_run_month', 'm', 'm.company_id = r.company_id AND m.run_id = r.id')
             ->where('r.company_id = :company')->andWhere('r.project_id = :project')->andWhere('r.id = :run')
             ->setParameter('company', $companyId)->setParameter('project', $projectId)->setParameter('run', $runId)->orderBy('m.month')->setMaxResults(25);
@@ -45,6 +46,19 @@ final readonly class ResearchRunsQuery
             ->setParameter('company', $companyId)->setParameter('at', $at->format('Y-m-d H:i:s.uP'))->orderBy($column)->addOrderBy('id')->setMaxResults($limit);
     }
 
+    public function reconcile(string $companyId, ?string $after, int $limit): QueryBuilder
+    {
+        if ($limit < 1 || $limit > 200) {
+            throw new \InvalidArgumentException('invalid_limit');
+        }
+        $q = $this->db->createQueryBuilder()->select('id')->from('product_research_ozon_run')->where('company_id=:company')->andWhere('delivered_at IS NOT NULL')->setParameter('company', $companyId)->orderBy('id')->setMaxResults($limit);
+        if (null !== $after) {
+            $q->andWhere('id > :after')->setParameter('after', $after);
+        }
+
+        return $q;
+    }
+
     /** @param list<array<string, mixed>> $rows */
     public static function map(array $rows): ?RunView
     {
@@ -57,7 +71,7 @@ final readonly class ResearchRunsQuery
             if (!\is_bool($row['partial']) || !\is_int($row['days']) || (null !== $row['row_count'] && !\is_int($row['row_count']))) {
                 throw new \UnexpectedValueException('invalid_run_row');
             }
-            $months[] = new RunMonthState(new MonthSlice(self::text($row, 'month'), self::text($row, 'date_from'), self::text($row, 'date_to'), $row['days'], $row['partial']), self::text($row, 'status'), self::nullableText($row, 'snapshot_id'), $row['row_count'], self::nullableText($row, 'error_code'));
+            $months[] = new RunMonthState(new MonthSlice(self::text($row, 'month'), self::text($row, 'date_from'), self::text($row, 'date_to'), $row['days'], $row['partial']), self::text($row, 'status'), self::nullableText($row, 'snapshot_id'), $row['row_count'], self::nullableText($row, 'error_code'), null === $row['origin'] ? null : new RunProvenance(self::text($row, 'origin'), new \DateTimeImmutable(self::text($row, 'collected_at')), new \DateTimeImmutable(self::text($row, 'used_at'))));
         }
         if (!\is_int($first['revision'])) {
             throw new \UnexpectedValueException('invalid_run_row');

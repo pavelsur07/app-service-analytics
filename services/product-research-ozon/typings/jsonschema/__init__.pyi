@@ -1,4 +1,9 @@
-class FormatChecker: ...
+from collections.abc import Callable
+
+class FormatChecker:
+    def checks(
+        self, format: str, raises: type[Exception] = ...
+    ) -> Callable[[Callable[[object], bool]], Callable[[object], bool]]: ...
 
 class Draft202012Validator:
     def __init__(

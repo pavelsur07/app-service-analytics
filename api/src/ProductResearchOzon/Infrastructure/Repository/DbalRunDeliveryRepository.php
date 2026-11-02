@@ -35,9 +35,14 @@ final readonly class DbalRunDeliveryRepository implements RunDeliveryRepository
         return 1 === $this->db->executeStatement('UPDATE product_research_ozon_run SET delivered_at = :at, next_poll_at = :at, lease_id = NULL, lease_until = NULL, error_code = NULL WHERE company_id = :company AND id = :run AND lease_id = :owner AND lease_until > clock_timestamp() AND delivered_at IS NULL', self::params($companyId, $runId, $owner, $at));
     }
 
-    public function claimPoll(string $companyId, string $runId, string $owner, \DateTimeImmutable $at): ?string
+    public function claimPoll(string $companyId, string $runId, string $owner, \DateTimeImmutable $at, bool $repair = false): ?string
     {
-        $row = $this->db->fetchAssociative("UPDATE product_research_ozon_run SET lease_id = :owner, lease_until = clock_timestamp() + INTERVAL '60 seconds' WHERE company_id = :company AND id = :run AND delivered_at IS NOT NULL AND finished_at IS NULL AND next_poll_at <= :at AND (lease_until IS NULL OR lease_until <= clock_timestamp()) RETURNING source_id", self::params($companyId, $runId, $owner, $at));
+        $condition = $repair ? '' : 'AND finished_at IS NULL AND next_poll_at <= :at';
+        $params = self::params($companyId, $runId, $owner, $at);
+        if ($repair) {
+            unset($params['at']);
+        }
+        $row = $this->db->fetchAssociative("UPDATE product_research_ozon_run SET lease_id = :owner, lease_until = clock_timestamp() + INTERVAL '60 seconds' WHERE company_id = :company AND id = :run AND delivered_at IS NOT NULL $condition AND (lease_until IS NULL OR lease_until <= clock_timestamp()) RETURNING source_id", $params);
 
         return false === $row ? null : ResearchRunsQuery::text($row, 'source_id');
     }
@@ -45,35 +50,43 @@ final readonly class DbalRunDeliveryRepository implements RunDeliveryRepository
     public function apply(string $companyId, string $runId, string $owner, RunProgress $progress, \DateTimeImmutable $at): bool
     {
         return $this->db->transactional(function () use ($companyId, $runId, $owner, $progress, $at): bool {
-            $row = $this->db->fetchAssociative('SELECT project_id, source_id, revision, progress_hash FROM product_research_ozon_run WHERE company_id = :company AND id = :run AND lease_id = :owner AND lease_until > clock_timestamp() AND delivered_at IS NOT NULL AND finished_at IS NULL FOR UPDATE', ['company' => $companyId, 'run' => $runId, 'owner' => $owner]);
+            $row = $this->db->fetchAssociative('SELECT project_id, source_id, revision, progress_hash, progress_format FROM product_research_ozon_run WHERE company_id = :company AND id = :run AND lease_id = :owner AND lease_until > clock_timestamp() AND delivered_at IS NOT NULL FOR UPDATE', ['company' => $companyId, 'run' => $runId, 'owner' => $owner]);
             if (false === $row) {
                 return false;
             }
             if ($progress->companyId !== $companyId || $progress->runId !== $runId || $progress->sourceId !== $row['source_id']) {
                 throw new RunSyncFailure('run_source_mismatch');
             }
+            if ($progress->revision < $row['revision']) {
+                $this->db->executeStatement('UPDATE product_research_ozon_run SET lease_id=NULL,lease_until=NULL,next_poll_at=:next WHERE company_id=:company AND id=:run AND lease_id=:owner', ['next' => $at->modify('+60 seconds')->format('Y-m-d H:i:s.uP'), 'company' => $companyId, 'run' => $runId, 'owner' => $owner]);
+
+                return true;
+            }
             $view = ResearchRunsQuery::map($this->query->detail($companyId, ResearchRunsQuery::text($row, 'project_id'), $runId)->executeQuery()->fetchAllAssociative());
             if (null === $view || \count($view->progress->months) !== \count($progress->months)) {
                 throw new RunSyncFailure('run_progress_conflict');
             }
+            if (1 === $row['progress_format'] && $progress->revision === $row['revision'] && $view->progress->payload() !== $progress->payload()) {
+                throw new RunSyncFailure('run_progress_conflict');
+            }
             foreach ($view->progress->months as $index => $old) {
                 $new = $progress->months[$index];
-                if ($old->periodPayload() !== $new->periodPayload() || ('ready' === $old->status && $old->payload() !== $new->payload())) {
+                if ($old->periodPayload() !== $new->periodPayload() || ('ready' === $old->status && $old->payload() !== $new->payload()) || (null !== $old->provenance && $old->provenance->payload() !== $new->provenance?->payload())) {
                     throw new RunSyncFailure('run_progress_conflict');
                 }
             }
-            if ($progress->revision === $row['revision'] && $progress->hash() !== $row['progress_hash']) {
+            if ($progress->revision === $row['revision'] && 2 === $row['progress_format'] && $progress->hash() !== $row['progress_hash']) {
                 throw new RunSyncFailure('run_progress_conflict');
             }
-            if ($progress->revision > $row['revision']) {
-                $values = json_encode(array_map(static fn ($month): array => $month->payload(), $progress->months), \JSON_THROW_ON_ERROR);
-                $this->db->executeStatement("UPDATE product_research_ozon_run_month m SET status = value.status, snapshot_id = value.snapshot_id, row_count = value.row_count, error_code = value.error_code FROM jsonb_to_recordset(CAST(:values AS jsonb)) AS value(period jsonb, status text, snapshot_id uuid, row_count integer, error_code text) WHERE m.company_id = :company AND m.run_id = :run AND m.month = value.period->>'month'", ['values' => $values, 'company' => $companyId, 'run' => $runId]);
+            if ($progress->revision > $row['revision'] || ($progress->revision === $row['revision'] && 1 === $row['progress_format'])) {
+                $values = json_encode(array_map(static fn ($month): array => [...$month->payload(), ...($month->provenance?->payload() ?? ['origin' => null, 'collected_at' => null, 'used_at' => null])], $progress->months), \JSON_THROW_ON_ERROR);
+                $this->db->executeStatement("UPDATE product_research_ozon_run_month m SET status = value.status, snapshot_id = value.snapshot_id, row_count = value.row_count, error_code = value.error_code, origin = value.origin, collected_at = value.collected_at, used_at = value.used_at FROM jsonb_to_recordset(CAST(:values AS jsonb)) AS value(period jsonb, status text, snapshot_id uuid, row_count integer, error_code text, origin text, collected_at timestamptz, used_at timestamptz) WHERE m.company_id = :company AND m.run_id = :run AND m.month = value.period->>'month'", ['values' => $values, 'company' => $companyId, 'run' => $runId]);
             }
             $accepted = $progress->revision >= $row['revision'];
             $terminal = $accepted && \in_array($progress->status, ['ready', 'error'], true);
             $params = self::params($companyId, $runId, $owner, $at) + ['next' => $at->modify('+60 seconds')->format('Y-m-d H:i:s.uP'), 'finished' => $terminal ? $at->format('Y-m-d H:i:s.uP') : null, 'status' => $accepted ? $progress->status : $view->progress->status, 'revision' => $accepted ? $progress->revision : $row['revision'], 'hash' => $accepted ? $progress->hash() : $row['progress_hash']];
             unset($params['at']);
-            $this->db->executeStatement('UPDATE product_research_ozon_run SET status = :status, revision = :revision, progress_hash = :hash, finished_at = :finished, next_poll_at = :next, lease_id = NULL, lease_until = NULL, error_code = NULL WHERE company_id = :company AND id = :run AND lease_id = :owner', $params);
+            $this->db->executeStatement('UPDATE product_research_ozon_run SET status = :status, revision = :revision, progress_hash = :hash, progress_format = 2, finished_at = :finished, next_poll_at = :next, lease_id = NULL, lease_until = NULL, error_code = NULL WHERE company_id = :company AND id = :run AND lease_id = :owner', $params);
 
             return true;
         });

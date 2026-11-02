@@ -23,6 +23,8 @@ final readonly class CreateResearchProjectAction
         $name = null === $input->name || '' === trim($input->name) ? $preview->suggestedName($category->path) : $input->name;
         $project = new ResearchProject(Uuid::fromString($companyId), $category, $name, $input->comment, $input->includeCurrentMonth, Uuid::fromString($actor), $at, \count($preview->periods));
 
+        $project->freezeRequirements($preview->months);
+
         return $this->projects->transactional(function () use ($project, $preview, $companyId, $actor): ProjectMutationResult {
             $this->projects->add($project, $preview->periods);
             $this->identity->recordAuditEntry($companyId, $actor, 'product_research_ozon.project_created', $project->id()->toRfc4122(), null, json_encode(['periodCount' => \count($preview->periods), 'monthCount' => \count($preview->months)], \JSON_THROW_ON_ERROR));

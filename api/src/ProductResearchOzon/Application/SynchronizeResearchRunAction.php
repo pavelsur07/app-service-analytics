@@ -16,17 +16,19 @@ final readonly class SynchronizeResearchRunAction
     {
     }
 
-    public function __invoke(string $companyId, string $runId): void
+    public function __invoke(string $companyId, string $runId, bool $repair = false): bool
     {
         $owner = Uuid::v7()->toRfc4122();
-        $source = $this->runs->claimPoll($companyId, $runId, $owner, $this->clock->now());
+        $source = $this->runs->claimPoll($companyId, $runId, $owner, $this->clock->now(), $repair);
         if (null === $source) {
-            return;
+            return false;
         }
         try {
-            $this->runs->apply($companyId, $runId, $owner, $this->source->progress($companyId, $runId, $source), $this->clock->now());
+            return $this->runs->apply($companyId, $runId, $owner, $this->source->progress($companyId, $runId, $source), $this->clock->now());
         } catch (RunSyncFailure $failure) {
             $this->runs->failed($companyId, $runId, $owner, $failure->reason, $this->clock->now());
+
+            return false;
         }
     }
 }

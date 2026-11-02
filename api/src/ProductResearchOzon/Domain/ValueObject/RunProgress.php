@@ -49,6 +49,6 @@ final readonly class RunProgress
 
     public function hash(): string
     {
-        return hash('sha256', json_encode($this->payload(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES));
+        return hash('sha256', json_encode([$this->payload(), array_map(static fn (RunMonthState $month): ?array => $month->provenance?->payload(), $this->months)], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES));
     }
 }

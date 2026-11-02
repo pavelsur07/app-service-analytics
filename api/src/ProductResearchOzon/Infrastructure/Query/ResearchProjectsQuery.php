@@ -24,8 +24,8 @@ final readonly class ResearchProjectsQuery
             throw new \InvalidArgumentException('invalid_limit');
         }
         $query = $this->db->createQueryBuilder()
-            ->select('id', 'category_path', 'name', 'period_count', 'version', 'created_at')
-            ->from('product_research_ozon_project')
+            ->select('p.id', 'p.category_path', 'p.name', 'p.period_count', 'p.version', 'p.created_at', ProjectStatusSql::expression('p').' AS status')
+            ->from('product_research_ozon_project', 'p')
             ->where('company_id = :company')->setParameter('company', $companyId)
             ->orderBy('id', 'DESC')->setMaxResults($limit + 1);
         if (null !== $cursor) {
@@ -39,7 +39,7 @@ final readonly class ResearchProjectsQuery
     {
         $columns = array_map(static fn (string $column): string => 'p.'.trim($column), explode(',', self::Columns));
 
-        return $this->db->createQueryBuilder()->select(...[...$columns, 'p.comment', 'r.from_month', 'r.to_month', 'r.name AS period_name'])
+        return $this->db->createQueryBuilder()->select(...[...$columns, ProjectStatusSql::expression('p').' AS status', 'p.comment', 'r.from_month', 'r.to_month', 'r.name AS period_name'])
             ->from('product_research_ozon_project', 'p')
             ->innerJoin('p', 'product_research_ozon_period', 'r', 'r.company_id = p.company_id AND r.project_id = p.id')
             ->where('p.company_id = :company')->andWhere('p.id = :id')
@@ -47,10 +47,24 @@ final readonly class ResearchProjectsQuery
             ->orderBy('r.position')->setMaxResults(24);
     }
 
+    public function state(string $companyId, string $projectId): QueryBuilder
+    {
+        return $this->db->createQueryBuilder()->select(ProjectStatusSql::expression('p').' AS status')->from('product_research_ozon_project', 'p')->where('p.company_id=:company')->andWhere('p.id=:project')->setParameter('company', $companyId)->setParameter('project', $projectId)->setMaxResults(1);
+    }
+
+    public static function mapStatus(mixed $value): string
+    {
+        if (!\is_string($value) || !\in_array($value, ['draft', 'loading', 'loaded', 'partially_loaded', 'error'], true)) {
+            throw new \UnexpectedValueException('invalid_research_status');
+        }
+
+        return $value;
+    }
+
     /** @param array<string, mixed> $row */
     public static function mapSummary(array $row): ResearchProjectSummaryRow
     {
-        return new ResearchProjectSummaryRow(self::text($row, 'id'), self::text($row, 'category_path'), self::text($row, 'name'), self::integer($row, 'period_count'), self::integer($row, 'version'), self::text($row, 'created_at'));
+        return new ResearchProjectSummaryRow(self::text($row, 'id'), self::text($row, 'category_path'), self::text($row, 'name'), self::integer($row, 'period_count'), self::integer($row, 'version'), self::text($row, 'created_at'), self::text($row, 'status'));
     }
 
     /** @param list<array<string, mixed>> $rows */
@@ -75,7 +89,7 @@ final readonly class ResearchProjectsQuery
             throw new \UnexpectedValueException('invalid_research_row');
         }
 
-        return new ResearchProjectRow(self::text($row, 'id'), self::text($row, 'category_path'), self::integer($row, 'category_revision'), self::text($row, 'name'), self::text($row, 'comment'), $row['include_current_month'], self::integer($row, 'period_count'), self::integer($row, 'version'), self::text($row, 'created_by_user_id'), self::text($row, 'created_at'), self::text($row, 'updated_at'));
+        return new ResearchProjectRow(self::text($row, 'id'), self::text($row, 'category_path'), self::integer($row, 'category_revision'), self::text($row, 'name'), self::text($row, 'comment'), $row['include_current_month'], self::integer($row, 'period_count'), self::integer($row, 'version'), self::text($row, 'created_by_user_id'), self::text($row, 'created_at'), self::text($row, 'updated_at'), self::text($row, 'status'));
     }
 
     /** @param array<string, mixed> $row */

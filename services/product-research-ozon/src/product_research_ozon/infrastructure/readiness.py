@@ -4,7 +4,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from product_research_ozon.infrastructure.config import Settings
 from product_research_ozon.infrastructure.storage import RawStorage
 
-REVISION = "0004_research_jobs"
+REVISION = "0005_month_cache"
 
 
 class Readiness:
