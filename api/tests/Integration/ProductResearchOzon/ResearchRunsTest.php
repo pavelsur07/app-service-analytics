@@ -34,11 +34,11 @@ final class ResearchRunsTest extends KernelTestCase
     use ResearchServices;
 
     /** @return array{ResearchProject, string, StartResearchRunAction, RunNotifier} */
-    private function fixture(): array
+    private function fixture(?string $source = null): array
     {
         self::bootKernel();
         $project = ResearchProjectBuilder::aProject()->persistWith(self::service(ResearchProjectRepository::class));
-        $source = Uuid::v7()->toRfc4122();
+        $source ??= Uuid::v7()->toRfc4122();
         $notifier = new class implements RunNotifier {
             /** @var list<string> */
             public array $ids = [];
@@ -51,6 +51,21 @@ final class ResearchRunsTest extends KernelTestCase
         $start = new StartResearchRunAction(self::service(ResearchProjectRepository::class), self::service(ResearchRunRepository::class), self::service(ResearchRunsQuery::class), self::service(ResearchPreparation::class), new CatalogContext($source), self::service(IdentityFacade::class), $notifier, self::service(GetResearchRunAction::class));
 
         return [$project, $source, $start, $notifier];
+    }
+
+    public function testUnconfiguredSourceLeavesPilotProjectAndOutboxUnchanged(): void
+    {
+        [$project, , $start, $notifier] = $this->fixture('');
+        $company = $project->companyId()->toRfc4122();
+        try {
+            $start($company, $project->id()->toRfc4122(), Uuid::v7()->toRfc4122(), 1, '2026-04-15', Uuid::v7()->toRfc4122());
+            self::fail('Pilot must not enqueue a run without a configured source');
+        } catch (ResearchProblem $error) {
+            self::assertSame('catalog_not_ready', $error->reason);
+        }
+        self::assertSame(1, $project->version());
+        self::assertFalse(self::service(Connection::class)->fetchOne('SELECT id FROM product_research_ozon_run WHERE company_id = ? LIMIT 1', [$company]));
+        self::assertSame([], get_object_vars($notifier)['ids']);
     }
 
     public function testRunAndOutboxAreCommittedTogetherAndRetrySurvivesVersionAndMidnight(): void

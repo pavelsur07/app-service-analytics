@@ -1116,6 +1116,14 @@ provision на disposable PostgreSQL, включая запрет текущих
 RAW_STORAGE_* в RESEARCH_S3_* API/worker. Путь остаётся research-префиксом в том
 же бакете; IAM-изоляции общего ключа нет (ADR-050). Config-тест проверяет
 приоритет над старыми env_file значениями, literal секреты и отсутствие ключа.
+Пилотный UI без собственного Ozon-подключения: `CompanyLayout` ждёт успешный
+company-scoped availability и освобождает от onboarding только точные research
+list/project маршруты (ADR-050 уточняет ADR-021). Продажи и остальные разделы
+сохраняют gate активного подключения. Vitest проверяет границы путей/состояний,
+Playwright — пустой connections, настоящий login и отсутствие create/run при
+catalog_not_ready. Integration ResearchRunsTest проверяет отклонение запуска
+при пустом PHP source без изменения проекта/run/outbox. UUID/имена пилотов
+остаются только в защищённой конфигурации, PHP/Python allowlist согласованы.
 [Закрытый план разработки этапа 8](plan/product-research-ozon-stage8.md),
 [открытый план этапа 9](plan/product-research-ozon-stage9.md),
 [операционные гейты](operations-checklist.md#product-research-ozon--этап-8).

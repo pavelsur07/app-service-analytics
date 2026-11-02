@@ -33,6 +33,49 @@ const BROKEN_CONNECTION: ConnectionResponse = {
 // приёмом selectOnboardingCompany (OnboardingStartPage.tsx).
 const SALES_PATH = `/companies/${COMPANY_ID}/sales`
 const CONNECTIONS_PATH = `/companies/${COMPANY_ID}/connections`
+const RESEARCH_PATH = `/companies/${COMPANY_ID}/product-research`
+
+describe('research без собственного подключения Ozon', () => {
+  const empty = { status: 'success' as const, data: { connections: [] } }
+
+  it.each([
+    RESEARCH_PATH,
+    `${RESEARCH_PATH}/`,
+    `${RESEARCH_PATH}/019a0000-0000-7000-8000-000000000001`,
+  ])('открывает только research после серверного допуска: %s', (path) => {
+    expect(resolveCompanyGate(COMPANY_ID, empty, path, 'enabled')).toEqual({
+      kind: 'ready',
+    })
+  })
+
+  it('дожидается availability, прежде чем отправить на онбординг', () => {
+    expect(
+      resolveCompanyGate(COMPANY_ID, empty, RESEARCH_PATH, 'pending'),
+    ).toEqual({ kind: 'pending' })
+  })
+
+  it.each([
+    SALES_PATH,
+    CONNECTIONS_PATH,
+    `${RESEARCH_PATH}-other`,
+    `${RESEARCH_PATH}/../sales`,
+    `/companies/other-company/product-research`,
+  ])('сохраняет онбординг вне точных research-маршрутов: %s', (path) => {
+    expect(resolveCompanyGate(COMPANY_ID, empty, path, 'enabled')).toEqual({
+      kind: 'onboarding',
+      to: `/onboarding?company=${COMPANY_ID}`,
+    })
+  })
+
+  it('не открывает research без подтверждённого серверного допуска', () => {
+    expect(
+      resolveCompanyGate(COMPANY_ID, empty, RESEARCH_PATH, 'disabled'),
+    ).toEqual({
+      kind: 'onboarding',
+      to: `/onboarding?company=${COMPANY_ID}`,
+    })
+  })
+})
 
 describe('resolveCompanyGate', () => {
   it('не решает, пока список подключений не прочитан', () => {

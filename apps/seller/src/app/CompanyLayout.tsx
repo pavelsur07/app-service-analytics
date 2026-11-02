@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation, useParams } from 'react-router'
 
 import type { components } from '../api/schema'
 import { useConnections } from '../features/connections/model/useConnections'
+import { useAvailability } from '../features/product-research-ozon/model/queries'
 import { RequireAuth } from './RequireAuth'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
@@ -91,7 +92,20 @@ export function resolveCompanyGate(
   companyId: string,
   connections: ConnectionsQueryState,
   pathname: string,
+  research: 'pending' | 'enabled' | 'disabled' = 'disabled',
 ): CompanyGateDecision {
+  // Research uses the server's MPStats source, not the seller's Ozon credentials.
+  // Only the server-confirmed pilot routes are exempt from connection onboarding.
+  const root = `/companies/${encodeURIComponent(companyId)}/product-research`
+  const path = pathname.replace(/\/$/, '')
+  const researchRoute =
+    path === root ||
+    (path.startsWith(`${root}/`) &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+        path.slice(root.length + 1),
+      ))
+  if (researchRoute && research === 'pending') return { kind: 'pending' }
+  if (researchRoute && research === 'enabled') return { kind: 'ready' }
   if (connections.status === 'pending') {
     return { kind: 'pending' }
   }
@@ -121,7 +135,9 @@ export function resolveCompanyGate(
 
 /**
  * Компания без активного подключения не имеет содержательного экрана
- * (ADR-021): показывать company-scoped экраны с пустыми списками
+ * собственных продаж (ADR-021). Узкое исключение ADR-050: server-enabled
+ * research использует MPStats и открывается без личных Ozon credentials.
+ * Для остальных company-scoped экранов показывать пустые списки
  * значит показывать нули, неотличимые от посчитанных. Гейт стоит
  * здесь, а не на каждом экране — забыть его в одном новом экране
  * вопрос времени, а последствие ровно те нули, ради отсутствия
@@ -144,8 +160,19 @@ export function resolveCompanyGate(
  */
 function ConnectionGate({ companyId }: { companyId: string }) {
   const connections = useConnections(companyId)
+  const research = useAvailability(companyId)
   const { pathname } = useLocation()
-  const decision = resolveCompanyGate(companyId, connections, pathname)
+  const researchState = research.isPending
+    ? 'pending'
+    : !research.isError && research.data?.enabled === true
+      ? 'enabled'
+      : 'disabled'
+  const decision = resolveCompanyGate(
+    companyId,
+    connections,
+    pathname,
+    researchState,
+  )
 
   if (decision.kind === 'pending') {
     return null
