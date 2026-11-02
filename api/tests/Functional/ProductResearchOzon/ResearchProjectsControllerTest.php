@@ -430,8 +430,27 @@ final class ResearchProjectsControllerTest extends SessionWebTestCase
         self::assertSame('feature_disabled', $this->json($client)['code']);
     }
 
+    public function testRolloutClosesEveryDataRouteAndAvailabilityBeforeAnyOperation(): void
+    {
+        [$client, $company] = $this->fixture(false);
+        $base = $this->base($company);
+        $client->request('GET', $base.'/availability');
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+        self::assertSame(['enabled' => false], $this->json($client));
+        foreach (['/projects', '/categories?q=хид', '/projects/'.Uuid::v7()->toRfc4122().'/progress'] as $suffix) {
+            $client->request('GET', $base.$suffix);
+            self::assertSame(404, $client->getResponse()->getStatusCode());
+            self::assertSame('feature_disabled', $this->json($client)['code']);
+        }
+        foreach (['/projects', '/preview', '/projects/'.Uuid::v7()->toRfc4122().'/runs'] as $suffix) {
+            $this->post($client, $base.$suffix, []);
+            self::assertSame(404, $client->getResponse()->getStatusCode());
+            self::assertSame('feature_disabled', $this->json($client)['code']);
+        }
+    }
+
     /** @return array{KernelBrowser, string} */
-    private function fixture(): array
+    private function fixture(bool $allow = true): array
     {
         $client = self::createClient();
         $client->disableReboot();
@@ -441,6 +460,7 @@ final class ResearchProjectsControllerTest extends SessionWebTestCase
         $this->member = $user;
         $this->company = $company;
         $this->actor = $user->id()->toRfc4122();
+        self::getContainer()->set(\App\ProductResearchOzon\Infrastructure\Config\ResearchRollout::class, new \App\ProductResearchOzon\Infrastructure\Config\ResearchRollout($allow ? $company->id()->toRfc4122() : ''));
         $client->loginUser($user, 'api');
         self::service(ResearchCategories::class)->publish($company->id()->toRfc4122(), ['Одежда/Хиджабы', 'Другая категория']);
 

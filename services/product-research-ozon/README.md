@@ -1,8 +1,8 @@
 # product-research-ozon
 
-Этапы 1–5: внутренний FastAPI, Alembic, отдельные dev/test БД,
+Этапы 1–7: внутренний FastAPI, Alembic, отдельные dev/test БД,
 company-scoped S3-порт и выключенный по умолчанию worker. Основание — принятый ADR-050.
-Реализованы суточный кэш категорий, локальная проекция Symfony и движок месячного raw-снимка. Диспетчер заданий и пользовательские экраны — следующие этапы.
+Реализованы суточный кэш категорий, локальная проекция Symfony и движок месячного raw-снимка. Диспетчер заданий и пользовательские экраны реализованы; production-активация ещё закрыта.
 
 План: [product-research-ozon](../../docs/plan/product-research-ozon.md).
 Проверка API: [отчёт REST](../../docs/plan/product-research-ozon-rest-check.md).
@@ -55,9 +55,10 @@ API слушает :8080 только в docker-сети internal (internal=true
 Профиль `product-research` включается явно; worker — отдельный профиль
 `product-research-worker`, по умолчанию выключен. Без явной collection-конфигурации он фиксирует disabled и завершает работу;
 worker_enabled=true требует валидные бюджеты и общий источник каталога.
-Production compose/выкладка Python не добавлены: активация — будущий этап.
+Отдельная production-заготовка и публикация image добавлены этапом8;
+автоматическая выкладка/активация Python пока не включены.
 
-/health проверяет процесс; /ready проверяет БД, точную baseline-ревизию и
+/health проверяет процесс; /ready проверяет БД, точную Alembic-ревизию и
 HeadBucket S3, возвращая collection_enabled=false. API не применяет миграции
 при старте и не создаёт bucket. Проверка S3 требует HeadBucket наряду с правами
 на префикс. Бакеты общие с монолитом: conwix-dev / conwix-test, свой только префикс.
@@ -289,3 +290,38 @@ Legacy API-ready jobs этапа 5 не имеют известного used_at:
 PHP сохраняет null. Новые API/cache jobs записывают точное время принятия;
 origin=cache всегда требует used_at. Неизвестное прошлое время не восстанавливается
 из collected_at.
+
+## Этап 8: подготовка эксплуатации, включение пока закрыто
+
+[План и незакрытые условия](../../docs/plan/product-research-ozon-stage8.md),
+[операционный runbook](../../docs/operations-checklist.md#product-research-ozon--этап-8).
+Production topology — отдельный `docker-compose.research.prod.yml`, default
+без сервисов. Master CI публикует runtime image с immutable version/source;
+основной Conwix deploy этот стек не включает и автоматически не обновляет.
+Включать его до wiring обновления/миграционного gate и live-предусловий нельзя.
+
+Symfony дополнительно проверяет `RESEARCH_ALLOWED_COMPANY_IDS`: canonical
+UUIDv7 через запятую, без пробелов. Пустой/невалидный список закрывает доступ,
+включая availability, даже при общем PRODUCT_RESEARCH_OZON_ENABLED=true.
+Python должен получить тот же список. Общий флаг false закрывает все компании.
+
+Операторские CLI (требуют настроенного защищённого RESEARCH окружения):
+
+```sh
+python -m product_research_ozon.operations diagnostics COMPANY_UUIDV7 SOURCE_UUIDV7 --limit 200
+python -m product_research_ozon.operations verify-snapshot COMPANY_UUIDV7 SOURCE_UUIDV7 --snapshot-id SNAPSHOT_UUIDV7
+```
+
+Diagnostics — sample последних N jobs этой company/source, не полный счётчик
+API-квоты/объёма S3. truncated=true означает неполноту sample. ready API/cache,
+ошибки, overdue и возраст активных jobs не содержат сумм, SKU, тела или секреты.
+Snapshot audit проверяет manifest/число страниц/размеры/SHA-256, читая сырьё
+постранично. MPStats не вызывается; код не исправляет и не удаляет данные.
+
+`make product-research-ozon-recovery-check` создаёт новый случайный local
+Compose project, делает synthetic501 rows/2 pages и cache reuse, pg_dump,
+pg_restore в отдельный PostgreSQL и exact raw audit/tenant denial.
+Копия БД без S3-связей не считается проверенным восстановлением. Это local
+recovery drill, а не утверждение о наличии production backup/restore.
+`make product-research-ozon-prod-config-check` только разбирает topology,
+не читает настоящий env и не создаёт контейнеров.

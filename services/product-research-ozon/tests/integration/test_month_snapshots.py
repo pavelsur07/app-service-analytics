@@ -4,6 +4,8 @@ import logging
 import subprocess
 import sys
 import tarfile
+import time
+import tracemalloc
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -526,8 +528,26 @@ def test_entire_captured_month_102_pages_persists_and_reconstructs_exactly(
             MonthParameters.create(metadata["category_path"], 2026, 1, h.clock()),
             CollectionLimits(100000, 200, 200 * 1024 * 1024),
         )
-        for _ in range(102):
-            value = h.step(value)
+        started = time.monotonic()
+        tracemalloc.start()
+        try:
+            for _ in range(102):
+                value = h.step(value)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        fixture_bytes = sum(asset["bytes"] for asset in metadata["pages"])
+        assert peak < fixture_bytes  # Retaining all raw pages would exceed this bound.
+        print(
+            json.dumps(
+                {
+                    "pages": 102,
+                    "python_heap_peak_bytes": peak,
+                    "fixture_bytes": fixture_bytes,
+                    "elapsed_seconds": int(time.monotonic() - started),
+                }
+            )
+        )
         assert (
             value.status == SnapshotStatus.READY
             and value.cursor == 50702

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\ProductResearchOzon\Ui\Controller;
 
+use App\ProductResearchOzon\Infrastructure\Config\ResearchRollout;
 use App\ProductResearchOzon\Ui\Response\ResearchAvailabilityResponse;
 use App\Shared\Ui\RequestAttributes;
 use App\Shared\Ui\Response\ValidationErrorResponse;
@@ -17,7 +18,7 @@ use Symfony\Component\Routing\Requirement\Requirement;
 #[Route('/api/companies/{companyId}/product-research-ozon/availability', requirements: ['companyId' => Requirement::UUID], methods: ['GET'])]
 final readonly class GetResearchAvailabilityController
 {
-    public function __construct(private bool $researchEnabled)
+    public function __construct(private bool $researchEnabled, private ResearchRollout $rollout)
     {
     }
 
@@ -30,6 +31,8 @@ final readonly class GetResearchAvailabilityController
             return new JsonResponse(new ValidationErrorResponse(403, 'access_denied', 'Нет доступа к компании.'), 403);
         }
 
-        return new JsonResponse(new ResearchAvailabilityResponse($this->researchEnabled), headers: ['Cache-Control' => 'no-store']);
+        $company = $request->attributes->get('companyId');
+
+        return new JsonResponse(new ResearchAvailabilityResponse($this->researchEnabled && \is_string($company) && $this->rollout->allows($company)), headers: ['Cache-Control' => 'no-store']);
     }
 }

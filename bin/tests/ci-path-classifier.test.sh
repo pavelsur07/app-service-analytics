@@ -46,6 +46,7 @@ CASES
 
 test_production_compose_change_runs_both_suites() {
     assert_classification 'docker-compose.prod.yml' true true true 'production Compose'
+    assert_classification 'docker-compose.research.prod.yml' true true true 'research production Compose'
 }
 
 test_early_force_all_match_survives_large_trailing_list() {
