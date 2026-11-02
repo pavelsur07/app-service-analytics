@@ -1088,7 +1088,8 @@ frozen requirements/latest attempts одной MVCC-командой до 24 с�
 `docs/plan/product-research-ozon-stage7.md`, browser-fixture —
 `apps/seller/tests/e2e/product-research.fixture.ts` (только test).
 
-Этап 8 product-research-ozon (подготовка, live-включение ещё закрыто):
+Этап 8 product-research-ozon закрыт как разработка по решению владельца;
+live-включение и эксплуатационная приёмка перенесены в этап 9:
 `Infrastructure/Config/ResearchRollout.php` и `Ui/EventListener/ResearchRolloutSubscriber.php`
 ограничивают research HTTP единым company allowlist; availability учитывает его
 независимо от общего флага. Python `infrastructure/diagnostics.py` читает sample
@@ -1101,5 +1102,6 @@ frozen requirements/latest attempts одной MVCC-командой до 24 с�
 production-заготовка API/worker, не продолжение автоматической выкладки Conwix.
 Runtime image публикуется только master CI с тем же immutable tag/source SHA.
 `bin/tests/product-research-prod-config.test.py` проверяет topology без запуска.
-[План этапа8](plan/product-research-ozon-stage8.md),
+[Закрытый план разработки этапа 8](plan/product-research-ozon-stage8.md),
+[открытый план этапа 9](plan/product-research-ozon-stage9.md),
 [операционные гейты](operations-checklist.md#product-research-ozon--этап-8).

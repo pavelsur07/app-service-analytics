@@ -23,7 +23,7 @@
   signed cursor company/source/revision/expiry. Неполученный и stale каталог — 503,
   пустая успешная генерация — обычный пустой ответ. Суммы category/list не сохранять.
 - Catalog enabled выключен по умолчанию; без явных source ID/generation/quota/секретов
-  MPStats не вызывается. Живой egress/production включается на этапе 8; dev использует
+  MPStats не вызывается. Живой egress/production относится к этапу 9 после закрытия разработки этапа 8; dev использует
   MockTransport/фикстуры, тестовый сервер не входит в runtime image.
 
 - Месячный снимок: одна страница на step, курсор/проверка SKU в своей БД,
@@ -38,4 +38,4 @@
   Слот указывает на job, поэтому restart/rotation не оставляют старый snapshot.
   Partial всегда новый. Admission/catalog/snapshots — v1, enriched progress —
   read-only v2; v1 schema/examples заморожены. collected_at исходного snapshot
-  отдельно от used_at текущего job. Python production остаётся этапом 8.
+  отдельно от used_at текущего job. По решению владельца от 02.11.2026 этап 8 закрыт как разработка; Python production и live-приёмка — этап 9. Требования допуска ADR-050 сохраняются.
