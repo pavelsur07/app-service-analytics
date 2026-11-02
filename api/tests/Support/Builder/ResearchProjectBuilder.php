@@ -15,6 +15,7 @@ final class ResearchProjectBuilder
     private Uuid $company;
     private Uuid $actor;
     private string $name = 'Исследование';
+    private bool $includeCurrent = false;
     /** @var list<PeriodRange> */
     private array $periods;
 
@@ -46,9 +47,19 @@ final class ResearchProjectBuilder
         return $copy;
     }
 
+    /** @param list<PeriodRange> $periods */
+    public function withPeriods(array $periods, bool $includeCurrent = false): self
+    {
+        $copy = clone $this;
+        $copy->periods = $periods;
+        $copy->includeCurrent = $includeCurrent;
+
+        return $copy;
+    }
+
     public function build(): ResearchProject
     {
-        return new ResearchProject($this->company, new CategoryReference('Одежда/Хиджабы', 1), $this->name, 'Комментарий', false, $this->actor, new \DateTimeImmutable('2026-04-15T09:00:00Z'), \count($this->periods));
+        return new ResearchProject($this->company, new CategoryReference('Одежда/Хиджабы', 1), $this->name, 'Комментарий', $this->includeCurrent, $this->actor, new \DateTimeImmutable('2026-04-15T09:00:00Z'), \count($this->periods));
     }
 
     public function persistWith(ResearchProjectRepository $repository): ResearchProject

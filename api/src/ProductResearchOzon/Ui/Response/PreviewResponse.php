@@ -20,7 +20,7 @@ final readonly class PreviewResponse
     public string $timezone;
     public ?string $suggestedName;
 
-    public function __construct(CalendarPreview $preview, ?string $categoryPath = null)
+    public function __construct(CalendarPreview $preview, ?string $categoryPath = null, public ?int $cachedMonthCount = null)
     {
         $this->periods = array_map(static fn (PeriodRange $range): PeriodResponse => new PeriodResponse($range), $preview->periods);
         $this->months = array_map(static fn (MonthSlice $month): MonthResponse => new MonthResponse($month), $preview->months);
