@@ -1112,6 +1112,10 @@ provision на disposable PostgreSQL, включая запрет текущих
 не создаёт источника и не обрабатывает jobs, readiness проверяет свою DB/S3.
 Основной deploy обновляет разрешённый standalone stack и проверяет ревизию,
 источник образа и health; при выключении останавливает только этот stack.
+По уточнению владельца от 02.11.2026 production Compose передаёт существующие
+RAW_STORAGE_* в RESEARCH_S3_* API/worker. Путь остаётся research-префиксом в том
+же бакете; IAM-изоляции общего ключа нет (ADR-050). Config-тест проверяет
+приоритет над старыми env_file значениями, literal секреты и отсутствие ключа.
 [Закрытый план разработки этапа 8](plan/product-research-ozon-stage8.md),
 [открытый план этапа 9](plan/product-research-ozon-stage9.md),
 [операционные гейты](operations-checklist.md#product-research-ozon--этап-8).

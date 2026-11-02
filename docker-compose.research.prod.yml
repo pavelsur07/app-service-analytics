@@ -16,6 +16,13 @@ x-research: &research
   env_file:
     - path: ${RESEARCH_ENV_FILE:-/opt/conwix/research.env}
       required: false
+  # Owner decision 2026-11-02: reuse the existing protected deployment connection.
+  # Explicit environment wins over stale research.env values, including key rotation.
+  environment:
+    RESEARCH_S3_ENDPOINT: ${RAW_STORAGE_ENDPOINT:-}
+    RESEARCH_S3_BUCKET: ${RAW_STORAGE_BUCKET:-}
+    RESEARCH_S3_ACCESS_KEY: ${RAW_STORAGE_ACCESS_KEY:-}
+    RESEARCH_S3_SECRET_KEY: ${RAW_STORAGE_SECRET_KEY:-}
   networks: [internal, egress]
   dns: [77.88.8.8, 1.1.1.1]
   labels:
