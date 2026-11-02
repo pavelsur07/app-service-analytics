@@ -91,6 +91,26 @@ PHP/ozon-fetcher/research и требует обновления всех пот
 Межсервисный токен PHP → Python отдельный,
 не короче 32 символов; сеть internal, без публичного маршрута.
 
+### Пилотный просмотр UI без MPStats
+
+02.11.2026 владелец поручил открыть интерфейс двум подтверждённым кабинетам.
+Research использует отдельный источник MPStats и не требует личного подключения
+Ozon для просмотра собственных исследовательских проектов. Поэтому только
+точные research list/project маршруты освобождены от onboarding gate ADR-021,
+и только после успешного server availability для текущей компании. Pending
+availability ожидается, error/false не открывают исключение. RequireAuth,
+membership, blocked-company, extension scope и API rollout сохраняются.
+Остальные разделы, включая продажи, по-прежнему требуют active подключения.
+Пилотные идентификаторы хранятся только в защищённом company allowlist.
+
+Просмотр включается PHP-флагом и allowlist, но PHP `RESEARCH_CATALOG_SOURCE_ID`
+остаётся пустым до допуска MPStats. Существующий CatalogContext отклоняет
+поиск/создание по неподготовленному каталогу и новый run возвращает
+catalog_not_ready до записи run/outbox и изменения проекта. Исходный source ID
+сохраняется в защищённом Python env для последующей настройки.
+Python catalog/collection/worker выключены, standby=true, MPStats secret
+отсутствует. UI-допуск не является разрешением live-сбора или закрытием этапа 9.
+
 ### Календарь, сырьё и ограничение MVP
 
 Предлагаемые defaults: FBS всегда включён, RUB, «Новинки: Неважно»,

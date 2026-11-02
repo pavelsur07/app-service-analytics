@@ -742,6 +742,16 @@ Protocol, private manifest, receipts и artifacts сохранены. Перез
 
 ### Гейты до включения загрузки
 
+**Пилотный UI (поручение владельца 02.11.2026):** PHP
+`PRODUCT_RESEARCH_OZON_ENABLED=true` допускает только два идентификатора из
+защищённого `RESEARCH_ALLOWED_COMPANY_IDS`. Они одинаковы в PHP/Python.
+Для просмотра PHP `RESEARCH_CATALOG_SOURCE_ID` оставляется пустым: существующий
+CatalogContext возвращает catalog_not_ready и run/outbox не создаются.
+Исходный source ID сохраняется в Python env, catalog/collection/worker=false,
+standby=true, MPStats token отсутствует. Только разрешённый research route
+открывается без личного подключения Ozon; остальные разделы сохраняют ADR-021.
+Это не выполнение live-гейтов ниже. Реальные имена/UUID пилотов в Git не включать.
+
 - [ ] Известны pilot company UUIDv7, действующий тариф, подтверждённые RPM/API
   quota и бюджеты rows/pages/bytes. Технические настройки не называют квотой.
 - [ ] Production MPStats secret настроен в защищённом окружении сервиса;
@@ -756,7 +766,8 @@ Protocol, private manifest, receipts и artifacts сохранены. Перез
 - [ ] Операторская сверка MPStats/CSV отдельно от фикстур; подтверждены параметры
   FBS/RUB/периоды и ограничения схемы41 manual /49 API CSV /62 REST полей.
 - [ ] CI/независимое ревью зелёные, pilot ready/cache и отказ остальным компаниям
-  проверены на production; до этого глобальный флаг false.
+  проверены на production; до этого разрешён только описанный выше пилотный
+  просмотр с ненастроенным PHP source, без live-сбора.
 
 ### Topology и конфигурация
 
@@ -778,7 +789,8 @@ pull immutable image → provision DB/HBA → source/revision check → up --wai
 `RESEARCH_COLLECTION_ENABLED=false`, `RESEARCH_WORKER_ENABLED=false`, без
 `MPSTATS_API_TOKEN`. Worker проверяет инфраструктуру и ожидает SIGTERM, не
 создаёт клиента источника и не захватывает jobs. Healthcheck отличает этот
-явный режим от отключённого worker. Общий PHP-флаг остаётся false,
+явный режим от отключённого worker. При инфраструктурном запуске PHP-флаг false;
+для отдельного пилотного просмотра применяется конфигурация выше.
 process-runs/sync-categories не запускаются. Это не выполнение live-гейтов.
 
 Бакет — существующий бакет сырья Conwix; новый не создаётся. Research пишет

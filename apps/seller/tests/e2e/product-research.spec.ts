@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import type { components } from '../../src/api/schema'
 import { researchFixture } from './product-research.fixture'
 
 test.use({ actionTimeout: 15_000 })
@@ -71,6 +72,83 @@ test.describe('product research Ozon — UI с синтетическим исс
         email === undefined ||
         password === undefined,
       'Запускать через make test-e2e: нужны sandbox company/user',
+    )
+  })
+
+  test('пилот без подключения Ozon видит research, но продажи требуют онбординга', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000)
+    const selected = company ?? ''
+    const fixture = await researchFixture(page, selected)
+    let connectionReads = 0
+    await page.route(
+      `**/api/companies/${selected}/connections`,
+      async (route) => {
+        connectionReads++
+        await route.fulfill({
+          json: {
+            connections: [],
+          } satisfies components['schemas']['ConnectionsResponse'],
+        })
+      },
+    )
+    await page.route(
+      `**/api/companies/${selected}/product-research-ozon/categories?*`,
+      async (route) => {
+        await route.fulfill({
+          status: 503,
+          json: {
+            status: 503,
+            code: 'catalog_not_ready',
+            message: 'Источник пока не настроен.',
+          } satisfies components['schemas']['ValidationErrorResponse'],
+        })
+      },
+    )
+    await page.goto('/login')
+    await page.getByLabel('Email', { exact: true }).fill(email ?? '')
+    await page.getByLabel('Пароль', { exact: true }).fill(password ?? '')
+    await page.getByRole('button', { name: 'Войти', exact: true }).click()
+    await expect(
+      page.getByRole('link', { name: 'E2E Sandbox LLC', exact: true }),
+    ).toBeVisible()
+    await page.goto(`/companies/${selected}/product-research`)
+    await expect(
+      page.getByRole('heading', { name: 'Подбор товаров Ozon' }),
+    ).toBeVisible()
+    await page
+      .getByRole('button', { name: 'Новый проект', exact: true })
+      .click()
+    await page.getByRole('combobox', { name: 'Категория Ozon' }).fill('хид')
+    await expect(
+      page.getByText(
+        'Справочник категорий обновляется. Повторите поиск позже.',
+      ),
+    ).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Создать проект', exact: true }),
+    ).toBeDisabled()
+    expect(fixture.creates()).toBe(0)
+    expect(fixture.starts()).toBe(0)
+    await page.goto(`/companies/${selected}/sales`)
+    await expect(page).toHaveURL(
+      new RegExp(`/onboarding\\?company=${selected}`),
+    )
+    expect(connectionReads).toBeLessThan(8)
+    await page.route(
+      `**/api/companies/${selected}/product-research-ozon/availability`,
+      async (route) => {
+        await route.fulfill({
+          json: {
+            enabled: false,
+          } satisfies components['schemas']['ResearchAvailabilityResponse'],
+        })
+      },
+    )
+    await page.goto(`/companies/${selected}/product-research`)
+    await expect(page).toHaveURL(
+      new RegExp(`/onboarding\\?company=${selected}`),
     )
   })
 
