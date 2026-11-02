@@ -14,7 +14,7 @@ app-service-analytics/
 │                         `make` без аргументов — список целей
 ├── docker-compose.yml    dev-окружение
 ├── docker-compose.research.prod.yml  отдельный opt-in research stack, profile research;
-│                         не запускается основным deploy, секреты вне Git
+│                         deploy по RESEARCH_STACK_ENABLED, секреты вне Git
 ├── docker-compose.prod.yml  описание prod-топологии: Traefik, nginx,
 │                         веб и два воркера из одного образа, Redis;
 │                         не выкладка
@@ -38,6 +38,10 @@ app-service-analytics/
 │   │                         postgres; выполняет выкладка на сервере
 │   ├── ozon-fetcher-compose.sh  compose боевой топологии с профилем
 │   │                         ozon-fetcher, если OZON_FETCHER_ENABLED=true
+│   ├── product-research-ozon-compose.sh  отдельный stack по RESEARCH_STACK_ENABLED;
+│   │                         неизвестное состояние закрыто, user flag независим
+│   ├── product-research-ozon-prod-db.sh  собственные роль/БД/HBA research;
+│   │                         пароль через stdin, миграции отдельным шагом
 │   ├── ozon-fetcher-observe.sh  сверка недели наблюдения (ADR-043 п. 5):
 │   │                         429/403 по API, покрытие; только чтение
 │   ├── tests/             автономные shell-контрактные тесты утилит
@@ -1099,9 +1103,15 @@ live-включение и эксплуатационная приёмка пе�
 `bin/test-product-research-recovery.py` проверяют настоящий pg_dump/pg_restore
 в случайном одноразовом local Compose проекте. Основной dev не перезаписывается.
 `docker-compose.research.prod.yml` — отдельная, выключенная по умолчанию
-production-заготовка API/worker, не продолжение автоматической выкладки Conwix.
+production-топология API/worker; этап 9 подключает её к штатному deploy по отдельному флагу.
 Runtime image публикуется только master CI с тем же immutable tag/source SHA.
 `bin/tests/product-research-prod-config.test.py` проверяет topology без запуска.
+`bin/tests/product-research-prod.test.py` проверяет закрытый switch и настоящий
+provision на disposable PostgreSQL, включая запрет текущих/будущих чужих БД.
+Инфраструктурный этап 9 добавляет явный standby worker без MPStats; режим
+не создаёт источника и не обрабатывает jobs, readiness проверяет свою DB/S3.
+Основной deploy обновляет разрешённый standalone stack и проверяет ревизию,
+источник образа и health; при выключении останавливает только этот stack.
 [Закрытый план разработки этапа 8](plan/product-research-ozon-stage8.md),
 [открытый план этапа 9](plan/product-research-ozon-stage9.md),
 [операционные гейты](operations-checklist.md#product-research-ozon--этап-8).

@@ -102,6 +102,7 @@ class Settings:
 
     catalog: CatalogSettings | None = None
     collection: CollectionSettings | None = None
+    worker_standby: bool = False
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> Settings:
@@ -127,6 +128,11 @@ class Settings:
             raise ValueError("invalid_directional_tokens")
         catalog = CatalogSettings.from_mapping(values)
         collection = CollectionSettings.from_mapping(values, catalog)
+        standby = values.get("worker_standby", "false")
+        if standby not in ("false", "true") or (
+            standby == "true" and (catalog is not None or collection is not None)
+        ):
+            raise ValueError("invalid_worker_standby_configuration")
         try:
             database = urlsplit(values["database_url"])
             endpoint = urlsplit(values["s3_endpoint"])
@@ -153,4 +159,5 @@ class Settings:
             **{name: values[name] for name in required},
             catalog=catalog,
             collection=collection,
+            worker_standby=standby == "true",
         )

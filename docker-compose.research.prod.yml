@@ -1,5 +1,5 @@
 # Standalone, opt-in research stack. Does not alter the current Conwix deployment.
-# Start only after the stage8 release gates; secrets live outside Git.
+# Infrastructure standby has no MPStats egress. Live collection requires stage9 gates.
 name: conwix-research
 x-research: &research
   image: ${RESEARCH_IMAGE:-ghcr.io/pavelsur07/app-service-analytics/product-research-ozon:unconfigured}
@@ -41,7 +41,7 @@ services:
       product-research-ozon:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "from product_research_ozon.bootstrap import configured_settings; from product_research_ozon.infrastructure.readiness import Readiness; from product_research_ozon.infrastructure.storage import RawStorage; s=configured_settings(); raise SystemExit(0 if s.collection is not None and s.collection.worker_enabled and Readiness(s, RawStorage(s))() else 1)"]
+      test: ["CMD", "python", "-m", "product_research_ozon.worker", "--check"]
       interval: 30s
       timeout: 8s
       retries: 3

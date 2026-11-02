@@ -53,6 +53,29 @@ def test_valid_request_is_explicitly_unavailable() -> None:
     assert response.json()["error"]["code"] == "not_available"
 
 
+def test_worker_standby_needs_no_mpstats_and_cannot_enable_collection() -> None:
+    configuration = settings(worker_standby="true")
+    assert configuration.worker_standby
+    assert configuration.catalog is None and configuration.collection is None
+    with pytest.raises(ValueError, match="invalid_worker_standby_configuration"):
+        settings(worker_standby="yes")
+    with pytest.raises(ValueError):
+        settings(worker_standby="true", worker_enabled="true")
+
+
+def test_standby_cannot_silently_discard_configured_catalog() -> None:
+    with pytest.raises(ValueError, match="invalid_worker_standby_configuration"):
+        settings(
+            worker_standby="true",
+            catalog_enabled="true",
+            catalog_source_id=COMPANY,
+            catalog_generation="1",
+            catalog_rpm="1",
+            mpstats_api_token="test-" + "x" * 32,
+            catalog_cursor_secret="test-" + "y" * 32,
+        )
+
+
 @pytest.mark.parametrize("ready", [True, False])
 def test_health_is_distinct_from_readiness(ready: bool) -> None:
     with TestClient(create_app(settings(), lambda: ready)) as client:

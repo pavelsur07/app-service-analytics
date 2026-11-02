@@ -537,7 +537,7 @@ jobs:
       - run: docker compose up -d postgres s3
 
       - run: make ozon-fetcher-lint ozon-fetcher-vet ozon-fetcher-test ozon-fetcher-vulncheck ozon-fetcher-build
-      - run: make product-research-ozon-stage0-check product-research-ozon-check product-research-ozon-recovery-check product-research-ozon-prod-config-check
+      - run: make product-research-ozon-stage0-check product-research-ozon-check product-research-ozon-recovery-check product-research-ozon-prod-check
 
   image:
     name: сборка и публикация образа
@@ -743,6 +743,10 @@ jobs:
           # Файлы топологии — из репозитория, чтобы правка compose доезжала
           # вместе с кодом, а не переносилась руками.
           rsync -az -e "$SSH" docker-compose.prod.yml "$HOST:/opt/conwix/"
+          rsync -az -e "$SSH" docker-compose.research.prod.yml "$HOST:/opt/conwix/"
+          $SSH "$HOST" 'mkdir -p /opt/conwix/research'
+          rsync -az -e "$SSH" bin/product-research-ozon-compose.sh bin/product-research-ozon-prod-db.sh \
+            services/docker/postgres/init/04-product-research-ozon-hba.sh "$HOST:/opt/conwix/research/"
           # --inplace для двух файлов ниже обязателен, и это не оптимизация.
           # Оба смонтированы в контейнеры как отдельные ФАЙЛЫ, а bind-mount
           # файла привязан к inode, не к пути. rsync по умолчанию пишет
@@ -869,6 +873,34 @@ jobs:
              sh ozon-fetcher/ozon-fetcher-compose.sh run --rm --no-deps -T ozon-fetcher -migrations-check \
                || { echo 'Есть неприменённые миграции ozon-fetcher. Примените: sh ozon-fetcher/ozon-fetcher-compose.sh run --rm --no-deps -T ozon-fetcher -migrate — и повторите выкладку.' >&2; exit 1; }"
 
+      - name: research — образ, БД и проверка миграций
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          SSH="ssh -i $HOME/.ssh/deploy -o BatchMode=yes root@${{ secrets.DEPLOY_HOST }}"
+          IMAGE='ghcr.io/${{ github.repository }}/product-research-ozon:${{ needs.image.outputs.tag }}'
+          rc=0
+          $SSH 'cd /opt/conwix && sh research/product-research-ozon-compose.sh --enabled' || rc=$?
+          case $rc in
+            0) ;;
+            1) echo 'research stack выключен — шаг пропущен'; exit 0 ;;
+            *) echo 'research: включённость неизвестна'; exit 1 ;;
+          esac
+          printf '%s' "$GHCR_TOKEN" | $SSH "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+          $SSH "set -eu
+            cd /opt/conwix
+            trap 'docker logout ghcr.io >/dev/null' EXIT
+            docker pull '$IMAGE'
+            sed -i '/^RESEARCH_IMAGE=/d' .env
+            echo 'RESEARCH_IMAGE=$IMAGE' >> .env
+            sh research/product-research-ozon-prod-db.sh
+            sh research/product-research-ozon-compose.sh run --rm --no-deps -T product-research-ozon \
+              python -c 'import os; assert os.environ[\"APP_SOURCE_COMMIT\"] == \"${{ github.sha }}\"'
+            sh research/product-research-ozon-compose.sh run --rm --no-deps -T product-research-ozon \
+              python -m product_research_ozon.migrate check \
+              || { echo 'research: примените миграции отдельной командой и повторите выкладку'; exit 1; }"
+
       - name: выкладка
         run: |
           set -eu
@@ -889,6 +921,21 @@ jobs:
                1) docker compose -f docker-compose.prod.yml --profile ozon-fetcher rm -sf ozon-fetcher ;;
                *) exit 1 ;;
              esac'
+
+      - name: research — запуск и готовность либо остановка
+        run: |
+          set -eu
+          ssh -i "$HOME/.ssh/deploy" -o BatchMode=yes 'root@${{ secrets.DEPLOY_HOST }}' sh -s <<'REMOTE'
+          set -eu
+          cd /opt/conwix
+          rc=0
+          sh research/product-research-ozon-compose.sh --enabled || rc=$?
+          case $rc in
+            0) sh research/product-research-ozon-compose.sh up -d --wait --wait-timeout 120 ;;
+            1) docker compose -f docker-compose.research.prod.yml --profile research stop --timeout 60 ;;
+            *) exit 1 ;;
+          esac
+          REMOTE
 
       # С повторами, а не один запрос после sleep: контейнер поднимается
       # не мгновенно, и одиночная проверка ловила пустой ответ, объявляя

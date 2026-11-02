@@ -736,10 +736,11 @@ Protocol, private manifest, receipts и artifacts сохранены. Перез
 
 Состояние: этап 8 закрыт как разработка по решению владельца от 02.11.2026.
 Операционные условия ниже перенесены в [этап 9](plan/product-research-ozon-stage9.md)
-без отметки PASS. Research production API/worker не включены.
+без отметки PASS. Live research не включён. Решением владельца от 02.11.2026
+разрешена подготовка и запуск закрытой инфраструктуры без MPStats-ключа.
 [Принятая разработка/TDD](plan/product-research-ozon-stage8.md).
 
-### Гейты до включения
+### Гейты до включения загрузки
 
 - [ ] Известны pilot company UUIDv7, действующий тариф, подтверждённые RPM/API
   quota и бюджеты rows/pages/bytes. Технические настройки не называют квотой.
@@ -763,9 +764,27 @@ Default config содержит0 сервисов. Явный profile research �
 без ports, с UID10001, read-only root и tmpfs, internal+egress сетью, journald,
 healthchecks. Memory ceiling256MiB — технический настраиваемый предел контейнера,
 не гарантия допустимого размера категории и не тарифный лимит провайдера.
-Это заготовка: основной `.github/workflows/ci.yml` публикует runtime image,
-но не запускает/не обновляет этот отдельный стек. Применение профиля до всех
-гейтов запрещено; отсутствие секретов не заменяется общими credentials.
+Основной `.github/workflows/ci.yml` публикует runtime image и обновляет этот
+стек только при `RESEARCH_STACK_ENABLED=true` в `/opt/conwix/.env`:
+pull immutable image → provision DB/HBA → source/revision check → up --wait.
+Миграции не применяются автоматически; до up их применяют отдельным шагом.
+При false стек останавливается без удаления БД/S3; ошибка определения флага
+останавливает deploy. Отсутствие секретов не заменяется общими credentials.
+
+Закрытый инфраструктурный запуск без MPStats: в `research.env` задать
+`RESEARCH_WORKER_STANDBY=true`, `RESEARCH_CATALOG_ENABLED=false`,
+`RESEARCH_COLLECTION_ENABLED=false`, `RESEARCH_WORKER_ENABLED=false`, без
+`MPSTATS_API_TOKEN`. Worker проверяет инфраструктуру и ожидает SIGTERM, не
+создаёт клиента источника и не захватывает jobs. Healthcheck отличает этот
+явный режим от отключённого worker. Общий PHP-флаг остаётся false,
+process-runs/sync-categories не запускаются. Это не выполнение live-гейтов.
+
+Бакет — существующий бакет сырья Conwix; новый не создаётся. Research пишет
+только в `conwix/svc/product-research-ozon/v1/`, ключ собирает сервис.
+Readiness делает ограниченный ListObjectsV2 этого префикса (MaxKeys=1),
+не требует просмотра корня бакета. Отдельный S3-пользователь/ключ обязателен;
+при отсутствии возможности ограничить prefix издержка фиксируется отдельно.
+Не применять публичные Allow-политики и не заменять политики всего бакета.
 
 Файл production-секретов — вне Git, например `/opt/conwix/research.env`, mode0600.
 Нужны RESEARCH_DATABASE_URL собственной БД, INBOUND/OUTBOUND_TOKEN,
@@ -774,6 +793,21 @@ CATALOG_CURSOR_SECRET, MPSTATS_API_TOKEN, COLLECTION_ENABLED/WORKER_ENABLED,
 ALLOWED_COMPANY_IDS и MAX_ROWS/MAX_PAGES/MAX_BYTES (RESEARCH_ префикс, кроме токена MPStats).
 Catalog/collection/worker включаются только явно. Source ID UUIDv7 стабилен;
 поколение повышается при ротации, raw прошлых поколений не переписывается.
+
+`research.env` дополнительно содержит `RESEARCH_DB_PASSWORD` (64 hex) для
+provision; `RESEARCH_DATABASE_URL` соответствует этому паролю. Собственная
+БД `product_research_ozon`, роль `svc_product_research_ozon`. Команды из `/opt/conwix`:
+
+```sh
+sh research/product-research-ozon-prod-db.sh
+# Явное применение, не часть deploy; профиль разрешён только после настройки прав.
+sh research/product-research-ozon-compose.sh run --rm --no-deps -T product-research-ozon python -m product_research_ozon.migrate up
+sh research/product-research-ozon-compose.sh run --rm --no-deps -T product-research-ozon python -m product_research_ozon.migrate check
+sh research/product-research-ozon-compose.sh up -d --wait --wait-timeout 120
+```
+
+Сначала подготовить защищённую конфигурацию; provision собственной БД допустим
+отдельно от запуска S3/API. CLI provision не создаёт бакет и не мигрирует схему.
 
 В `.env` Conwix задаются только PRODUCT_RESEARCH_OZON_ENABLED,
 RESEARCH_ALLOWED_COMPANY_IDS, RESEARCH_CATALOG_SOURCE_ID и RESEARCH_SERVICE_TOKEN.

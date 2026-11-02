@@ -28,7 +28,13 @@ class RawStorage:
         )
 
     def ready(self) -> None:
-        self._client.head_bucket(Bucket=self._bucket)
+        # A prefix-scoped credential need not have root bucket listing permissions.
+        # Bounded metadata probe only; no raw bodies or bucket creation.
+        self._client.list_objects_v2(
+            Bucket=self._bucket,
+            Prefix="conwix/svc/product-research-ozon/v1/",
+            MaxKeys=1,
+        )
 
     def put_page(self, company_id: UUID, page: PageRef, body: bytes) -> None:
         key = page.key(company_id)
