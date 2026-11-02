@@ -30,6 +30,8 @@ import {
   LocalizationSection,
 } from './LocalizationSection'
 import { RequireAuth } from './RequireAuth'
+import { ResearchProjectsPage } from '../features/product-research-ozon/ui/ResearchProjectsPage'
+import { ResearchProjectPage } from '../features/product-research-ozon/ui/ResearchProjectPage'
 
 // retry: false — TanStack Query по умолчанию повторяет неудачный запрос
 // трижды с задержкой; для 401/403 это не транзиентный сбой, а ответ,
@@ -94,6 +96,8 @@ const router = createBrowserRouter([
       // Адрес про предметную область, а не про модуль (docs/structure.md):
       // продавцу «price-monitoring» ничего не говорит.
       { path: 'prices', element: <PriceOverviewPage /> },
+      { path: 'product-research', element: <ResearchProjectsPage /> },
+      { path: 'product-research/:projectId', element: <ResearchProjectPage /> },
     ],
   },
 ])

@@ -14,11 +14,13 @@ import {
   CalendarCheck,
   ChartNoAxesCombined,
   LayoutDashboard,
+  SearchCheck,
 } from 'lucide-react'
 import { NavLink } from 'react-router'
 
 import { Button } from '../../../../packages/ui/src'
 import { useCurrentUser } from '../shared/model/useCurrentUser'
+import { useAvailability } from '../features/product-research-ozon/model/queries'
 import { useLogout } from '../features/auth/model/useLogout'
 
 // Раскладка навигации — эталон docs/design/ui-kit/v0.6.html, раздел 9:
@@ -66,7 +68,8 @@ const ITEMS = [
   { to: 'coverage', label: 'Полнота данных', icon: CalendarCheck },
 ] as const
 
-export function Sidebar() {
+export function Sidebar({ companyId }: { companyId: string }) {
+  const research = useAvailability(companyId)
   const currentUser = useCurrentUser()
   const logout = useLogout()
 
@@ -93,6 +96,18 @@ export function Sidebar() {
           {label}
         </NavLink>
       ))}
+
+      {research.data?.enabled === true && !research.isError && (
+        <NavLink
+          to="product-research"
+          className={({ isActive }) =>
+            `${ITEM} ${isActive ? ITEM_ACTIVE : ITEM_IDLE}`
+          }
+        >
+          <SearchCheck aria-hidden="true" size={16} />
+          Подбор товаров Ozon
+        </NavLink>
+      )}
 
       {/* Выход внизу и на каждом экране. Раньше он жил только на выборе
           компании — то есть после входа в компанию был недоступен. */}

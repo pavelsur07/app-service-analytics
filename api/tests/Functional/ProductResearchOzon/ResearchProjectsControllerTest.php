@@ -246,6 +246,10 @@ final class ResearchProjectsControllerTest extends SessionWebTestCase
         $client->getCookieJar()->clear();
         $client->request('GET', $this->base($company).'/projects', server: $headers);
         self::assertSame(401, $client->getResponse()->getStatusCode());
+        foreach (['/availability', '/projects/'.Uuid::v7()->toRfc4122().'/progress'] as $suffix) {
+            $client->request('GET', $this->base($company).$suffix, server: $headers);
+            self::assertSame(401, $client->getResponse()->getStatusCode());
+        }
         $client->request('POST', $this->base($company).'/projects', server: [...$headers, 'CONTENT_TYPE' => 'application/json'], content: json_encode($this->valid(), \JSON_THROW_ON_ERROR));
         self::assertSame(401, $client->getResponse()->getStatusCode());
     }
@@ -384,6 +388,46 @@ final class ResearchProjectsControllerTest extends SessionWebTestCase
         self::assertSame(422, $client->getResponse()->getStatusCode());
         $client->request('GET', $this->base($company).'/projects/'.Uuid::v7()->toRfc4122().'/runs/'.$run);
         self::assertSame(404, $client->getResponse()->getStatusCode());
+    }
+
+    public function testAvailabilityAndProjectProgressEnforceCompanyScope(): void
+    {
+        [$client, $company] = $this->fixture();
+        $base = $this->base($company);
+        $client->request('GET', $base.'/availability');
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+        self::assertTrue($this->json($client)['enabled']);
+        $this->post($client, $base.'/projects', $this->valid());
+        $id = $this->json($client)['id'];
+        self::assertIsString($id);
+        $client->request('GET', $base.'/projects/'.$id.'/progress');
+        $progress = $this->json($client);
+        self::assertSame('draft', $progress['status']);
+        self::assertNull($progress['lastRunId']);
+        self::assertIsArray($progress['months']);
+        self::assertCount(6, $progress['months']);
+        $foreign = CompanyBuilder::aCompany()->persistWith(self::service(CompanyRepository::class));
+        foreach (['/availability', '/projects/'.$id.'/progress'] as $suffix) {
+            $client->request('GET', $this->base($foreign->id()->toRfc4122()).$suffix);
+            self::assertSame(403, $client->getResponse()->getStatusCode());
+        }
+        $client->request('GET', $base.'/projects/'.Uuid::v7()->toRfc4122().'/progress');
+        self::assertSame(404, $client->getResponse()->getStatusCode());
+        $client->getCookieJar()->clear();
+        $client->request('GET', $base.'/availability');
+        self::assertSame(401, $client->getResponse()->getStatusCode());
+    }
+
+    public function testAvailabilityExposesDisabledFlagWithoutOpeningData(): void
+    {
+        $_ENV['PRODUCT_RESEARCH_OZON_ENABLED'] = $_SERVER['PRODUCT_RESEARCH_OZON_ENABLED'] = '0';
+        [$client, $company] = $this->fixture();
+        $client->request('GET', $this->base($company).'/availability');
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+        self::assertFalse($this->json($client)['enabled']);
+        $client->request('GET', $this->base($company).'/projects/'.Uuid::v7()->toRfc4122().'/progress');
+        self::assertSame(404, $client->getResponse()->getStatusCode());
+        self::assertSame('feature_disabled', $this->json($client)['code']);
     }
 
     /** @return array{KernelBrowser, string} */

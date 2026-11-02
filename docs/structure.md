@@ -1070,3 +1070,18 @@ Symfony `RunProvenance` хранит origin/collected/used, `ProjectStatusSql` �
 `ReconcileResearchRunsAction`/`ReconcileResearchRunsCommand` восстанавливают
 доставленные, включая завершённые, runs keyset-порцией одной компании.
 План/приёмка — `docs/plan/product-research-ozon-stage6.md`.
+
+Этап 7 product-research-ozon: seller feature `features/product-research-ozon/`:
+`model/queries.ts` — company client/Query keys, `useResearchForm` — draft/preview
+и записи, `useResearchProject` — bounded polling/intent/версионная сверка;
+`lib` — ввод/UUIDv7/ошибки/представление, `ui` — список, форма и месяцы проекта.
+Routes `/companies/:companyId/product-research[/:projectId]` и пункт Sidebar
+используют backend availability; существующий CompanyLayout gate сохранён.
+Symfony `ProjectProgressQuery`/readonly DTO/response и GET project progress читают
+frozen requirements/latest attempts одной MVCC-командой до 24 строк.
+`ResearchCacheEstimateQuery` считает ориентир по локальным ready closed метаданным
+той же company/source/category. Preview дополняет cachedMonthCount, null при
+неизвестном source. Read-only availability отражает исходный серверный флаг.
+Миграций/изменений Python или пакета общих UI нет; план/TDD —
+`docs/plan/product-research-ozon-stage7.md`, browser-fixture —
+`apps/seller/tests/e2e/product-research.fixture.ts` (только test).

@@ -207,7 +207,7 @@ function CompanyShell({
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-bg-base">
       <Topbar companyId={companyId} connections={connections} />
       <div className="flex min-h-0 flex-1">
-        <Sidebar />
+        <Sidebar companyId={companyId} />
         {/* Отступ и вертикальный ритм — свойство рабочей зоны, а не
             каждого экрана (docs/design/ui-kit/v0.6.html, раздел 13:
             padding 24px, gap 16px). Пока их проставляла каждая

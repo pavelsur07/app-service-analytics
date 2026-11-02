@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\ProductResearchOzon\Ui\Controller;
 
 use App\ProductResearchOzon\Application\ResearchPreparation;
+use App\ProductResearchOzon\Domain\CatalogSyncFailure;
+use App\ProductResearchOzon\Infrastructure\Config\CatalogContext;
+use App\ProductResearchOzon\Infrastructure\Query\ResearchCacheEstimateQuery;
 use App\ProductResearchOzon\Ui\Request\ResearchRequest;
 use App\ProductResearchOzon\Ui\Response\PreviewResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
@@ -18,7 +21,7 @@ use Symfony\Component\Routing\Requirement\Requirement;
 #[Route('/api/companies/{companyId}/product-research-ozon/preview', requirements: ['companyId' => Requirement::UUID], methods: ['POST'])]
 final class PreviewResearchController extends ResearchController
 {
-    public function __construct(bool $researchEnabled, private readonly ResearchPreparation $prepare)
+    public function __construct(bool $researchEnabled, private readonly ResearchPreparation $prepare, private readonly ResearchCacheEstimateQuery $cache, private readonly CatalogContext $context)
     {
         parent::__construct($researchEnabled);
     }
@@ -47,7 +50,23 @@ final class PreviewResearchController extends ResearchController
                 $path = $this->prepare->category($companyId, $path)->path;
             }
 
-            return new JsonResponse(new PreviewResponse($preview, $path));
+            $cached = null;
+            if (null !== $path) {
+                try {
+                    $source = $this->context->sourceId();
+                } catch (CatalogSyncFailure) {
+                    $source = null;
+                }
+                if (null !== $source) {
+                    $value = $this->cache->months($companyId, $source, $path, $preview->months)->executeQuery()->fetchOne();
+                    if (!\is_int($value)) {
+                        throw new \UnexpectedValueException('invalid_cache_estimate');
+                    }
+                    $cached = $value;
+                }
+            }
+
+            return new JsonResponse(new PreviewResponse($preview, $path, $cached), headers: ['Cache-Control' => 'no-store']);
         });
     }
 }
