@@ -66,6 +66,9 @@ final readonly class DbalRunDeliveryRepository implements RunDeliveryRepository
             if (null === $view || \count($view->progress->months) !== \count($progress->months)) {
                 throw new RunSyncFailure('run_progress_conflict');
             }
+            if (\in_array($view->progress->status, ['ready', 'error'], true) && !\in_array($progress->status, ['ready', 'error'], true)) {
+                throw new RunSyncFailure('run_progress_conflict');
+            }
             if (1 === $row['progress_format'] && $progress->revision === $row['revision'] && $view->progress->payload() !== $progress->payload()) {
                 throw new RunSyncFailure('run_progress_conflict');
             }
@@ -86,7 +89,7 @@ final readonly class DbalRunDeliveryRepository implements RunDeliveryRepository
             $terminal = $accepted && \in_array($progress->status, ['ready', 'error'], true);
             $params = self::params($companyId, $runId, $owner, $at) + ['next' => $at->modify('+60 seconds')->format('Y-m-d H:i:s.uP'), 'finished' => $terminal ? $at->format('Y-m-d H:i:s.uP') : null, 'status' => $accepted ? $progress->status : $view->progress->status, 'revision' => $accepted ? $progress->revision : $row['revision'], 'hash' => $accepted ? $progress->hash() : $row['progress_hash']];
             unset($params['at']);
-            $this->db->executeStatement('UPDATE product_research_ozon_run SET status = :status, revision = :revision, progress_hash = :hash, progress_format = 2, finished_at = :finished, next_poll_at = :next, lease_id = NULL, lease_until = NULL, error_code = NULL WHERE company_id = :company AND id = :run AND lease_id = :owner', $params);
+            $this->db->executeStatement('UPDATE product_research_ozon_run SET status = :status, revision = :revision, progress_hash = :hash, progress_format = 2, finished_at = COALESCE(finished_at, :finished), next_poll_at = :next, lease_id = NULL, lease_until = NULL, error_code = NULL WHERE company_id = :company AND id = :run AND lease_id = :owner', $params);
 
             return true;
         });

@@ -145,7 +145,7 @@ class RunWorker:
                     observed.error_code or "contract_violation",
                     observed.next_attempt_at,
                 )
-            elif observed.status != "ready" and self._clock() < lease.deadline:
+            elif observed.status == "collecting" and self._clock() < lease.deadline:
                 try:
                     self._execute(lease)
                 except CollectionFailure as error:

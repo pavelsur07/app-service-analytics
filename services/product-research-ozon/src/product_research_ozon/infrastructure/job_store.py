@@ -263,7 +263,11 @@ class JobStore:
                     (company, source_id, snapshot_id),
                 )
                 snap = self._load_snapshot(db, company, source_id, snapshot_id)
-            restarted = snap.generation != generation and snap.status != "ready"
+            restarted = (
+                cache_origin != "budget"
+                and snap.generation != generation
+                and snap.status != "ready"
+            )
             if restarted:
                 snapshot_id = self._restart(
                     db, company, source_id, job_id, snap, generation, now

@@ -355,3 +355,67 @@ def test_ready_snapshot_from_before_cache_migration_is_reused(
     assert h.calls == [0]
     result = h.service.progress(h.company, second.run_id, True)["months"]
     assert isinstance(result, list) and result[0]["origin"] == "cache"
+
+
+def test_expired_consumer_cannot_evict_ready_owner(settings: Settings) -> None:
+    from datetime import timedelta
+
+    import httpx
+    import psycopg
+    from test_job_queue import raw
+
+    calls = []
+
+    def provider(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        h.clock.advance(20)
+        return httpx.Response(200, content=raw(0))
+
+    h = harness(settings, httpx.MockTransport(provider))
+    early, owner = h.spec(1), h.spec(1)
+    h.submit(early)
+    with psycopg.connect(settings.database_url) as db:
+        db.execute(
+            "UPDATE research_job SET next_attempt_at=%s,deadline=%s WHERE company_id=%s AND run_id=%s",
+            (
+                h.clock() + timedelta(hours=1),
+                h.clock() + timedelta(seconds=10),
+                h.company,
+                early.run_id,
+            ),
+        )
+    h.submit(owner)
+    assert h.tick() and h.progress(owner)["status"] == "ready"
+    assert h.tick() and h.progress(early)["status"] == "error"
+    later = h.spec(1)
+    h.submit(later)
+    assert h.tick() and h.progress(later)["status"] == "ready"
+    assert len(calls) == 1
+
+
+def test_rotation_cannot_bypass_cached_budget_rejection(settings: Settings) -> None:
+    from product_research_ozon.domain.jobs import JobLease
+    from product_research_ozon.domain.month import CollectionLimits, Snapshot
+    from product_research_ozon.jobs.service import RunService, RunWorker
+
+    h = harness(settings, total=501)
+    first = h.spec(1)
+    h.submit(first)
+    assert h.tick() and h.tick()
+    strict = RunService(
+        h.store, h.source, 1, CollectionLimits(500, 1, 1024), (h.company,), h.clock
+    )
+    second = h.spec(1)
+    strict.submit(h.company, second.payload())
+    assert h.gate.activate_generation(h.source, 2, h.clock())
+    attempted = []
+
+    def execute(lease: JobLease) -> Snapshot:
+        attempted.append(1)
+        return h.store.state(h.company, lease)
+
+    worker = RunWorker(h.store, h.source, 2, (h.company,), execute, h.clock)
+    h.clock.advance(60)
+    assert worker.run_once()
+    assert attempted == []
+    assert h.progress(second)["status"] == "error"

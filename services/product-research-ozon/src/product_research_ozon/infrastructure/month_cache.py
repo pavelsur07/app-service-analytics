@@ -81,8 +81,10 @@ def resolve(
         other[0] == "ready"
         and cached.status == "ready"
         and cached.completed_at is not None
-        and cached.completed_at < deadline
     ):
+        # Consumer deadlines do not invalidate the shared ready result.
+        if cached.completed_at >= deadline:
+            return "expired", current
         if cached.parameters != current.parameters:
             raise CollectionFailure("conflict")
         if (

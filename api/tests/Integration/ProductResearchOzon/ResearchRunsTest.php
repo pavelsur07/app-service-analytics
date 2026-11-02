@@ -278,7 +278,10 @@ final class ResearchRunsTest extends KernelTestCase
         $reconcile = new \App\ProductResearchOzon\Application\ReconcileResearchRunsAction(self::service(ResearchRunsQuery::class), new \App\ProductResearchOzon\Application\SynchronizeResearchRunAction(self::service(RunDeliveryRepository::class), $remote, self::service(ResearchClock::class)));
         $foreign = $reconcile(Uuid::v7()->toRfc4122(), null, 1);
         self::assertSame(0, $foreign->attempted);
+        $finished = self::service(Connection::class)->fetchOne('SELECT finished_at FROM product_research_ozon_run WHERE company_id=? AND id=?', [$company, $retry->progress->runId]);
+        self::service(ResearchClock::class)->freeze('2026-04-15T11:00:00Z');
         $result = $reconcile($company, $view->progress->runId, 1);
+        self::assertSame($finished, self::service(Connection::class)->fetchOne('SELECT finished_at FROM product_research_ozon_run WHERE company_id=? AND id=?', [$company, $retry->progress->runId]));
         self::assertSame(0, $result->failed);
         self::assertSame($retry->progress->runId, $result->nextCursor);
         self::assertSame(0, $reconcile($company, $result->nextCursor, 1)->attempted);
@@ -292,4 +295,19 @@ final class ResearchRunsTest extends KernelTestCase
         self::assertSame(1, $reconcile($company, $view->progress->runId, 1)->failed);
         $this->assertProjectStatus($company, $id, 'loaded');
     }
+    public function testReconciliationCannotReopenTerminalError(): void
+    {
+        [$project, $source, $start] = $this->fixture();
+        $company = $project->companyId()->toRfc4122();
+        $view = $start($company, $project->id()->toRfc4122(), Uuid::v7()->toRfc4122(), 1, '2026-04-15', Uuid::v7()->toRfc4122());
+        $failed = array_map(static fn (RunMonthState $m): RunMonthState => new RunMonthState($m->period, 'error', null, null, 'retry_exhausted'), $view->progress->months);
+        $this->finish($company, $view->progress->runId, $source, $failed);
+        $remote = new \App\Tests\Support\Fake\ResearchRunSource(new RunProgress($company, $view->progress->runId, $source, 'queued', 10, $view->progress->months));
+        $action = new \App\ProductResearchOzon\Application\ReconcileResearchRunsAction(self::service(ResearchRunsQuery::class), new \App\ProductResearchOzon\Application\SynchronizeResearchRunAction(self::service(RunDeliveryRepository::class), $remote, self::service(ResearchClock::class)));
+        self::assertSame(1, $action($company, null, 10)->failed);
+        $this->assertProjectStatus($company, $project->id()->toRfc4122(), 'error');
+        $next = $start($company, $project->id()->toRfc4122(), Uuid::v7()->toRfc4122(), 2, '2026-04-15', Uuid::v7()->toRfc4122());
+        self::assertNotSame($view->progress->runId, $next->progress->runId);
+    }
+
 }
