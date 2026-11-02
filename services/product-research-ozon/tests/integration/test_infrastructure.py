@@ -1,8 +1,10 @@
 import hashlib
 import os
+import selectors
 import subprocess
 import sys
 from collections.abc import Iterator
+from dataclasses import replace
 from uuid import uuid7
 
 import psycopg
@@ -77,17 +79,12 @@ def test_readiness_checks_db_revision_and_storage(settings: Settings) -> None:
                 connection.execute(
                     "UPDATE alembic_version SET version_num = %s", (REVISION,)
                 )
-    values = {name: getattr(settings, name) for name in settings.__dataclass_fields__}
-    broken_db = Settings.from_mapping(
-        {
-            **values,
-            "database_url": "postgresql://invalid:secret@127.0.0.1:1/product_research_ozon_test",
-        }
+    broken_db = replace(
+        settings,
+        database_url="postgresql://invalid:secret@127.0.0.1:1/product_research_ozon_test",
     )
     assert not Readiness(broken_db, store)()
-    broken_s3 = Settings.from_mapping(
-        {**values, "s3_bucket": "research-missing-" + str(uuid7())}
-    )
+    broken_s3 = replace(settings, s3_bucket="research-missing-" + str(uuid7()))
     assert not Readiness(broken_s3, RawStorage(broken_s3))()
 
 
@@ -128,3 +125,52 @@ def test_postgres_alias_is_supported_by_migrator(settings: Settings) -> None:
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_standby_worker_stays_alive_without_source_and_stops_cleanly(
+    settings: Settings,
+) -> None:
+    environment = {
+        **os.environ,
+        "RESEARCH_WORKER_STANDBY": "true",
+        "RESEARCH_WORKER_ENABLED": "false",
+        "RESEARCH_CATALOG_ENABLED": "false",
+        "RESEARCH_COLLECTION_ENABLED": "false",
+    }
+    environment.pop("MPSTATS_API_TOKEN", None)
+    checked = subprocess.run(
+        [sys.executable, "-m", "product_research_ozon.worker", "--check"],
+        env=environment,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    assert checked.returncode == 0
+    with subprocess.Popen(
+        [sys.executable, "-m", "product_research_ozon.worker"],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    ) as process:
+        try:
+            assert process.stderr is not None
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stderr, selectors.EVENT_READ)
+                assert selector.select(timeout=10), "worker did not report standby"
+                message = process.stderr.readline()
+            assert '"standby"' in message
+            assert process.poll() is None
+        finally:
+            process.terminate()
+            stdout, stderr = process.communicate(timeout=5)
+        assert process.returncode == 0
+        assert settings.inbound_token not in stdout + stderr + message
+    disabled = subprocess.run(
+        [sys.executable, "-m", "product_research_ozon.worker", "--check"],
+        env={**environment, "RESEARCH_WORKER_STANDBY": "false"},
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    assert disabled.returncode == 1

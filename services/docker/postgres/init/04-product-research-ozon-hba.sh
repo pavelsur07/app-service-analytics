@@ -1,4 +1,4 @@
-# Sandbox boundary also covers future PHP test databases, not just existing ones.
+# Shared dev/prod boundary also covers databases created later, not just existing ones.
 hba="$PGDATA/pg_hba.conf"
 if ! grep -q '^# product-research-ozon: ' "$hba"; then
     {

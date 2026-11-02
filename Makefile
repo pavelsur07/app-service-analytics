@@ -399,6 +399,7 @@ review: ## подготовка + Claude; REVIEW_RISK=high (по умолчан�
 
 ci-local: structure-check stan deptrac lint front-typecheck front-lint front-knip front-test audit \
 	product-research-ozon-stage0-check product-research-ozon-check product-research-ozon-stage5-smoke \
+	product-research-ozon-prod-check \
 	ozon-fetcher-lint ozon-fetcher-vet ozon-fetcher-test ozon-fetcher-vulncheck \
 	api-types-check \
 	db-wait db-test-create api-migrate-test s3-bucket-create test-unit test-int test-func \
@@ -469,3 +470,7 @@ product-research-ozon-recovery-check: ## disposable local pg_dump/pg_restore and
 .PHONY: product-research-ozon-prod-config-check
 product-research-ozon-prod-config-check: ## parse opt-in production stack without secrets or startup
 	python3 bin/tests/product-research-prod-config.test.py
+
+.PHONY: product-research-ozon-prod-check
+product-research-ozon-prod-check: product-research-ozon-prod-config-check ## wrapper and real disposable DB provisioning; no production access
+	python3 bin/tests/product-research-prod.test.py

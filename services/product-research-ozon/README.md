@@ -1,5 +1,20 @@
 # product-research-ozon
 
+## Production-инфраструктура без MPStats
+
+Этап 9 добавляет закрытый режим ожидания. Используется существующий бакет сырья
+Conwix и префикс `conwix/svc/product-research-ozon/v1/`; новый бакет не создаётся.
+Отдельный S3-ключ и собственная роль/БД PostgreSQL остаются обязательными.
+`RESEARCH_WORKER_STANDBY=true` требует выключенных catalog/collection/worker;
+MPStats не настраивается и не вызывается. Worker ожидает завершения без захвата jobs.
+Общий PHP-флаг остаётся false. Инфраструктурная готовность не заменяет live-приёмку.
+
+`RESEARCH_STACK_ENABLED=true` в основном защищённом окружении подключает отдельный
+стек к штатной выкладке. Workflow создаёт DB/HBA, проверяет source образа и ревизию
+схемы, затем ожидает health. Миграции применяются явно. False останавливает только
+этот стек без удаления DB/raw. Порядок —
+[production runbook](../../docs/operations-checklist.md#product-research-ozon--этап-8).
+
 Этапы 1–8 (разработка): внутренний FastAPI, Alembic, отдельные dev/test БД,
 company-scoped S3-порт и выключенный по умолчанию worker. Основание — принятый ADR-050.
 Реализованы суточный кэш категорий, локальная проекция Symfony и движок месячного raw-снимка. Диспетчер заданий и пользовательские экраны реализованы; production-активация ещё закрыта.
@@ -299,7 +314,8 @@ origin=cache всегда требует used_at. Неизвестное про�
 [операционный runbook](../../docs/operations-checklist.md#product-research-ozon--этап-8).
 Production topology — отдельный `docker-compose.research.prod.yml`, default
 без сервисов. Master CI публикует runtime image с immutable version/source;
-основной Conwix deploy этот стек не включает и автоматически не обновляет.
+этап 9 подключает его к Conwix deploy по RESEARCH_STACK_ENABLED; режим ожидания
+и live-сбор разделены, пользовательский флаг остаётся независимым.
 Включать его до wiring обновления/миграционного gate и live-предусловий нельзя.
 
 Symfony дополнительно проверяет `RESEARCH_ALLOWED_COMPANY_IDS`: canonical

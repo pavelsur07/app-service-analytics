@@ -8,6 +8,13 @@
 Правила размещения — [CLAUDE.md → «Эксплуатационные конфигурации»](../CLAUDE.md#эксплуатационные-конфигурации).
 Карта репозитория — [docs/structure.md](../docs/structure.md).
 
+Research использует существующий бакет сырья с префиксом
+`conwix/svc/product-research-ozon/v1/`; новый бакет не создаётся. Ответственный
+сервис — product-research-ozon (ADR-050). В этой задаче новая lifecycle/bucket policy
+не применяется. Provision DB/HBA остаётся исполняемой утилитой в `bin/`, контейнеры —
+в корневом compose, секреты — вне Git. Порядок запуска/проверки/остановки описан
+в [операционном runbook](../docs/operations-checklist.md#product-research-ozon--этап-8).
+
 ## Текущая конфигурация
 
 | Файл | Ответственный модуль | Назначение |

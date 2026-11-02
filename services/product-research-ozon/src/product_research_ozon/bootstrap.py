@@ -29,6 +29,7 @@ def configured_settings() -> Settings:
         "s3_access_key",
         "s3_secret_key",
         "worker_enabled",
+        "worker_standby",
         "catalog_enabled",
         "catalog_source_id",
         "catalog_generation",
@@ -48,7 +49,13 @@ def configured_settings() -> Settings:
                 if name == "mpstats_api_token"
                 else "RESEARCH_" + name.upper(),
                 "false"
-                if name in ("worker_enabled", "catalog_enabled", "collection_enabled")
+                if name
+                in (
+                    "worker_enabled",
+                    "worker_standby",
+                    "catalog_enabled",
+                    "collection_enabled",
+                )
                 else "",
             )
             for name in names
