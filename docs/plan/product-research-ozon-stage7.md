@@ -1,6 +1,6 @@
 # product-research-ozon — этап 7: интерфейс seller
 
-Дата: 02.11.2026. Статус: реализация. Основание: ADR-050, принятый этап 6.
+Дата: 02.11.2026. Статус: завершён. Основание: ADR-050, принятый этап 6.
 
 ## Цель и границы
 
@@ -50,7 +50,7 @@ Python/MPStats, production activation и реальные ключи остаю�
   Повтор загрузки выбирает missing/failed closed, partial всегда новый (этапы5/6).
 - Повторные нажатия блокируются. Для неизвестного исхода start сохраняются
   UUIDv7 requestId и исходные version/calendarDate; повтор отправляет тот же intent.
-- Poll только loading, каждые5с, без background polling, максимум10мин за сессию,
+- Poll только loading, каждые 5 с, без background polling, максимум10 мин за сессию,
   остановка при terminal/error; ручное продолжение. Задержка прогресса/ошибка
   не маскируются готовностью, старые данные явно помечены. 0 строк — предупреждение.
 - Company client/queryKey обязательны, без placeholder предыдущей компании,
@@ -90,7 +90,17 @@ PR/merge/deploy/production smoke, постоянные отчёты. Тольк�
 | G01 | Red/Green, PHP/frontend/API гейты, полный CI, обязательное ревью завершены |
 | G02 | Merge/deploy/smoke false flag и постоянные отчёты |
 
-- [ ] B01–B03: серверные данные и границы приняты.
-- [ ] U01–U04: UI-правила, сеть и кэш приняты.
-- [ ] E01–E05: browser-путь и восстановление приняты.
-- [ ] G01–G02: проверки, ревью и доставка завершены.
+- [x] B01–B03: серверные данные и границы приняты.
+- [x] U01–U04: UI-правила, сеть и кэш приняты.
+- [x] E01–E05: browser-путь и восстановление приняты.
+- [x] G01–G02: проверки, ревью и доставка завершены.
+
+## Результат поставки
+
+Код [PR #315](https://github.com/pavelsur07/app-service-analytics/pull/315),
+merge `4b396c982e564d43d5d4f916238c52cfe230d12c`. Финальный CI 41398125939 зелёный до merge;
+master build/deploy [41398679017](https://github.com/pavelsur07/app-service-analytics/actions/runs/41398679017)
+и production smoke подтверждены. Миграций нет; feature flag false.
+[Отчёт и границы приёмки](product-research-ozon-stage7-report.md),
+[полные независимые заключения](product-research-ozon-stage7-review.md).
+Browser research API синтетический; реальный MPStats и включение — этап 8.
