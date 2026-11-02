@@ -363,7 +363,10 @@ def test_ready_snapshot_from_before_cache_migration_is_reused(
     assert isinstance(result, list) and result[0]["origin"] == "cache"
 
 
-def test_expired_consumer_cannot_evict_ready_owner(settings: Settings) -> None:
+@pytest.mark.parametrize("legacy", [False, True])
+def test_expired_consumer_cannot_evict_ready_owner(
+    settings: Settings, legacy: bool
+) -> None:
     from datetime import timedelta
 
     import httpx
@@ -392,6 +395,12 @@ def test_expired_consumer_cannot_evict_ready_owner(settings: Settings) -> None:
         )
     h.submit(owner)
     assert h.tick() and h.progress(owner)["status"] == "ready"
+    if legacy:
+        with psycopg.connect(settings.database_url) as db:
+            db.execute(
+                "DELETE FROM month_cache_slot WHERE company_id=%s AND source_id=%s",
+                (h.company, h.source),
+            )
     assert h.tick() and h.progress(early)["status"] == "error"
     later = h.spec(1)
     h.submit(later)

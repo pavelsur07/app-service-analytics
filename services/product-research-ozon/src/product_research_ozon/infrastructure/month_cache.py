@@ -49,7 +49,7 @@ def resolve(
             ON j.company_id=s.company_id AND j.source_id=s.source_id AND j.snapshot_id=s.snapshot_id
             WHERE s.company_id=%s AND s.source_id=%s AND s.category_path=%s AND s.date_from=%s AND s.date_to=%s
             AND NOT s.partial AND s.fbs AND s.currency='RUB' AND s.profile_version=1
-            AND s.status='ready' AND j.status='ready' AND s.completed_at<%s
+            AND s.status='ready' AND j.status='ready' AND s.completed_at IS NOT NULL
             ORDER BY s.completed_at DESC,j.job_id LIMIT 1""",
             (
                 company_id,
@@ -57,7 +57,6 @@ def resolve(
                 key.category_path,
                 key.date_from,
                 key.date_to,
-                deadline,
             ),
         ).fetchone()
         if legacy is not None:
