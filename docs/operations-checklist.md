@@ -785,7 +785,12 @@ MPStats/S3 secrets Python туда не копируются. Allowlist один
 1. Зафиксировать source/image/schema revisions и company scope в защищённом receipt.
    Выключить общий PHP флаг и поступление новых заданий. Остановить company
    process-runs/sync-categories и Python worker, дождаться завершения текущей
-   ограниченной страницы. Не останавливать чужие воркеры Conwix.
+   ограниченной страницы. Не останавливать чужие воркеры Conwix. Изменение
+   `.env` требует пересоздания PHP контейнеров; проверить фактический
+   availability=false. Общий Messenger worker также может обрабатывать research
+   notifications: нужна отдельная проверенная quiesce-процедура для research
+   writers, без остановки остальных загрузок. Она входит в незакрытый production
+   backup gate, а local service drill её не подтверждает.
 2. Сохранить защищённые логические дампы Conwix и `product_research_ozon`
    вместе с ролями/HBA/config и master-key backup. Dump обеих БД делается при
    остановленных research writers: outbox/run и service snapshot links связаны.
