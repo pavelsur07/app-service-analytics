@@ -10,6 +10,7 @@ import { Link } from 'react-router'
 import { Badge } from '../../../../../../packages/ui/src'
 import type { components } from '../../../api/schema'
 import { formatMinorAmount } from '../../../shared/lib/formatMinorAmount'
+import { ozonProductUrl } from '../../../shared/lib/ozonProductUrl'
 import { marginBadge, shareOfRevenue } from '../lib/margin'
 import { thumbnailUrl } from '../lib/photo'
 import type { SortDirection, SortKey } from '../lib/tableParams'
@@ -332,6 +333,7 @@ function Row({
 }) {
   const zebra = striped ? 'bg-surface-hover' : 'bg-surface-raised'
   const margin = marginBadge(sku.marginMinor, sku.revenueMinor)
+  const productUrl = ozonProductUrl(sku.marketplaceSku)
 
   return (
     <>
@@ -342,7 +344,19 @@ function Row({
         <td
           className={`${BODY_CELL} ${STICKY_SKU} ${zebra} text-text-secondary`}
         >
-          {sku.marketplaceSku}
+          {productUrl === null ? (
+            sku.marketplaceSku
+          ) : (
+            <a
+              className="text-accent-default underline hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-default"
+              href={productUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Открыть товар на Ozon (в новой вкладке)"
+            >
+              {sku.marketplaceSku}
+            </a>
+          )}
         </td>
         {/* truncate, а не один whitespace-nowrap: без overflow-hidden
             длинное название рисовалось поверх соседних колонок, а так как
