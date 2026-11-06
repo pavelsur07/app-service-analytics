@@ -52,6 +52,8 @@ function summary(ordersAmountMinor: number): Summary {
     ordersQuantity: 3,
     salesAmountMinor: 0,
     salesQuantity: 1,
+    salesPerDayMinor: 5001,
+    averageSalePriceMinor: null,
     returnsAmountMinor: 0,
     returnsQuantity: 0,
     advertisingMinor: 0,
