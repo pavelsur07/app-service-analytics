@@ -40,6 +40,50 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
 
     private int $accrualId = 1;
 
+    public function testSalesRatiosUseCalendarDaysAndUnitsWithExactRounding(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $foreign = $this->company($container);
+        $this->accrual($container, $company, '2026-08-09', OzonFeeTypeNames::REVENUE, 10_001, 'P-1', 2);
+        $this->accrual($container, $company, '2026-08-10', OzonFeeTypeNames::REVENUE, -1_000, 'P-1');
+        $this->accrual($container, $foreign, '2026-08-09', OzonFeeTypeNames::REVENUE, 999_999, 'P-2');
+        $this->accrual($container, $company, '2026-08-07', OzonFeeTypeNames::REVENUE, 6_000, 'P-3', 3);
+        /** @var BuildDashboardSummaryAction $action */
+        $action = $container->get(BuildDashboardSummaryAction::class);
+        $summary = $action($company->id()->toRfc4122(),
+            new \DateTimeImmutable('2026-08-09'), new \DateTimeImmutable('2026-08-10'),
+            new \DateTimeImmutable('2026-08-01'), new \DateTimeImmutable('2026-08-07'),
+            new \DateTimeImmutable('2026-10-15'));
+        self::assertSame(5_001, $summary->current->metrics->salesPerDayMinor);
+        self::assertSame(5_001, $summary->current->metrics->averageSalePriceMinor);
+        self::assertSame(857, $summary->comparison->metrics->salesPerDayMinor);
+        self::assertSame(2_000, $summary->comparison->metrics->averageSalePriceMinor);
+        self::assertNull($summary->changes->salesPerDayBps);
+        self::assertNull($summary->changes->averageSalePriceBps);
+    }
+
+    public function testCompleteSalesRatiosCompareUsingEachPeriodsOwnLength(): void
+    {
+        $container = $this->bootedContainer();
+        $company = $this->company($container);
+        $this->loaded($container, $company, '2026-07-20');
+        $this->accrual($container, $company, '2026-08-03', OzonFeeTypeNames::REVENUE, 1_200_000, 'P-1', 12);
+        $this->accrual($container, $company, '2026-08-12', OzonFeeTypeNames::REVENUE, 3_000_000, 'P-2', 20);
+        /** @var BuildDashboardSummaryAction $action */
+        $action = $container->get(BuildDashboardSummaryAction::class);
+        $summary = $action($company->id()->toRfc4122(),
+            new \DateTimeImmutable('2026-08-05'), new \DateTimeImmutable('2026-08-14'),
+            new \DateTimeImmutable('2026-07-30'), new \DateTimeImmutable('2026-08-04'),
+            new \DateTimeImmutable('2026-10-15'));
+        self::assertTrue($summary->current->dataComplete);
+        self::assertTrue($summary->comparison->dataComplete);
+        self::assertSame(300_000, $summary->current->metrics->salesPerDayMinor);
+        self::assertSame(200_000, $summary->comparison->metrics->salesPerDayMinor);
+        self::assertSame(5_000, $summary->changes->salesPerDayBps);
+        self::assertSame(5_000, $summary->changes->averageSalePriceBps);
+    }
+
     public function testOrdersCountEveryStatusByOrderDateWithinThePeriod(): void
     {
         $container = $this->bootedContainer();
@@ -95,6 +139,8 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
 
         self::assertSame(3, $metrics->salesQuantity);
         self::assertSame(300_000, $metrics->salesAmountMinor);
+        self::assertSame(100_000, $metrics->averageSalePriceMinor);
+        self::assertSame(42_857, $metrics->salesPerDayMinor);
         self::assertSame(10_000, $metrics->costPerSaleMinor);
     }
 
@@ -485,6 +531,10 @@ final class BuildDashboardSummaryActionTest extends KernelTestCase
         $this->loaded($container, $company, '2026-08-01');
         $summary = $this->summary($container, $company);
         self::assertSame(0, $summary->current->metrics->profitMinor);
+        self::assertSame(0, $summary->current->metrics->salesPerDayMinor);
+        self::assertNull($summary->current->metrics->averageSalePriceMinor);
+        self::assertNull($summary->changes->salesPerDayBps);
+        self::assertNull($summary->changes->averageSalePriceBps);
         self::assertFalse($summary->current->profitDetails->hasAccruals);
     }
 

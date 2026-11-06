@@ -16,6 +16,8 @@ final readonly class DashboardChanges
         public ?int $ordersQuantityBps,
         public ?int $salesAmountBps,
         public ?int $salesQuantityBps,
+        public ?int $salesPerDayBps,
+        public ?int $averageSalePriceBps,
         public ?int $returnsAmountBps,
         public ?int $returnsQuantityBps,
         public ?int $advertisingBps,

@@ -54,6 +54,12 @@ final class ShowDashboardSummaryControllerTest extends WebTestCase
         self::assertResponseIsSuccessful();
         $payload = self::payload($client);
         self::assertSame('RUB', $payload['currency'] ?? null);
+        foreach (['current', 'comparison'] as $period) {
+            self::assertSame(0, $payload[$period]['metrics']['salesPerDayMinor']);
+            self::assertNull($payload[$period]['metrics']['averageSalePriceMinor']);
+        }
+        self::assertNull($payload['changes']['salesPerDayBps']);
+        self::assertNull($payload['changes']['averageSalePriceBps']);
         self::assertSame($from->format('Y-m-d'), $payload['current']['from']);
         self::assertSame(20_000, $payload['current']['metrics']['ordersAmountMinor']);
         self::assertSame(2, $payload['current']['metrics']['ordersQuantity']);
@@ -170,13 +176,13 @@ final class ShowDashboardSummaryControllerTest extends WebTestCase
     }
 
     /**
-     * @return array{currency?: string, code?: string, current: array{from: string, metrics: array{ordersAmountMinor: int, ordersQuantity: int, profitMinor: ?int}, profitDetails: array{accrualsTotalMinor: int, hasAccruals: bool, costMethod: string}, days: list<array{ordersAmountMinor: int, profitMinor: ?int}>}, comparison: array{metrics: array{ordersAmountMinor: int}}, changes: array{ordersAmountBps: ?int}}
+     * @return array{currency?: string, code?: string, current: array{from: string, metrics: array{ordersAmountMinor: int, ordersQuantity: int, profitMinor: ?int, salesPerDayMinor: int, averageSalePriceMinor: ?int}, profitDetails: array{accrualsTotalMinor: int, hasAccruals: bool, costMethod: string}, days: list<array{ordersAmountMinor: int, profitMinor: ?int}>}, comparison: array{metrics: array{ordersAmountMinor: int, salesPerDayMinor: int, averageSalePriceMinor: ?int}}, changes: array{ordersAmountBps: ?int, salesPerDayBps: ?int, averageSalePriceBps: ?int}}
      */
     private static function payload(KernelBrowser $client): array
     {
         $content = $client->getResponse()->getContent();
         self::assertIsString($content);
-        /** @var array{currency?: string, code?: string, current: array{from: string, metrics: array{ordersAmountMinor: int, ordersQuantity: int, profitMinor: ?int}, profitDetails: array{accrualsTotalMinor: int, hasAccruals: bool, costMethod: string}, days: list<array{ordersAmountMinor: int, profitMinor: ?int}>}, comparison: array{metrics: array{ordersAmountMinor: int}}, changes: array{ordersAmountBps: ?int}} $payload */
+        /** @var array{currency?: string, code?: string, current: array{from: string, metrics: array{ordersAmountMinor: int, ordersQuantity: int, profitMinor: ?int, salesPerDayMinor: int, averageSalePriceMinor: ?int}, profitDetails: array{accrualsTotalMinor: int, hasAccruals: bool, costMethod: string}, days: list<array{ordersAmountMinor: int, profitMinor: ?int}>}, comparison: array{metrics: array{ordersAmountMinor: int, salesPerDayMinor: int, averageSalePriceMinor: ?int}}, changes: array{ordersAmountBps: ?int, salesPerDayBps: ?int, averageSalePriceBps: ?int}} $payload */
         $payload = json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
 
         return $payload;
