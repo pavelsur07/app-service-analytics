@@ -110,6 +110,8 @@ final readonly class DashboardMetricsQuery
         return $this->withParameters($this->connection->createQueryBuilder(), $companyId, $from, $to, $compareFrom, $compareTo)
             ->select(
                 't.*',
+                'ROUND(t.sales_amount_minor::numeric / (CASE WHEN t.period = \'current\' THEN CAST(:to AS date) - CAST(:from AS date) + 1 ELSE CAST(:compareTo AS date) - CAST(:compareFrom AS date) + 1 END))::bigint AS sales_per_day_minor',
+                'ROUND(t.sales_amount_minor::numeric / NULLIF(t.sales_quantity, 0))::bigint AS average_sale_price_minor',
                 'ROUND(t.advertising_minor::numeric / NULLIF(t.orders_quantity, 0))::bigint AS cost_per_order_minor',
                 'ROUND(10000::numeric * t.advertising_minor / NULLIF(t.orders_amount_minor, 0))::bigint AS drr_orders_bps',
                 'ROUND(t.advertising_minor::numeric / NULLIF(t.sales_quantity, 0))::bigint AS cost_per_sale_minor',
@@ -189,6 +191,8 @@ final readonly class DashboardMetricsQuery
             ordersQuantity: self::int($row['orders_quantity'] ?? null),
             ordersAmountMinor: self::int($row['orders_amount_minor'] ?? null),
             salesQuantity: self::int($row['sales_quantity'] ?? null),
+            salesPerDayMinor: self::int($row['sales_per_day_minor'] ?? null),
+            averageSalePriceMinor: self::nullableInt($row['average_sale_price_minor'] ?? null),
             salesAmountMinor: self::int($row['sales_amount_minor'] ?? null),
             returnsQuantity: self::int($row['returns_quantity'] ?? null),
             returnsAmountMinor: self::int($row['returns_amount_minor'] ?? null),

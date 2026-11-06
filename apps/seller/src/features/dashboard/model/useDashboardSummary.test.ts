@@ -24,6 +24,8 @@ const METRICS = {
   ordersQuantity: 0,
   salesAmountMinor: 0,
   salesQuantity: 0,
+  salesPerDayMinor: 5001,
+  averageSalePriceMinor: null,
   returnsAmountMinor: 0,
   returnsQuantity: 0,
   advertisingMinor: 0,

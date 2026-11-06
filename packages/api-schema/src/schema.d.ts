@@ -1521,6 +1521,10 @@ export interface components {
             ordersQuantity: number;
             salesAmountMinor: number;
             salesQuantity: number;
+            /** Сумма продаж / календарные дни периода, копейки; ADR-051. */
+            salesPerDayMinor: number;
+            /** Сумма продаж / проданные единицы; null при нулевом количестве. */
+            averageSalePriceMinor?: number | null;
             returnsAmountMinor: number;
             returnsQuantity: number;
             advertisingMinor: number;
@@ -1586,6 +1590,8 @@ export interface components {
             ordersQuantityBps?: number | null;
             salesAmountBps?: number | null;
             salesQuantityBps?: number | null;
+            salesPerDayBps?: number | null;
+            averageSalePriceBps?: number | null;
             returnsAmountBps?: number | null;
             returnsQuantityBps?: number | null;
             advertisingBps?: number | null;

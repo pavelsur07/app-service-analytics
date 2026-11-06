@@ -87,6 +87,22 @@ export const WIDGETS = [
         kind: 'relative',
         good: 'up',
       },
+      {
+        label: 'Продажи в день',
+        metric: 'salesPerDayMinor',
+        format: 'moneyPrecise',
+        change: 'salesPerDayBps',
+        kind: 'relative',
+        good: 'up',
+      },
+      {
+        label: 'Средняя цена продажи',
+        metric: 'averageSalePriceMinor',
+        format: 'moneyPrecise',
+        change: 'averageSalePriceBps',
+        kind: 'relative',
+        good: 'neutral',
+      },
     ],
   },
   {
