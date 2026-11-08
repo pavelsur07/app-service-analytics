@@ -1,5 +1,12 @@
 import { useState } from 'react'
-import { CircleAlert, CircleX, LoaderCircle } from 'lucide-react'
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router'
+import { CircleX, LoaderCircle } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -7,16 +14,43 @@ import {
   StatusPanel,
 } from '../../../../../../packages/ui/src'
 import { useClientAccounts } from '../model/useClientAccounts'
-import { useSetAccountStatus } from '../model/useSetAccountStatus'
+import { AccountDetailPanel } from './AccountDetailPanel'
+import { AccountStatusButton } from './AccountStatusButton'
 import { RegisterAccountForm } from './RegisterAccountForm'
 
 // Экран управления клиентскими аккаунтами (ADR-017). Доступен обеим
 // ролям контура — в отличие от заведения администраторов.
 export function AccountsPage() {
-  const [page, setPage] = useState(1)
+  const { companyId } = useParams<{ companyId: string }>()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const rawPage = Number(searchParams.get('page') ?? '1')
+  const page = Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1
+  const setPage = (next: number) => {
+    setSearchParams((params) => {
+      if (next === 1) params.delete('page')
+      else params.set('page', String(next))
+      return params
+    })
+  }
+  const cardPath = (id: string) =>
+    `/accounts/${encodeURIComponent(id)}${location.search}`
+  const closeCard = () => {
+    const state: unknown = location.state
+    if (
+      typeof state === 'object' &&
+      state !== null &&
+      'companyCard' in state &&
+      state.companyCard === true
+    ) {
+      void navigate(-1)
+    } else {
+      void navigate(`/accounts${location.search}`, { replace: true })
+    }
+  }
   const [creatingAccount, setCreatingAccount] = useState(false)
   const accounts = useClientAccounts(page)
-  const setStatus = useSetAccountStatus()
 
   return (
     <div className="flex flex-col gap-6">
@@ -80,24 +114,6 @@ export function AccountsPage() {
           />
         )}
 
-        {setStatus.isError && (
-          // Молчаливый отказ здесь опаснее обычного: кнопка перестаёт
-          // грузиться, строка остаётся в прежнем состоянии, и со стороны
-          // это неотличимо от «уже было так». Администратор ушёл бы
-          // с экрана уверенным, что аккаунт заблокирован.
-          <div
-            className="mb-4 flex items-center gap-2 rounded-lg border border-negative-border bg-negative-bg p-3 text-xs text-negative-text"
-            role="alert"
-          >
-            <CircleAlert aria-hidden="true" size={16} />
-            <span>
-              {setStatus.error instanceof Error
-                ? setStatus.error.message
-                : 'Не удалось изменить состояние аккаунта'}
-            </span>
-          </div>
-        )}
-
         {accounts.status === 'success' && (
           <>
             <div className="overflow-x-auto">
@@ -112,8 +128,32 @@ export function AccountsPage() {
                 </thead>
                 <tbody>
                   {accounts.data.items.map((account) => (
-                    <tr key={account.id} className="border-t border-border">
-                      <td className="py-2">{account.name}</td>
+                    <tr
+                      key={account.id}
+                      className="cursor-pointer border-t border-border hover:bg-surface-hover"
+                      onClick={(event) => {
+                        if (
+                          event.target instanceof Element &&
+                          event.target.closest(
+                            'button, a, input, summary, dialog',
+                          )
+                        )
+                          return
+                        event.currentTarget.querySelector('a')?.focus()
+                        void navigate(cardPath(account.id), {
+                          state: { companyCard: true },
+                        })
+                      }}
+                    >
+                      <td className="py-2">
+                        <Link
+                          to={cardPath(account.id)}
+                          state={{ companyCard: true }}
+                          className="text-accent-default underline decoration-transparent hover:decoration-current focus-visible:outline-accent-default"
+                        >
+                          {account.name}
+                        </Link>
+                      </td>
                       <td className="py-2">
                         <Badge
                           tone={
@@ -131,28 +171,7 @@ export function AccountsPage() {
                         {account.createdAt.slice(0, 10)}
                       </td>
                       <td className="py-2 text-right">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="compact"
-                          loading={
-                            setStatus.isPending &&
-                            setStatus.variables?.id === account.id
-                          }
-                          onClick={() => {
-                            setStatus.mutate({
-                              id: account.id,
-                              status:
-                                account.status === 'active'
-                                  ? 'blocked'
-                                  : 'active',
-                            })
-                          }}
-                        >
-                          {account.status === 'active'
-                            ? 'Заблокировать'
-                            : 'Включить'}
-                        </Button>
+                        <AccountStatusButton account={account} />
                       </td>
                     </tr>
                   ))}
@@ -168,7 +187,7 @@ export function AccountsPage() {
                   size="compact"
                   disabled={page <= 1}
                   onClick={() => {
-                    setPage((current) => current - 1)
+                    setPage(page - 1)
                   }}
                 >
                   Назад
@@ -182,7 +201,7 @@ export function AccountsPage() {
                   size="compact"
                   disabled={page >= accounts.data.pages}
                   onClick={() => {
-                    setPage((current) => current + 1)
+                    setPage(page + 1)
                   }}
                 >
                   Вперёд
@@ -192,6 +211,13 @@ export function AccountsPage() {
           </>
         )}
       </Card>
+      {companyId && (
+        <AccountDetailPanel
+          key={companyId}
+          companyId={companyId}
+          onClose={closeCard}
+        />
+      )}
     </div>
   )
 }

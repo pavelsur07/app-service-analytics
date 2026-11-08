@@ -85,6 +85,7 @@ return static function (DeptracConfig $config): void {
                     mustNot: [
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonAccountsQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\AllCompaniesForAdminQuery$'),
+                        ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\CompanyForAdminQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ActiveOzonConnectionsForServiceQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\ExtensionTokenByHashQuery$'),
                         ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Security\\ExtensionTokenHandler$'),
@@ -131,6 +132,12 @@ return static function (DeptracConfig $config): void {
             ),
             $identityAdminAccountsUi = Layer::withName('IdentityAdminAccountsUi')->collectors(
                 ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Admin\\ListClientAccountsController$'),
+            ),
+            $identityAdminCompanyQuery = Layer::withName('IdentityAdminCompanyQuery')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Infrastructure\\Query\\CompanyForAdminQuery$'),
+            ),
+            $identityAdminCompanyUi = Layer::withName('IdentityAdminCompanyUi')->collectors(
+                ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Admin\\GetClientAccountController$'),
             ),
             // Четвёртый случай исключения CLAUDE.md §1 — сервисный контур
             // (ADR-043 п. 4): межарендаторное чтение с ключами всех компаний
@@ -192,6 +199,7 @@ return static function (DeptracConfig $config): void {
                     must: [DirectoryConfig::create('src/Identity/Ui/.*')],
                     mustNot: [
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Admin\\ListClientAccountsController$'),
+                        ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Admin\\GetClientAccountController$'),
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Internal\\MarketplaceConnectionsController$'),
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Command\\PurgeUnconfirmedAccountsCommand$'),
                         ClassLikeConfig::create('^App\\Identity\\Ui\\Controller\\Registration\\(ConfirmEmail|ResendEmailVerification)Controller$'),
@@ -487,6 +495,8 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($identityExtensionTokenHandler)->accesses($identityExtensionTokenQuery, $identityDomain, $identityInfrastructure, $symfonyComponent),
             Ruleset::forLayer($identityExtensionTokenQuery)->accesses($identityInfrastructure),
             Ruleset::forLayer($identityAdminAccountsQuery)->accesses($identityInfrastructure, $symfonyComponent),
+            Ruleset::forLayer($identityAdminCompanyQuery)->accesses($identityInfrastructure, $identityDomain),
+            Ruleset::forLayer($identityAdminCompanyUi)->accesses($identityApplication, $identityDomain, $identityAdminCompanyQuery, $identityInfrastructure, $identityUi, $sharedUi, $symfonyComponent, $nelmioApiDoc, $openApiAttributes),
             // Кроме узкого запроса — то же, что у любого контроллера:
             // широкий IdentityInfrastructure (за Row-DTO запроса, как
             // IdentityScheduleFacade за ActiveOzonAccountRow) и

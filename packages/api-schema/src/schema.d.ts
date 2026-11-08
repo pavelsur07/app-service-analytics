@@ -164,6 +164,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/companies/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_identity_admin_company_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/companies": {
         parameters: {
             query?: never;
@@ -1323,6 +1339,38 @@ export interface components {
             status: string;
             createdAt: string;
             hasConfirmedUser: boolean;
+        };
+        AdminCompanyMemberResponse: {
+            id: string;
+            email: string;
+            role: string;
+            joinedAt: string;
+            emailConfirmedAt?: string | null;
+        };
+        AdminCompanyConnectionResponse: {
+            id: string;
+            marketplace: string;
+            externalShopId: string;
+            state: string;
+            advertisingState?: string | null;
+            createdAt: string;
+        };
+        AdminCompanyAuditResponse: {
+            id: string;
+            action: string;
+            actorType: string;
+            actorId: string;
+            actorEmail?: string | null;
+            occurredAt: string;
+        };
+        AdminCompanyDetailResponse: {
+            company: components["schemas"]["AdminCompanyResponse"];
+            members: components["schemas"]["AdminCompanyMemberResponse"][];
+            membersTruncated: boolean;
+            connections: components["schemas"]["AdminCompanyConnectionResponse"][];
+            connectionsTruncated: boolean;
+            recentAudit: components["schemas"]["AdminCompanyAuditResponse"][];
+            auditTruncated: boolean;
         };
         AdminCompanyListResponse: {
             items: components["schemas"]["AdminCompanyResponse"][];
@@ -3117,6 +3165,37 @@ export interface operations {
             };
             /** @description Некорректный email или слишком короткий пароль */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_identity_admin_company_detail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Компания, до 50 участников и подключений и 20 последних событий поддержки. Флаги truncated обозначают ограниченный список. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCompanyDetailResponse"];
+                };
+            };
+            /** @description Компания не найдена */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

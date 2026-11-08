@@ -439,7 +439,13 @@ HTTP-входы сессии находятся в `Ui/Controller/Session` (`Log
 (`RequestPasswordReset`, `ResetPassword`), ответ — `Ui/Response/PasswordReset`.
 Остальные системные HTTP-входы находятся в `Ui/Controller/Admin` (`AdminLogin`,
 `AdminMe`, `CreateAdministrator`, `ListClientAccounts`,
-`SetClientAccountStatus`).
+`GetClientAccount`, `SetClientAccountStatus`).
+Карточка компании читает DBAL-запрос `CompanyForAdminQuery` в отдельном
+class-level слое Deptrac по ADR-018; дочерние выборки ограничены companyId.
+`RecordAdminCompanyViewAction` фиксирует чтение в аудит без значений данных.
+Ответ `AdminCompanyDetailResponse` ограничен 50 участниками, 50 подключениями
+и 20 последними событиями поддержки с явными флагами усечения.
+В историю карточки не входят просмотры и произвольные значения audit_record.
 MFA администраторов (ADR-045): `Ui/Controller/Admin/AdminMfaController`,
 `Ui/Security/AdminMfaSession`, `Ui/EventListener/AdminMfaGuardSubscriber`;
 системная auth lifecycle-запись — `Infrastructure/Repository/DoctrineAdminMfaRepository`,
@@ -927,7 +933,9 @@ apps/admin/src/
 │                       AdminLayout — шапка с ролью и выходом
 ├── features/
 │   ├── auth/           вход, выход
-│   ├── accounts/       список аккаунтов, регистрация, блокировка
+│   ├── accounts/       список аккаунтов, регистрация, блокировка; карточка
+│   │                   в боковой панели по /accounts/:companyId, страница
+│   │                   списка — в ?page=; статус меняется с подтверждением
 │   ├── administrators/ SuperAdmin заводит Admin
 │   ├── links/          короткие ссылки и переходы по дням месяца;
 │   │                   формы создания и изменения в локальном LinkFormDialog

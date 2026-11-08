@@ -10,11 +10,13 @@ export function FormDialog({
   busy,
   onClose,
   children,
+  variant = 'form',
 }: {
   title: string
   busy: boolean
   onClose: () => void
   children: ReactNode
+  variant?: 'form' | 'panel'
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
@@ -44,9 +46,15 @@ export function FormDialog({
     <dialog
       ref={dialogRef}
       aria-labelledby={titleId}
-      className="m-auto max-h-11/12 w-11/12 max-w-lg overflow-y-auto rounded-xl border border-border-default bg-surface-raised p-5 text-text-primary shadow-modal backdrop:bg-text-primary/40"
+      className={
+        variant === 'panel'
+          ? 'fixed inset-y-0 right-0 left-auto m-0 h-dvh max-h-none w-full max-w-3xl overflow-y-auto border border-border-default bg-surface-raised p-6 text-text-primary shadow-modal backdrop:bg-text-primary/40 sm:rounded-l-xl'
+          : 'm-auto max-h-11/12 w-11/12 max-w-lg overflow-y-auto rounded-xl border border-border-default bg-surface-raised p-5 text-text-primary shadow-modal backdrop:bg-text-primary/40'
+      }
       onCancel={(event) => {
         event.preventDefault()
+        // React распространяет cancel и через вложенный dialog.
+        event.stopPropagation()
         if (!busy) onClose()
       }}
       onClose={() => {
