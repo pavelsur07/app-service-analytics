@@ -1147,3 +1147,13 @@ catalog_not_ready. Integration ResearchRunsTest проверяет отклон�
 - `services/docker/postgres/init/05-ozon-ads.sql`, `06-ozon-ads-hba.sh` — только dev/test.
 - `docs/plan/ozon-advertising-00-08-implementation.md` — проверяемый срез/остатки.
   UI/продовая топология/управление рекламой не входят в этот срез.
+
+## Озон Ads: seller, этап 10
+
+`apps/seller/src/features/ozon-ads/` — URL-вкладки, форма политик,
+типизированные queries и представление расходов/событий.
+`shared/model/useOzonAdsAvailability.ts` используется sidebar и страницей.
+`Advertising/Domain/ObservationEvent` описывает собственный company-scoped
+журнал: человеческие настройки через ORM, принятые расчёты через DBAL атомарно
+с последней проекцией. Чтение — `ObservationEventsQuery`, keyset и readonly DTO.
+[Объём, приёмка и результаты](plan/ozon-advertising-stage10-implementation.md).

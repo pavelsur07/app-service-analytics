@@ -5,10 +5,156 @@
         "version": "0.1.0-dev"
     },
     "paths": {
+        "/api/companies/{companyId}/ozon-ads/availability": {
+            "get": {
+                "operationId": "get_app_advertising_ui_observationpolicies_availability",
+                "parameters": [
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u0414\u043e\u0441\u0442\u0443\u043f\u043d\u043e\u0441\u0442\u044c \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430 \u043d\u0430\u0431\u043b\u044e\u0434\u0435\u043d\u0438\u044f",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "required": [
+                                        "enabled"
+                                    ],
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/companies/{companyId}/ozon-ads/events": {
+            "get": {
+                "operationId": "get_app_advertising_ui_observationpolicies_events",
+                "parameters": [
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "accountId",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 50,
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u0418\u0441\u0442\u043e\u0440\u0438\u044f \u043d\u0430\u0431\u043b\u044e\u0434\u0435\u043d\u0438\u044f, \u043d\u043e\u0432\u044b\u0435 \u0437\u0430\u043f\u0438\u0441\u0438 \u043f\u0435\u0440\u0432\u044b\u043c\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "required": [
+                                        "items",
+                                        "nextCursor"
+                                    ],
+                                    "properties": {
+                                        "items": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/ObservationEventResponse"
+                                            }
+                                        },
+                                        "nextCursor": {
+                                            "type": "string",
+                                            "format": "uuid",
+                                            "nullable": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u043e\u043b\u0438\u0442\u0438\u043a\u0430 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0438\u043b\u0438 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u043e\u0435 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/companies/{companyId}/ozon-ads/policies": {
             "get": {
                 "operationId": "get_app_advertising_ui_observationpolicies_list",
                 "parameters": [
+                    {
+                        "name": "accountId",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "enabled",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ]
+                        }
+                    },
                     {
                         "name": "cursor",
                         "in": "query",
@@ -61,6 +207,26 @@
                                         }
                                     },
                                     "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u043e\u043b\u0438\u0442\u0438\u043a\u0430 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0438\u043b\u0438 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u043e\u0435 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
                                 }
                             }
                         }
@@ -166,6 +332,36 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ObservationPolicyResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u043e\u043b\u0438\u0442\u0438\u043a\u0430 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0438\u043b\u0438 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u043e\u0435 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u041a\u043e\u043d\u0444\u043b\u0438\u043a\u0442 \u0432\u0435\u0440\u0441\u0438\u0438 \u0438\u043b\u0438 \u043f\u043e\u0432\u0442\u043e\u0440 \u043a\u0430\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
                                 }
                             }
                         }
@@ -295,6 +491,36 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ObservationPolicyResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "\u041c\u043e\u0434\u0443\u043b\u044c \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d \u0438\u043b\u0438 \u043f\u043e\u043b\u0438\u0442\u0438\u043a\u0430 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u0430",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0438\u043b\u0438 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u043e\u0435 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u041a\u043e\u043d\u0444\u043b\u0438\u043a\u0442 \u0432\u0435\u0440\u0441\u0438\u0438 \u0438\u043b\u0438 \u043f\u043e\u0432\u0442\u043e\u0440 \u043a\u0430\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
                                 }
                             }
                         }
@@ -8318,6 +8544,170 @@
     },
     "components": {
         "schemas": {
+            "ObservationEventResponse": {
+                "required": [
+                    "id",
+                    "policyId",
+                    "accountId",
+                    "campaignId",
+                    "version",
+                    "kind",
+                    "actorId",
+                    "action",
+                    "reason",
+                    "details",
+                    "occurredAt",
+                    "dailyLimit",
+                    "spend",
+                    "difference"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "policyId": {
+                        "type": "string"
+                    },
+                    "accountId": {
+                        "type": "string"
+                    },
+                    "campaignId": {
+                        "type": "string"
+                    },
+                    "version": {
+                        "type": "integer"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "policy_created",
+                            "policy_updated",
+                            "observation"
+                        ]
+                    },
+                    "actorId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "saved",
+                            "would_run",
+                            "would_stop",
+                            "blocked"
+                        ]
+                    },
+                    "reason": {
+                        "type": "string"
+                    },
+                    "details": {
+                        "properties": {
+                            "start": {
+                                "type": "string"
+                            },
+                            "stop": {
+                                "type": "string"
+                            },
+                            "pollSeconds": {
+                                "type": "integer"
+                            },
+                            "enabled": {
+                                "type": "boolean"
+                            },
+                            "day": {
+                                "type": "string"
+                            },
+                            "latched": {
+                                "type": "boolean"
+                            }
+                        },
+                        "type": "object",
+                        "additionalProperties": false
+                    },
+                    "occurredAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "dailyLimit": {
+                        "required": [
+                            "amountMinor",
+                            "currency"
+                        ],
+                        "properties": {
+                            "amountMinor": {
+                                "type": "integer"
+                            },
+                            "currency": {
+                                "type": "string",
+                                "enum": [
+                                    "RUB"
+                                ]
+                            }
+                        },
+                        "type": "object",
+                        "nullable": true
+                    },
+                    "spend": {
+                        "required": [
+                            "amountMinor",
+                            "currency"
+                        ],
+                        "properties": {
+                            "amountMinor": {
+                                "type": "integer"
+                            },
+                            "currency": {
+                                "type": "string",
+                                "enum": [
+                                    "RUB"
+                                ]
+                            }
+                        },
+                        "type": "object",
+                        "nullable": true
+                    },
+                    "difference": {
+                        "required": [
+                            "amountMinor",
+                            "currency"
+                        ],
+                        "properties": {
+                            "amountMinor": {
+                                "type": "integer"
+                            },
+                            "currency": {
+                                "type": "string",
+                                "enum": [
+                                    "RUB"
+                                ]
+                            }
+                        },
+                        "type": "object",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "ValidationErrorResponse": {
+                "required": [
+                    "status",
+                    "code",
+                    "message"
+                ],
+                "properties": {
+                    "status": {
+                        "type": "integer"
+                    },
+                    "code": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
             "ObservationPolicyResponse": {
                 "required": [
                     "id",
@@ -8331,7 +8721,10 @@
                     "stop",
                     "timezone",
                     "pollSeconds",
-                    "deliveryStatus"
+                    "deliveryStatus",
+                    "observation",
+                    "sourceAgeKnown",
+                    "budgetProtectionActive"
                 ],
                 "properties": {
                     "id": {
@@ -8358,6 +8751,10 @@
                         "type": "boolean"
                     },
                     "dailyLimit": {
+                        "required": [
+                            "amountMinor",
+                            "currency"
+                        ],
                         "properties": {
                             "amountMinor": {
                                 "type": "integer",
@@ -8396,6 +8793,16 @@
                         ]
                     },
                     "observation": {
+                        "required": [
+                            "appliedVersion",
+                            "day",
+                            "spend",
+                            "difference",
+                            "action",
+                            "reason",
+                            "latched",
+                            "evaluatedAt"
+                        ],
                         "properties": {
                             "appliedVersion": {
                                 "type": "integer"
@@ -8405,6 +8812,10 @@
                                 "format": "date"
                             },
                             "spend": {
+                                "required": [
+                                    "amountMinor",
+                                    "currency"
+                                ],
                                 "properties": {
                                     "amountMinor": {
                                         "type": "integer"
@@ -8417,6 +8828,10 @@
                                 "nullable": true
                             },
                             "difference": {
+                                "required": [
+                                    "amountMinor",
+                                    "currency"
+                                ],
                                 "properties": {
                                     "amountMinor": {
                                         "type": "integer"
@@ -8473,25 +8888,6 @@
                             "verification_required",
                             "authenticated"
                         ]
-                    }
-                },
-                "type": "object"
-            },
-            "ValidationErrorResponse": {
-                "required": [
-                    "status",
-                    "code",
-                    "message"
-                ],
-                "properties": {
-                    "status": {
-                        "type": "integer"
-                    },
-                    "code": {
-                        "type": "string"
-                    },
-                    "message": {
-                        "type": "string"
                     }
                 },
                 "type": "object"

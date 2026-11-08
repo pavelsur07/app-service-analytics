@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Functional\Advertising;
 
 use App\Advertising\Domain\ObservationPolicyRepository;
+use App\Advertising\Infrastructure\Query\ObservationEventsQuery;
 use App\Advertising\Infrastructure\Query\ObservationPoliciesQuery;
 use App\Identity\Domain\CompanyRepository;
 use App\Identity\Domain\MarketplaceAccountRepository;
@@ -14,6 +15,7 @@ use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
+use App\Tests\Support\Builder\ObservationEventBuilder;
 use App\Tests\Support\Builder\ObservationPolicyBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\SessionWebTestCase;
@@ -72,6 +74,41 @@ final class ObservationPoliciesControllerTest extends SessionWebTestCase
         self::assertCount(1, $items);
         $client->request('GET', '/api/companies/'.Uuid::v7()->toRfc4122().'/ozon-ads/policies');
         self::assertResponseStatusCodeSame(403);
+        $events = '/api/companies/'.$company.'/ozon-ads/events';
+        $client->request('GET', $events.'?limit=1&accountId='.$account);
+        self::assertResponseIsSuccessful();
+        $page = $this->json($client);
+        self::assertIsArray($page['items']);
+        self::assertCount(1, $page['items']);
+        $updated = $page['items'][0] ?? null;
+        self::assertIsArray($updated);
+        self::assertIsArray($updated['dailyLimit']);
+        self::assertSame('policy_updated', $updated['kind']);
+        self::assertSame(2, $updated['version']);
+        self::assertSame(9000, $updated['dailyLimit']['amountMinor']);
+        self::assertIsString($page['nextCursor']);
+        $client->request('GET', $events.'?limit=1&cursor='.$page['nextCursor']);
+        $older = $this->json($client);
+        self::assertIsArray($older['items']);
+        self::assertCount(1, $older['items']);
+        $createdEvent = $older['items'][0] ?? null;
+        self::assertIsArray($createdEvent);
+        self::assertIsArray($createdEvent['dailyLimit']);
+        self::assertSame('policy_created', $createdEvent['kind']);
+        self::assertSame(10000, $createdEvent['dailyLimit']['amountMinor']);
+        $client->request('GET', $events.'?accountId='.Uuid::v7()->toRfc4122());
+        self::assertSame([], $this->json($client)['items']);
+        $client->request('GET', $base.'?enabled=false');
+        self::assertSame([], $this->json($client)['items']);
+        $client->request('GET', $base.'?enabled=true&accountId='.$account);
+        self::assertIsArray($this->json($client)['items']);
+        self::assertCount(1, $this->json($client)['items']);
+        $client->request('GET', $base.'?enabled=1');
+        self::assertResponseStatusCodeSame(422);
+        $client->request('GET', '/api/companies/'.$company.'/ozon-ads/availability');
+        self::assertSame(['enabled' => true], $this->json($client));
+        $client->request('GET', '/api/companies/'.Uuid::v7()->toRfc4122().'/ozon-ads/events');
+        self::assertResponseStatusCodeSame(403);
         $input['dailyLimit']['amountMinor'] = 1.5;
         $client->jsonRequest('POST', $base, $input);
         self::assertResponseStatusCodeSame(422);
@@ -115,6 +152,14 @@ final class ObservationPoliciesControllerTest extends SessionWebTestCase
         self::assertSame('applied', $view->deliveryStatus);
         self::assertNotNull($view->observation);
         self::assertSame(['amountMinor' => 463, 'currency' => 'RUB'], $view->observation['spend']);
+        $eventQuery = self::getContainer()->get(ObservationEventsQuery::class);
+        self::assertInstanceOf(ObservationEventsQuery::class, $eventQuery);
+        $client->jsonRequest('POST', '/api/internal/ozon-ads/observations', $body, server: $headers);
+        self::assertResponseIsSuccessful();
+        $journal = $eventQuery->list($body['company_id'], null, 100, null)->executeQuery()->fetchAllAssociative();
+        self::assertCount(1, $journal);
+        self::assertSame('observation', $journal[0]['kind']);
+        self::assertSame(['amountMinor' => 463, 'currency' => 'RUB'], ObservationEventsQuery::map($journal[0])->spend);
         $body['account_id'] = Uuid::v7()->toRfc4122();
         $body['runtime']['effective']['amount_minor'] = 999;
         $body['runtime']['evaluated_at'] = $at->modify('+1 second')->format(\DATE_RFC3339);
@@ -126,8 +171,35 @@ final class ObservationPoliciesControllerTest extends SessionWebTestCase
 
         self::assertNotNull($unchanged->observation);
         self::assertSame(['amountMinor' => 463, 'currency' => 'RUB'], $unchanged->observation['spend']);
+        self::assertCount(1, $eventQuery->list($body['company_id'], null, 100, null)->executeQuery()->fetchAllAssociative());
         $client->request('GET', '/api/internal/ozon-ads/policies', server: ['HTTP_AUTHORIZATION' => 'Bearer php-to-service-direction-token-0123456789ab']);
         self::assertResponseStatusCodeSame(401);
+    }
+
+    public function testDisabledModuleStillReportsAvailabilityAndRejectsReads(): void
+    {
+        $_ENV['OZON_ADS_ENABLED'] = $_SERVER['OZON_ADS_ENABLED'] = '0';
+        [$client, $company] = $this->fixture();
+        $root = '/api/companies/'.$company.'/ozon-ads';
+        $client->request('GET', $root.'/availability');
+        self::assertResponseIsSuccessful();
+        self::assertSame(['enabled' => false], $this->json($client));
+        foreach (['/policies', '/events'] as $path) {
+            $client->request('GET', $root.$path);
+            self::assertResponseStatusCodeSame(404);
+        }
+    }
+
+    public function testJournalNeverReturnsOtherCompanyEvents(): void
+    {
+        [$client, $company] = $this->fixture();
+        $repo = self::getContainer()->get(ObservationPolicyRepository::class);
+        self::assertInstanceOf(ObservationPolicyRepository::class, $repo);
+        $foreign = ObservationEventBuilder::anEvent()->build();
+        $repo->transactional(static fn () => $repo->recordEvent($foreign));
+        $client->request('GET', '/api/companies/'.$company.'/ozon-ads/events');
+        self::assertResponseIsSuccessful();
+        self::assertSame([], $this->json($client)['items']);
     }
 
     /** @return array{KernelBrowser, string, string} */

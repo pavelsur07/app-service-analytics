@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Advertising\Infrastructure\Repository;
 
+use App\Advertising\Domain\ObservationEvent;
 use App\Advertising\Domain\ObservationPolicy;
 use App\Advertising\Domain\ObservationPolicyRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -38,6 +39,11 @@ final readonly class DoctrineObservationPolicyRepository implements ObservationP
             throw new \DomainException('account_capacity_exceeded');
         }
         $this->em->persist($policy);
+    }
+
+    public function recordEvent(ObservationEvent $event): void
+    {
+        $this->em->persist($event);
     }
 
     public function locked(string $companyId, string $policyId, int $version): ObservationPolicy

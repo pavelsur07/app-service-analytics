@@ -24,6 +24,7 @@ import { SignUpPage } from '../features/auth/ui/SignUpPage'
 import { SkuForecastFactPage } from '../features/sku-forecast-fact/ui/SkuForecastFactPage'
 import { StockPlacementPage } from '../features/stock-placement/ui/StockPlacementPage'
 import { UnitEconomicsPage } from '../features/unit-economics/ui/UnitEconomicsPage'
+import { OzonAdsPage } from '../features/ozon-ads/ui/OzonAdsPage'
 import { CompanyLayout } from './CompanyLayout'
 import {
   DemandMatrixRedirect,
@@ -87,6 +88,7 @@ const router = createBrowserRouter([
       { path: 'stock-placement', element: <StockPlacementPage /> },
       { path: 'demand-matrix', element: <DemandMatrixRedirect /> },
       { path: 'extension', element: <ExtensionConnectPage /> },
+      { path: 'ozon-ads', element: <OzonAdsPage /> },
       { path: 'connections', element: <ConnectionsPage /> },
       { path: 'coverage', element: <DataCoveragePage /> },
       { path: 'unit-economics', element: <UnitEconomicsPage /> },

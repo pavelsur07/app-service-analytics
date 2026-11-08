@@ -4,6 +4,38 @@
  */
 
 export interface paths {
+    "/api/companies/{companyId}/ozon-ads/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_advertising_ui_observationpolicies_availability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/ozon-ads/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_advertising_ui_observationpolicies_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/ozon-ads/policies": {
         parameters: {
             query?: never;
@@ -1256,6 +1288,49 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ObservationEventResponse: {
+            id: string;
+            policyId: string;
+            accountId: string;
+            campaignId: string;
+            version: number;
+            /** @enum {string} */
+            kind: "policy_created" | "policy_updated" | "observation";
+            actorId: string | null;
+            /** @enum {string} */
+            action: "saved" | "would_run" | "would_stop" | "blocked";
+            reason: string;
+            details: {
+                start?: string;
+                stop?: string;
+                pollSeconds?: number;
+                enabled?: boolean;
+                day?: string;
+                latched?: boolean;
+            };
+            /** Format: date-time */
+            occurredAt: string;
+            dailyLimit: {
+                amountMinor: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
+            spend: {
+                amountMinor: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
+            difference: {
+                amountMinor: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
+        };
+        ValidationErrorResponse: {
+            status: number;
+            code: string;
+            message: string;
+        };
         ObservationPolicyResponse: {
             /** Format: uuid */
             id: string;
@@ -1267,9 +1342,9 @@ export interface components {
             mode: "observe";
             enabled: boolean;
             dailyLimit: {
-                amountMinor?: number;
+                amountMinor: number;
                 /** @enum {string} */
-                currency?: "RUB";
+                currency: "RUB";
             };
             start: string;
             stop: string;
@@ -1278,24 +1353,24 @@ export interface components {
             pollSeconds: number;
             /** @enum {string} */
             deliveryStatus: "saved" | "applied";
-            observation?: {
-                appliedVersion?: number;
+            observation: {
+                appliedVersion: number;
                 /** Format: date */
-                day?: string;
-                spend?: {
-                    amountMinor?: number;
-                    currency?: string;
+                day: string;
+                spend: {
+                    amountMinor: number;
+                    currency: string;
                 } | null;
-                difference?: {
-                    amountMinor?: number;
-                    currency?: string;
+                difference: {
+                    amountMinor: number;
+                    currency: string;
                 } | null;
                 /** @enum {string} */
-                action?: "would_run" | "would_stop" | "blocked";
-                reason?: string;
-                latched?: boolean;
+                action: "would_run" | "would_stop" | "blocked";
+                reason: string;
+                latched: boolean;
                 /** Format: date-time */
-                evaluatedAt?: string;
+                evaluatedAt: string;
             } | null;
             /** @default false */
             sourceAgeKnown: boolean;
@@ -1305,11 +1380,6 @@ export interface components {
         AdminMfaStatusResponse: {
             /** @enum {string} */
             state: "enrollment_required" | "verification_required" | "authenticated";
-        };
-        ValidationErrorResponse: {
-            status: number;
-            code: string;
-            message: string;
         };
         AdminMeResponse: {
             email: string;
@@ -2540,9 +2610,83 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_app_advertising_ui_observationpolicies_availability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Доступность интерфейса наблюдения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                    };
+                };
+            };
+        };
+    };
+    get_app_advertising_ui_observationpolicies_events: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                accountId?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description История наблюдения, новые записи первыми */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ObservationEventResponse"][];
+                        /** Format: uuid */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description Модуль выключен или политика не найдена */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры или недоступное подключение */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     get_app_advertising_ui_observationpolicies_list: {
         parameters: {
             query?: {
+                accountId?: string;
+                enabled?: "true" | "false";
                 cursor?: string;
                 limit?: number;
             };
@@ -2565,6 +2709,24 @@ export interface operations {
                         /** Format: uuid */
                         nextCursor: string | null;
                     };
+                };
+            };
+            /** @description Модуль выключен или политика не найдена */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры или недоступное подключение */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
         };
@@ -2620,8 +2782,35 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
+            /** @description Модуль выключен или политика не найдена */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Конфликт версии или повтор кампании */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Non-empty request body requires application/json. */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры или недоступное подключение */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2679,8 +2868,35 @@ export interface operations {
                     "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
+            /** @description Модуль выключен или политика не найдена */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Конфликт версии или повтор кампании */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
             /** @description Non-empty request body requires application/json. */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры или недоступное подключение */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

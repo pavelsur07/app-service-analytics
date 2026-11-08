@@ -17,5 +17,7 @@ interface ObservationPolicyRepository
 
     public function add(ObservationPolicy $policy): void;
 
+    public function recordEvent(ObservationEvent $event): void;
+
     public function locked(string $companyId, string $policyId, int $version): ObservationPolicy;
 }

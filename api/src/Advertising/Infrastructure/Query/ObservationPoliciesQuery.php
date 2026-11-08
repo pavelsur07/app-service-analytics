@@ -15,7 +15,7 @@ final readonly class ObservationPoliciesQuery
     {
     }
 
-    public function list(string $companyId, ?string $afterId, int $limit): QueryBuilder
+    public function list(string $companyId, ?string $afterId, int $limit, ?string $accountId = null, ?bool $enabled = null): QueryBuilder
     {
         if ($limit < 1 || $limit > 100) {
             throw new \InvalidArgumentException('invalid_limit');
@@ -25,6 +25,13 @@ final readonly class ObservationPoliciesQuery
             ->where('p.company_id=:company')->setParameter('company', $companyId)->orderBy('p.id')->setMaxResults($limit);
         if (null !== $afterId) {
             $query->andWhere('p.id>:after')->setParameter('after', $afterId);
+        }
+
+        if (null !== $accountId) {
+            $query->andWhere('p.account_id=:account')->setParameter('account', $accountId);
+        }
+        if (null !== $enabled) {
+            $query->andWhere('p.enabled=:enabled')->setParameter('enabled', $enabled, \Doctrine\DBAL\ParameterType::BOOLEAN);
         }
 
         return $query;

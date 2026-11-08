@@ -87,6 +87,11 @@ class ObservationPolicy
         return $this->accountId;
     }
 
+    public function campaignId(): string
+    {
+        return $this->campaignId;
+    }
+
     public function version(): int
     {
         return $this->version;
