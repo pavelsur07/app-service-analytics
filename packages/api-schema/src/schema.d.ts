@@ -4,6 +4,38 @@
  */
 
 export interface paths {
+    "/api/companies/{companyId}/ozon-ads/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_advertising_ui_observationpolicies_list"];
+        put?: never;
+        post: operations["post_app_advertising_ui_observationpolicies_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/ozon-ads/policies/{policyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_app_advertising_ui_observationpolicies_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/auth/login": {
         parameters: {
             query?: never;
@@ -1208,6 +1240,52 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ObservationPolicyResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            accountId: string;
+            campaignId: string;
+            version: number;
+            /** @enum {string} */
+            mode: "observe";
+            enabled: boolean;
+            dailyLimit: {
+                amountMinor?: number;
+                /** @enum {string} */
+                currency?: "RUB";
+            };
+            start: string;
+            stop: string;
+            /** @enum {string} */
+            timezone: "Europe/Moscow";
+            pollSeconds: number;
+            /** @enum {string} */
+            deliveryStatus: "saved" | "applied";
+            observation?: {
+                appliedVersion?: number;
+                /** Format: date */
+                day?: string;
+                spend?: {
+                    amountMinor?: number;
+                    currency?: string;
+                } | null;
+                difference?: {
+                    amountMinor?: number;
+                    currency?: string;
+                } | null;
+                /** @enum {string} */
+                action?: "would_run" | "would_stop" | "blocked";
+                reason?: string;
+                latched?: boolean;
+                /** Format: date-time */
+                evaluatedAt?: string;
+            } | null;
+            /** @default false */
+            sourceAgeKnown: boolean;
+            /** @default false */
+            budgetProtectionActive: boolean;
+        };
         AdminMfaStatusResponse: {
             /** @enum {string} */
             state: "enrollment_required" | "verification_required" | "authenticated";
@@ -2414,6 +2492,156 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_app_advertising_ui_observationpolicies_list: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Политики наблюдения, без автоматического управления рекламой */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ObservationPolicyResponse"][];
+                        /** Format: uuid */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+        };
+    };
+    post_app_advertising_ui_observationpolicies_create: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    accountId: string;
+                    campaignId: string;
+                    dailyLimit: {
+                        amountMinor: number;
+                        /** @enum {string} */
+                        currency: "RUB";
+                    };
+                    /** @example 09:00 */
+                    start: string;
+                    /** @example 21:00 */
+                    stop: string;
+                    pollSeconds: number;
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Сохранено; применение сервисом подтверждается отдельно */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationPolicyResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    put_app_advertising_ui_observationpolicies_update: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+                policyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    version: number;
+                    dailyLimit: {
+                        amountMinor: number;
+                        /** @enum {string} */
+                        currency: "RUB";
+                    };
+                    start: string;
+                    stop: string;
+                    pollSeconds: number;
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Сохранена новая версия наблюдения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationPolicyResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     post_identity_admin_auth_login: {
         parameters: {
             query?: never;

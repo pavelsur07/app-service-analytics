@@ -1127,3 +1127,15 @@ catalog_not_ready. Integration ResearchRunsTest проверяет отклон�
 [Закрытый план разработки этапа 8](plan/product-research-ozon-stage8.md),
 [открытый план этапа 9](plan/product-research-ozon-stage9.md),
 [операционные гейты](operations-checklist.md#product-research-ozon--этап-8).
+
+
+## Озон Ads, observe 00–08
+
+- `api/src/Advertising/{Domain,Application,Infrastructure,Ui}` — политики
+  Money, пользовательский API, аудит через IdentityFacade и company-scoped проекция.
+- `services/ozon-ads-controller/` — Go, собственная БД, аналитический коннектор,
+  аренды и предполагаемые решения; `cmd/`, `internal/`, `docker/`.
+- `services/_contracts/ozon-ads-observe/v1/` — схемы/корпус обеих сторон.
+- `services/docker/postgres/init/05-ozon-ads.sql`, `06-ozon-ads-hba.sh` — только dev/test.
+- `docs/plan/ozon-advertising-00-08-implementation.md` — проверяемый срез/остатки.
+  UI/продовая топология/управление рекламой не входят в этот срез.

@@ -1,0 +1,339 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.conwix.com/ozon-ads-observe/v1/schema.json",
+  "$defs": {
+    "Money": {
+      "type": "object",
+      "properties": {
+        "amount_minor": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "currency": {
+          "const": "RUB"
+        }
+      },
+      "required": [
+        "amount_minor",
+        "currency"
+      ],
+      "additionalProperties": false
+    },
+    "Policy": {
+      "type": "object",
+      "properties": {
+        "company_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "account_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "policy_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "campaign_id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,18}$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode": {
+          "const": "observe"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "daily_limit": {
+          "$ref": "#/$defs/Money"
+        },
+        "timezone": {
+          "const": "Europe/Moscow"
+        },
+        "start": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "stop": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "poll_seconds": {
+          "type": "integer",
+          "minimum": 600,
+          "maximum": 86400
+        },
+        "permission_until": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "company_id",
+        "account_id",
+        "policy_id",
+        "campaign_id",
+        "version",
+        "mode",
+        "enabled",
+        "daily_limit",
+        "timezone",
+        "start",
+        "stop",
+        "poll_seconds",
+        "permission_until"
+      ],
+      "additionalProperties": false
+    },
+    "Snapshot": {
+      "type": "object",
+      "properties": {
+        "campaign_id": {
+          "type": "string"
+        },
+        "day": {
+          "type": "string"
+        },
+        "spend": {
+          "type": "object",
+          "properties": {
+            "amount_minor": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "currency": {
+              "enum": [
+                "RUB",
+                ""
+              ]
+            }
+          },
+          "required": [
+            "amount_minor",
+            "currency"
+          ],
+          "additionalProperties": false
+        },
+        "fetched_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source": {
+          "enum": [
+            "aggregate",
+            "sku",
+            ""
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "campaign_id",
+        "day",
+        "spend",
+        "fetched_at",
+        "source",
+        "complete"
+      ],
+      "additionalProperties": false
+    },
+    "Decision": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "enum": [
+            "would_run",
+            "would_stop",
+            "blocked"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^[a-z_]{1,64}$"
+        },
+        "effective_spend": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "difference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reserve": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_age_known": {
+          "const": false
+        }
+      },
+      "required": [
+        "action",
+        "reason",
+        "effective_spend",
+        "difference",
+        "reserve",
+        "source_age_known"
+      ],
+      "additionalProperties": false
+    },
+    "Runtime": {
+      "type": "object",
+      "properties": {
+        "day": {
+          "type": "string",
+          "format": "date"
+        },
+        "primary": {
+          "$ref": "#/$defs/Snapshot"
+        },
+        "sku": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Snapshot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effective": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latched": {
+          "type": "boolean"
+        },
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        },
+        "error": {
+          "type": "string",
+          "pattern": "^[a-z_]{0,64}$"
+        },
+        "applied_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "evaluated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "day",
+        "primary",
+        "sku",
+        "effective",
+        "latched",
+        "decision",
+        "error",
+        "applied_version",
+        "evaluated_at"
+      ],
+      "additionalProperties": false
+    },
+    "Configuration": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "policies": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/Policy"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "policies",
+        "next_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "Observation": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "company_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "account_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "policy_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "runtime": {
+          "$ref": "#/$defs/Runtime"
+        }
+      },
+      "required": [
+        "schema_version",
+        "company_id",
+        "account_id",
+        "policy_id",
+        "runtime"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Configuration"
+    },
+    {
+      "$ref": "#/$defs/Observation"
+    }
+  ]
+}

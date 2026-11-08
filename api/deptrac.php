@@ -369,6 +369,17 @@ return static function (DeptracConfig $config): void {
                 DirectoryConfig::create('src/ProductResearchOzon/Ui/.*'),
             ),
 
+            $adsDomain = Layer::withName('AdvertisingDomain')->collectors(DirectoryConfig::create('src/Advertising/Domain/.*')),
+            $adsApplication = Layer::withName('AdvertisingApplication')->collectors(DirectoryConfig::create('src/Advertising/Application/.*')),
+            $adsInfrastructure = Layer::withName('AdvertisingInfrastructure')->collectors(
+                BoolConfig::create(must: [DirectoryConfig::create('src/Advertising/Infrastructure/.*')], mustNot: [ClassLikeConfig::create('^App\\Advertising\\Infrastructure\\Query\\(ServiceObservationPoliciesQuery|ServiceObservationPolicyRow)$')]),
+            ),
+            $adsUi = Layer::withName('AdvertisingUi')->collectors(
+                BoolConfig::create(must: [DirectoryConfig::create('src/Advertising/Ui/.*')], mustNot: [ClassLikeConfig::create('^App\\Advertising\\Ui\\Controller\\Internal\\ObservationConfigurationController$')]),
+            ),
+            $adsServiceQuery = Layer::withName('AdvertisingServiceQuery')->collectors(ClassLikeConfig::create('^App\\Advertising\\Infrastructure\\Query\\(ServiceObservationPoliciesQuery|ServiceObservationPolicyRow)$')),
+            $adsServiceUi = Layer::withName('AdvertisingServiceUi')->collectors(ClassLikeConfig::create('^App\\Advertising\\Ui\\Controller\\Internal\\ObservationConfigurationController$')),
+
             // Внешние библиотеки — не наши модули, но зависимость на них
             // реальна и должна быть покрыта правилом, а не висеть Uncovered.
             $brickMoney = Layer::withName('BrickMoney')->collectors(
@@ -578,6 +589,14 @@ return static function (DeptracConfig $config): void {
             Ruleset::forLayer($priceMonitoringApplication)->accesses($priceMonitoringDomain, $priceMonitoringInfrastructure, $identityFacade, $ingestionFacade, $sharedApplication, $sharedDomain, $symfonyUid),
             Ruleset::forLayer($priceMonitoringInfrastructure)->accesses($priceMonitoringDomain, $sharedApplication, $sharedDomain, $sharedInfrastructure, $symfonyComponent, $symfonyUid),
             Ruleset::forLayer($priceMonitoringDomain)->accesses($sharedDomain, $symfonyUid),
+
+            // ADR-052: observe only; cross-company delivery is limited to one query/controller.
+            Ruleset::forLayer($adsDomain)->accesses($sharedDomain, $symfonyUid),
+            Ruleset::forLayer($adsApplication)->accesses($adsDomain, $identityFacade, $sharedDomain, $symfonyComponent, $symfonyUid, $openApiAttributes),
+            Ruleset::forLayer($adsInfrastructure)->accesses($adsDomain, $adsApplication, $sharedDomain, $symfonyUid),
+            Ruleset::forLayer($adsUi)->accesses($adsApplication, $adsInfrastructure, $sharedUi, $sharedDomain, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
+            Ruleset::forLayer($adsServiceQuery)->accesses($sharedDomain),
+            Ruleset::forLayer($adsServiceUi)->accesses($adsServiceQuery, $sharedDomain, $sharedUi, $symfonyComponent, $symfonyUid),
 
             // ADR-050: исследование рынка, без связей с Ingestion/SalesPlanning.
             Ruleset::forLayer($researchUi)->accesses($researchApplication, $researchDomain, $researchInfrastructure, $sharedUi, $symfonyComponent, $symfonyUid, $nelmioApiDoc, $openApiAttributes),
