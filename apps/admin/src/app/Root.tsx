@@ -34,7 +34,7 @@ const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { path: '/accounts', element: <AccountsPage /> },
+      { path: '/accounts/:companyId?', element: <AccountsPage /> },
       { path: '/security', element: <MfaPage settings /> },
       { path: '/links', element: <LinksPage /> },
       { path: '/service-coverage', element: <ServiceCoveragePage /> },
