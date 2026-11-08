@@ -273,6 +273,26 @@ test.describe('Озон Ads: интерфейс наблюдения, синте
       page
         .getByRole('navigation')
         .getByRole('link', { name: 'Озон Ads', exact: true }),
+    ).toHaveCount(1)
+    const dataReads = () =>
+      state.reads.filter((path) => /\/ozon-ads\/(policies|events)$/.test(path))
+        .length
+    const before = dataReads()
+    await page.getByRole('link', { name: 'Главная', exact: true }).click()
+    await page.getByRole('link', { name: 'Озон Ads', exact: true }).click()
+    await expect(
+      page.getByText('Раздел наблюдения пока выключен.'),
+    ).toBeVisible()
+    for (const name of ['Стратегии', 'История действий', 'Настройки']) {
+      await page.getByRole('tab', { name, exact: true }).click()
+      await expect(
+        page.getByText('Раздел наблюдения пока выключен.'),
+      ).toBeVisible()
+    }
+    await expect(
+      page.getByRole('button', { name: 'Добавить наблюдение' }),
     ).toHaveCount(0)
+    expect(dataReads()).toBe(before)
+    expect(state.writes()).toBe(0)
   })
 })

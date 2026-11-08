@@ -20,7 +20,6 @@ import {
 import { NavLink } from 'react-router'
 
 import { Button } from '../../../../packages/ui/src'
-import { useOzonAdsAvailability } from '../shared/model/useOzonAdsAvailability'
 import { useCurrentUser } from '../shared/model/useCurrentUser'
 import { useAvailability } from '../features/product-research-ozon/model/queries'
 import { useLogout } from '../features/auth/model/useLogout'
@@ -68,10 +67,10 @@ const ITEMS = [
   { to: 'extension', label: 'Расширение', icon: Puzzle },
   { to: 'connections', label: 'Подключения', icon: Plug },
   { to: 'coverage', label: 'Полнота данных', icon: CalendarCheck },
+  { to: 'ozon-ads', label: 'Озон Ads', icon: Megaphone },
 ] as const
 
 export function Sidebar({ companyId }: { companyId: string }) {
-  const ads = useOzonAdsAvailability(companyId)
   const research = useAvailability(companyId)
   const currentUser = useCurrentUser()
   const logout = useLogout()
@@ -99,18 +98,6 @@ export function Sidebar({ companyId }: { companyId: string }) {
           {label}
         </NavLink>
       ))}
-
-      {ads.data?.enabled === true && !ads.isError && (
-        <NavLink
-          to="ozon-ads"
-          className={({ isActive }) =>
-            `${ITEM} ${isActive ? ITEM_ACTIVE : ITEM_IDLE}`
-          }
-        >
-          <Megaphone aria-hidden="true" size={16} />
-          Озон Ads
-        </NavLink>
-      )}
 
       {research.data?.enabled === true && !research.isError && (
         <NavLink
