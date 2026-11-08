@@ -213,6 +213,7 @@ Q1–Q7 не закрываются наличием ADR: полнота/нов�
 - [Квоты, веса, формулы и минутные интервалы](../plan/ozon-advertising-api-quota.md).
 - [Следующий объём N0–N6: общий бюджет API, полная приёмка 11 и допуск к observe 12](../plan/ozon-advertising-observe-launch-plan.md).
   Проект плана; его публикация не принимает доли квоты, новые зависимости или live-допуск.
+- [Паспорт N0: PHP, ozon-fetcher, Ads и открытые границы общего счётчика](../plan/ozon-advertising-quota-passport.md).
 - [Исследование API и границы фактических проверок](../plan/ozon-advertising-methods-research.md).
 - [Оставшиеся вопросы и выбранные решения](../plan/ozon-advertising-open-questions.md).
 
