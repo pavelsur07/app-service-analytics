@@ -1157,3 +1157,14 @@ catalog_not_ready. Integration ResearchRunsTest проверяет отклон�
 журнал: человеческие настройки через ORM, принятые расчёты через DBAL атомарно
 с последней проекцией. Чтение — `ObservationEventsQuery`, keyset и readonly DTO.
 [Объём, приёмка и результаты](plan/ozon-advertising-stage10-implementation.md).
+
+## Озон Ads: стенд этапа 11
+
+- `services/ozon-ads-controller/internal/control/workers.go`, `clock.go` —
+  штатный ограниченный цикл работников и защита от шага часов.
+- `internal/store/inspection.go` и закрытый `/internal/observations` —
+  bounded keyset диагностика каждой кампании, без денежных/секретных полей.
+- `services/ozon-ads-controller/test/stand/` — PostgreSQL/HTTP стенд с
+  нормальным/пиковым due, двумя репликами, массовым расчётом и ошибками.
+- [Паспорт](plan/ozon-advertising-stage11-passport.md),
+  [результаты и матрица](plan/ozon-advertising-stage11-implementation.md).

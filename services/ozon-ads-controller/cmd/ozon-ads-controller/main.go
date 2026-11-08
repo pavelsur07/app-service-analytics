@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 
 	"net/http"
@@ -59,13 +60,14 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
-	reader, err := ozon.New(&http.Client{}, "https://api-performance.ozon.ru", db, time.Now)
+	quota := control.GuardQuota(db, time.Now, time.Now)
+	reader, err := ozon.New(&http.Client{}, "https://api-performance.ozon.ru", quota, time.Now)
 	if err != nil {
 		log.Error("reader unavailable")
 		os.Exit(1)
 	}
 	php := delivery.Client{HTTP: &http.Client{}, Base: cfg.PHPBase, Token: cfg.OutboundToken}
-	engine := &control.Engine{Store: db, Reader: reader, Now: time.Now}
+	engine := &control.Engine{Store: db, Reader: reader, Now: time.Now, ClockOK: quota.Check}
 	var workers sync.WaitGroup
 	if cfg.Enabled {
 		workers.Go(func() {
@@ -89,33 +91,26 @@ func main() {
 				}
 			}
 		})
-		for range cfg.Workers {
-			workers.Go(func() {
-				ticker := time.NewTicker(time.Second)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case <-ticker.C:
-					}
-					started := time.Now()
-					job, stop := context.WithTimeout(ctx, 45*time.Second)
-					claim, claimErr := db.ClaimAccount(job, uuidv7.New(time.Now()), time.Now())
-					if claimErr == nil && claim != nil {
-						claimErr = engine.Process(job, claim)
-					}
-					stop()
-					if claimErr != nil {
-						cycleLog := log
-						if claim != nil {
-							cycleLog = log.With("company_id", claim.CompanyID, "marketplace_account_id", claim.AccountID, "job_id", claim.Token)
-						}
-						cycleLog.Warn("observation cycle failed", "error_class", "cycle", "outcome", "blocked", "duration_ms", time.Since(started).Milliseconds())
-					}
+		workers.Go(func() {
+			runErr := control.Workers(ctx, db, engine, cfg.Workers, time.Now, time.Now, uuidv7.New, func(claim *store.Claim, err error, duration time.Duration) {
+				if err == nil {
+					return
 				}
+				cycleLog := log
+				if claim != nil {
+					cycleLog = log.With("company_id", claim.CompanyID, "marketplace_account_id", claim.AccountID, "job_id", claim.Token)
+				}
+				errorClass := "cycle"
+				if errors.Is(err, control.ErrClockSkew) {
+					errorClass = "clock_skew"
+				}
+				cycleLog.Warn("observation cycle failed", "error_class", errorClass, "outcome", "blocked", "duration_ms", duration.Milliseconds())
 			})
-		}
+			if runErr != nil {
+				log.Error("workers unavailable", "error_class", "config")
+				cancel()
+			}
+		})
 		workers.Go(func() {
 			ticker := time.NewTicker(time.Second)
 			defer ticker.Stop()
@@ -143,7 +138,7 @@ func main() {
 			}
 		})
 	}
-	srv := &http.Server{Addr: cfg.Listen, Handler: server.Handler(db, cfg.InboundToken, cfg.Enabled), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
+	srv := &http.Server{Addr: cfg.Listen, Handler: server.Handler(db, cfg.InboundToken, cfg.Enabled, db, time.Now), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	workers.Go(func() {
 		<-ctx.Done()
 		shutdown, stop := context.WithTimeout(context.Background(), 15*time.Second)
