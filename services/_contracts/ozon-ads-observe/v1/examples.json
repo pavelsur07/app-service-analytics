@@ -1,0 +1,803 @@
+[
+  {
+    "name": "configuration",
+    "definition": "Configuration",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "policies": [
+        {
+          "company_id": "019a60df-1000-7000-8000-000000000001",
+          "account_id": "019a60df-1000-7000-8000-000000000002",
+          "policy_id": "019a60df-1000-7000-8000-000000000003",
+          "campaign_id": "49761882",
+          "version": 1,
+          "mode": "observe",
+          "enabled": true,
+          "daily_limit": {
+            "amount_minor": 10000,
+            "currency": "RUB"
+          },
+          "timezone": "Europe/Moscow",
+          "start": "09:00",
+          "stop": "21:00",
+          "poll_seconds": 600,
+          "permission_until": "2026-11-08T10:02:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "blocked_observation",
+    "definition": "Observation",
+    "valid": true,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a60df-1000-7000-8000-000000000001",
+      "account_id": "019a60df-1000-7000-8000-000000000002",
+      "policy_id": "019a60df-1000-7000-8000-000000000003",
+      "runtime": {
+        "day": "2026-11-08",
+        "primary": {
+          "campaign_id": "49761882",
+          "day": "2026-11-08",
+          "spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "fetched_at": "2026-11-08T10:00:00Z",
+          "source": "aggregate",
+          "complete": true
+        },
+        "sku": null,
+        "effective": {
+          "amount_minor": 103,
+          "currency": "RUB"
+        },
+        "latched": false,
+        "decision": {
+          "action": "blocked",
+          "reason": "reserve_unavailable",
+          "effective_spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "difference": null,
+          "reserve": null,
+          "source_age_known": false
+        },
+        "error": "",
+        "applied_version": 1,
+        "evaluated_at": "2026-11-08T10:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "invalid_mode_2",
+    "definition": "Configuration",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "policies": [
+        {
+          "company_id": "019a60df-1000-7000-8000-000000000001",
+          "account_id": "019a60df-1000-7000-8000-000000000002",
+          "policy_id": "019a60df-1000-7000-8000-000000000003",
+          "campaign_id": "49761882",
+          "version": 1,
+          "mode": "control",
+          "enabled": true,
+          "daily_limit": {
+            "amount_minor": 10000,
+            "currency": "RUB"
+          },
+          "timezone": "Europe/Moscow",
+          "start": "09:00",
+          "stop": "21:00",
+          "poll_seconds": 600,
+          "permission_until": "2026-11-08T10:02:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "invalid_poll_seconds_3",
+    "definition": "Configuration",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "policies": [
+        {
+          "company_id": "019a60df-1000-7000-8000-000000000001",
+          "account_id": "019a60df-1000-7000-8000-000000000002",
+          "policy_id": "019a60df-1000-7000-8000-000000000003",
+          "campaign_id": "49761882",
+          "version": 1,
+          "mode": "observe",
+          "enabled": true,
+          "daily_limit": {
+            "amount_minor": 10000,
+            "currency": "RUB"
+          },
+          "timezone": "Europe/Moscow",
+          "start": "09:00",
+          "stop": "21:00",
+          "poll_seconds": 599,
+          "permission_until": "2026-11-08T10:02:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "invalid_daily_limit_4",
+    "definition": "Configuration",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "policies": [
+        {
+          "company_id": "019a60df-1000-7000-8000-000000000001",
+          "account_id": "019a60df-1000-7000-8000-000000000002",
+          "policy_id": "019a60df-1000-7000-8000-000000000003",
+          "campaign_id": "49761882",
+          "version": 1,
+          "mode": "observe",
+          "enabled": true,
+          "daily_limit": {
+            "amount_minor": 1.1,
+            "currency": "RUB"
+          },
+          "timezone": "Europe/Moscow",
+          "start": "09:00",
+          "stop": "21:00",
+          "poll_seconds": 600,
+          "permission_until": "2026-11-08T10:02:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "invalid_daily_limit_5",
+    "definition": "Configuration",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "policies": [
+        {
+          "company_id": "019a60df-1000-7000-8000-000000000001",
+          "account_id": "019a60df-1000-7000-8000-000000000002",
+          "policy_id": "019a60df-1000-7000-8000-000000000003",
+          "campaign_id": "49761882",
+          "version": 1,
+          "mode": "observe",
+          "enabled": true,
+          "daily_limit": {
+            "amount_minor": 1,
+            "currency": "USD"
+          },
+          "timezone": "Europe/Moscow",
+          "start": "09:00",
+          "stop": "21:00",
+          "poll_seconds": 600,
+          "permission_until": "2026-11-08T10:02:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "invalid_company_id_6",
+    "definition": "Configuration",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "policies": [
+        {
+          "company_id": "foreign",
+          "account_id": "019a60df-1000-7000-8000-000000000002",
+          "policy_id": "019a60df-1000-7000-8000-000000000003",
+          "campaign_id": "49761882",
+          "version": 1,
+          "mode": "observe",
+          "enabled": true,
+          "daily_limit": {
+            "amount_minor": 10000,
+            "currency": "RUB"
+          },
+          "timezone": "Europe/Moscow",
+          "start": "09:00",
+          "stop": "21:00",
+          "poll_seconds": 600,
+          "permission_until": "2026-11-08T10:02:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "invalid_start_7",
+    "definition": "Configuration",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "policies": [
+        {
+          "company_id": "019a60df-1000-7000-8000-000000000001",
+          "account_id": "019a60df-1000-7000-8000-000000000002",
+          "policy_id": "019a60df-1000-7000-8000-000000000003",
+          "campaign_id": "49761882",
+          "version": 1,
+          "mode": "observe",
+          "enabled": true,
+          "daily_limit": {
+            "amount_minor": 10000,
+            "currency": "RUB"
+          },
+          "timezone": "Europe/Moscow",
+          "start": "25:00",
+          "stop": "21:00",
+          "poll_seconds": 600,
+          "permission_until": "2026-11-08T10:02:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "invalid_version_8",
+    "definition": "Configuration",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "policies": [
+        {
+          "company_id": "019a60df-1000-7000-8000-000000000001",
+          "account_id": "019a60df-1000-7000-8000-000000000002",
+          "policy_id": "019a60df-1000-7000-8000-000000000003",
+          "campaign_id": "49761882",
+          "version": 0,
+          "mode": "observe",
+          "enabled": true,
+          "daily_limit": {
+            "amount_minor": 10000,
+            "currency": "RUB"
+          },
+          "timezone": "Europe/Moscow",
+          "start": "09:00",
+          "stop": "21:00",
+          "poll_seconds": 600,
+          "permission_until": "2026-11-08T10:02:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "invalid_unexpected_9",
+    "definition": "Configuration",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "policies": [
+        {
+          "company_id": "019a60df-1000-7000-8000-000000000001",
+          "account_id": "019a60df-1000-7000-8000-000000000002",
+          "policy_id": "019a60df-1000-7000-8000-000000000003",
+          "campaign_id": "49761882",
+          "version": 1,
+          "mode": "observe",
+          "enabled": true,
+          "daily_limit": {
+            "amount_minor": 10000,
+            "currency": "RUB"
+          },
+          "timezone": "Europe/Moscow",
+          "start": "09:00",
+          "stop": "21:00",
+          "poll_seconds": 600,
+          "permission_until": "2026-11-08T10:02:00Z",
+          "unexpected": true
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "invalid_decision_source_age_known",
+    "definition": "Observation",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a60df-1000-7000-8000-000000000001",
+      "account_id": "019a60df-1000-7000-8000-000000000002",
+      "policy_id": "019a60df-1000-7000-8000-000000000003",
+      "runtime": {
+        "day": "2026-11-08",
+        "primary": {
+          "campaign_id": "49761882",
+          "day": "2026-11-08",
+          "spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "fetched_at": "2026-11-08T10:00:00Z",
+          "source": "aggregate",
+          "complete": true
+        },
+        "sku": null,
+        "effective": {
+          "amount_minor": 103,
+          "currency": "RUB"
+        },
+        "latched": false,
+        "decision": {
+          "action": "blocked",
+          "reason": "reserve_unavailable",
+          "effective_spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "difference": null,
+          "reserve": null,
+          "source_age_known": true
+        },
+        "error": "",
+        "applied_version": 1,
+        "evaluated_at": "2026-11-08T10:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "invalid_decision_action",
+    "definition": "Observation",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a60df-1000-7000-8000-000000000001",
+      "account_id": "019a60df-1000-7000-8000-000000000002",
+      "policy_id": "019a60df-1000-7000-8000-000000000003",
+      "runtime": {
+        "day": "2026-11-08",
+        "primary": {
+          "campaign_id": "49761882",
+          "day": "2026-11-08",
+          "spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "fetched_at": "2026-11-08T10:00:00Z",
+          "source": "aggregate",
+          "complete": true
+        },
+        "sku": null,
+        "effective": {
+          "amount_minor": 103,
+          "currency": "RUB"
+        },
+        "latched": false,
+        "decision": {
+          "action": "sent",
+          "reason": "reserve_unavailable",
+          "effective_spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "difference": null,
+          "reserve": null,
+          "source_age_known": false
+        },
+        "error": "",
+        "applied_version": 1,
+        "evaluated_at": "2026-11-08T10:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "invalid_decision_reserve",
+    "definition": "Observation",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a60df-1000-7000-8000-000000000001",
+      "account_id": "019a60df-1000-7000-8000-000000000002",
+      "policy_id": "019a60df-1000-7000-8000-000000000003",
+      "runtime": {
+        "day": "2026-11-08",
+        "primary": {
+          "campaign_id": "49761882",
+          "day": "2026-11-08",
+          "spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "fetched_at": "2026-11-08T10:00:00Z",
+          "source": "aggregate",
+          "complete": true
+        },
+        "sku": null,
+        "effective": {
+          "amount_minor": 103,
+          "currency": "RUB"
+        },
+        "latched": false,
+        "decision": {
+          "action": "blocked",
+          "reason": "reserve_unavailable",
+          "effective_spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "difference": null,
+          "reserve": {
+            "amount_minor": -1,
+            "currency": "RUB"
+          },
+          "source_age_known": false
+        },
+        "error": "",
+        "applied_version": 1,
+        "evaluated_at": "2026-11-08T10:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "invalid_decision_reserve",
+    "definition": "Observation",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a60df-1000-7000-8000-000000000001",
+      "account_id": "019a60df-1000-7000-8000-000000000002",
+      "policy_id": "019a60df-1000-7000-8000-000000000003",
+      "runtime": {
+        "day": "2026-11-08",
+        "primary": {
+          "campaign_id": "49761882",
+          "day": "2026-11-08",
+          "spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "fetched_at": "2026-11-08T10:00:00Z",
+          "source": "aggregate",
+          "complete": true
+        },
+        "sku": null,
+        "effective": {
+          "amount_minor": 103,
+          "currency": "RUB"
+        },
+        "latched": false,
+        "decision": {
+          "action": "blocked",
+          "reason": "reserve_unavailable",
+          "effective_spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "difference": null,
+          "reserve": {
+            "amount_minor": 1.1,
+            "currency": "RUB"
+          },
+          "source_age_known": false
+        },
+        "error": "",
+        "applied_version": 1,
+        "evaluated_at": "2026-11-08T10:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "invalid_decision_unexpected",
+    "definition": "Observation",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a60df-1000-7000-8000-000000000001",
+      "account_id": "019a60df-1000-7000-8000-000000000002",
+      "policy_id": "019a60df-1000-7000-8000-000000000003",
+      "runtime": {
+        "day": "2026-11-08",
+        "primary": {
+          "campaign_id": "49761882",
+          "day": "2026-11-08",
+          "spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "fetched_at": "2026-11-08T10:00:00Z",
+          "source": "aggregate",
+          "complete": true
+        },
+        "sku": null,
+        "effective": {
+          "amount_minor": 103,
+          "currency": "RUB"
+        },
+        "latched": false,
+        "decision": {
+          "action": "blocked",
+          "reason": "reserve_unavailable",
+          "effective_spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "difference": null,
+          "reserve": null,
+          "source_age_known": false,
+          "unexpected": 0
+        },
+        "error": "",
+        "applied_version": 1,
+        "evaluated_at": "2026-11-08T10:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "numeric_error",
+    "definition": "Observation",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a60df-1000-7000-8000-000000000001",
+      "account_id": "019a60df-1000-7000-8000-000000000002",
+      "policy_id": "019a60df-1000-7000-8000-000000000003",
+      "runtime": {
+        "day": "2026-11-08",
+        "primary": {
+          "campaign_id": "49761882",
+          "day": "2026-11-08",
+          "spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "fetched_at": "2026-11-08T10:00:00Z",
+          "source": "aggregate",
+          "complete": true
+        },
+        "sku": null,
+        "effective": {
+          "amount_minor": 103,
+          "currency": "RUB"
+        },
+        "latched": false,
+        "decision": {
+          "action": "blocked",
+          "reason": "reserve_unavailable",
+          "effective_spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "difference": null,
+          "reserve": null,
+          "source_age_known": false
+        },
+        "error": 42,
+        "applied_version": 1,
+        "evaluated_at": "2026-11-08T10:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "extra_money_property",
+    "definition": "Observation",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a60df-1000-7000-8000-000000000001",
+      "account_id": "019a60df-1000-7000-8000-000000000002",
+      "policy_id": "019a60df-1000-7000-8000-000000000003",
+      "runtime": {
+        "day": "2026-11-08",
+        "primary": {
+          "campaign_id": "49761882",
+          "day": "2026-11-08",
+          "spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "fetched_at": "2026-11-08T10:00:00Z",
+          "source": "aggregate",
+          "complete": true
+        },
+        "sku": null,
+        "effective": {
+          "amount_minor": 103,
+          "currency": "RUB",
+          "unexpected": true
+        },
+        "latched": false,
+        "decision": {
+          "action": "blocked",
+          "reason": "reserve_unavailable",
+          "effective_spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "difference": null,
+          "reserve": null,
+          "source_age_known": false
+        },
+        "error": "",
+        "applied_version": 1,
+        "evaluated_at": "2026-11-08T10:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "invalid_snapshot_time",
+    "definition": "Observation",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a60df-1000-7000-8000-000000000001",
+      "account_id": "019a60df-1000-7000-8000-000000000002",
+      "policy_id": "019a60df-1000-7000-8000-000000000003",
+      "runtime": {
+        "day": "2026-11-08",
+        "primary": {
+          "campaign_id": "49761882",
+          "day": "2026-11-08",
+          "spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "fetched_at": "not-a-date",
+          "source": "aggregate",
+          "complete": true
+        },
+        "sku": null,
+        "effective": {
+          "amount_minor": 103,
+          "currency": "RUB"
+        },
+        "latched": false,
+        "decision": {
+          "action": "blocked",
+          "reason": "reserve_unavailable",
+          "effective_spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "difference": null,
+          "reserve": null,
+          "source_age_known": false
+        },
+        "error": "",
+        "applied_version": 1,
+        "evaluated_at": "2026-11-08T10:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "null_snapshot_money",
+    "definition": "Observation",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a60df-1000-7000-8000-000000000001",
+      "account_id": "019a60df-1000-7000-8000-000000000002",
+      "policy_id": "019a60df-1000-7000-8000-000000000003",
+      "runtime": {
+        "day": "2026-11-08",
+        "primary": {
+          "campaign_id": "49761882",
+          "day": "2026-11-08",
+          "spend": null,
+          "fetched_at": "2026-11-08T10:00:00Z",
+          "source": "aggregate",
+          "complete": true
+        },
+        "sku": null,
+        "effective": {
+          "amount_minor": 103,
+          "currency": "RUB"
+        },
+        "latched": false,
+        "decision": {
+          "action": "blocked",
+          "reason": "reserve_unavailable",
+          "effective_spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "difference": null,
+          "reserve": null,
+          "source_age_known": false
+        },
+        "error": "",
+        "applied_version": 1,
+        "evaluated_at": "2026-11-08T10:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "campaign_id_twenty_digits",
+    "definition": "Configuration",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "policies": [
+        {
+          "company_id": "019a60df-1000-7000-8000-000000000001",
+          "account_id": "019a60df-1000-7000-8000-000000000002",
+          "policy_id": "019a60df-1000-7000-8000-000000000003",
+          "campaign_id": "10000000000000000000",
+          "version": 1,
+          "mode": "observe",
+          "enabled": true,
+          "daily_limit": {
+            "amount_minor": 10000,
+            "currency": "RUB"
+          },
+          "timezone": "Europe/Moscow",
+          "start": "09:00",
+          "stop": "21:00",
+          "poll_seconds": 600,
+          "permission_until": "2026-11-08T10:02:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  {
+    "name": "normalized_invalid_evaluated_at",
+    "definition": "Observation",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "company_id": "019a60df-1000-7000-8000-000000000001",
+      "account_id": "019a60df-1000-7000-8000-000000000002",
+      "policy_id": "019a60df-1000-7000-8000-000000000003",
+      "runtime": {
+        "day": "2026-11-08",
+        "primary": {
+          "campaign_id": "49761882",
+          "day": "2026-11-08",
+          "spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "fetched_at": "2026-11-08T10:00:00Z",
+          "source": "aggregate",
+          "complete": true
+        },
+        "sku": null,
+        "effective": {
+          "amount_minor": 103,
+          "currency": "RUB"
+        },
+        "latched": false,
+        "decision": {
+          "action": "blocked",
+          "reason": "reserve_unavailable",
+          "effective_spend": {
+            "amount_minor": 103,
+            "currency": "RUB"
+          },
+          "difference": null,
+          "reserve": null,
+          "source_age_known": false
+        },
+        "error": "",
+        "applied_version": 1,
+        "evaluated_at": "2026-11-08T09:60:00+00:00"
+      }
+    }
+  },
+  {
+    "name": "invalid_uuid_cursor",
+    "definition": "Configuration",
+    "valid": false,
+    "payload": {
+      "schema_version": "1",
+      "policies": [],
+      "next_cursor": "bad"
+    }
+  }
+]

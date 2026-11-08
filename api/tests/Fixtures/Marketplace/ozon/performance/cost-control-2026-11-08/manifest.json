@@ -1,0 +1,62 @@
+[
+  {
+    "file": "campaign-list.json",
+    "path": "/api/client/campaign",
+    "http_status": "200",
+    "request_body": "",
+    "captured_at": "2026-11-08T05:07:34Z",
+    "method": "GET",
+    "sha256": "617dce84dd28e6eec824417d936f117c26dfc9e3aefa844d95514770ac2bbcde",
+    "bytes": 73500
+  },
+  {
+    "file": "statistics-campaign-product.csv",
+    "path": "/api/client/statistics/campaign/product",
+    "http_status": "200",
+    "request_body": "",
+    "captured_at": "2026-11-08T05:07:35Z",
+    "method": "GET",
+    "sha256": "4cf7ec76d724dffc41bb062445ed894757d884ed12ea57ecc5655b2edccb27a5",
+    "bytes": 8682
+  },
+  {
+    "file": "statistics-expense-2026-11-08.json",
+    "path": "/api/client/statistics/expense/json?dateFrom=2026-11-08&dateTo=2026-11-08",
+    "http_status": "200",
+    "request_body": "",
+    "captured_at": "2026-11-08T05:07:35Z",
+    "method": "GET",
+    "sha256": "6c45288a5e9d1444ab024fac905b02495e73426d74e22544bbf867e5f4811680",
+    "bytes": 12
+  },
+  {
+    "file": "statistics-daily-2026-11-08.json",
+    "path": "/api/client/statistics/daily/json?dateFrom=2026-11-08&dateTo=2026-11-08",
+    "http_status": "200",
+    "request_body": "",
+    "captured_at": "2026-11-08T05:07:35Z",
+    "method": "GET",
+    "sha256": "d31d79ed1ce0d0ed60fcb22b89f38597d9325a0df49efce55b178de8d82a627d",
+    "bytes": 1873
+  },
+  {
+    "file": "statistics-products-sku-2026-11-08.json",
+    "path": "/api/client/statistics/products/sku",
+    "http_status": "200",
+    "request_body": "{\"campaignIds\":[\"49761882\"],\"dateFrom\":\"2026-11-08\",\"dateTo\":\"2026-11-08\"}",
+    "captured_at": "2026-11-08T05:07:35Z",
+    "method": "POST",
+    "sha256": "2bad0e7abd7c6bf0d9d35de490dc932ead3f136baf63e528adae7b4559e6a0af",
+    "bytes": 293
+  },
+  {
+    "file": "statistics-products-sku-2026-11-07.json",
+    "path": "/api/client/statistics/products/sku",
+    "http_status": "200",
+    "request_body": "{\"campaignIds\":[\"49761882\"],\"dateFrom\":\"2026-11-07\",\"dateTo\":\"2026-11-07\"}",
+    "captured_at": "2026-11-08T05:07:35Z",
+    "method": "POST",
+    "sha256": "f03e4d9b1d99d183054bd999b2206c8a646aefe56338e832d535ebc83420e396",
+    "bytes": 296
+  }
+]

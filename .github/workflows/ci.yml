@@ -536,6 +536,7 @@ jobs:
       # тесты rawstore и executor.
       - run: docker compose up -d postgres s3
 
+      - run: make ozon-ads-controller-lint ozon-ads-controller-vet ozon-ads-controller-test ozon-ads-controller-vulncheck ozon-ads-controller-build
       - run: make ozon-fetcher-lint ozon-fetcher-vet ozon-fetcher-test ozon-fetcher-vulncheck ozon-fetcher-build
       - run: make product-research-ozon-stage0-check product-research-ozon-check product-research-ozon-recovery-check product-research-ozon-prod-check
 

@@ -1447,3 +1447,17 @@ make ozon-fetcher-migrate          миграции БД сервиса
 # Сводная
 make ci-local            всё, что прогоняет конвейер Stage 4, одной командой
 ```
+
+
+### ADR-052: observe 00–08 (08.11.2026)
+
+Новый модуль `Advertising` (Domain/Application/Infrastructure/Ui) и сервис
+`ozon-ads-controller`; область — [ADR-052](docs/adr/0052-ozon-ads-cost-control.md).
+В сервисном исключении §1 допускается ещё одна узкая пара:
+`ObservationConfigurationController` → `ServiceObservationPoliciesQuery`.
+Deptrac исключает их из широких слоёв. Владелец политик/прав/аудита — PHP,
+суммы PHP представлены существующим Shared Money. Go не обращается в БД
+Conwix, не получает право менять рекламу, не публикуется наружу. Синхронного
+вызова Go из пользовательского запроса PHP нет. Отдельное разрешение на
+нормализацию и деньги касается только нового observe-сервиса, не ozon-fetcher.
+Точка остановки — 08, без выкладки живого observe/управления.
