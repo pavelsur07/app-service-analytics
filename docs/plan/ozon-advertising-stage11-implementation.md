@@ -3,6 +3,7 @@
 08.11.2026. Основание: поручение «продолжай» после этапа10.
 База `25b6fd2`, ветка `task/ozon-ads-observe-11`.
 [Паспорт до замеров](ozon-advertising-stage11-passport.md).
+[Следующие работы N0–N6 и чек-листы допуска](ozon-advertising-observe-launch-plan.md).
 
 **Стендовая часть выполнена. Полный этап11 и живой12 не приняты:** остаются
 инфраструктурные и внешние гейты ниже. Никакого включения Ads или управления
@@ -20,7 +21,9 @@
 - [x] Шаг часов проверяется перед Claim, quota SQL, изменением runtime и Finish; регрессии по полночь пройдены.
 - [x] Go fmt/vet/lint/race/build/govulncheck пройдены; два независимых финальных ревью complete0/0.
 - [x] Пробел общего суточного бюджета с ozon-fetcher установлен по коду, не скрыт отдельными лимитерами.
-- [ ] Зелёный обязательный CI всего diff, включая audit/e2e — подтверждается до merge.
+- [x] Зелёный обязательный CI всего diff, включая audit/e2e:
+  [ветка PR #332](https://github.com/pavelsur07/app-service-analytics/actions/runs/42497233786),
+  [master и выкладка](https://github.com/pavelsur07/app-service-analytics/actions/runs/42498377627).
 - [ ] Полная инфраструктурная приёмка/soak/clock calibration/production watcher — отдельный незакрытый гейт.
 
 ## Результаты

@@ -211,6 +211,8 @@ Q1–Q7 не закрываются наличием ADR: полнота/нов�
 - [Чек-лист первого выпуска observe](../plan/ozon-advertising-stages.md#чек-лист-приёмки-первого-выпуска-observe).
 - [ТЗ: модели, API, состояния и каталог тестов](../plan/ozon-advertising-technical-spec.md).
 - [Квоты, веса, формулы и минутные интервалы](../plan/ozon-advertising-api-quota.md).
+- [Следующий объём N0–N6: общий бюджет API, полная приёмка 11 и допуск к observe 12](../plan/ozon-advertising-observe-launch-plan.md).
+  Проект плана; его публикация не принимает доли квоты, новые зависимости или live-допуск.
 - [Исследование API и границы фактических проверок](../plan/ozon-advertising-methods-research.md).
 - [Оставшиеся вопросы и выбранные решения](../plan/ozon-advertising-open-questions.md).
 
