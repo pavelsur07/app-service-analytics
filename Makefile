@@ -512,3 +512,8 @@ ozon-ads-controller-build:
 
 ozon-ads-controller-vulncheck:
 	$(SERVICES) run --rm -T ozon-ads-controller-dev go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+OZON_ADS_STAND_TEST ?= .
+.PHONY: ozon-ads-controller-stand
+ozon-ads-controller-stand: ozon-ads-controller-db ## паспортная нагрузка и аварии, только TEST_DB_DSN/localhost mock
+	$(SERVICES) run --rm -T ozon-ads-controller-dev go test -race -count=1 -v -timeout=180s -run "$(OZON_ADS_STAND_TEST)" ./test/stand

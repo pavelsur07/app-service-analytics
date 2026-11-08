@@ -34,6 +34,7 @@ type Engine struct {
 	Store       Repository
 	Reader      Reader
 	Now         func() time.Time
+	ClockOK     func(time.Time) bool
 	mu          sync.RWMutex
 	credentials map[string]ozon.Credentials
 	active      map[string]activeRead
@@ -96,6 +97,9 @@ func (e *Engine) credential(companyID, accountID string, now time.Time) (ozon.Cr
 // observations; they do not trigger an early statistics request.
 func (e *Engine) Process(ctx context.Context, c *store.Claim) error {
 	now := e.Now()
+	if e.ClockOK != nil && !e.ClockOK(now) {
+		return ErrClockSkew
+	}
 	cred, allowed := e.credential(c.CompanyID, c.AccountID, now)
 	polling := !now.Before(c.NextPoll)
 	nextPoll := c.NextPoll
@@ -147,6 +151,9 @@ func (e *Engine) Process(ctx context.Context, c *store.Claim) error {
 			if err == nil {
 				sku, err = observation.ParseSKU(body, ids, day, e.Now())
 			}
+			if errors.Is(err, ErrClockSkew) {
+				return err
+			}
 			if err != nil {
 				readError = "source_unavailable"
 				sku = nil
@@ -163,6 +170,9 @@ func (e *Engine) Process(ctx context.Context, c *store.Claim) error {
 		}
 	}
 	now = e.Now()
+	if e.ClockOK != nil && !e.ClockOK(now) {
+		return ErrClockSkew
+	}
 	nextTick := nextPoll
 	for index := range c.Items {
 		item := &c.Items[index]
@@ -239,7 +249,11 @@ func (e *Engine) Process(ctx context.Context, c *store.Claim) error {
 	if !nextTick.After(now) {
 		nextTick = now.Add(time.Second)
 	}
-	if err := e.Store.Finish(ctx, c.CompanyID, c.AccountID, c.Token, c.Items, nextPoll, nextTick, now); err != nil {
+	checkedAt := e.Now()
+	if e.ClockOK != nil && !e.ClockOK(checkedAt) {
+		return ErrClockSkew
+	}
+	if err := e.Store.Finish(ctx, c.CompanyID, c.AccountID, c.Token, c.Items, nextPoll, nextTick, checkedAt); err != nil {
 		return err
 	}
 	// Publication is an eventually consistent projection, never a prerequisite for
