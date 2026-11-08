@@ -1152,7 +1152,9 @@ catalog_not_ready. Integration ResearchRunsTest проверяет отклон�
 
 `apps/seller/src/features/ozon-ads/` — URL-вкладки, форма политик,
 типизированные queries и представление расходов/событий.
-`shared/model/useOzonAdsAvailability.ts` используется sidebar и страницей.
+`shared/model/useOzonAdsAvailability.ts` используется страницей: флаг управляет
+доступностью наблюдения и форм, а постоянный пункт «Озон Ads» в sidebar
+позволяет открыть раздел и увидеть выключенное состояние.
 `Advertising/Domain/ObservationEvent` описывает собственный company-scoped
 журнал: человеческие настройки через ORM, принятые расчёты через DBAL атомарно
 с последней проекцией. Чтение — `ObservationEventsQuery`, keyset и readonly DTO.
