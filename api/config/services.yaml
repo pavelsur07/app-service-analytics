@@ -237,3 +237,22 @@ services:
             $clock: '@App\Shared\Infrastructure\SystemClock'
 
     App\Advertising\Domain\ObservationPolicyRepository: '@App\Advertising\Infrastructure\Repository\DoctrineObservationPolicyRepository'
+
+    App\Ingestion\Domain\OzonPerformanceCallCounter: '@App\Ingestion\Infrastructure\Connector\OzonPerformance\DoctrineOzonPerformanceCallCounter'
+
+    # Performance API (ADR-026): separate host and credentials. The 10-second
+    # ceiling also bounds the synchronous connection probe; the read-only
+    # allowlist remains in OzonPerformanceHttp.
+    # NativeResponse performs one fopen with max_redirects=0; no CurlResponse
+    # automatic network replay outside the durable attempt reservation.
+    ozon_performance.client:
+        class: Symfony\Component\HttpClient\NativeHttpClient
+        arguments:
+            $defaultOptions:
+                base_uri: '%env(OZON_PERFORMANCE_API_BASE_URL)%'
+                timeout: 10.0
+                max_duration: 10.0
+                max_redirects: 0
+                http_version: '1.1'
+                headers:
+                    Connection: close

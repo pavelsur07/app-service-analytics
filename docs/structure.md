@@ -1185,3 +1185,6 @@ catalog_not_ready. Integration ResearchRunsTest проверяет отклон�
 - [Паспорт квот N0](plan/ozon-advertising-quota-passport.md) — внутренние
   HTTP-потребители, методы/стоимость, ограниченный production-снимок,
   пробелы scope/reset, транспорта и внешнего потребления.
+- [Учёт Performance HTTP](plan/ozon-performance-http-accounting.md) — durable
+  minute-счётчики PHP и fetcher в собственных БД, запрет скрытых повторов,
+  миграции, границы доказательств и чек-лист второй части N0.

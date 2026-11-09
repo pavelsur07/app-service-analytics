@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ingestion\Infrastructure\Connector\OzonPerformance;
 
+use App\Ingestion\Domain\OzonPerformanceCallCounter;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -33,6 +34,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  */
 final class OzonPerformanceHttp
 {
+    private readonly HttpClientInterface $httpClient;
+
     /**
      * Разрешённые пары: метод и шаблон пути целиком. Добавить путь сюда —
      * решение о том, что код вправе делать с кабинетом клиента: только
@@ -69,9 +72,12 @@ final class OzonPerformanceHttp
 
     public function __construct(
         #[Autowire(service: 'ozon_performance.client')]
-        private readonly HttpClientInterface $httpClient,
+        HttpClientInterface $httpClient,
         private readonly LoggerInterface $logger,
+        private readonly OzonPerformanceCallCounter $callCounter,
     ) {
+        $options = ['max_redirects' => 0, 'http_version' => '1.1', 'headers' => ['Connection' => 'close']];
+        $this->httpClient = $httpClient->withOptions($options);
     }
 
     /**
@@ -139,6 +145,19 @@ final class OzonPerformanceHttp
             throw new \LogicException(\sprintf('Ozon Performance: %s %s is not in the read-only allow-list (ADR-026).', $method, $path));
         }
 
+        $operation = match (true) {
+            self::TOKEN_PATH === $path => 'token',
+            '/api/client/campaign' === $path => 'campaigns',
+            str_ends_with($path, '/v2/products') => 'campaign_products',
+            '/api/client/statistics/expense/json' === $path => 'expense',
+            '/api/client/statistics/daily/json' === $path => 'daily',
+            '/api/client/statistics/products/sku' === $path => 'sku',
+            '/api/client/statistics/json' === $path => 'report_order',
+            '/api/client/statistics/report' === $path => 'report_download',
+            '/api/client/statistic/orders/generate/json' === $path => 'cpo_order',
+            default => 'report_status',
+        };
+        $this->callCounter->recordAcrossAccounts($operation);
         $response = $this->httpClient->request($method, $path, $options);
         $status = $response->getStatusCode();
         if (429 === $status || 403 === $status) {

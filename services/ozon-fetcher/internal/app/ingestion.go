@@ -81,7 +81,7 @@ func Start(ctx context.Context, cfg config.Config, pool *store.Pool, logger *slo
 	raw := rawstore.New(s3Client, cfg.S3Bucket, cfg.MaxParallelConnections*2)
 	execCfg := executor.DefaultConfig()
 	execCfg.Location = loc
-	perf := ozonperf.NewClient(cfg.OzonPerformanceBaseURL, &http.Client{Timeout: ozonperf.DefaultTimeout}, logger, now).WithLimiter(limits)
+	perf := ozonperf.NewClient(cfg.OzonPerformanceBaseURL, &http.Client{Timeout: ozonperf.DefaultTimeout}, logger, now, tasks).WithLimiter(limits)
 	exec := executor.New(execCfg, tasks, raw, client, cabinets, logger, now, jitter, ozon.SleepContext).
 		WithRawReader(rawstore.NewReader(s3Client, cfg.S3Bucket)).
 		WithPerformance(perf)
