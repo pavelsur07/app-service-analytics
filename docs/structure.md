@@ -1176,6 +1176,9 @@ catalog_not_ready. Integration ResearchRunsTest проверяет отклон�
   нормальным/пиковым due, двумя репликами, массовым расчётом и ошибками.
 - [Паспорт](plan/ozon-advertising-stage11-passport.md),
   [результаты и матрица](plan/ozon-advertising-stage11-implementation.md).
+- [Выполнение постоянного observe](plan/ozon-ads-continuous-execution.md) —
+  согласованный этап квот, непрерывного цикла и production-допуска;
+  первая часть — offline quota-check в Go, без сетевых обращений.
 - [Допуск к живому observe](plan/ozon-advertising-observe-launch-plan.md) —
   следующие шаги N0–N6, общие квоты, физические отказы, мониторинг,
   production без чтений, ограниченный пилот и чек-листы каждого шага.

@@ -23,9 +23,13 @@ import (
 )
 
 func main() {
+	quotaPath := flag.String("quota-check", "", "offline validation of a quota passport; no database or network")
 	migrate := flag.Bool("migrate", false, "apply observe schema")
 	check := flag.Bool("migrations-check", false, "verify migrations without applying them")
 	flag.Parse()
+	if *quotaPath != "" {
+		os.Exit(checkQuota(*quotaPath, time.Now(), os.Stdout))
+	}
 	log := observability.New(os.Stdout)
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
