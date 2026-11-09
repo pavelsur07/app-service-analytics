@@ -2,8 +2,9 @@
 
 09.11.2026. Вторая часть [постоянного observe](ozon-ads-continuous-execution.md),
 подготовка N0/N2 из [плана допуска](ozon-advertising-observe-launch-plan.md).
-Основа: ADR-026, ADR-043, ADR-052. Статус: реализация и локальная проверка;
-пока не является поставленной защитой общей квоты.
+Основа: ADR-026, ADR-043, ADR-052. [PR #340](https://github.com/pavelsur07/app-service-analytics/pull/340)
+merged 09.11.2026, merge `5ac73f6`. Учёт отправок не является защитой общей квоты.
+Выкладка и безопасный production smoke фиксируются ниже отдельными результатами.
 
 ## Результат
 
@@ -124,9 +125,9 @@ API: `Version20261109071000`; fetcher: `00005_performance_logical_count.sql`.
 - [x] Финальные lint/stan/deptrac/structure-check после всех правок PHP PASS.
 - [x] make db-rebuild-check в отдельном синтетическом dev/test-проекте PASS.
 - [x] Проверен локальный down/up обеих новых миграций (PHP execute; Go TestMigrationsRoundTrip).
-- [ ] Независимые новые CLI-сессии Codex 5A/5B complete; замечания разобраны.
-- [ ] Обязательный CI зелёный для всего diff, PR merged.
-- [ ] Production: миграции, версия всех потребителей, health и безопасный smoke проверены.
+- [x] Независимые новые CLI-сессии Codex 5A/5B complete; замечания разобраны.
+- [x] Обязательный CI зелёный для всего diff, PR merged.
+- [x] Production: миграции, версия всех потребителей, health и безопасный smoke проверены.
 - [ ] Полное окно/часы/старые процессы и bootstrap доказаны — это последующая N0/N2-приёмка.
 
 Ресурсное ограничение локального PHPStan: стандартный запуск холодного полного
@@ -141,6 +142,58 @@ Codex CLI (в артефактах указана модель gpt-6.1-sol), п�
 Добавлен неизменяемый Builder; integration-тест проверяет увеличение заранее
 сохранённого значения и его сохранность после rollback. 5B complete: 0 уникальных
 замечаний сверх 5A. Отклонённых нет. После исправления lint/deptrac/structure,
-затронутые 94 теста и PHPStan трёх изменённых файлов PASS. Повтор полного
-PHPStan и оба ревью выполняются; прежнее заключение не выдаётся за проверку
-исправления. Схема миграций после полного db-rebuild-check не менялась.
+затронутые 94 теста, focused и полный PHPStan с теми же правилами и 2 GiB PASS.
+Схема миграций после полного db-rebuild-check не менялась.
+
+Финальное ревью пакета
+`dacbb10bed3e0bd47f6fef766285f5883c89496c7c827c4cf6cd389d1ddb3f39`:
+5A `20261109T105534.239425Z-dacbb10bed3e-codex-fcs64ebn`,
+5B `20261109T105534.256301Z-dacbb10bed3e-defects-tguo0m3l`.
+Оба complete, оба JSON прочитаны; исправление Builder подтверждено.
+Повторные проходы дали 0/0 новых уникальных замечаний. Все 22 файла задачи
+совпадают с manifest. Код head `8ce07a7` после ревью не менялся.
+
+[Обязательный branch CI](https://github.com/pavelsur07/app-service-analytics/actions/runs/42604815350)
+success целиком: backend/frontend/services/e2e/контракт и уязвимости.
+Первый отменённый прогон `42604261631` за успешную итоговую проверку не засчитывается.
+Постоянная запись проверки и merge: [PR #340](https://github.com/pavelsur07/app-service-analytics/pull/340#issuecomment-6738477861).
+
+Независимый внешний монитор отложен владельцем в
+[issue #341](https://github.com/pavelsur07/app-service-analytics/issues/341).
+Это не отменяет N4/N5 и не даёт live-допуск.
+
+## Production: миграции выпуска 830-5ac73f6
+
+До изменения проверено: обе таблицы отсутствуют, версия миграций fetcher — 4.
+HTTPS wrapper/OpenSSL/allow_url_fopen в production PHP доступны.
+[Master pipeline](https://github.com/pavelsur07/app-service-analytics/actions/runs/42606220786)
+прошёл все проверки и опубликовал образы. Далее штатно остановился на API-гейте:
+1 pending migration. Из нового образа `830-5ac73f6` отдельно применена
+`Version20261109071000`, после неё `migrations:up-to-date` PASS.
+
+Повторён только failed deploy. Второй отказ — гейт собственной БД fetcher;
+09.11 в 11:33:12 UTC из нового образа применена `00005_performance_logical_count`,
+версия стала 5. В 11:33:14 `-migrations-check` PASS. Повтор failed deploy завершился
+успешно; master pipeline в итоге success целиком.
+Ни production down, ни удаление истории не выполнялись. Наличие таблиц само
+по себе не является доказательством работающего учёта или полного окна.
+
+Production smoke 09.11.2026, 11:39:45–11:39:54 UTC:
+
+- Seller ping снаружи и admin ping через nginx/Host подтверждают `830-5ac73f6`.
+  Внешний admin ping отвечает 403 по действующему admin IP allowlist; это
+  отдельная проверка периметра, не ошибочно записанный успешный публичный ping.
+- API, все PHP-потребители и fetcher используют образ `830-5ac73f6`.
+  Контейнеры работают, штатные healthchecks healthy (worker-freshness без
+  healthcheck по существующей топологии; его health не выдумывается).
+- Production DI: ozon_performance.client — NativeHttpClient. HTTPS через этот
+  транспорт к публичному seller ping Conwix — 200 и та же версия; Ozon не вызывался.
+- Обе новые таблицы существуют, fetcher migration=5. В ограниченном диапазоне
+  bucket_start≥09.11 11:33 UTC PHP уже сохранил 16 попыток штатного трафика,
+  fetcher — 0. Это суммы резерваций всех подключений потребителя, без идентификаторов
+  или денежных данных; 0 fetcher не означает отсутствие всего старого/внешнего трафика.
+- Go Ads в production отсутствует. Этот выпуск не включает управление кампаниями
+  и не создаёт live-допуск.
+
+Начало полного учёта должно подтверждаться отдельно с учётом смены всех процессов
+и возможных старых запусков. За полный день эти несколько минут не засчитываются.
