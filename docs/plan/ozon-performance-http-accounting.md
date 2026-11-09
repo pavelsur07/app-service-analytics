@@ -119,10 +119,10 @@ API: `Version20261109071000`; fetcher: `00005_performance_logical_count.sql`.
 - [x] Конкурентные upsert fetcher и переход минут покрыты тестами.
 - [x] PHP DI использует NativeHttpClient, опции запрещают редирект/повтор соединения.
 - [x] Локальный Go HTTP-сервер подтверждает отсутствие скрытого повтора и перехода 3xx.
-- [x] Затронутые PHP-тесты: 94 теста, 2100 assertions, PASS.
+- [x] Затронутые PHP-тесты после исправления ревью: 94 теста, 2098 assertions, PASS.
 - [x] Go vet/lint/race/test/vulncheck/build PASS, уязвимостей 0; новые TLS/opaque-тесты PASS.
 - [x] Финальные lint/stan/deptrac/structure-check после всех правок PHP PASS.
-- [ ] make db-rebuild-check в отдельном синтетическом dev/test-проекте PASS.
+- [x] make db-rebuild-check в отдельном синтетическом dev/test-проекте PASS.
 - [x] Проверен локальный down/up обеих новых миграций (PHP execute; Go TestMigrationsRoundTrip).
 - [ ] Независимые новые CLI-сессии Codex 5A/5B complete; замечания разобраны.
 - [ ] Обязательный CI зелёный для всего diff, PR merged.
@@ -134,3 +134,13 @@ API: `Version20261109071000`; fetcher: `00005_performance_logical_count.sql`.
 на существующем NetForwardCaptureTest. Полный проход с теми же правилами и
 --memory-limit=2G завершился без ошибок. Baseline/правила не изменялись;
 после итоговых изменений проверка повторяется, обязательный CI остаётся гейтом.
+
+Первое независимое ревью: Claude CLI отсутствует, разрешённая замена — новые
+Codex CLI (в артефактах указана модель gpt-6.1-sol), пакет `fe1b3f76a9d0`.
+5A complete: 1 замечание принято — отсутствовал Builder новой Entity.
+Добавлен неизменяемый Builder; integration-тест проверяет увеличение заранее
+сохранённого значения и его сохранность после rollback. 5B complete: 0 уникальных
+замечаний сверх 5A. Отклонённых нет. После исправления lint/deptrac/structure,
+затронутые 94 теста и PHPStan трёх изменённых файлов PASS. Повтор полного
+PHPStan и оба ревью выполняются; прежнее заключение не выдаётся за проверку
+исправления. Схема миграций после полного db-rebuild-check не менялась.

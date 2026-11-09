@@ -22,10 +22,25 @@ class PerformanceHttpLogicalCount
     #[ORM\Column(type: 'bigint')]
     private readonly int $attempts;
 
-    private function __construct(\DateTimeImmutable $bucketStart, string $operation, int $attempts)
+    public function __construct(\DateTimeImmutable $bucketStart, string $operation, int $attempts)
     {
         $this->bucketStart = $bucketStart;
         $this->operation = $operation;
         $this->attempts = $attempts;
+    }
+
+    public function bucketStart(): \DateTimeImmutable
+    {
+        return $this->bucketStart;
+    }
+
+    public function operation(): string
+    {
+        return $this->operation;
+    }
+
+    public function attempts(): int
+    {
+        return $this->attempts;
     }
 }
