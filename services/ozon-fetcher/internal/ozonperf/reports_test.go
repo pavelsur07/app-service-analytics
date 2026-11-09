@@ -123,17 +123,17 @@ func TestActiveCampaignsNeedKnownNumericMetrics(t *testing.T) {
 }
 
 func TestRedirectSchemeDowngradeIsRefused(t *testing.T) {
-	c := NewClient("https://api-performance.ozon.ru", &http.Client{}, nil, time.Now)
+	c := NewClient("https://api-performance.ozon.ru", &http.Client{}, nil, time.Now, &testAttempts{})
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://api-performance.ozon.ru/file.zip", nil)
 	assert.Error(t, c.http.CheckRedirect(req, nil), "https → http — Bearer открытым текстом")
 	same, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://api-performance.ozon.ru/file.zip", nil)
-	assert.NoError(t, c.http.CheckRedirect(same, nil))
+	assert.Error(t, c.http.CheckRedirect(same, nil), "automatic redirects require a separate reservation")
 }
 
 func TestTokenNotFoundIsNotReportFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }))
 	t.Cleanup(srv.Close)
-	c := NewClient(srv.URL, srv.Client(), slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), time.Now)
+	c := NewClient(srv.URL, srv.Client(), slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), time.Now, &testAttempts{})
 
 	_, err := c.ReportStatus(context.Background(), testRef, testCreds, "u-1")
 

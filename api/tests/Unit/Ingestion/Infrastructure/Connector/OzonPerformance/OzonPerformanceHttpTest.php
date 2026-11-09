@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Ingestion\Infrastructure\Connector\OzonPerformance;
 
+use App\Ingestion\Domain\OzonPerformanceCallCounter;
 use App\Ingestion\Infrastructure\Connector\OzonPerformance\OzonPerformanceHttp;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
@@ -80,7 +81,7 @@ final class OzonPerformanceHttpTest extends TestCase
 
             return new MockResponse('{}');
         });
-        $http = new OzonPerformanceHttp($client, new Logger('test'));
+        $http = new OzonPerformanceHttp($client, new Logger('test'), self::createStub(OzonPerformanceCallCounter::class));
 
         try {
             $http->get('token', '/api/client/campaign/all_sku_promo/activate');
@@ -91,11 +92,47 @@ final class OzonPerformanceHttpTest extends TestCase
         self::assertSame(0, $requests);
     }
 
+    public function testTransportCannotFollowRedirectOrReplayOnReusedConnection(): void
+    {
+        $counter = self::createMock(OzonPerformanceCallCounter::class);
+        $counter->expects(self::once())->method('recordAcrossAccounts')->with('token');
+        $client = new MockHttpClient(static function (string $method, string $url, array $options): MockResponse {
+            self::assertSame('POST', $method);
+            self::assertStringContainsString('/api/client/token', $url);
+            self::assertSame(0, $options['max_redirects']);
+            self::assertSame('1.1', $options['http_version']);
+            self::assertContains('Connection: close', $options['normalized_headers']['connection']);
+
+            return new MockResponse('{"access_token":"synthetic-token"}');
+        });
+        $http = new OzonPerformanceHttp($client, new Logger('test'), $counter);
+        self::assertSame('synthetic-token', $http->token('synthetic-client', 'synthetic-secret'));
+    }
+
+    public function testAccountingFailurePreventsAnyNetworkCall(): void
+    {
+        $counter = self::createMock(OzonPerformanceCallCounter::class);
+        $counter->expects(self::once())->method('recordAcrossAccounts')->with('token')->willThrowException(new \RuntimeException('accounting unavailable'));
+        $calls = 0;
+        $http = new OzonPerformanceHttp(new MockHttpClient(static function () use (&$calls): MockResponse {
+            ++$calls;
+
+            return new MockResponse('{}');
+        }), new Logger('test'), $counter);
+        try {
+            $http->token('synthetic-client', 'synthetic-secret');
+            self::fail('Accounting failure must prevent HTTP.');
+        } catch (\RuntimeException $failure) {
+            self::assertSame('accounting unavailable', $failure->getMessage());
+        }
+        self::assertSame(0, $calls);
+    }
+
     public function testTokenIsTakenFromTheResponse(): void
     {
         $http = new OzonPerformanceHttp(new MockHttpClient(
             new MockResponse('{"access_token":"jwt-token","expires_in":1800,"token_type":"Bearer"}'),
-        ), new Logger('test'));
+        ), new Logger('test'), self::createStub(OzonPerformanceCallCounter::class));
 
         self::assertSame('jwt-token', $http->token('client@advertising.performance.ozon.ru', 'secret'));
     }
@@ -113,7 +150,7 @@ final class OzonPerformanceHttpTest extends TestCase
             new MockResponse('{"error":"too many"}', ['http_code' => 429]),
             new MockResponse('{"error":"forbidden"}', ['http_code' => 403]),
             new MockResponse('[]'),
-        ]), new Logger('test', [$logs]));
+        ]), new Logger('test', [$logs]), self::createStub(OzonPerformanceCallCounter::class));
 
         $token = $http->token('perf-a@advertising.performance.ozon.ru', 'perf-secret-a');
         foreach (['/api/client/campaign', '/api/client/statistics/daily/json'] as $path) {
@@ -142,7 +179,7 @@ final class OzonPerformanceHttpTest extends TestCase
         $logs = new TestHandler();
         $http = new OzonPerformanceHttp(new MockHttpClient(
             new MockResponse('{"error":"forbidden"}', ['http_code' => 403]),
-        ), new Logger('test', [$logs]));
+        ), new Logger('test', [$logs]), self::createStub(OzonPerformanceCallCounter::class));
 
         try {
             $http->token('perf-b@advertising.performance.ozon.ru', 'perf-secret-b');
