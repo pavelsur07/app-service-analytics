@@ -15,6 +15,7 @@ import {
 } from '../lib/presentation'
 import { adsKey } from '../model/queries'
 import type { CreatePolicy, Policy, UpdatePolicy } from '../model/types'
+import { CampaignSelector } from './CampaignSelector'
 
 interface Account {
   id: string
@@ -52,6 +53,7 @@ export function PolicyForm({
     enabled: policy?.enabled ?? true,
   }))
   const [form, setForm] = useState(initial)
+  const [campaignAvailable, setCampaignAvailable] = useState(false)
   const [unknown, setUnknown] = useState(false)
   const locked = useRef(false)
   const alive = useRef(true)
@@ -78,6 +80,7 @@ export function PolicyForm({
     pollSeconds !== null &&
     validWindow(form.start, form.stop) &&
     validCampaign(form.campaignId) &&
+    (policy !== null || campaignAvailable) &&
     (accountAvailable || (policy !== null && !form.enabled))
   const mutation = useMutation({
     mutationFn: async () => {
@@ -162,7 +165,14 @@ export function PolicyForm({
               className="rounded-md border border-border-default bg-surface-raised px-3 py-2"
               value={form.accountId}
               disabled={policy !== null}
-              onChange={(event) => set('accountId', event.target.value)}
+              onChange={(event) => {
+                setForm((previous) => ({
+                  ...previous,
+                  accountId: event.target.value,
+                  campaignId: '',
+                }))
+                setCampaignAvailable(false)
+              }}
             >
               <option value="">Выберите подключение</option>
               {accounts.map((account) => (
@@ -177,14 +187,25 @@ export function PolicyForm({
               ))}
             </select>
           </label>
-          <Input
-            label="ID кампании Ozon"
-            value={form.campaignId}
-            maxLength={19}
-            disabled={policy !== null}
-            onChange={(event) => set('campaignId', event.target.value)}
-            hint="Существующая CPC-кампания. Скопируйте ID из рекламного кабинета Ozon."
-          />
+          {policy === null ? (
+            <CampaignSelector
+              key={form.accountId}
+              companyId={companyId}
+              accountId={form.accountId}
+              value={form.campaignId}
+              onChange={(id) => set('campaignId', id)}
+              onAvailable={setCampaignAvailable}
+            />
+          ) : (
+            <Input
+              label="ID кампании Ozon"
+              value={form.campaignId}
+              maxLength={19}
+              disabled={policy !== null}
+              onChange={(event) => set('campaignId', event.target.value)}
+              hint="Кампания сохранённого наблюдения."
+            />
+          )}
           <Input
             label="Суточный лимит наблюдения, ₽"
             inputMode="decimal"
@@ -227,8 +248,8 @@ export function PolicyForm({
         </fieldset>
         {!valid && (
           <p role="status" className="text-sm text-text-secondary">
-            Укажите доступное подключение, ID кампании, положительный лимит,
-            корректное окно и интервал.
+            Выберите доступное подключение и кампанию, укажите положительный
+            лимит, корректное окно и интервал.
           </p>
         )}
         {mutation.isError && (

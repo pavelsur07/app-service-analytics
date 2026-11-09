@@ -1188,6 +1188,16 @@ catalog_not_ready. Integration ResearchRunsTest проверяет отклон�
 - [Учёт Performance HTTP](plan/ozon-performance-http-accounting.md) — durable
   minute-счётчики PHP и fetcher в собственных БД, запрет скрытых повторов,
   миграции, границы доказательств и чек-лист второй части N0.
+- [Каталог кампаний](plan/ozon-ads-campaign-catalog.md) — Ingestion хранит
+  rebuildable metadata snapshot company/account с JSONB whitelist; новый
+  `/ozon-advertising/campaigns` читает bounded keyset-страницы SQL без Ozon/S3.
+  Список в seller виден при отключённом наблюдении; выбор кампании в форме
+  не включает live. CLI bootstrap читает только сохранённый company-scoped raw.
 - [Предложение мониторинга N4](plan/ozon-ads-external-monitoring-proposal.md) —
   варианты внешнего heartbeat, ограничения минимальных интервалов и приёмка;
   подключение отложено владельцем в issue #341, live-гейт сохраняется.
+
+Каталог Ozon Ads помечает восстановление из raw (`restored`): повторные получения
+одинакового raw не восстанавливаются по времени; bootstrap не заменяет существующую
+проекцию. Ошибки разбора передаются через порт `Shared/Domain/ExceptionTracker`,
+его Sentry-адаптер расположен в `Shared/Infrastructure/Observability`.

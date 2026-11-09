@@ -2,7 +2,31 @@ import { useQuery } from '@tanstack/react-query'
 
 import { createCompanyApiClient } from '../../../api/companyClient'
 import { companyQueryKey } from '../../../shared/lib/companyQueryKey'
-import type { PolicyList, EventList } from './types'
+import type { PolicyList, EventList, CampaignCatalog } from './types'
+
+export function useCampaignCatalog(
+  companyId: string,
+  accountId: string,
+  cursor: string | null,
+  includeArchived = false,
+  enabled = true,
+) {
+  const params = new URLSearchParams({
+    accountId,
+    limit: '50',
+    includeArchived: String(includeArchived),
+  })
+  if (cursor !== null) params.set('cursor', cursor)
+  const query = params.toString()
+  return useQuery({
+    queryKey: adsKey(companyId, 'catalog', { params: query }),
+    queryFn: () =>
+      createCompanyApiClient(companyId).get<CampaignCatalog>(
+        `/ozon-advertising/campaigns?${query}`,
+      ),
+    enabled: enabled && accountId !== '',
+  })
+}
 
 export function adsKey(
   companyId: string,

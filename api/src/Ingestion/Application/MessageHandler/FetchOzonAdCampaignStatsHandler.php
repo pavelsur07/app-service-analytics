@@ -10,6 +10,7 @@ use App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Application\StoreOzonAdSkuExpenses;
+use App\Ingestion\Application\StoreOzonCampaignCatalog;
 use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
 use App\Ingestion\Domain\MarketplaceRawDocument;
@@ -79,6 +80,7 @@ final readonly class FetchOzonAdCampaignStatsHandler
         private LoggerInterface $logger,
         private StoreOzonAdSkuExpenses $skuExpenses,
         private MarketplaceDayLoadRepository $dayLoads,
+        private StoreOzonCampaignCatalog $campaignCatalog,
     ) {
     }
 
@@ -197,13 +199,17 @@ final readonly class FetchOzonAdCampaignStatsHandler
 
     private function capture(Uuid $companyId, Uuid $accountId, string $reportType, \DateTimeImmutable $period, string $body): void
     {
-        $this->rawDocuments->add(MarketplaceRawDocument::capture(
+        $document = MarketplaceRawDocument::capture(
             companyId: $companyId,
             marketplaceAccountId: $accountId,
             reportType: $reportType,
             period: $period,
             rawBody: $body,
-        ));
+        );
+        $rawId = $this->rawDocuments->add($document);
+        if (MarketplaceReportType::OzonAdCampaigns === $reportType) {
+            $this->campaignCatalog->store($companyId->toRfc4122(), $accountId, $rawId, $document->receivedAt(), $body);
+        }
     }
 
     /**
