@@ -3076,6 +3076,102 @@
                 }
             }
         },
+        "/api/companies/{companyId}/ozon-advertising/campaigns": {
+            "get": {
+                "operationId": "get_ingestion_ozon_campaign_catalog",
+                "parameters": [
+                    {
+                        "name": "accountId",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "default": 20,
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "includeArchived",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "default": "false",
+                            "enum": [
+                                "true",
+                                "false"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "companyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[13-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "\u0421\u043e\u0445\u0440\u0430\u043d\u0451\u043d\u043d\u044b\u0439 \u043a\u0430\u0442\u0430\u043b\u043e\u0433 \u043a\u0430\u043c\u043f\u0430\u043d\u0438\u0439; \u043e\u0442\u043a\u0440\u044b\u0442\u0438\u0435 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b \u043d\u0435 \u0432\u044b\u0437\u044b\u0432\u0430\u0435\u0442 Ozon",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OzonCampaignCatalogResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "\u041d\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u0430 \u043a \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "\u0421\u043d\u0438\u043c\u043e\u043a \u0438\u0437\u043c\u0435\u043d\u0438\u043b\u0441\u044f; \u043d\u0430\u0447\u0430\u0442\u044c \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440 \u0437\u0430\u043d\u043e\u0432\u043e",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/companies/{companyId}/ingestion/ozon/sales-facts": {
             "get": {
                 "operationId": "get_ingestion_ozon_sales_facts_list",
@@ -9843,6 +9939,72 @@
                     "pricedCount": {
                         "title": "\u0418\u0437 \u043d\u0438\u0445 \u0441 \u0437\u0430\u0434\u0430\u043d\u043d\u043e\u0439 \u0441\u0435\u0431\u0435\u0441\u0442\u043e\u0438\u043c\u043e\u0441\u0442\u044c\u044e \u043d\u0430 \u0434\u0430\u0442\u0443 $on.",
                         "type": "integer"
+                    },
+                    "nextCursor": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "OzonCampaignCatalogItem": {
+                "required": [
+                    "id",
+                    "state",
+                    "advObjectType"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "state": {
+                        "type": "string"
+                    },
+                    "advObjectType": {
+                        "type": "string"
+                    },
+                    "paymentType": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "type": "object"
+            },
+            "OzonCampaignCatalogResponse": {
+                "required": [
+                    "items",
+                    "status",
+                    "savedCount"
+                ],
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/OzonCampaignCatalogItem"
+                        }
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "not_loaded",
+                            "partial",
+                            "ready"
+                        ]
+                    },
+                    "receivedAt": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "savedCount": {
+                        "type": "integer"
+                    },
+                    "total": {
+                        "type": "integer",
+                        "nullable": true
                     },
                     "nextCursor": {
                         "type": "string",

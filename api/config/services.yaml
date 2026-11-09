@@ -238,6 +238,8 @@ services:
 
     App\Advertising\Domain\ObservationPolicyRepository: '@App\Advertising\Infrastructure\Repository\DoctrineObservationPolicyRepository'
 
+    App\Ingestion\Domain\OzonCampaignCatalogRepository: '@App\Ingestion\Infrastructure\Persistence\DoctrineOzonCampaignCatalogRepository'
+
     App\Ingestion\Domain\OzonPerformanceCallCounter: '@App\Ingestion\Infrastructure\Connector\OzonPerformance\DoctrineOzonPerformanceCallCounter'
 
     # Performance API (ADR-026): separate host and credentials. The 10-second

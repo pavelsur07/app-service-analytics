@@ -26,6 +26,8 @@ export function createAdsMock(company: string, second: string) {
   let gateError = false
   let hold = false
   let release: (() => void) | null = null
+  let catalogHold: string | null = null
+  let releaseCatalog: (() => void) | null = null
   const reads: string[] = []
   // A proxy 503 is intentionally outside these endpoints' OpenAPI contract.
   // Raw MSW exercises parsing of an unconfirmed infrastructure response.
@@ -78,6 +80,45 @@ export function createAdsMock(company: string, second: string) {
     rawHttp.get(
       'http://app.conwix.internal/api/companies/:companyId/ozon-ads/policies',
       () => (listError ? unavailable() : undefined),
+    ),
+    rawHttp.get(
+      'http://app.conwix.internal/api/companies/:companyId/ozon-advertising/campaigns',
+      () => (listError ? unavailable() : undefined),
+    ),
+    http.get(
+      '/api/companies/{companyId}/ozon-advertising/campaigns',
+      async ({ params, response }) => {
+        if (params.companyId === catalogHold)
+          await new Promise<void>((resolve) => {
+            releaseCatalog = resolve
+          })
+        return response(200).json({
+          status: 'ready',
+          receivedAt: ADS_STAMP,
+          savedCount: 2,
+          total: 2,
+          nextCursor: null,
+          items: [
+            {
+              id: '49761882',
+              title:
+                params.companyId === company
+                  ? 'Тестовая CPC-кампания'
+                  : 'Кампания другой компании',
+              state: 'CAMPAIGN_STATE_RUNNING',
+              advObjectType: 'SKU',
+              paymentType: 'CPC',
+            },
+            {
+              id: '49761883',
+              title: 'Кампания с оплатой за показы',
+              state: 'CAMPAIGN_STATE_RUNNING',
+              advObjectType: 'SKU',
+              paymentType: 'CPM',
+            },
+          ],
+        })
+      },
     ),
     http.get('/api/companies/{companyId}/connections', ({ response }) =>
       response(200).json({
@@ -168,6 +209,13 @@ export function createAdsMock(company: string, second: string) {
     lists,
     reads,
     writes: () => writes,
+    holdCatalog: (owner: string) => {
+      catalogHold = owner
+    },
+    releaseCatalog: () => {
+      catalogHold = null
+      releaseCatalog?.()
+    },
     gateError: (value: boolean) => {
       gateError = value
     },

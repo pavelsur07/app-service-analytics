@@ -16,6 +16,7 @@ import type { Policy } from '../model/types'
 import { EventTable } from './EventTable'
 import { PolicyForm } from './PolicyForm'
 import { PolicyTable } from './PolicyTable'
+import { CampaignCatalog } from './CampaignCatalog'
 
 export function OzonAdsPage() {
   const { companyId } = useParams<{ companyId: string }>()
@@ -39,7 +40,9 @@ function AdsWorkspace({ companyId }: { companyId: string }) {
   const requestedAccount = search.get('account') ?? ''
   const account = accounts.some((a) => a.id === requestedAccount)
     ? requestedAccount
-    : ''
+    : accounts.length === 1
+      ? (accounts[0]?.id ?? '')
+      : ''
   const status = ['true', 'false'].includes(search.get('status') ?? '')
     ? (search.get('status') ?? 'all')
     : 'all'
@@ -75,7 +78,7 @@ function AdsWorkspace({ companyId }: { companyId: string }) {
     account,
     cursor,
     status,
-    enabled && (tab === 'campaigns' || tab === 'strategies'),
+    enabled && tab === 'strategies',
   )
   const events = useEvents(
     companyId,
@@ -96,10 +99,11 @@ function AdsWorkspace({ companyId }: { companyId: string }) {
     if (key === 'account' || key === 'status') {
       next.delete('cursor')
       next.delete('eventCursor')
+      if (key === 'account') next.delete('catalogCursor')
     }
     setSearch(next)
   }
-  const policyVisible = tab === 'campaigns' || tab === 'strategies'
+  const policyVisible = tab === 'strategies'
   const current = tab === 'history' ? events : policies
   const root = `/companies/${encodeURIComponent(companyId)}`
   return (
@@ -124,7 +128,11 @@ function AdsWorkspace({ companyId }: { companyId: string }) {
             value={account}
             onChange={(event) => changeSearch('account', event.target.value)}
           >
-            <option value="">Все подключения Ozon</option>
+            <option value="">
+              {tab === 'campaigns'
+                ? 'Выберите кабинет'
+                : 'Все подключения Ozon'}
+            </option>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.label}
@@ -259,6 +267,16 @@ function AdsWorkspace({ companyId }: { companyId: string }) {
             <p>Раздел наблюдения пока выключен.</p>
           </Card>
         )}
+        {tab === 'campaigns' &&
+          connections.isSuccess &&
+          !connections.isError && (
+            <CampaignCatalog
+              key={account}
+              companyId={companyId}
+              accountId={account}
+              enabled={enabled}
+            />
+          )}
         {tab === 'strategies' && editor !== null && (
           <PolicyForm
             key={editor.policy?.id ?? 'new'}

@@ -67,6 +67,8 @@ final class ConnectOzonAdvertisingInitialLoadTest extends KernelTestCase
         $catalogMatch = $container->get(AccountCatalogSkuMatchQuery::class);
         self::assertInstanceOf(AccountCatalogSkuMatchQuery::class, $catalogMatch);
 
+        $campaignCatalog = $container->get(\App\Ingestion\Application\StoreOzonCampaignCatalog::class);
+        self::assertInstanceOf(\App\Ingestion\Application\StoreOzonCampaignCatalog::class, $campaignCatalog);
         $action = new ConnectOzonAdvertisingAction(
             $this->acceptingFetcher(),
             new OzonAdCampaignListParser(),
@@ -81,6 +83,7 @@ final class ConnectOzonAdvertisingInitialLoadTest extends KernelTestCase
                 }
             },
             MarketplaceRawDocumentBuilder::repository($container),
+            $campaignCatalog,
         );
 
         $result = $action(

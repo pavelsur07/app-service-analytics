@@ -16,7 +16,7 @@ async function fixture(page: Page) {
   await page.clock.setFixedTime(new Date(stamp))
   // Playwright is only the transport adapter. MSW resolves typed handlers.
   await page.route(
-    /\/api\/companies\/[^/]+\/(?:connections|ozon-ads\/.*)(?:\?.*)?$/,
+    /\/api\/companies\/[^/]+\/(?:connections|ozon-ads\/.*|ozon-advertising\/.*)(?:\?.*)?$/,
     async (route) => {
       const request = route.request()
       const body = request.postDataBuffer()
@@ -62,7 +62,9 @@ async function openForm(page: Page) {
   await page
     .getByRole('combobox', { name: 'Рекламное подключение', exact: true })
     .selectOption(account)
-  await page.getByLabel(/^ID кампании Ozon/).fill('49761882')
+  await page
+    .getByRole('combobox', { name: 'Кампания Ozon', exact: true })
+    .selectOption('49761882')
   await page.getByLabel(/^Суточный лимит наблюдения, ₽/).fill('1,03')
 }
 
@@ -146,9 +148,59 @@ test.describe('Озон Ads: интерфейс наблюдения, синте
       page.getByRole('button', { name: 'Настроить 49761882' }),
     ).toHaveCount(0)
     await expect(
+      page.getByText('Кампания другой компании', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByText('Тестовая CPC-кампания', { exact: true }),
+    ).toHaveCount(0)
+    await page.getByRole('tab', { name: 'Стратегии', exact: true }).click()
+    await expect(
       page.getByText('Для выбранного фильтра наблюдений нет.'),
     ).toBeVisible()
     expect(state.reads.some((path) => path.includes(second))).toBe(true)
+  })
+  test('каталог виден при выключенном наблюдении и не показывает старую компанию во время загрузки', async ({
+    page,
+  }) => {
+    const state = await fixture(page)
+    state.disable()
+    await login(page)
+    await expect(
+      page.getByText('Тестовая CPC-кампания', { exact: true }),
+    ).toBeVisible()
+    await expect(page.getByText('Работает', { exact: true })).toHaveCount(2)
+    await page.getByRole('checkbox', { name: 'Показать архивные' }).click()
+    await expect(page).toHaveURL(/catalogArchived=true/)
+    await page.getByRole('tab', { name: 'Настройки', exact: true }).click()
+    await page.getByRole('tab', { name: 'Кампании', exact: true }).click()
+    await expect(
+      page.getByRole('checkbox', { name: 'Показать архивные' }),
+    ).toBeChecked()
+    await expect(
+      page.getByRole('button', { name: 'Добавить наблюдение' }),
+    ).toHaveCount(0)
+    state.holdCatalog(second)
+    await page
+      .getByRole('link', { name: 'E2E Sandbox LLC', exact: true })
+      .click()
+    await page
+      .getByRole('link', { name: 'E2E Sandbox Two', exact: true })
+      .click()
+    await page.getByRole('link', { name: 'Озон Ads', exact: true }).click()
+    await expect(
+      page.getByText('Загружаем сохранённый список кампаний…', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByText('Тестовая CPC-кампания', { exact: true }),
+    ).toHaveCount(0)
+    state.releaseCatalog()
+    await expect(
+      page.getByText('Кампания другой компании', { exact: true }),
+    ).toBeVisible()
+    expect(state.writes()).toBe(0)
+    expect(
+      state.reads.filter((path) => /\/ozon-ads\/(policies|events)$/.test(path)),
+    ).toEqual([])
   })
   test('несохранённый ввод и неопределённый результат не теряются и не повторяются', async ({
     page,
@@ -269,6 +321,12 @@ test.describe('Озон Ads: интерфейс наблюдения, синте
     await expect(
       page.getByText('Раздел наблюдения пока выключен.'),
     ).toBeVisible()
+    await expect(page.getByRole('alert')).toContainText(
+      'Не удалось подтвердить результат',
+    )
+    await expect(
+      page.getByText('Тестовая CPC-кампания', { exact: true }),
+    ).toHaveCount(0)
     await expect(
       page
         .getByRole('navigation')

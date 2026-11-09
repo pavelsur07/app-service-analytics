@@ -532,6 +532,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{companyId}/ozon-advertising/campaigns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_ozon_campaign_catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{companyId}/ingestion/ozon/sales-facts": {
         parameters: {
             query?: never;
@@ -1641,6 +1657,22 @@ export interface components {
             listingCount: number;
             /** Из них с заданной себестоимостью на дату $on. */
             pricedCount: number;
+            nextCursor?: string | null;
+        };
+        OzonCampaignCatalogItem: {
+            id: string;
+            title?: string | null;
+            state: string;
+            advObjectType: string;
+            paymentType?: string | null;
+        };
+        OzonCampaignCatalogResponse: {
+            items: components["schemas"]["OzonCampaignCatalogItem"][];
+            /** @enum {string} */
+            status: "not_loaded" | "partial" | "ready";
+            receivedAt?: string | null;
+            savedCount: number;
+            total?: number | null;
             nextCursor?: string | null;
         };
         SalesFactListItemResponse: {
@@ -4679,6 +4711,60 @@ export interface operations {
                 };
             };
             /** @description Тело запроса некорректно */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_ozon_campaign_catalog: {
+        parameters: {
+            query: {
+                accountId: string;
+                limit?: number;
+                cursor?: string;
+                includeArchived?: "true" | "false";
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Сохранённый каталог кампаний; открытие страницы не вызывает Ozon */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OzonCampaignCatalogResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Снимок изменился; начать просмотр заново */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры */
             422: {
                 headers: {
                     [name: string]: unknown;
