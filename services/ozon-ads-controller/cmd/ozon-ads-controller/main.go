@@ -27,7 +27,7 @@ func main() {
 	migrate := flag.Bool("migrate", false, "apply observe schema")
 	check := flag.Bool("migrations-check", false, "verify migrations without applying them")
 	flag.Parse()
-	if *quotaPath != "" {
+	if quotaCheckRequested(flag.CommandLine) {
 		os.Exit(checkQuota(*quotaPath, time.Now(), os.Stdout))
 	}
 	log := observability.New(os.Stdout)

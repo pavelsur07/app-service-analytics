@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"io"
 	"os"
 	"path/filepath"
@@ -41,4 +42,15 @@ func checkQuota(path string, now time.Time, out io.Writer) int {
 func invalidQuota(out io.Writer) int {
 	_ = json.NewEncoder(out).Encode(map[string]string{"error": "invalid_quota_passport"})
 	return 1
+}
+
+// Presence, not value: an explicitly empty offline path must never enter runtime.
+func quotaCheckRequested(flags *flag.FlagSet) bool {
+	requested := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "quota-check" {
+			requested = true
+		}
+	})
+	return requested
 }

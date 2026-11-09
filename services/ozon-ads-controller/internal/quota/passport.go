@@ -75,6 +75,9 @@ func Decode(r io.Reader) (Passport, error) {
 	if _, err = d.Token(); err != io.EOF {
 		return p, ErrInvalid
 	}
+	if err = exactShape(body); err != nil {
+		return p, ErrInvalid
+	}
 	d = json.NewDecoder(bytes.NewReader(body))
 	d.DisallowUnknownFields()
 	if err = d.Decode(&p); err != nil {
@@ -209,4 +212,44 @@ func (p Passport) Check(now time.Time) (Result, error) {
 	}
 	r.PassportReady = len(r.Blockers) == 0
 	return r, nil
+}
+
+// Check exact wire names and explicit non-null values before struct decoding:
+// encoding/json otherwise accepts case-insensitive aliases and implicit zeros.
+func exactFields(raw []byte, names ...string) (map[string]json.RawMessage, error) {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) != nil || len(object) != len(names) {
+		return nil, ErrInvalid
+	}
+	for _, name := range names {
+		value, ok := object[name]
+		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return nil, ErrInvalid
+		}
+	}
+	return object, nil
+}
+func exactShape(body []byte) error {
+	object, err := exactFields(body, "version", "revision", "scope_id", "window_seconds", "clock_skew_seconds", "limit", "reserve", "valid_from", "valid_until", "scope_evidence", "reset_evidence", "bootstrap_evidence", "consumers_confirmed", "shares", "accounts")
+	if err != nil {
+		return err
+	}
+	for _, group := range []struct {
+		name   string
+		fields []string
+	}{
+		{"shares", []string{"consumer", "requests"}},
+		{"accounts", []string{"company_id", "account_id", "poll_seconds", "cycle_requests", "oauth_max", "retry_max", "other_max"}},
+	} {
+		var rows []json.RawMessage
+		if json.Unmarshal(object[group.name], &rows) != nil {
+			return ErrInvalid
+		}
+		for _, row := range rows {
+			if _, err = exactFields(row, group.fields...); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

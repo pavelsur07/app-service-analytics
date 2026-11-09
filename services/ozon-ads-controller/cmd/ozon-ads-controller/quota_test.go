@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,25 @@ func TestQuotaCLIReadyStillRequiresLiveAdmission(t *testing.T) {
 		}
 		if !strings.Contains(out.String(), `"requires_live_admission":true`) || strings.Contains(out.String(), "sentinel") || strings.Contains(out.String(), "0199a1b2") {
 			t.Fatal("unsafe admission output")
+		}
+	}
+}
+
+func TestExplicitEmptyQuotaFlagStaysOffline(t *testing.T) {
+	for _, args := range [][]string{nil, {"-quota-check", ""}, {"-quota-check", "passport.json"}} {
+		flags := flag.NewFlagSet("test", flag.ContinueOnError)
+		path := flags.String("quota-check", "", "offline")
+		if err := flags.Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		if quotaCheckRequested(flags) != (len(args) > 0) {
+			t.Fatal("incorrect flag presence")
+		}
+		if len(args) > 0 && *path == "" {
+			var out bytes.Buffer
+			if checkQuota(*path, time.Now(), &out) != 1 {
+				t.Fatal("empty path accepted")
+			}
 		}
 	}
 }

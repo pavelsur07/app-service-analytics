@@ -111,3 +111,25 @@ func TestStrictDocumentAndNoSecretErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestMissingNullAndCaseAliasesCannotBecomeImplicitZeroOrTrue(t *testing.T) {
+	raw, err := json.Marshal(fixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := string(raw)
+	for _, body := range []string{
+		strings.Replace(base, `"oauth_max":48,`, "", 1),
+		strings.Replace(base, `"oauth_max":48`, `"oauth_max":null`, 1),
+		strings.Replace(base, `"reserve":100,`, "", 1),
+		strings.Replace(base, `"clock_skew_seconds":0,`, "", 1),
+		strings.Replace(base, `"requests":200`, `"requests":null`, 1),
+		strings.Replace(base, `"consumers_confirmed":true`, `"consumers_confirmed":false,"CONSUMERS_CONFIRMED":true`, 1),
+		strings.Replace(base, `"consumer":"ads"`, `"CONSUMER":"ads"`, 1),
+		strings.Replace(base, `"poll_seconds":600`, `"POLL_SECONDS":600`, 1),
+	} {
+		if _, e := Decode(strings.NewReader(body)); e != ErrInvalid {
+			t.Fatal("ambiguous or incomplete declarations accepted", e)
+		}
+	}
+}
