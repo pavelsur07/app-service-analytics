@@ -8,6 +8,8 @@ use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage;
 use App\Ingestion\Application\Message\OrderOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
+use App\Ingestion\Application\OzonAdReportDiagnostics;
+use App\Ingestion\Application\OzonAdReportTrace;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Domain\DayLoadMark;
 use App\Ingestion\Domain\MarketplaceDayLoadRepository;
@@ -65,6 +67,7 @@ final readonly class OrderOzonAdSkuReportHandler
         private MessageBusInterface $bus,
         private LoggerInterface $logger,
         private MarketplaceDayLoadRepository $dayLoads,
+        private OzonAdReportDiagnostics $diagnostics,
     ) {
     }
 
@@ -81,8 +84,10 @@ final readonly class OrderOzonAdSkuReportHandler
             throw new \InvalidArgumentException('Ozon advertising report order needs valid dates; SKU reports 1..10 campaigns, orders reports none.');
         }
 
+        $trace = $this->diagnostics->trace($message);
         $target = $this->identityFacade->findOzonAdvertisingTarget($message->companyId, $message->marketplaceAccountId);
         if (null === $target) {
+            $this->diagnostics->event($trace, 'skipped');
             $this->logger->info('Реклама подключения не активна — заказ отчёта пропущен', [
                 'company_id' => $message->companyId,
                 'marketplace_account_id' => $message->marketplaceAccountId,
@@ -92,12 +97,14 @@ final readonly class OrderOzonAdSkuReportHandler
         }
 
         try {
-            $token = $this->client->token($target->performanceClientId, $target->performanceClientSecret);
-            $body = OzonAdReportKind::Sku === $kind
+            $token = $this->diagnostics->request($trace, 'token', fn (): string => $this->client->token($target->performanceClientId, $target->performanceClientSecret));
+            $body = $this->diagnostics->request($trace, 'order', fn (): string => OzonAdReportKind::Sku === $kind
                 ? $this->client->orderSkuReport($token, $message->campaignIds, $from, $to)
-                : $this->client->orderCpoOrdersReport($token, $from, $to);
+                : $this->client->orderCpoOrdersReport($token, $from, $to));
             $uuid = self::uuid($body);
+            $this->diagnostics->event($trace, 'accepted', reportUuid: $uuid);
         } catch (\Throwable $failure) {
+            $this->diagnostics->event($trace, 'handler_failed');
             if (OzonAuthorizationFailure::isAuthorizationFailure($failure)) {
                 $this->markFailed($message, $from, $to, 'Рекламный ключ отозван: '.$failure->getMessage());
                 $this->brokenLogger->log($target->companyId, $target->marketplaceAccountId, 'advertising', $failure, $target->performanceClientSecret);
@@ -106,7 +113,7 @@ final readonly class OrderOzonAdSkuReportHandler
                 return;
             }
             if (OzonRateLimited::is($failure)) {
-                $this->retryLater($message, $from, $to);
+                $this->retryLater($message, $from, $to, $trace);
 
                 return;
             }
@@ -115,7 +122,7 @@ final readonly class OrderOzonAdSkuReportHandler
                 // Отказ площадки 4xx — заказ точно не состоялся, и повтор
                 // того же запроса ответ не изменит (например, период
                 // глубже истории отчёта).
-                $this->giveUp($message, $from, $to, "площадка отклонила заказ: HTTP {$status}");
+                $this->giveUp($message, $from, $to, $trace, "площадка отклонила заказ: HTTP {$status}");
 
                 return;
             }
@@ -129,6 +136,7 @@ final readonly class OrderOzonAdSkuReportHandler
             new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $uuid, 1, $kind, $message->to),
             [new DelayStamp(self::FIRST_CHECK_DELAY_MS)],
         );
+        $this->diagnostics->event($trace, 'check_scheduled', reportUuid: $uuid, delayMs: self::FIRST_CHECK_DELAY_MS);
     }
 
     /**
@@ -150,16 +158,17 @@ final readonly class OrderOzonAdSkuReportHandler
      * у повтора есть потолок, и постоянный отказ (исчерпан суточный лимит)
      * заканчивается предупреждением, а не бесконечной петлёй.
      */
-    private function retryLater(OrderOzonAdSkuReportMessage $message, \DateTimeImmutable $from, \DateTimeImmutable $to): void
+    private function retryLater(OrderOzonAdSkuReportMessage $message, \DateTimeImmutable $from, \DateTimeImmutable $to, OzonAdReportTrace $trace): void
     {
         $now = new \DateTimeImmutable();
         $refusedSince = null === $message->refusedSince ? $now : new \DateTimeImmutable($message->refusedSince);
         if ($refusedSince->add(new \DateInterval(self::GIVE_UP_AFTER)) <= $now) {
-            $this->giveUp($message, $from, $to, 'отказ лимита площадки (429) дольше суток');
+            $this->giveUp($message, $from, $to, $trace, 'отказ лимита площадки (429) дольше суток');
 
             return;
         }
 
+        $delay = self::RATE_LIMIT_RETRY_MS - self::RETRY_JITTER_MS + random_int(0, 2 * self::RETRY_JITTER_MS);
         $this->bus->dispatch(
             new OrderOzonAdSkuReportMessage(
                 $message->companyId,
@@ -171,16 +180,18 @@ final readonly class OrderOzonAdSkuReportHandler
                 $refusedSince->format(\DateTimeInterface::ATOM),
                 $message->reportKind(),
             ),
-            [new DelayStamp(self::RATE_LIMIT_RETRY_MS - self::RETRY_JITTER_MS + random_int(0, 2 * self::RETRY_JITTER_MS))],
+            [new DelayStamp($delay)],
         );
+        $this->diagnostics->event($trace, 'retry_scheduled', delayMs: $delay);
     }
 
     /**
      * Сигнал, а не тишина: незаказанный отчёт виден в журнале уровнем
      * `warning` (порог prod-журнала).
      */
-    private function giveUp(OrderOzonAdSkuReportMessage $message, \DateTimeImmutable $from, \DateTimeImmutable $to, string $reason): void
+    private function giveUp(OrderOzonAdSkuReportMessage $message, \DateTimeImmutable $from, \DateTimeImmutable $to, OzonAdReportTrace $trace, string $reason): void
     {
+        $this->diagnostics->event($trace, 'abandoned');
         $this->markFailed($message, $from, $to, $reason);
 
         $this->logger->warning('Отчёт рекламы Ozon не заказан', [

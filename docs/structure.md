@@ -524,6 +524,12 @@ SKU за дни раньше вчерашнего — асинхронные о�
 `ozon_ad_sku_report`; той же цепочкой — заказы «Оплаты за заказ»
 (`OzonAdReportKind::CpoOrders`, raw-тип `ozon_ad_cpo_orders`). Разовый повтор — `app:ingestion:backfill-ozon-advertising`.
 
+Диагностика этой цепочки — `Application/OzonAdReportDiagnostics`,
+`OzonAdReportTrace` и `OzonAdReportFailureDetails`: канал `ozon_report`
+связывает order_ref, report_uuid и invocation_id, без изменения очереди
+или retry-политики. Правила безопасных полей и проверки —
+[план диагностики](plan/ozon-report-diagnostics.md).
+
 Реклама по SKU (ADR-035): SKU-разбивка (`ozon_ad_sku_day`,
 `ozon_ad_sku_report`) после сохранения в raw разбирается
 `Domain/OzonAdSkuReportParser` в факт-таблицу `ad_sku_expense_fact`

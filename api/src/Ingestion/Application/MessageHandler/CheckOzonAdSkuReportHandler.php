@@ -7,6 +7,8 @@ namespace App\Ingestion\Application\MessageHandler;
 use App\Identity\Application\Facade\IdentityFacade;
 use App\Ingestion\Application\Message\CheckOzonAdSkuReportMessage;
 use App\Ingestion\Application\OzonAccountBrokenLogger;
+use App\Ingestion\Application\OzonAdReportDiagnostics;
+use App\Ingestion\Application\OzonAdReportTrace;
 use App\Ingestion\Application\OzonAdvertisingWindows;
 use App\Ingestion\Application\StoreOzonAdSkuExpenses;
 use App\Ingestion\Domain\DayLoadMark;
@@ -60,6 +62,7 @@ final readonly class CheckOzonAdSkuReportHandler
         private LoggerInterface $logger,
         private StoreOzonAdSkuExpenses $skuExpenses,
         private MarketplaceDayLoadRepository $dayLoads,
+        private OzonAdReportDiagnostics $diagnostics,
     ) {
     }
 
@@ -70,8 +73,10 @@ final readonly class CheckOzonAdSkuReportHandler
             throw new \InvalidArgumentException('Ozon SKU report check needs a valid Y-m-d period start.');
         }
 
+        $trace = $this->diagnostics->trace($message);
         $target = $this->identityFacade->findOzonAdvertisingTarget($message->companyId, $message->marketplaceAccountId);
         if (null === $target) {
+            $this->diagnostics->event($trace, 'skipped');
             $this->logger->info('Реклама подключения не активна — проверка отчёта пропущена', [
                 'company_id' => $message->companyId,
                 'marketplace_account_id' => $message->marketplaceAccountId,
@@ -81,8 +86,9 @@ final readonly class CheckOzonAdSkuReportHandler
         }
 
         try {
-            $token = $this->client->token($target->performanceClientId, $target->performanceClientSecret);
-            $state = self::state($this->client->reportState($token, $message->uuid));
+            $token = $this->diagnostics->request($trace, 'token', fn (): string => $this->client->token($target->performanceClientId, $target->performanceClientSecret));
+            $state = self::state($this->diagnostics->request($trace, 'check', fn (): string => $this->client->reportState($token, $message->uuid)));
+            $this->diagnostics->event($trace, 'state', state: $state);
 
             if ('OK' === $state) {
                 $captured = MarketplaceRawDocument::capture(
@@ -90,9 +96,10 @@ final readonly class CheckOzonAdSkuReportHandler
                     marketplaceAccountId: Uuid::fromString($target->marketplaceAccountId),
                     reportType: OzonAdReportKind::rawType($message->reportKind()),
                     period: $from,
-                    rawBody: $this->client->report($token, $message->uuid),
+                    rawBody: $this->diagnostics->request($trace, 'download', fn (): string => $this->client->report($token, $message->uuid)),
                 );
                 $rawDocumentId = $this->rawDocuments->add($captured);
+                $this->diagnostics->event($trace, 'stored');
 
                 $this->mark($message, null);
 
@@ -100,6 +107,7 @@ final readonly class CheckOzonAdSkuReportHandler
                     try {
                         $this->skuExpenses->fromReport($captured, $rawDocumentId);
                     } catch (\UnexpectedValueException|\JsonException $failure) {
+                        $this->diagnostics->event($trace, 'processing_failed');
                         // Отчёт в raw; повтор скачал бы тот же и упал там же.
                         // В трекер (ADR-006) и в failed-транспорт, без повторов.
                         throw new UnrecoverableMessageHandlingException(\sprintf('SKU-отчёт рекламы Ozon не разобран: подключение %s, период с %s, raw %s: %s', $message->marketplaceAccountId, $message->from, $rawDocumentId->toRfc4122(), $failure->getMessage()), 0, $failure);
@@ -109,10 +117,11 @@ final readonly class CheckOzonAdSkuReportHandler
                 return;
             }
         } catch (\Throwable $failure) {
+            $this->diagnostics->event($trace, 'handler_failed');
             if (OzonRateLimited::is($failure)) {
                 // Отказ лимита считается проверкой: потолок тот же,
                 // бесконечной петли нет.
-                $this->checkAgain($message, 'отказ лимита площадки (429)');
+                $this->checkAgain($message, $trace, 'отказ лимита площадки (429)');
 
                 return;
             }
@@ -130,34 +139,37 @@ final readonly class CheckOzonAdSkuReportHandler
         }
 
         if (!\in_array($state, self::NOT_READY, true)) {
-            $this->giveUp($message, "площадка вернула состояние {$state}");
+            $this->giveUp($message, $trace, "площадка вернула состояние {$state}");
 
             return;
         }
 
-        $this->checkAgain($message, 'отчёт не сформирован');
+        $this->checkAgain($message, $trace, 'отчёт не сформирован');
     }
 
-    private function checkAgain(CheckOzonAdSkuReportMessage $message, string $reason): void
+    private function checkAgain(CheckOzonAdSkuReportMessage $message, OzonAdReportTrace $trace, string $reason): void
     {
         if ($message->attempt >= self::MAX_ATTEMPTS) {
-            $this->giveUp($message, "исчерпан потолок проверок: {$reason}");
+            $this->giveUp($message, $trace, "исчерпан потолок проверок: {$reason}");
 
             return;
         }
 
+        $delay = min(OrderOzonAdSkuReportHandler::FIRST_CHECK_DELAY_MS * $message->attempt, self::MAX_DELAY_MS);
         $this->bus->dispatch(
             new CheckOzonAdSkuReportMessage($message->companyId, $message->marketplaceAccountId, $message->from, $message->uuid, $message->attempt + 1, $message->reportKind(), $message->periodTo()),
-            [new DelayStamp(min(OrderOzonAdSkuReportHandler::FIRST_CHECK_DELAY_MS * $message->attempt, self::MAX_DELAY_MS))],
+            [new DelayStamp($delay)],
         );
+        $this->diagnostics->event($trace, 'retry_scheduled', delayMs: $delay);
     }
 
     /**
      * Сигнал, а не тишина: незагруженный отчёт виден в журнале уровнем
      * `warning` (порог prod-журнала).
      */
-    private function giveUp(CheckOzonAdSkuReportMessage $message, string $reason): void
+    private function giveUp(CheckOzonAdSkuReportMessage $message, OzonAdReportTrace $trace, string $reason): void
     {
+        $this->diagnostics->event($trace, 'abandoned');
         $this->mark($message, 'Отчёт не загружен: '.$reason);
 
         $this->logger->warning('Отчёт рекламы Ozon не загружен', [
