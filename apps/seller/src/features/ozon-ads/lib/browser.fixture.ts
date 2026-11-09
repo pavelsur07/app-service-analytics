@@ -26,6 +26,7 @@ export function createAdsMock(company: string, second: string) {
   let gateError = false
   let hold = false
   let release: (() => void) | null = null
+  let catalogRestored = false
   let catalogHold: string | null = null
   let releaseCatalog: (() => void) | null = null
   const reads: string[] = []
@@ -94,6 +95,7 @@ export function createAdsMock(company: string, second: string) {
           })
         return response(200).json({
           status: 'ready',
+          restored: catalogRestored,
           receivedAt: ADS_STAMP,
           savedCount: 2,
           total: 2,
@@ -209,6 +211,9 @@ export function createAdsMock(company: string, second: string) {
     lists,
     reads,
     writes: () => writes,
+    restoredCatalog: () => {
+      catalogRestored = true
+    },
     holdCatalog: (owner: string) => {
       catalogHold = owner
     },

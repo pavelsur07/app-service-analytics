@@ -18,6 +18,7 @@ final readonly class OzonCampaignCatalogResponse
         public int $savedCount,
         public ?int $total,
         public ?string $nextCursor,
+        public bool $restored,
     ) {
     }
 }

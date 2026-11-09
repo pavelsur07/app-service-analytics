@@ -13,7 +13,7 @@ export function useCampaignCatalog(
 ) {
   const params = new URLSearchParams({
     accountId,
-    limit: '20',
+    limit: '50',
     includeArchived: String(includeArchived),
   })
   if (cursor !== null) params.set('cursor', cursor)

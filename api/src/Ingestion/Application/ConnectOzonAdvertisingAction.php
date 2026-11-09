@@ -81,6 +81,7 @@ final readonly class ConnectOzonAdvertisingAction
         try {
             $token = $this->fetcher->token($performanceClientId, $performanceClientSecret);
             $campaignList = $this->fetcher->campaigns($token);
+            $campaignListReceivedAt = new \DateTimeImmutable();
             $campaigns = $this->campaignParser->parse($campaignList);
             $skus = $this->probedSkus($token, $campaigns);
         } catch (\Throwable $failure) {
@@ -100,7 +101,7 @@ final readonly class ConnectOzonAdvertisingAction
             $actorUserId,
         );
         if (CredentialsReplacementOutcome::Replaced === $outcome) {
-            $this->scheduleInitialLoad($companyId, $marketplaceAccountId, $campaignList);
+            $this->scheduleInitialLoad($companyId, $marketplaceAccountId, $campaignList, $campaignListReceivedAt);
         }
 
         return match ($outcome) {
@@ -207,7 +208,7 @@ final readonly class ConnectOzonAdvertisingAction
      * восстанавливает повторный ввод того же ключа: он ставит первичную
      * загрузку заново, повтор кусков идемпотентен. Секрета в записи нет.
      */
-    private function scheduleInitialLoad(string $companyId, string $marketplaceAccountId, string $campaignList): void
+    private function scheduleInitialLoad(string $companyId, string $marketplaceAccountId, string $campaignList, \DateTimeImmutable $receivedAt): void
     {
         $today = OzonAdvertisingWindows::today(new \DateTimeImmutable());
 
@@ -222,6 +223,7 @@ final readonly class ConnectOzonAdvertisingAction
                 reportType: MarketplaceReportType::OzonAdCampaigns,
                 period: $today,
                 rawBody: $campaignList,
+                receivedAt: $receivedAt,
             );
             $rawId = $this->rawDocuments->add($document);
             $this->campaignCatalog->store($companyId, Uuid::fromString($marketplaceAccountId), $rawId, $document->receivedAt(), $campaignList);

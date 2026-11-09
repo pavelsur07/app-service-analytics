@@ -11,7 +11,7 @@ use Doctrine\DBAL\Query\QueryBuilder;
 /** One atomic snapshot read; the JSONB projection is paginated by SQL. */
 final readonly class OzonCampaignCatalogQuery
 {
-    public const int MAX_LIMIT = 100;
+    public const int MAX_LIMIT = 200;
 
     public function __construct(private Connection $connection)
     {
@@ -42,7 +42,7 @@ final readonly class OzonCampaignCatalogQuery
             )
             SQL;
         $query = $this->connection->createQueryBuilder()
-            ->select('s.raw_document_id', 's.received_at', 's.complete', 's.total', 'jsonb_array_length(s.campaigns) AS saved_count', "COALESCE(page.items, '[]'::jsonb) AS items")
+            ->select('s.raw_document_id', 's.received_at', 's.complete', 's.restored', 's.total', 'jsonb_array_length(s.campaigns) AS saved_count', "COALESCE(page.items, '[]'::jsonb) AS items")
             ->from('ozon_campaign_catalog_snapshot', 's')
             ->leftJoin('s', $page, 'page', 'TRUE')
             ->where('s.company_id = :company')->andWhere('s.account_id = :account')

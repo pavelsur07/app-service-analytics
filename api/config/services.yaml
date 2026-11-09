@@ -238,6 +238,8 @@ services:
 
     App\Advertising\Domain\ObservationPolicyRepository: '@App\Advertising\Infrastructure\Repository\DoctrineObservationPolicyRepository'
 
+    App\Shared\Domain\ExceptionTracker: '@App\Shared\Infrastructure\Observability\SentryExceptionTracker'
+
     App\Ingestion\Domain\OzonCampaignCatalogRepository: '@App\Ingestion\Infrastructure\Persistence\DoctrineOzonCampaignCatalogRepository'
 
     App\Ingestion\Domain\OzonPerformanceCallCounter: '@App\Ingestion\Infrastructure\Connector\OzonPerformance\DoctrineOzonPerformanceCallCounter'

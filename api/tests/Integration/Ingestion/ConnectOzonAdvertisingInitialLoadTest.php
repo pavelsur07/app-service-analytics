@@ -16,11 +16,14 @@ use App\Ingestion\Domain\MarketplaceReportType;
 use App\Ingestion\Domain\OzonAdCampaignListParser;
 use App\Ingestion\Domain\OzonAdCampaignProductsParser;
 use App\Ingestion\Domain\OzonAdvertisingFetcher;
+use App\Ingestion\Domain\OzonCampaignCatalogRepository;
 use App\Ingestion\Infrastructure\Query\Listings\AccountCatalogSkuMatchQuery;
+use App\Ingestion\Infrastructure\Query\OzonCampaignCatalogQuery;
 use App\Tests\Support\Builder\CompanyBuilder;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
 use App\Tests\Support\Builder\MarketplaceAccountBuilder;
 use App\Tests\Support\Builder\MarketplaceRawDocumentBuilder;
+use App\Tests\Support\Builder\OzonCampaignCatalogSnapshotBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use Doctrine\DBAL\Connection;
 use Monolog\Handler\TestHandler;
@@ -69,8 +72,14 @@ final class ConnectOzonAdvertisingInitialLoadTest extends KernelTestCase
 
         $campaignCatalog = $container->get(\App\Ingestion\Application\StoreOzonCampaignCatalog::class);
         self::assertInstanceOf(\App\Ingestion\Application\StoreOzonCampaignCatalog::class, $campaignCatalog);
+        $catalogRepository = $container->get(OzonCampaignCatalogRepository::class);
+        self::assertInstanceOf(OzonCampaignCatalogRepository::class, $catalogRepository);
         $action = new ConnectOzonAdvertisingAction(
-            $this->acceptingFetcher(),
+            $this->acceptingFetcher(static function () use ($company, $account, $catalogRepository): void {
+                // A regular fetch finishes while the probe is still checking products.
+                OzonCampaignCatalogSnapshotBuilder::aSnapshot()->withCompany($company->id())->withAccount($account->id())
+                    ->withReceivedAt(new \DateTimeImmutable())->persistWith($catalogRepository);
+            }),
             new OzonAdCampaignListParser(),
             new OzonAdCampaignProductsParser(),
             $catalogMatch,
@@ -96,6 +105,13 @@ final class ConnectOzonAdvertisingInitialLoadTest extends KernelTestCase
         );
 
         self::assertSame(ConnectAdvertisingResult::Connected, $result);
+        $catalogQuery = $container->get(OzonCampaignCatalogQuery::class);
+        self::assertInstanceOf(OzonCampaignCatalogQuery::class, $catalogQuery);
+        $catalog = $catalogQuery->build($company->id()->toRfc4122(), $account->id()->toRfc4122(), null, 50, true)->executeQuery()->fetchAssociative();
+        self::assertIsArray($catalog);
+        self::assertIsString($catalog['items']);
+        self::assertStringContainsString('123', $catalog['items']);
+        self::assertStringNotContainsString('101', $catalog['items']);
         $connection = $container->get(Connection::class);
         self::assertInstanceOf(Connection::class, $connection);
         self::assertSame('active', $connection->fetchOne(
@@ -115,9 +131,13 @@ final class ConnectOzonAdvertisingInitialLoadTest extends KernelTestCase
         }
     }
 
-    private function acceptingFetcher(): OzonAdvertisingFetcher
+    private function acceptingFetcher(?\Closure $duringProducts = null): OzonAdvertisingFetcher
     {
-        return new class implements OzonAdvertisingFetcher {
+        return new class($duringProducts) implements OzonAdvertisingFetcher {
+            public function __construct(private readonly ?\Closure $duringProducts)
+            {
+            }
+
             public function token(string $clientId, string $clientSecret): string
             {
                 return 'jwt';
@@ -130,6 +150,10 @@ final class ConnectOzonAdvertisingInitialLoadTest extends KernelTestCase
 
             public function campaignProducts(string $token, string $campaignId): string
             {
+                if (null !== $this->duringProducts) {
+                    ($this->duringProducts)();
+                }
+
                 return '{"products":[]}';
             }
 

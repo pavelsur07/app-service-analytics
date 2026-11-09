@@ -69,10 +69,32 @@ final class OzonCampaignCatalogControllerTest extends SessionWebTestCase
         $base->withRaw(Uuid::v7())->withReceivedAt(new \DateTimeImmutable('2026-11-09T11:00:00Z'))->persistWith($repository);
         $client->request('GET', $url.'&cursor='.rawurlencode($cursor));
         self::assertResponseStatusCodeSame(409);
-        foreach (['&limit=101', '&cursor=bad', '&includeArchived=unknown'] as $invalid) {
+        foreach (['&limit=201', '&cursor=bad', '&includeArchived=unknown'] as $invalid) {
             $client->request('GET', $url.$invalid);
             self::assertResponseStatusCodeSame(422);
         }
+    }
+
+    public function testDefaultPageIsFiftyAndLargerAllowedPageIsBounded(): void
+    {
+        [$client, $company] = $this->fixture();
+        $repository = self::getContainer()->get(OzonCampaignCatalogRepository::class);
+        self::assertInstanceOf(OzonCampaignCatalogRepository::class, $repository);
+        $items = array_map(static fn (int $id): OzonCampaignCatalogItem => new OzonCampaignCatalogItem((string) $id, 'Campaign', 'CAMPAIGN_STATE_RUNNING', 'SKU', 'CPC'), range(1, 51));
+        $snapshot = OzonCampaignCatalogSnapshotBuilder::aSnapshot()->withCompany(Uuid::fromString($company))->withData(new OzonCampaignCatalogData($items, 51, true))->persistWith($repository);
+        $url = '/api/companies/'.$company.'/ozon-advertising/campaigns?accountId='.$snapshot->accountId()->toRfc4122();
+        $client->request('GET', $url);
+        self::assertResponseIsSuccessful();
+        $response = $this->json($client);
+        self::assertIsArray($response['items']);
+        self::assertCount(50, $response['items']);
+        self::assertIsString($response['nextCursor']);
+        $client->request('GET', $url.'&limit=150');
+        self::assertResponseIsSuccessful();
+        $response = $this->json($client);
+        self::assertIsArray($response['items']);
+        self::assertCount(51, $response['items']);
+        self::assertNull($response['nextCursor']);
     }
 
     /** @return array{KernelBrowser,string} */

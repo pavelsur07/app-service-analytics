@@ -1674,6 +1674,7 @@ export interface components {
             savedCount: number;
             total?: number | null;
             nextCursor?: string | null;
+            restored: boolean;
         };
         SalesFactListItemResponse: {
             marketplaceAccountId: string;

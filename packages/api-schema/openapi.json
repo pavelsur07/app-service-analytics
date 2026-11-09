@@ -3094,8 +3094,8 @@
                         "in": "query",
                         "schema": {
                             "type": "integer",
-                            "default": 20,
-                            "maximum": 100,
+                            "default": 50,
+                            "maximum": 200,
                             "minimum": 1
                         }
                     },
@@ -9978,7 +9978,8 @@
                 "required": [
                     "items",
                     "status",
-                    "savedCount"
+                    "savedCount",
+                    "restored"
                 ],
                 "properties": {
                     "items": {
@@ -10009,6 +10010,9 @@
                     "nextCursor": {
                         "type": "string",
                         "nullable": true
+                    },
+                    "restored": {
+                        "type": "boolean"
                     }
                 },
                 "type": "object"

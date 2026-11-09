@@ -96,12 +96,23 @@ export function CampaignCatalog({
           ) : (
             <>
               <p className="text-sm text-text-muted">
-                Список получен:{' '}
+                {catalog.data.restored
+                  ? 'Ответ впервые сохранён:'
+                  : 'Список получен:'}{' '}
                 {catalog.data.receivedAt == null
                   ? 'время неизвестно'
                   : catalogTime(catalog.data.receivedAt)}{' '}
                 · Europe/Moscow. Текущий статус в Ozon мог измениться.
               </p>
+              {catalog.data.restored && (
+                <Card tone="warning">
+                  <p role="status">
+                    Каталог восстановлен из сохранённого ответа. Его
+                    актуальность не подтверждена; дождитесь следующей
+                    синхронизации.
+                  </p>
+                </Card>
+              )}
               {catalog.data.status === 'partial' && (
                 <Card tone="warning">
                   <p role="status">

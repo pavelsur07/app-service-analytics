@@ -25,7 +25,7 @@ final readonly class ListOzonCampaignCatalogController
     }
 
     #[OA\Parameter(name: 'accountId', in: 'query', required: true, schema: new OA\Schema(type: 'string', format: 'uuid'))]
-    #[OA\Parameter(name: 'limit', in: 'query', schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 100, default: 20))]
+    #[OA\Parameter(name: 'limit', in: 'query', schema: new OA\Schema(type: 'integer', minimum: 1, maximum: 200, default: 50))]
     #[OA\Parameter(name: 'cursor', in: 'query', schema: new OA\Schema(type: 'string'))]
     #[OA\Parameter(name: 'includeArchived', in: 'query', schema: new OA\Schema(type: 'string', enum: ['true', 'false'], default: 'false'))]
     #[OA\Response(response: 200, description: 'Сохранённый каталог кампаний; открытие страницы не вызывает Ozon', content: new Model(type: OzonCampaignCatalogResponse::class))]
@@ -35,10 +35,10 @@ final readonly class ListOzonCampaignCatalogController
     public function __invoke(string $companyId, Request $request): JsonResponse
     {
         $account = $request->query->get('accountId');
-        $limit = QueryParameter::int($request, 'limit', 20);
+        $limit = QueryParameter::int($request, 'limit', 50);
         $archived = $request->query->get('includeArchived', 'false');
         $cursor = $request->query->get('cursor');
-        if (!\is_string($account) || !Uuid::isValid($account) || null === $limit || $limit < 1 || $limit > 100 || !\in_array($archived, ['true', 'false'], true)) {
+        if (!\is_string($account) || !Uuid::isValid($account) || null === $limit || $limit < 1 || $limit > 200 || !\in_array($archived, ['true', 'false'], true)) {
             return self::invalid();
         }
         $rawId = null;
@@ -59,7 +59,7 @@ final readonly class ListOzonCampaignCatalogController
             return new JsonResponse(new ValidationErrorResponse(409, 'catalog_changed', 'Список кампаний обновился. Начните просмотр заново.'), 409);
         }
         if (false === $row) {
-            return new JsonResponse(new OzonCampaignCatalogResponse([], 'not_loaded', null, 0, null, null));
+            return new JsonResponse(new OzonCampaignCatalogResponse([], 'not_loaded', null, 0, null, null, false));
         }
         $itemsJson = $row['items'];
         $receivedAt = $row['received_at'];
@@ -84,7 +84,7 @@ final readonly class ListOzonCampaignCatalogController
         $next = $hasNext && null !== $last ? $sourceId.':'.('true' === $archived ? '1' : '0').':'.$last->id : null;
         $complete = true === $row['complete'] || 't' === $row['complete'] || 1 === $row['complete'];
 
-        return new JsonResponse(new OzonCampaignCatalogResponse($items, $complete ? 'ready' : 'partial', (new \DateTimeImmutable($receivedAt))->format(\DATE_ATOM), self::integer($row['saved_count']), null === $row['total'] ? null : self::integer($row['total']), $next));
+        return new JsonResponse(new OzonCampaignCatalogResponse($items, $complete ? 'ready' : 'partial', (new \DateTimeImmutable($receivedAt))->format(\DATE_ATOM), self::integer($row['saved_count']), null === $row['total'] ? null : self::integer($row['total']), $next, true === $row['restored'] || 't' === $row['restored'] || 1 === $row['restored']));
     }
 
     private static function invalid(): JsonResponse

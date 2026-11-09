@@ -15,6 +15,7 @@ final readonly class OzonCampaignCatalogSourceQuery
     {
     }
 
+    /** Latest first-persisted body; raw deduplication does not retain subsequent receipt times. */
     public function latest(string $companyId, string $accountId): QueryBuilder
     {
         return $this->connection->createQueryBuilder()

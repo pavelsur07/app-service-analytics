@@ -1196,3 +1196,8 @@ catalog_not_ready. Integration ResearchRunsTest проверяет отклон�
 - [Предложение мониторинга N4](plan/ozon-ads-external-monitoring-proposal.md) —
   варианты внешнего heartbeat, ограничения минимальных интервалов и приёмка;
   подключение отложено владельцем в issue #341, live-гейт сохраняется.
+
+Каталог Ozon Ads помечает восстановление из raw (`restored`): повторные получения
+одинакового raw не восстанавливаются по времени; bootstrap не заменяет существующую
+проекцию. Ошибки разбора передаются через порт `Shared/Domain/ExceptionTracker`,
+его Sentry-адаптер расположен в `Shared/Infrastructure/Observability`.

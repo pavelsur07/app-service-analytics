@@ -70,6 +70,12 @@ export function CampaignSelector({
           Список кампаний ещё не загружен.
         </p>
       )}
+      {catalog.data?.restored && (
+        <p role="status" className="text-sm text-warning-text">
+          Каталог восстановлен из сохранённого ответа; актуальность требует
+          синхронизации.
+        </p>
+      )}
       {catalog.data?.status === 'partial' && (
         <p role="status" className="text-sm text-warning-text">
           Получена только часть списка кампаний.

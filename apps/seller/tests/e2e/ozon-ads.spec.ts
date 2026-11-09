@@ -164,7 +164,14 @@ test.describe('Озон Ads: интерфейс наблюдения, синте
   }) => {
     const state = await fixture(page)
     state.disable()
+    state.restoredCatalog()
     await login(page)
+    await expect(
+      page.getByText(
+        'Каталог восстановлен из сохранённого ответа. Его актуальность не подтверждена; дождитесь следующей синхронизации.',
+        { exact: true },
+      ),
+    ).toBeVisible()
     await expect(
       page.getByText('Тестовая CPC-кампания', { exact: true }),
     ).toBeVisible()

@@ -36,7 +36,10 @@ class OzonCampaignCatalogSnapshot
     #[ORM\Column]
     private readonly bool $complete;
 
-    public function __construct(Uuid $companyId, Uuid $accountId, Uuid $rawDocumentId, \DateTimeImmutable $receivedAt, OzonCampaignCatalogData $data)
+    #[ORM\Column]
+    private readonly bool $restored;
+
+    public function __construct(Uuid $companyId, Uuid $accountId, Uuid $rawDocumentId, \DateTimeImmutable $receivedAt, OzonCampaignCatalogData $data, bool $restored = false)
     {
         $this->companyId = $companyId;
         $this->accountId = $accountId;
@@ -45,6 +48,7 @@ class OzonCampaignCatalogSnapshot
         $this->campaigns = array_map(static fn (OzonCampaignCatalogItem $item): array => $item->metadata(), $data->items);
         $this->total = $data->total;
         $this->complete = $data->complete;
+        $this->restored = $restored;
     }
 
     public function companyId(): Uuid
@@ -81,5 +85,10 @@ class OzonCampaignCatalogSnapshot
     public function complete(): bool
     {
         return $this->complete;
+    }
+
+    public function restored(): bool
+    {
+        return $this->restored;
     }
 }

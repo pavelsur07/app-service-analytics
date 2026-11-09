@@ -50,7 +50,7 @@ final class RebuildOzonCampaignCatalogCommand extends Command
         if (!\is_string($id) || !\is_string($received)) {
             throw new \UnexpectedValueException('Invalid raw campaign metadata.');
         }
-        $ok = $this->store->store($company, Uuid::fromString($account), Uuid::fromString($id), new \DateTimeImmutable($received), $this->body->read($company, $row));
+        $ok = $this->store->store($company, Uuid::fromString($account), Uuid::fromString($id), new \DateTimeImmutable($received), $this->body->read($company, $row), restored: true);
         $output->writeln($ok ? '<info>Сохранённый список обработан. Новых запросов Ozon нет.</info>' : '<error>Сохранённый список не прошёл проверку; сырьё не изменено.</error>');
 
         return $ok ? Command::SUCCESS : Command::FAILURE;
