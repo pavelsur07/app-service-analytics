@@ -78,6 +78,9 @@ final readonly class ListOzonCampaignCatalogController
             }
             $items[] = OzonCampaignCatalogItem::fromRaw($item);
         }
+        if (null !== $rawId && [] === $items) {
+            return self::invalid();
+        }
         $hasNext = \count($items) > $limit;
         $items = \array_slice($items, 0, $limit);
         $last = [] === $items ? null : $items[\count($items) - 1];

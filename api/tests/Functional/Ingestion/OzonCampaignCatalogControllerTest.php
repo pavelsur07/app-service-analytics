@@ -66,6 +66,8 @@ final class OzonCampaignCatalogControllerTest extends SessionWebTestCase
         $client->request('GET', $url.'&cursor='.rawurlencode($cursor));
         self::assertResponseIsSuccessful();
         self::assertNull($this->json($client)['nextCursor']);
+        $client->request('GET', $url.'&cursor='.rawurlencode($snapshot->rawDocumentId()->toRfc4122().':0:999'));
+        self::assertResponseStatusCodeSame(422);
         $base->withRaw(Uuid::v7())->withReceivedAt(new \DateTimeImmutable('2026-11-09T11:00:00Z'))->persistWith($repository);
         $client->request('GET', $url.'&cursor='.rawurlencode($cursor));
         self::assertResponseStatusCodeSame(409);
