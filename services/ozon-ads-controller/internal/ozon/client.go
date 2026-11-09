@@ -5,6 +5,7 @@ package ozon
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,7 +54,28 @@ func New(client *http.Client, base string, quota Quota, now func() time.Time) (*
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && u.Hostname() != "127.0.0.1") {
 		return nil, errors.New("invalid_ozon_url")
 	}
+	baseTransport := client.Transport
+	if baseTransport == nil {
+		baseTransport = http.DefaultTransport
+	}
+	transport, ok := baseTransport.(*http.Transport)
+	if !ok || transport == nil {
+		return nil, errors.New("unsupported_ozon_transport")
+	}
+	// The quota covers one send. A fresh HTTP/1 connection prevents net/http
+	// from silently retrying an idempotent request on a reused connection.
+	owned := transport.Clone()
+	owned.DisableKeepAlives = true
+	owned.ForceAttemptHTTP2 = false
+	owned.Protocols = new(http.Protocols)
+	owned.Protocols.SetHTTP1(true)
+	if owned.TLSClientConfig != nil {
+		owned.TLSClientConfig.NextProtos = []string{"http/1.1"}
+	}
+	// A caller-provided TLS protocol hook must not bypass the HTTP/1 policy.
+	owned.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
 	copyClient := *client
+	copyClient.Transport = owned
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	copyClient.Timeout = 10 * time.Second
 	return &Client{http: &copyClient, base: strings.TrimSuffix(base, "/"), quota: quota, now: now, sessions: make(map[string]*session)}, nil

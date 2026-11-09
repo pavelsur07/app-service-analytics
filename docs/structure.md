@@ -1173,3 +1173,6 @@ catalog_not_ready. Integration ResearchRunsTest проверяет отклон�
 - [Допуск к живому observe](plan/ozon-advertising-observe-launch-plan.md) —
   следующие шаги N0–N6, общие квоты, физические отказы, мониторинг,
   production без чтений, ограниченный пилот и чек-листы каждого шага.
+- [Паспорт квот N0](plan/ozon-advertising-quota-passport.md) — внутренние
+  HTTP-потребители, методы/стоимость, ограниченный production-снимок,
+  пробелы scope/reset, транспорта и внешнего потребления.
