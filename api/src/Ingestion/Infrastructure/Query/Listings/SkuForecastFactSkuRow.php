@@ -10,6 +10,7 @@ final readonly class SkuForecastFactSkuRow
         public string $marketplaceSku,
         public ?string $name,
         public ?string $offerId,
+        public ?string $photoUrl,
     ) {
     }
 }

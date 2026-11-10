@@ -6,6 +6,7 @@ namespace App\Ingestion\Ui\Controller;
 
 use App\Ingestion\Application\Buyout\BuildBuyoutDailySeriesAction;
 use App\Ingestion\Infrastructure\Query\Buyout\BuyoutDailyRow;
+use App\Ingestion\Infrastructure\Query\Listings\SkuForecastFactSkuSearchQuery;
 use App\Ingestion\Ui\Response\SkuForecastFactDayResponse;
 use App\Ingestion\Ui\Response\SkuForecastFactResponse;
 use App\Shared\Ui\Response\ValidationErrorResponse;
@@ -25,7 +26,7 @@ use Symfony\Component\Routing\Requirement\Requirement;
 )]
 final class ShowSkuForecastFactController
 {
-    public function __construct(private readonly BuildBuyoutDailySeriesAction $buildSeries)
+    public function __construct(private readonly BuildBuyoutDailySeriesAction $buildSeries, private readonly SkuForecastFactSkuSearchQuery $skuSearch)
     {
     }
 
@@ -64,7 +65,9 @@ final class ShowSkuForecastFactController
             $days[] = self::day($date, $byDate[$date] ?? null);
         }
 
-        return new JsonResponse(new SkuForecastFactResponse($sku, $month, 'RUB', $days));
+        $metadata = $this->skuSearch->findMetadata($companyId, $sku);
+
+        return new JsonResponse(new SkuForecastFactResponse($sku, $month, 'RUB', $days, $metadata?->name, $metadata?->offerId, $metadata?->photoUrl));
     }
 
     private static function day(string $date, ?BuyoutDailyRow $row): SkuForecastFactDayResponse

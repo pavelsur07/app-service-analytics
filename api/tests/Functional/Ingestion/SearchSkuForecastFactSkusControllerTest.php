@@ -51,7 +51,7 @@ final class SearchSkuForecastFactSkusControllerTest extends WebTestCase
 
         $client->request('GET', $this->url($companyId, 'q='.urlencode('красная')));
         self::assertResponseIsSuccessful();
-        self::assertSame([['marketplaceSku' => 'SKU-101', 'name' => 'Красная чашка', 'offerId' => 'CUP-RED']], $this->payload($client)['items']);
+        self::assertSame([['marketplaceSku' => 'SKU-101', 'name' => 'Красная чашка', 'offerId' => 'CUP-RED', 'photoUrl' => 'https://ir.ozone.ru/s3/multimedia-1-h/11107018133.jpg']], $this->payload($client)['items']);
 
         $client->request('GET', $this->url($companyId, 'q=CUP'));
         self::assertResponseIsSuccessful();

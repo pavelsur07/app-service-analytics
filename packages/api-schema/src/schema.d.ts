@@ -1706,6 +1706,7 @@ export interface components {
             marketplaceSku: string;
             name: string | null;
             offerId: string | null;
+            photoUrl: string | null;
         };
         SkuForecastFactSkuSearchResponse: {
             items: components["schemas"]["SkuForecastFactSkuResponse"][];
@@ -2090,6 +2091,9 @@ export interface components {
             /** @enum {string} */
             currency: "RUB";
             days: components["schemas"]["SkuForecastFactDayResponse"][];
+            name: string | null;
+            offerId: string | null;
+            photoUrl: string | null;
         };
         SkuSalesTotalResponse: {
             currency: string;
