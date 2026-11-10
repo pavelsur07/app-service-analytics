@@ -234,3 +234,5 @@ ADR-041 закрывает решение, оставленное ADR-040 п. 13
 ## Новые принятые решения
 
 - [ADR-050: исследование категорий Ozon через Python-сервис](0050-product-research-ozon.md) — Accepted (01.11.2026), действует после merge PR #302.
+
+| [ADR-052](0052-ozon-ads-cost-control.md) | Озон Ads: observe 00–08; управление Proposed | Accepted (observe) |

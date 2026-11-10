@@ -4,6 +4,70 @@
  */
 
 export interface paths {
+    "/api/companies/{companyId}/ozon-ads/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_advertising_ui_observationpolicies_availability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/ozon-ads/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_advertising_ui_observationpolicies_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/ozon-ads/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_app_advertising_ui_observationpolicies_list"];
+        put?: never;
+        post: operations["post_app_advertising_ui_observationpolicies_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/ozon-ads/policies/{policyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["put_app_advertising_ui_observationpolicies_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/auth/login": {
         parameters: {
             query?: never;
@@ -126,6 +190,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["post_identity_admin_administrator_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/companies/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_identity_admin_company_detail"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -446,6 +526,22 @@ export interface paths {
         get: operations["get_ingestion_listing_costs_list"];
         put?: never;
         post: operations["post_ingestion_listing_cost_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{companyId}/ozon-advertising/campaigns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_ingestion_ozon_campaign_catalog"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1208,14 +1304,98 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        AdminMfaStatusResponse: {
+        ObservationEventResponse: {
+            id: string;
+            policyId: string;
+            accountId: string;
+            campaignId: string;
+            version: number;
             /** @enum {string} */
-            state: "enrollment_required" | "verification_required" | "authenticated";
+            kind: "policy_created" | "policy_updated" | "observation";
+            actorId: string | null;
+            /** @enum {string} */
+            action: "saved" | "would_run" | "would_stop" | "blocked";
+            reason: string;
+            details: {
+                start?: string;
+                stop?: string;
+                pollSeconds?: number;
+                enabled?: boolean;
+                day?: string;
+                latched?: boolean;
+            };
+            /** Format: date-time */
+            occurredAt: string;
+            dailyLimit: {
+                amountMinor: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
+            spend: {
+                amountMinor: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
+            difference: {
+                amountMinor: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
         };
         ValidationErrorResponse: {
             status: number;
             code: string;
             message: string;
+        };
+        ObservationPolicyResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            accountId: string;
+            campaignId: string;
+            version: number;
+            /** @enum {string} */
+            mode: "observe";
+            enabled: boolean;
+            dailyLimit: {
+                amountMinor: number;
+                /** @enum {string} */
+                currency: "RUB";
+            };
+            start: string;
+            stop: string;
+            /** @enum {string} */
+            timezone: "Europe/Moscow";
+            pollSeconds: number;
+            /** @enum {string} */
+            deliveryStatus: "saved" | "applied";
+            observation: {
+                appliedVersion: number;
+                /** Format: date */
+                day: string;
+                spend: {
+                    amountMinor: number;
+                    currency: string;
+                } | null;
+                difference: {
+                    amountMinor: number;
+                    currency: string;
+                } | null;
+                /** @enum {string} */
+                action: "would_run" | "would_stop" | "blocked";
+                reason: string;
+                latched: boolean;
+                /** Format: date-time */
+                evaluatedAt: string;
+            } | null;
+            /** @default false */
+            sourceAgeKnown: boolean;
+            /** @default false */
+            budgetProtectionActive: boolean;
+        };
+        AdminMfaStatusResponse: {
+            /** @enum {string} */
+            state: "enrollment_required" | "verification_required" | "authenticated";
         };
         AdminMeResponse: {
             email: string;
@@ -1245,6 +1425,38 @@ export interface components {
             status: string;
             createdAt: string;
             hasConfirmedUser: boolean;
+        };
+        AdminCompanyMemberResponse: {
+            id: string;
+            email: string;
+            role: string;
+            joinedAt: string;
+            emailConfirmedAt?: string | null;
+        };
+        AdminCompanyConnectionResponse: {
+            id: string;
+            marketplace: string;
+            externalShopId: string;
+            state: string;
+            advertisingState?: string | null;
+            createdAt: string;
+        };
+        AdminCompanyAuditResponse: {
+            id: string;
+            action: string;
+            actorType: string;
+            actorId: string;
+            actorEmail?: string | null;
+            occurredAt: string;
+        };
+        AdminCompanyDetailResponse: {
+            company: components["schemas"]["AdminCompanyResponse"];
+            members: components["schemas"]["AdminCompanyMemberResponse"][];
+            membersTruncated: boolean;
+            connections: components["schemas"]["AdminCompanyConnectionResponse"][];
+            connectionsTruncated: boolean;
+            recentAudit: components["schemas"]["AdminCompanyAuditResponse"][];
+            auditTruncated: boolean;
         };
         AdminCompanyListResponse: {
             items: components["schemas"]["AdminCompanyResponse"][];
@@ -1447,6 +1659,23 @@ export interface components {
             pricedCount: number;
             nextCursor?: string | null;
         };
+        OzonCampaignCatalogItem: {
+            id: string;
+            title?: string | null;
+            state: string;
+            advObjectType: string;
+            paymentType?: string | null;
+        };
+        OzonCampaignCatalogResponse: {
+            items: components["schemas"]["OzonCampaignCatalogItem"][];
+            /** @enum {string} */
+            status: "not_loaded" | "partial" | "ready";
+            receivedAt?: string | null;
+            savedCount: number;
+            total?: number | null;
+            nextCursor?: string | null;
+            restored: boolean;
+        };
         SalesFactListItemResponse: {
             marketplaceAccountId: string;
             sourceRowId: string;
@@ -1477,6 +1706,7 @@ export interface components {
             marketplaceSku: string;
             name: string | null;
             offerId: string | null;
+            photoUrl: string | null;
         };
         SkuForecastFactSkuSearchResponse: {
             items: components["schemas"]["SkuForecastFactSkuResponse"][];
@@ -1521,6 +1751,10 @@ export interface components {
             ordersQuantity: number;
             salesAmountMinor: number;
             salesQuantity: number;
+            /** Сумма продаж / календарные дни периода, копейки; ADR-051. */
+            salesPerDayMinor: number;
+            /** Сумма продаж / проданные единицы; null при нулевом количестве. */
+            averageSalePriceMinor?: number | null;
             returnsAmountMinor: number;
             returnsQuantity: number;
             advertisingMinor: number;
@@ -1586,6 +1820,8 @@ export interface components {
             ordersQuantityBps?: number | null;
             salesAmountBps?: number | null;
             salesQuantityBps?: number | null;
+            salesPerDayBps?: number | null;
+            averageSalePriceBps?: number | null;
             returnsAmountBps?: number | null;
             returnsQuantityBps?: number | null;
             advertisingBps?: number | null;
@@ -1855,6 +2091,9 @@ export interface components {
             /** @enum {string} */
             currency: "RUB";
             days: components["schemas"]["SkuForecastFactDayResponse"][];
+            name: string | null;
+            offerId: string | null;
+            photoUrl: string | null;
         };
         SkuSalesTotalResponse: {
             currency: string;
@@ -2408,6 +2647,302 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_app_advertising_ui_observationpolicies_availability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Доступность интерфейса наблюдения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                    };
+                };
+            };
+        };
+    };
+    get_app_advertising_ui_observationpolicies_events: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                accountId?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description История наблюдения, новые записи первыми */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ObservationEventResponse"][];
+                        /** Format: uuid */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description Модуль выключен или политика не найдена */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры или недоступное подключение */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_app_advertising_ui_observationpolicies_list: {
+        parameters: {
+            query?: {
+                accountId?: string;
+                enabled?: "true" | "false";
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Политики наблюдения, без автоматического управления рекламой */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ObservationPolicyResponse"][];
+                        /** Format: uuid */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description Модуль выключен или политика не найдена */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры или недоступное подключение */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    post_app_advertising_ui_observationpolicies_create: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    accountId: string;
+                    campaignId: string;
+                    dailyLimit: {
+                        amountMinor: number;
+                        /** @enum {string} */
+                        currency: "RUB";
+                    };
+                    /** @example 09:00 */
+                    start: string;
+                    /** @example 21:00 */
+                    stop: string;
+                    pollSeconds: number;
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Сохранено; применение сервисом подтверждается отдельно */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationPolicyResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Модуль выключен или политика не найдена */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Конфликт версии или повтор кампании */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры или недоступное подключение */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    put_app_advertising_ui_observationpolicies_update: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Session request protection. Origin must match this application; non-empty bodies require application/json. */
+                "X-Conwix-Request": "1";
+            };
+            path: {
+                companyId: string;
+                policyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    version: number;
+                    dailyLimit: {
+                        amountMinor: number;
+                        /** @enum {string} */
+                        currency: "RUB";
+                    };
+                    start: string;
+                    stop: string;
+                    pollSeconds: number;
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Сохранена новая версия наблюдения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationPolicyResponse"];
+                };
+            };
+            /** @description Invalid request protection header or origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Модуль выключен или политика не найдена */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Конфликт версии или повтор кампании */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Non-empty request body requires application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры или недоступное подключение */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
     post_identity_admin_auth_login: {
         parameters: {
             query?: never;
@@ -2883,6 +3418,37 @@ export interface operations {
             };
             /** @description Некорректный email или слишком короткий пароль */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_identity_admin_company_detail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Компания, до 50 участников и подключений и 20 последних событий поддержки. Флаги truncated обозначают ограниченный список. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCompanyDetailResponse"];
+                };
+            };
+            /** @description Компания не найдена */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4150,6 +4716,60 @@ export interface operations {
                 };
             };
             /** @description Тело запроса некорректно */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ingestion_ozon_campaign_catalog: {
+        parameters: {
+            query: {
+                accountId: string;
+                limit?: number;
+                cursor?: string;
+                includeArchived?: "true" | "false";
+            };
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Сохранённый каталог кампаний; открытие страницы не вызывает Ozon */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OzonCampaignCatalogResponse"];
+                };
+            };
+            /** @description Нет доступа к компании */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Снимок изменился; начать просмотр заново */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Неверные параметры */
             422: {
                 headers: {
                     [name: string]: unknown;

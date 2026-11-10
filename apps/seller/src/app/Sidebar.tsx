@@ -15,6 +15,7 @@ import {
   ChartNoAxesCombined,
   LayoutDashboard,
   SearchCheck,
+  Megaphone,
 } from 'lucide-react'
 import { NavLink } from 'react-router'
 
@@ -66,6 +67,7 @@ const ITEMS = [
   { to: 'extension', label: 'Расширение', icon: Puzzle },
   { to: 'connections', label: 'Подключения', icon: Plug },
   { to: 'coverage', label: 'Полнота данных', icon: CalendarCheck },
+  { to: 'ozon-ads', label: 'Озон Ads', icon: Megaphone },
 ] as const
 
 export function Sidebar({ companyId }: { companyId: string }) {

@@ -12,7 +12,7 @@ import type { components } from '../../../api/schema'
 import { formatMinorAmount } from '../../../shared/lib/formatMinorAmount'
 import { ozonProductUrl } from '../../../shared/lib/ozonProductUrl'
 import { marginBadge, shareOfRevenue } from '../lib/margin'
-import { thumbnailUrl } from '../lib/photo'
+import { ProductThumbnail } from '../../../shared/ui/ProductThumbnail'
 import type { SortDirection, SortKey } from '../lib/tableParams'
 
 type UnitEconomicsSku = components['schemas']['UnitEconomicsSkuResponse']
@@ -277,45 +277,6 @@ function Breakdown({
   )
 }
 
-/**
- * Превью товара 32×32.
- *
- * Обработчика ошибки нет намеренно: при пустом alt браузеру нечего
- * показать вместо не загрузившейся картинки, а фон border-subtle
- * на самом img оставляет ровно тот же серый квадрат, что и у товара
- * без фото. Загрузка и отказ сходятся в одно состояние без единой
- * строки кода — а обработчик был бы единственной непокрытой веткой:
- * компонентных тестов у приложения нет.
- *
- * Кликом ничего не открывается, поэтому ни cursor-pointer, ни подсказки
- * «Просмотреть фото» из макета здесь нет: обещать действие, которого
- * не будет, хуже, чем не обещать.
- */
-function Thumb({ url }: { url: string | null | undefined }) {
-  const src = thumbnailUrl(url)
-
-  if (src === null) {
-    return <span className="block size-8 rounded bg-border-subtle" />
-  }
-
-  return (
-    <img
-      // Пустой alt, а не aria-hidden: у изображения это тот же смысл —
-      // декорация. Имя и артикул стоят в соседних ячейках той же строки,
-      // и повторять их голосом на каждой из 25 строк незачем.
-      alt=""
-      className="size-8 rounded bg-border-subtle object-cover"
-      decoding="async"
-      // Размеры атрибутами, а не только классом: без них строка
-      // подпрыгивает в момент загрузки.
-      height={32}
-      loading="lazy"
-      src={src}
-      width={32}
-    />
-  )
-}
-
 function Row({
   companyId,
   currency,
@@ -339,7 +300,7 @@ function Row({
     <>
       <tr className={zebra}>
         <td className={`${BODY_CELL} ${STICKY_PHOTO} ${zebra}`}>
-          <Thumb url={sku.photoUrl} />
+          <ProductThumbnail url={sku.photoUrl} />
         </td>
         <td
           className={`${BODY_CELL} ${STICKY_SKU} ${zebra} text-text-secondary`}

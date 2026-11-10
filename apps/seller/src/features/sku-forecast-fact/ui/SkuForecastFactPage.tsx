@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, CircleX, PackageSearch } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 
@@ -8,6 +8,7 @@ import {
   Input,
   StatusPanel,
 } from '../../../../../../packages/ui/src'
+import { ProductThumbnail } from '../../../shared/ui/ProductThumbnail'
 import { ApiError } from '../../../api/ApiError'
 import {
   canGoBack,
@@ -26,8 +27,7 @@ import { SkuForecastFactTable } from './SkuForecastFactTable'
 const SEARCH_LIMIT = 50
 
 export function SkuForecastFactPage() {
-  const [params] = useSearchParams()
-  return <SkuForecastFactView key={params.get('sku') ?? ''} />
+  return <SkuForecastFactView />
 }
 
 function SkuForecastFactView() {
@@ -39,7 +39,14 @@ function SkuForecastFactView() {
   const month = monthFromParam(params.get('month'), current)
   const [searchInput, setSearchInput] = useState(sku)
   const [searchText, setSearchText] = useState(sku)
-  const [choosing, setChoosing] = useState(sku === '')
+  const [choosing, setChoosing] = useState(false)
+  const dialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    if (choosing) dialog.current?.showModal()
+    else if (dialog.current?.open) {
+      dialog.current.close()
+    }
+  }, [choosing])
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null])
   const cursor = cursorStack.at(-1) ?? null
   const skuResults = useSkuForecastFactSkus(
@@ -102,8 +109,27 @@ function SkuForecastFactView() {
         </p>
       </header>
 
-      <Card>
+      <dialog
+        ref={dialog}
+        aria-labelledby="sku-picker-title"
+        className="fixed inset-0 m-auto max-h-screen w-full max-w-2xl overflow-y-auto rounded-lg border border-border-subtle bg-surface-raised p-4 text-text-primary shadow-popover backdrop:bg-black/50"
+        onCancel={() => setChoosing(false)}
+        onClose={() => setChoosing(false)}
+      >
         <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="sku-picker-title" className="text-lg font-semibold">
+              Выбрать товар
+            </h2>
+            <Button
+              aria-label="Закрыть выбор товара"
+              onClick={() => setChoosing(false)}
+              type="button"
+              variant="ghost"
+            >
+              Закрыть
+            </Button>
+          </div>
           <form
             className="flex flex-wrap items-end gap-2"
             onSubmit={(event) => {
@@ -175,6 +201,7 @@ function SkuForecastFactView() {
                       }}
                       type="button"
                     >
+                      <ProductThumbnail url={item.photoUrl} />
                       <span className="font-medium">
                         SKU {item.marketplaceSku}
                       </span>
@@ -220,12 +247,32 @@ function SkuForecastFactView() {
             </>
           )}
         </div>
-      </Card>
+      </dialog>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-text-secondary">
-          {sku === '' ? 'Выберите SKU для отчёта' : `Выбран SKU ${sku}`}
-        </p>
+        <div className="flex items-center gap-3">
+          {sku === '' ? null : (
+            <>
+              <ProductThumbnail url={report.data?.photoUrl} />
+              <div className="text-sm">
+                {report.data?.name ? (
+                  <p className="font-medium">{report.data.name}</p>
+                ) : null}
+                <p className="text-text-secondary">SKU {sku}</p>
+                {report.data?.offerId ? (
+                  <p className="text-text-muted">{report.data.offerId}</p>
+                ) : null}
+              </div>
+            </>
+          )}
+          <Button
+            onClick={() => setChoosing(true)}
+            type="button"
+            variant="secondary"
+          >
+            {sku === '' ? 'Выбрать товар' : 'Сменить товар'}
+          </Button>
+        </div>
         <div aria-label="Месяц отчёта" className="flex items-center gap-1">
           <Button
             aria-label="Предыдущий месяц"

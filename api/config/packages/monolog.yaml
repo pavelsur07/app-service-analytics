@@ -21,6 +21,7 @@ monolog:
         # свой обработчик: общий порог warning их бы отбросил.
         - service_audit
         - net_capture
+        - ozon_report
 
 when@dev:
     monolog:
@@ -88,7 +89,7 @@ when@prod:
                 # fingers_crossed нет (см. выше), поэтому отсев по каналу.
                 # `service_audit` — своим обработчиком ниже, с порога info;
                 # без исключения отказ токена (warning) писался бы дважды.
-                channels: ["!deprecation", "!request", "!service_audit", "!net_capture"]
+                channels: ["!deprecation", "!request", "!service_audit", "!net_capture", "!ozon_report"]
             # Настоящие отказы сервера из того же канала — отдельно
             # и с порога critical: 5xx Symfony пишет именно им
             # (4xx — error), так что порог сам отделяет наши поломки
@@ -126,3 +127,11 @@ when@prod:
                 level: info
                 formatter: monolog.formatter.json
                 channels: [net_capture]
+
+            # Только структурированные события цепочки отчёта, без тел/секретов.
+            ozon_report:
+                type: stream
+                path: php://stderr
+                level: info
+                formatter: monolog.formatter.json
+                channels: [ozon_report]

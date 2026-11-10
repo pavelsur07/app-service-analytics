@@ -29,6 +29,7 @@ use App\Tests\Support\Fake\FakeOzonAdvertisingFetcher;
 use App\Tests\Support\Probe\DayLoadMarks;
 use Doctrine\DBAL\Connection;
 use Monolog\Handler\TestHandler;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -51,6 +52,118 @@ final class FetchOzonAdvertisingHandlersTest extends KernelTestCase
 
     /** Кампании с расходом за последний день снятого расхода (23.09.2026). */
     private const array SPENDING_ON_LAST_DAY = ['14275771', '16017246', '23253271', '24147313', '29088934'];
+
+    /** @return iterable<string, array{string}> */
+    public static function diagnosticKinds(): iterable
+    {
+        yield 'SKU' => [OzonAdReportKind::Sku];
+        yield 'CPO' => [OzonAdReportKind::CpoOrders];
+    }
+
+    #[DataProvider('diagnosticKinds')]
+    public function testDiagnosticsLinksAcceptedOrderToCheckDownloadAndStorage(string $kind): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+        $order = new OrderOzonAdSkuReportMessage($account->companyId()->toRfc4122(), $account->id()->toRfc4122(), '2026-08-25', '2026-09-23', OzonAdReportKind::Sku === $kind ? ['14275771'] : [], kind: $kind);
+        $orderHandler = $container->get(OrderOzonAdSkuReportHandler::class);
+        self::assertInstanceOf(OrderOzonAdSkuReportHandler::class, $orderHandler);
+        $orderHandler($order);
+        $check = $this->sent($container, CheckOzonAdSkuReportMessage::class)[0];
+        $checkHandler = $container->get(CheckOzonAdSkuReportHandler::class);
+        self::assertInstanceOf(CheckOzonAdSkuReportHandler::class, $checkHandler);
+        $checkHandler($check);
+        $events = $this->diagnosticEvents($container);
+        $accepted = array_values(array_filter($events, static fn (array $e): bool => 'accepted' === $e['event']))[0];
+        self::assertSame($check->uuid, $accepted['report_uuid']);
+        self::assertIsString($accepted['order_ref']);
+        $invocations = [];
+        foreach ($events as $event) {
+            self::assertSame($account->companyId()->toRfc4122(), $event['company_id']);
+            self::assertSame($account->id()->toRfc4122(), $event['marketplace_account_id']);
+            self::assertSame($kind, $event['kind']);
+            self::assertIsString($event['invocation_id']);
+            $invocations[$event['invocation_id']] = true;
+            if ('order' === $event['phase']) {
+                self::assertSame($accepted['order_ref'], $event['order_ref']);
+            } else {
+                self::assertSame($accepted['report_uuid'], $event['report_uuid']);
+            }
+        }
+        self::assertCount(2, $invocations);
+        self::assertSame(['token', 'order', 'token', 'check', 'download'], array_column(array_values(array_filter($events, static fn (array $e): bool => 'request_started' === $e['event'])), 'operation'));
+        $lastEvent = array_pop($events);
+        self::assertIsArray($lastEvent);
+        self::assertSame('stored', $lastEvent['event']);
+        self::assertSame(2, $fetcher->calls);
+        self::assertCount(1, $this->rawBodies($container, $account, OzonAdReportKind::rawType($kind)));
+    }
+
+    public function testDiagnosticsKeepsReferencesAcross429AndPendingCheckWithoutChangingDelays(): void
+    {
+        $container = $this->bootedContainer();
+        $account = $this->account($container);
+        $fetcher = $this->fetcher($container);
+        $fetcher->failOrdersWith($this->httpFailure(429));
+        $this->order($container, $account);
+        $retryEnvelope = $this->sentEnvelopes($container, OrderOzonAdSkuReportMessage::class)[0];
+        $delay = $retryEnvelope->last(DelayStamp::class)?->getDelay();
+        self::assertNotNull($delay);
+        self::assertGreaterThanOrEqual(30_000, $delay);
+        self::assertLessThanOrEqual(90_000, $delay);
+        $fetcher->orderFailure = null;
+        $orderHandler = $container->get(OrderOzonAdSkuReportHandler::class);
+        self::assertInstanceOf(OrderOzonAdSkuReportHandler::class, $orderHandler);
+        $retry = $retryEnvelope->getMessage();
+        self::assertInstanceOf(OrderOzonAdSkuReportMessage::class, $retry);
+        $orderHandler($retry);
+        $check = $this->sent($container, CheckOzonAdSkuReportMessage::class)[0];
+        $fetcher->reportStates(['IN_PROGRESS', 'OK']);
+        $checkHandler = $container->get(CheckOzonAdSkuReportHandler::class);
+        self::assertInstanceOf(CheckOzonAdSkuReportHandler::class, $checkHandler);
+        $checkHandler($check);
+        $checks = $this->sentEnvelopes($container, CheckOzonAdSkuReportMessage::class);
+        self::assertCount(2, $checks);
+        self::assertSame(30_000, $checks[1]->last(DelayStamp::class)?->getDelay());
+        $next = $checks[1]->getMessage();
+        self::assertInstanceOf(CheckOzonAdSkuReportMessage::class, $next);
+        $checkHandler($next);
+        $events = $this->diagnosticEvents($container);
+        $orders = array_values(array_filter($events, static fn (array $e): bool => 'order' === $e['phase']));
+        self::assertCount(1, array_unique(array_column($orders, 'order_ref')));
+        self::assertSame([1, 2], array_values(array_unique(array_column($orders, 'attempt'))));
+        $failures = array_values(array_filter($events, static fn (array $e): bool => 'request_failed' === $e['event']));
+        self::assertCount(1, $failures);
+        self::assertSame(429, $failures[0]['http_status']);
+        self::assertSame('unknown', $failures[0]['reason_hint']);
+        $states = array_values(array_filter($events, static fn (array $e): bool => 'state' === $e['event']));
+        self::assertSame(['IN_PROGRESS', 'OK'], array_column($states, 'state'));
+        self::assertSame([$check->uuid], array_values(array_unique(array_column($states, 'report_uuid'))));
+        self::assertCount(4, array_unique(array_column($events, 'invocation_id')));
+        self::assertSame(4, $fetcher->calls);
+    }
+
+    /** @return list<array<string, int|string|null>> */
+    private function diagnosticEvents(ContainerInterface $container): array
+    {
+        $handler = $container->get('monolog.handler.in_memory');
+        self::assertInstanceOf(TestHandler::class, $handler);
+        $contexts = [];
+        foreach ($handler->getRecords() as $record) {
+            if ('ozon_report' === $record->channel && 'ozon_report_diagnostic' === $record->message) {
+                $fields = [];
+                foreach ($record->context as $key => $value) {
+                    self::assertIsString($key);
+                    self::assertTrue(\is_int($value) || \is_string($value) || null === $value);
+                    $fields[$key] = $value;
+                }
+                $contexts[] = $fields;
+            }
+        }
+
+        return $contexts;
+    }
 
     public function testExpenseAndDailyAreStoredAsReceived(): void
     {

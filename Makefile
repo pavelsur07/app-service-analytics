@@ -161,7 +161,7 @@ s3-bucket-create: s3-wait ## бакеты сырья для dev и test (иде�
 #
 # Порядок задан списком зависимостей; он соблюдается благодаря
 # .NOTPARALLEL в начале файла.
-db-rebuild-check: down-clear up db-wait api-migrate api-migrate-test db-schema-validate test \
+db-rebuild-check: down-clear up db-wait api-migrate api-migrate-test db-schema-validate test ozon-ads-controller-test \
 	ozon-fetcher-migrate ozon-fetcher-test \
 	product-research-ozon-migrate product-research-ozon-test product-research-ozon-stage5-smoke ## down-clear → up → migrate → schema-validate → test, то же для БД сервисов
 	@echo "db-rebuild-check: OK"
@@ -191,7 +191,8 @@ test-workers-ready:
 	$(COMPOSE) exec -T php-cli php bin/console cache:warmup --env=test >/dev/null
 
 test-int: test-workers-ready ## тесты с БД, параллельно через paratest (базы процессов готовит api-migrate-test)
-	$(COMPOSE) exec php-cli composer test:integration -- --processes=$(TEST_WORKERS)
+	# Resource guards measure invocation peak; recycle workers between files.
+	$(COMPOSE) exec php-cli composer test:integration -- --processes=$(TEST_WORKERS) --max-batch-size=1
 
 test-func: test-workers-ready ## тесты через HTTP, параллельно через paratest (базы процессов готовит api-migrate-test)
 	$(COMPOSE) exec php-cli composer test:functional -- --processes=$(TEST_WORKERS)
@@ -397,7 +398,7 @@ review: ## подготовка + Claude; REVIEW_RISK=high (по умолчан�
 # и не нужна; в конвейере Stage 4 install — отдельный шаг перед этим же
 # набором проверок.
 
-ci-local: structure-check stan deptrac lint front-typecheck front-lint front-knip front-test audit \
+ci-local: ozon-ads-controller-lint ozon-ads-controller-vet ozon-ads-controller-test ozon-ads-controller-vulncheck ozon-ads-controller-build structure-check stan deptrac lint front-typecheck front-lint front-knip front-test audit \
 	product-research-ozon-stage0-check product-research-ozon-check product-research-ozon-stage5-smoke \
 	product-research-ozon-prod-check \
 	ozon-fetcher-lint ozon-fetcher-vet ozon-fetcher-test ozon-fetcher-vulncheck \
@@ -474,3 +475,45 @@ product-research-ozon-prod-config-check: ## parse opt-in production stack withou
 .PHONY: product-research-ozon-prod-check
 product-research-ozon-prod-check: product-research-ozon-prod-config-check ## wrapper and real disposable DB provisioning; no production access
 	python3 bin/tests/product-research-prod.test.py
+
+# ADR-052: observe only, no production enablement in stages 00–08.
+.PHONY: ozon-ads-controller-db ozon-ads-controller-fmt ozon-ads-controller-lint ozon-ads-controller-vet ozon-ads-controller-test
+ozon-ads-controller-db: db-wait
+	$(COMPOSE) exec -T postgres psql -q -v ON_ERROR_STOP=1 -U $(DB_USER) -d $(DB_NAME) < services/docker/postgres/init/05-ozon-ads.sql
+	$(COMPOSE) exec -T postgres sh -e < services/docker/postgres/init/06-ozon-ads-hba.sh
+	@if $(COMPOSE) exec -T -e PGPASSWORD=ozon_ads_dev postgres psql -h 127.0.0.1 -U svc_ozon_ads -d $(DB_NAME) -c 'SELECT 1' >/dev/null 2>&1; then exit 1; fi
+
+ozon-ads-controller-fmt:
+	$(SERVICES) run --rm -T ozon-ads-controller-lint golangci-lint fmt
+
+ozon-ads-controller-lint:
+	$(SERVICES) run --rm -T ozon-ads-controller-lint sh -ec 'golangci-lint fmt --diff && golangci-lint run ./...'
+
+ozon-ads-controller-vet:
+	$(SERVICES) run --rm -T ozon-ads-controller-dev go vet ./...
+
+ozon-ads-controller-test: ozon-ads-controller-db
+	$(SERVICES) run --rm -T ozon-ads-controller-dev sh -ec 'go test -race -count=1 -coverprofile=/tmp/ads-cover.out ./...; grep -v "/cmd/" /tmp/ads-cover.out > /tmp/ads-internal.out; go tool cover -func=/tmp/ads-internal.out; total=$$(go tool cover -func=/tmp/ads-internal.out | awk "/^total:/ {sub(\"%\", \"\", \$$3); print \$$3}"); awk -v t="$$total" "BEGIN { exit !(t >= 70) }"'
+
+.PHONY: ozon-ads-controller-deps
+ozon-ads-controller-deps:
+	$(SERVICES) run --rm -T ozon-ads-controller-dev go mod tidy
+
+.PHONY: ozon-ads-php-test ozon-ads-php-stan
+ozon-ads-php-stan:
+	$(COMPOSE) exec -T php-cli composer run-script --timeout=1800 stan
+
+ozon-ads-php-test:
+	$(COMPOSE) exec -T php-cli php vendor/bin/phpunit tests/Unit/Advertising tests/Functional/Advertising
+
+.PHONY: ozon-ads-controller-build ozon-ads-controller-vulncheck
+ozon-ads-controller-build:
+	$(SERVICES) run --rm -T ozon-ads-controller-dev go build -trimpath -o /tmp/ozon-ads-controller ./cmd/ozon-ads-controller
+
+ozon-ads-controller-vulncheck:
+	$(SERVICES) run --rm -T ozon-ads-controller-dev go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+OZON_ADS_STAND_TEST ?= .
+.PHONY: ozon-ads-controller-stand
+ozon-ads-controller-stand: ozon-ads-controller-db ## паспортная нагрузка и аварии, только TEST_DB_DSN/localhost mock
+	$(SERVICES) run --rm -T ozon-ads-controller-dev go test -race -count=1 -v -timeout=180s -run "$(OZON_ADS_STAND_TEST)" ./test/stand

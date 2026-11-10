@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/account"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/account/accounttest"
 	"github.com/pavelsur07/app-service-analytics/services/ozon-fetcher/internal/ozon"
 )
@@ -69,7 +71,7 @@ func newTestClient(t *testing.T, f *fakePerf) (*Client, *clock, *bytes.Buffer) {
 	t.Cleanup(srv.Close)
 	clk := &clock{now: time.Date(2026, 10, 22, 1, 0, 0, 0, time.UTC)}
 	logs := &bytes.Buffer{}
-	return NewClient(srv.URL, srv.Client(), slog.New(slog.NewJSONHandler(logs, nil)), clk.Now), clk, logs
+	return NewClient(srv.URL, srv.Client(), slog.New(slog.NewJSONHandler(logs, nil)), clk.Now, &testAttempts{}), clk, logs
 }
 
 func campaignsOK(w http.ResponseWriter, _ *http.Request, _ string) {
@@ -245,7 +247,7 @@ func TestErrorMessagesNeverCarrySecretOrToken(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"code": 16, "message": "invalid client_secret " + secret})
 	}))
 	t.Cleanup(srv.Close)
-	c2 := NewClient(srv.URL, srv.Client(), slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), time.Now)
+	c2 := NewClient(srv.URL, srv.Client(), slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), time.Now, &testAttempts{})
 	_, err = c2.FetchCampaigns(context.Background(), testRef, testCreds)
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), secret)
@@ -285,7 +287,7 @@ func TestSecretCrossingMessageLimitIsRedacted(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"code": 16, "message": strings.Repeat("x", 196) + secret})
 	}))
 	t.Cleanup(srv.Close)
-	c2 := NewClient(srv.URL, srv.Client(), slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), time.Now)
+	c2 := NewClient(srv.URL, srv.Client(), slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), time.Now, &testAttempts{})
 	_, err = c2.FetchCampaigns(context.Background(), testRef, testCreds)
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "xperf", "и префикс секрета")
@@ -298,7 +300,7 @@ func TestJSONEscapedSecretIsRedacted(t *testing.T) {
 		_, _ = w.Write([]byte(`{"code":16,"message":"invalid client_secret ` + escaped + `"}`))
 	}))
 	t.Cleanup(srv.Close)
-	c := NewClient(srv.URL, srv.Client(), slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), time.Now)
+	c := NewClient(srv.URL, srv.Client(), slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), time.Now, &testAttempts{})
 	_, err := c.FetchCampaigns(context.Background(), testRef, testCreds)
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), secret)
@@ -312,4 +314,48 @@ func TestShapeListsKeysWithoutValues(t *testing.T) {
 	assert.Equal(t, `[1]{date,moneySpent}`, Shape([]byte(`[{"date":"2026-10-21","moneySpent":"123,45"}]`)))
 	assert.NotContains(t, Shape([]byte(`{"list":[{"title":"Secret title"}]}`)), "Secret")
 	assert.Equal(t, "not json", Shape([]byte(`x`)))
+}
+
+type testAttempts struct {
+	calls   atomic.Int32
+	failure error
+}
+
+func (a *testAttempts) RecordPerformanceCallAcrossConnections(context.Context, account.Ref, string, time.Time) error {
+	a.calls.Add(1)
+	return a.failure
+}
+
+func TestUsageRecorderFailurePreventsTokenAndHTTP(t *testing.T) {
+	f := &fakePerf{ttl: 1800, handle: campaignsOK}
+	c, _, logs := newTestClient(t, f)
+	recorder := &testAttempts{failure: errors.New("sentinel-private-db-error")}
+	c.recorder = recorder
+	_, err := c.FetchCampaigns(context.Background(), testRef, testCreds)
+	require.Error(t, err)
+	assert.Zero(t, f.tokens.Load())
+	assert.Equal(t, int32(1), recorder.calls.Load())
+	assert.NotContains(t, logs.String(), "sentinel-private-db-error")
+	c.recorder = nil
+	_, err = c.FetchCampaigns(context.Background(), testRef, testCreds)
+	require.Error(t, err)
+	assert.Zero(t, f.tokens.Load())
+}
+
+func TestUsageRecorderIncludesOAuthRefreshAndExplicitRetry(t *testing.T) {
+	var refused atomic.Bool
+	f := &fakePerf{ttl: 1800, handle: func(w http.ResponseWriter, r *http.Request, token string) {
+		if !refused.Swap(true) {
+			w.WriteHeader(401)
+			return
+		}
+		campaignsOK(w, r, token)
+	}}
+	c, _, _ := newTestClient(t, f)
+	recorder := &testAttempts{}
+	c.recorder = recorder
+	_, err := c.FetchCampaigns(context.Background(), testRef, testCreds)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), f.tokens.Load())
+	assert.Equal(t, int32(4), recorder.calls.Load())
 }

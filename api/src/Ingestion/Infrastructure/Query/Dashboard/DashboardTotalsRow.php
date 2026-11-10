@@ -16,6 +16,10 @@ final readonly class DashboardTotalsRow
         public int $ordersQuantity,
         public int $ordersAmountMinor,
         public int $salesQuantity,
+        /** Сумма продаж / календарные дни периода, копейки; ADR-051. */
+        public int $salesPerDayMinor,
+        /** Сумма продаж / проданные единицы; null при нулевом количестве. */
+        public ?int $averageSalePriceMinor,
         public int $salesAmountMinor,
         public int $returnsQuantity,
         public int $returnsAmountMinor,

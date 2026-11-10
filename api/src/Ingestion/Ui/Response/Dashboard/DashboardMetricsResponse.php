@@ -19,6 +19,10 @@ final readonly class DashboardMetricsResponse
         public int $ordersQuantity,
         public int $salesAmountMinor,
         public int $salesQuantity,
+        /** Сумма продаж / календарные дни периода, копейки; ADR-051. */
+        public int $salesPerDayMinor,
+        /** Сумма продаж / проданные единицы; null при нулевом количестве. */
+        public ?int $averageSalePriceMinor,
         public int $returnsAmountMinor,
         public int $returnsQuantity,
         public int $advertisingMinor,
@@ -46,6 +50,8 @@ final readonly class DashboardMetricsResponse
             $metrics->ordersQuantity,
             $metrics->salesAmountMinor,
             $metrics->salesQuantity,
+            $metrics->salesPerDayMinor,
+            $metrics->averageSalePriceMinor,
             $metrics->returnsAmountMinor,
             $metrics->returnsQuantity,
             $metrics->advertisingMinor,

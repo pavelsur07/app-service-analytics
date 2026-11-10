@@ -160,6 +160,8 @@ final readonly class BuildDashboardSummaryAction
             ordersQuantity: $row->ordersQuantity ?? 0,
             salesAmountMinor: $row->salesAmountMinor ?? 0,
             salesQuantity: $row->salesQuantity ?? 0,
+            salesPerDayMinor: $row->salesPerDayMinor ?? 0,
+            averageSalePriceMinor: $row?->averageSalePriceMinor,
             returnsAmountMinor: $row->returnsAmountMinor ?? 0,
             returnsQuantity: $row->returnsQuantity ?? 0,
             advertisingMinor: $row->advertisingMinor ?? 0,
@@ -227,6 +229,8 @@ final readonly class BuildDashboardSummaryAction
             ordersQuantityBps: DashboardChange::relativeBps($current->ordersQuantity, $previous->ordersQuantity),
             salesAmountBps: DashboardChange::relativeBps($current->salesAmountMinor, $previous->salesAmountMinor),
             salesQuantityBps: DashboardChange::relativeBps($current->salesQuantity, $previous->salesQuantity),
+            salesPerDayBps: DashboardChange::relativeBps($current->salesPerDayMinor, $previous->salesPerDayMinor),
+            averageSalePriceBps: DashboardChange::relativeBps($current->averageSalePriceMinor, $previous->averageSalePriceMinor),
             returnsAmountBps: DashboardChange::relativeBps($current->returnsAmountMinor, $previous->returnsAmountMinor),
             returnsQuantityBps: DashboardChange::relativeBps($current->returnsQuantity, $previous->returnsQuantity),
             advertisingBps: DashboardChange::relativeBps($current->advertisingMinor, $previous->advertisingMinor),
@@ -247,7 +251,7 @@ final readonly class BuildDashboardSummaryAction
 
     private static function noChanges(): DashboardChanges
     {
-        return new DashboardChanges(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        return new DashboardChanges(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     /**

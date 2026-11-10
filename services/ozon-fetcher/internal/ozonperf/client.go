@@ -3,6 +3,7 @@ package ozonperf
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -62,34 +63,52 @@ type tokenKey struct {
 	clientID string
 }
 
+// AttemptRecorder reserves application-level sends. Client refuses redirects and
+// reused connections so one reservation cannot cause an automatic HTTP replay.
+type AttemptRecorder interface {
+	RecordPerformanceCallAcrossConnections(context.Context, account.Ref, string, time.Time) error
+}
+
 // Client — транспорт Performance API. Ключи передаются в вызов, токены
 // кэшируются по подключению и client_id только в памяти.
 type Client struct {
-	baseURL string
-	http    *http.Client
-	logger  *slog.Logger
-	now     func() time.Time
-	limiter ozon.Limiter
+	baseURL          string
+	http             *http.Client
+	logger           *slog.Logger
+	now              func() time.Time
+	limiter          ozon.Limiter
+	recorder         AttemptRecorder
+	invalidTransport bool
 
 	mu     sync.Mutex
 	tokens map[tokenKey]*tokenEntry
 }
 
 // NewClient — httpClient с таймаутом настраивает вызывающий (DefaultTimeout).
-// Редирект — только на хост Performance: Bearer не уходит дальше.
-func NewClient(baseURL string, httpClient *http.Client, logger *slog.Logger, now func() time.Time) *Client {
+// One reserved call uses one fresh HTTP/1 connection; redirects are refused.
+func NewClient(baseURL string, httpClient *http.Client, logger *slog.Logger, now func() time.Time, recorder AttemptRecorder) *Client {
 	hc := *httpClient
-	base, _ := url.Parse(baseURL)
-	hc.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if base == nil || !strings.EqualFold(req.URL.Host, base.Host) || !strings.EqualFold(req.URL.Scheme, base.Scheme) {
-			return errors.New("ozonperf: redirect to another host or scheme")
-		}
-		if len(via) >= 5 {
-			return errors.New("ozonperf: too many redirects")
-		}
-		return nil
+	transport := hc.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
 	}
-	return &Client{baseURL: baseURL, http: &hc, logger: logger, now: now, limiter: noLimit{}, tokens: map[tokenKey]*tokenEntry{}}
+	original, valid := transport.(*http.Transport)
+	invalidTransport := !valid || original == nil
+	if !invalidTransport {
+		owned := original.Clone()
+		owned.DisableKeepAlives = true
+		owned.ForceAttemptHTTP2 = false
+		owned.Protocols = new(http.Protocols)
+		owned.Protocols.SetHTTP1(true)
+		if owned.TLSClientConfig != nil {
+			owned.TLSClientConfig.NextProtos = []string{"http/1.1"}
+		}
+		owned.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+		hc.Transport = owned
+	}
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	return &Client{invalidTransport: invalidTransport, baseURL: baseURL, http: &hc, logger: logger, now: now, limiter: noLimit{}, recorder: recorder, tokens: map[tokenKey]*tokenEntry{}}
 }
 
 // WithLimiter задаёт ограничение скорости (вызывать до использования).
@@ -258,6 +277,10 @@ func safeMessage(body []byte, secrets ...string) string {
 // send — один HTTP-запрос: чтение тела с потолком, классификация, журнал без
 // query, тела и заголовков.
 func (c *Client) send(ctx context.Context, ref account.Ref, endpoint, method, target string, header http.Header, payload []byte, secrets ...string) (ozon.Response, error) {
+	if c.invalidTransport {
+		return ozon.Response{}, &ozon.APIError{Class: ozon.ClassTransient, Endpoint: endpoint, Err: errors.New("unsupported performance transport")}
+	}
+
 	var body io.Reader
 	if payload != nil {
 		body = bytes.NewReader(payload)
@@ -267,6 +290,15 @@ func (c *Client) send(ctx context.Context, ref account.Ref, endpoint, method, ta
 		return ozon.Response{}, fmt.Errorf("ozonperf: build request %s: %w", endpoint, err)
 	}
 	req.Header = header
+
+	operation := map[string]string{
+		EndpointToken: "token", EndpointCampaigns: "campaigns", EndpointExpense: "expense", EndpointDaily: "daily",
+		EndpointStatistics: "report_order", EndpointStatisticsStatus: "report_status", EndpointStatisticsReport: "report_download",
+	}[endpoint]
+	if c.recorder == nil || operation == "" || c.recorder.RecordPerformanceCallAcrossConnections(ctx, ref, operation, c.now()) != nil {
+		c.log(ctx, ref, endpoint, 0, 0, "accounting_blocked")
+		return ozon.Response{}, &ozon.APIError{Class: ozon.ClassTransient, Endpoint: endpoint, Err: errors.New("usage accounting unavailable")}
+	}
 
 	started := c.now()
 	resp, err := c.http.Do(req)

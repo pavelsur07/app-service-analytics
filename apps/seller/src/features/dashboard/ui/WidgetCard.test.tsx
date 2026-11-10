@@ -12,6 +12,8 @@ const METRICS: Metrics = {
   ordersQuantity: 180,
   salesAmountMinor: 30_000_000,
   salesQuantity: 120,
+  salesPerDayMinor: 5001,
+  averageSalePriceMinor: null,
   returnsAmountMinor: 2_000_000,
   returnsQuantity: 8,
   advertisingMinor: 5_400_000,
@@ -84,6 +86,14 @@ function render(id: string, hint: string | null = null): string {
     />,
   ).replace(/\s/gu, ' ')
 }
+
+it('shows daily sales and an unavailable average price without inventing zero', () => {
+  const html = render('sales')
+  expect(html).toContain('Продажи в день')
+  expect(html).toContain('50,01')
+  expect(html).toContain('Средняя цена продажи')
+  expect(html).toContain('—')
+})
 
 describe('виджет главной', () => {
   it('значение, изменение, «было» и строки — из ответа бэкенда', () => {

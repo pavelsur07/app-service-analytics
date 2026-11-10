@@ -7,6 +7,7 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    ads.enabled_default: 'false'
     research.enabled_default: 'false'
     research.allowed_company_ids_default: ''
     research.catalog_source_default: ''
@@ -23,6 +24,7 @@ services:
         autowire: true      # Automatically injects dependencies in your services.
         autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
         bind:
+            bool $adsEnabled: '%env(bool:default:ads.enabled_default:OZON_ADS_ENABLED)%'
             string $researchCatalogSourceId: '%env(default:research.catalog_source_default:RESEARCH_CATALOG_SOURCE_ID)%'
             string $researchServiceToken: '%env(default:research.service_token_default:RESEARCH_SERVICE_TOKEN)%'
             string $researchAllowedCompanyIds: '%env(default:research.allowed_company_ids_default:RESEARCH_ALLOWED_COMPANY_IDS)%'
@@ -233,3 +235,28 @@ services:
     App\ProductResearchOzon\Application\ProcessResearchRunsAction:
         arguments:
             $clock: '@App\Shared\Infrastructure\SystemClock'
+
+    App\Advertising\Domain\ObservationPolicyRepository: '@App\Advertising\Infrastructure\Repository\DoctrineObservationPolicyRepository'
+
+    App\Shared\Domain\ExceptionTracker: '@App\Shared\Infrastructure\Observability\SentryExceptionTracker'
+
+    App\Ingestion\Domain\OzonCampaignCatalogRepository: '@App\Ingestion\Infrastructure\Persistence\DoctrineOzonCampaignCatalogRepository'
+
+    App\Ingestion\Domain\OzonPerformanceCallCounter: '@App\Ingestion\Infrastructure\Connector\OzonPerformance\DoctrineOzonPerformanceCallCounter'
+
+    # Performance API (ADR-026): separate host and credentials. The 10-second
+    # ceiling also bounds the synchronous connection probe; the read-only
+    # allowlist remains in OzonPerformanceHttp.
+    # NativeResponse performs one fopen with max_redirects=0; no CurlResponse
+    # automatic network replay outside the durable attempt reservation.
+    ozon_performance.client:
+        class: Symfony\Component\HttpClient\NativeHttpClient
+        arguments:
+            $defaultOptions:
+                base_uri: '%env(OZON_PERFORMANCE_API_BASE_URL)%'
+                timeout: 10.0
+                max_duration: 10.0
+                max_redirects: 0
+                http_version: '1.1'
+                headers:
+                    Connection: close

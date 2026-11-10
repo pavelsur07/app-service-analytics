@@ -47,6 +47,9 @@ final class AuditAction
      */
     public const string UserPasswordReset = 'user.password_reset';
 
+    /** Чтение карточки компании системным администратором. */
+    public const string CompanyViewed = 'company.viewed';
+
     public const string CompanyBlocked = 'company.blocked';
 
     public const string CompanyActivated = 'company.activated';

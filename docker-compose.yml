@@ -271,6 +271,30 @@ services:
       - go_mod:/go/pkg/mod
       - go_build:/root/.cache/go-build
 
+  ozon-ads-controller-dev:
+    image: golang:1.27.3
+    profiles: ["services"]
+    working_dir: /src/ozon-ads-controller
+    environment:
+      CGO_ENABLED: "1"
+      TEST_DB_DSN: "postgres://svc_ozon_ads:ozon_ads_dev@postgres:5432/ozon_ads_test?sslmode=disable"
+    volumes:
+      - ./services:/src
+      - ./api/tests/Fixtures/Marketplace/ozon:/api/tests/Fixtures/Marketplace/ozon:ro
+      - go_mod:/go/pkg/mod
+      - go_build:/root/.cache/go-build
+    depends_on:
+      - postgres
+
+  ozon-ads-controller-lint:
+    image: golangci/golangci-lint:v2.14.0-alpine
+    profiles: ["services"]
+    working_dir: /src/ozon-ads-controller
+    volumes:
+      - ./services:/src
+      - go_mod:/go/pkg/mod
+      - go_build:/root/.cache/go-build
+
   product-research-ozon:
     profiles: ["product-research"]
     build:

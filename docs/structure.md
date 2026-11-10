@@ -439,7 +439,13 @@ HTTP-входы сессии находятся в `Ui/Controller/Session` (`Log
 (`RequestPasswordReset`, `ResetPassword`), ответ — `Ui/Response/PasswordReset`.
 Остальные системные HTTP-входы находятся в `Ui/Controller/Admin` (`AdminLogin`,
 `AdminMe`, `CreateAdministrator`, `ListClientAccounts`,
-`SetClientAccountStatus`).
+`GetClientAccount`, `SetClientAccountStatus`).
+Карточка компании читает DBAL-запрос `CompanyForAdminQuery` в отдельном
+class-level слое Deptrac по ADR-018; дочерние выборки ограничены companyId.
+`RecordAdminCompanyViewAction` фиксирует чтение в аудит без значений данных.
+Ответ `AdminCompanyDetailResponse` ограничен 50 участниками, 50 подключениями
+и 20 последними событиями поддержки с явными флагами усечения.
+В историю карточки не входят просмотры и произвольные значения audit_record.
 MFA администраторов (ADR-045): `Ui/Controller/Admin/AdminMfaController`,
 `Ui/Security/AdminMfaSession`, `Ui/EventListener/AdminMfaGuardSubscriber`;
 системная auth lifecycle-запись — `Infrastructure/Repository/DoctrineAdminMfaRepository`,
@@ -517,6 +523,12 @@ SKU за дни раньше вчерашнего — асинхронные о�
 `OrderOzonAdSkuReportMessage` → `CheckOzonAdSkuReportMessage`, raw-тип
 `ozon_ad_sku_report`; той же цепочкой — заказы «Оплаты за заказ»
 (`OzonAdReportKind::CpoOrders`, raw-тип `ozon_ad_cpo_orders`). Разовый повтор — `app:ingestion:backfill-ozon-advertising`.
+
+Диагностика этой цепочки — `Application/OzonAdReportDiagnostics`,
+`OzonAdReportTrace` и `OzonAdReportFailureDetails`: канал `ozon_report`
+связывает order_ref, report_uuid и invocation_id, без изменения очереди
+или retry-политики. Правила безопасных полей и проверки —
+[план диагностики](plan/ozon-report-diagnostics.md).
 
 Реклама по SKU (ADR-035): SKU-разбивка (`ozon_ad_sku_day`,
 `ozon_ad_sku_report`) после сохранения в raw разбирается
@@ -927,7 +939,9 @@ apps/admin/src/
 │                       AdminLayout — шапка с ролью и выходом
 ├── features/
 │   ├── auth/           вход, выход
-│   ├── accounts/       список аккаунтов, регистрация, блокировка
+│   ├── accounts/       список аккаунтов, регистрация, блокировка; карточка
+│   │                   в боковой панели по /accounts/:companyId, страница
+│   │                   списка — в ?page=; статус меняется с подтверждением
 │   ├── administrators/ SuperAdmin заводит Admin
 │   ├── links/          короткие ссылки и переходы по дням месяца;
 │   │                   формы создания и изменения в локальном LinkFormDialog
@@ -1127,3 +1141,66 @@ catalog_not_ready. Integration ResearchRunsTest проверяет отклон�
 [Закрытый план разработки этапа 8](plan/product-research-ozon-stage8.md),
 [открытый план этапа 9](plan/product-research-ozon-stage9.md),
 [операционные гейты](operations-checklist.md#product-research-ozon--этап-8).
+
+
+## Озон Ads, observe 00–08
+
+- `api/src/Advertising/{Domain,Application,Infrastructure,Ui}` — политики
+  Money, пользовательский API, аудит через IdentityFacade и company-scoped проекция.
+- `services/ozon-ads-controller/` — Go, собственная БД, аналитический коннектор,
+  аренды и предполагаемые решения; `cmd/`, `internal/`, `docker/`.
+- `services/_contracts/ozon-ads-observe/v1/` — схемы/корпус обеих сторон.
+- `services/docker/postgres/init/05-ozon-ads.sql`, `06-ozon-ads-hba.sh` — только dev/test.
+- `docs/plan/ozon-advertising-00-08-implementation.md` — проверяемый срез/остатки.
+  UI/продовая топология/управление рекламой не входят в этот срез.
+
+## Озон Ads: seller, этап 10
+
+`apps/seller/src/features/ozon-ads/` — URL-вкладки, форма политик,
+типизированные queries и представление расходов/событий.
+`shared/model/useOzonAdsAvailability.ts` используется страницей: флаг управляет
+доступностью наблюдения и форм, а постоянный пункт «Озон Ads» в sidebar
+позволяет открыть раздел и увидеть выключенное состояние.
+`Advertising/Domain/ObservationEvent` описывает собственный company-scoped
+журнал: человеческие настройки через ORM, принятые расчёты через DBAL атомарно
+с последней проекцией. Чтение — `ObservationEventsQuery`, keyset и readonly DTO.
+[Объём, приёмка и результаты](plan/ozon-advertising-stage10-implementation.md).
+
+## Озон Ads: стенд этапа 11
+
+- `services/ozon-ads-controller/internal/control/workers.go`, `clock.go` —
+  штатный ограниченный цикл работников и защита от шага часов.
+- `internal/store/inspection.go` и закрытый `/internal/observations` —
+  bounded keyset диагностика каждой кампании, без денежных/секретных полей.
+- `services/ozon-ads-controller/test/stand/` — PostgreSQL/HTTP стенд с
+  нормальным/пиковым due, двумя репликами, массовым расчётом и ошибками.
+- [Паспорт](plan/ozon-advertising-stage11-passport.md),
+  [результаты и матрица](plan/ozon-advertising-stage11-implementation.md).
+- [Выполнение постоянного observe](plan/ozon-ads-continuous-execution.md) —
+  согласованный этап квот, непрерывного цикла и production-допуска;
+  первая часть — offline quota-check в Go, без сетевых обращений.
+- [Допуск к живому observe](plan/ozon-advertising-observe-launch-plan.md) —
+  следующие шаги N0–N6, общие квоты, физические отказы, мониторинг,
+  production без чтений, ограниченный пилот и чек-листы каждого шага.
+- [Паспорт квот N0](plan/ozon-advertising-quota-passport.md) — внутренние
+  HTTP-потребители, методы/стоимость, ограниченный production-снимок,
+  пробелы scope/reset, транспорта и внешнего потребления.
+- [Учёт Performance HTTP](plan/ozon-performance-http-accounting.md) — durable
+  minute-счётчики PHP и fetcher в собственных БД, запрет скрытых повторов,
+  миграции, границы доказательств и чек-лист второй части N0.
+- [Каталог кампаний](plan/ozon-ads-campaign-catalog.md) — Ingestion хранит
+  rebuildable metadata snapshot company/account с JSONB whitelist; новый
+  `/ozon-advertising/campaigns` читает bounded keyset-страницы SQL без Ozon/S3.
+  Список в seller виден при отключённом наблюдении; выбор кампании в форме
+  не включает live. CLI bootstrap читает только сохранённый company-scoped raw.
+- [Предложение мониторинга N4](plan/ozon-ads-external-monitoring-proposal.md) —
+  варианты внешнего heartbeat, ограничения минимальных интервалов и приёмка;
+  подключение отложено владельцем в issue #341, live-гейт сохраняется.
+
+Каталог Ozon Ads помечает восстановление из raw (`restored`): повторные получения
+одинакового raw не восстанавливаются по времени; bootstrap не заменяет существующую
+проекцию. Ошибки разбора передаются через порт `Shared/Domain/ExceptionTracker`,
+его Sentry-адаптер расположен в `Shared/Infrastructure/Observability`.
+Миниатюра товара seller: `shared/ui/ProductThumbnail.tsx` и преобразование
+адреса Ozon `shared/lib/photo.ts` используются в «Экономике» и «Прогнозе
+и факте по SKU». Поиск товара в последнем открывается в модальном окне.

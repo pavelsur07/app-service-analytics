@@ -181,13 +181,137 @@ test('SuperAdmin входит и заводит Admin', async ({ page }) => {
   await expect(row).toBeVisible()
   await expect(row).toContainText('работает')
 
-  // Блокировка меняет состояние прямо в списке.
-  await row.getByRole('button', { name: 'Заблокировать' }).click()
-  await expect(row).toContainText('заблокирован')
+  // Карточка открывается с клавиатуры, по строке и по прямой ссылке.
+  const companyLink = row.getByRole('link', { name: companyName })
+  const detail = page.getByRole('dialog', { name: companyName, exact: true })
+  await companyLink.focus()
+  await page.keyboard.press('Enter')
+  await expect(detail).toBeVisible()
+  await expect(detail.getByRole('heading', { name: companyName })).toBeVisible()
+  await expect(
+    detail.getByRole('region', { name: 'Участники', exact: true }),
+  ).toContainText(`e2e-owner-${String(stamp)}@example.com`)
+  await expect(detail).toContainText('Email подтверждён')
+  await expect(detail).toContainText('Маркетплейсы ещё не подключены.')
+  // Escape отменяет только верхний диалог, карточка остаётся открытой.
+  await detail
+    .getByRole('button', { name: 'Заблокировать', exact: true })
+    .click()
+  const nestedConfirmation = page.getByRole('dialog', {
+    name: 'Заблокировать компанию?',
+  })
+  await page.keyboard.press('Escape')
+  await expect(nestedConfirmation).toHaveCount(0)
+  await expect(detail).toBeVisible()
+  await expect(
+    detail.getByRole('button', { name: 'Заблокировать', exact: true }),
+  ).toBeFocused()
 
-  // И возвращается обратно — переход обратим.
-  await row.getByRole('button', { name: 'Включить' }).click()
+  // Во время запроса Escape не закрывает ни подтверждение, ни карточку.
+  await detail
+    .getByRole('button', { name: 'Заблокировать', exact: true })
+    .click()
+  await page.route(
+    '**/api/admin/companies/*/status',
+    async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      await route.fulfill({ status: 503, body: '{}' })
+    },
+    { times: 1 },
+  )
+  await nestedConfirmation
+    .getByRole('button', { name: 'Заблокировать', exact: true })
+    .click()
+  await expect(
+    nestedConfirmation.getByRole('button', {
+      name: 'Заблокировать',
+      exact: true,
+    }),
+  ).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(nestedConfirmation).toBeVisible()
+  await expect(detail).toBeVisible()
+  await expect(nestedConfirmation.getByRole('alert')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(nestedConfirmation).toHaveCount(0)
+  await expect(detail).toBeVisible()
+  await detail.getByText('История действий', { exact: true }).click()
+  await expect(detail).toContainText('Компания зарегистрирована')
+  const detailUrl = page.url()
+  await page.keyboard.press('Escape')
+  await expect(detail).toHaveCount(0)
+  await expect(companyLink).toBeFocused()
+  await expect(page).toHaveURL(/\/accounts$/)
+  await row.getByRole('cell').nth(1).click()
+  await expect(detail).toBeVisible()
+  await page.goBack()
+  await expect(detail).toHaveCount(0)
+
+  // При прямом открытии закрытие возвращает в список, а не на внешний сайт.
+  await page.goto(detailUrl)
+  await expect(detail).toBeVisible()
+  await page.reload()
+  await expect(detail).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(detail).toBeInViewport()
+  const size = await detail.boundingBox()
+  expect(size?.width).toBeLessThanOrEqual(390)
+  await detail.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await expect(page).toHaveURL(/\/accounts$/)
+  await page.setViewportSize({ width: 1280, height: 720 })
+
+  // Блокировка отделена от открытия карточки; отмена ничего не меняет.
+  await row.getByRole('button', { name: 'Заблокировать', exact: true }).click()
+  const blockDialog = page.getByRole('dialog', {
+    name: 'Заблокировать компанию?',
+  })
+  await expect(blockDialog).toBeVisible()
+  await expect(detail).toHaveCount(0)
+  await blockDialog.getByRole('button', { name: 'Отмена' }).click()
   await expect(row).toContainText('работает')
+  await row.getByRole('button', { name: 'Заблокировать', exact: true }).click()
+  await blockDialog
+    .getByRole('button', { name: 'Заблокировать', exact: true })
+    .click()
+  await expect(blockDialog).toHaveCount(0)
+  await expect(row).toContainText('заблокирован')
+  await companyLink.click()
+  await expect(detail).toContainText('Заблокирована')
+  await detail.getByRole('button', { name: 'Включить', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Включить компанию?' })
+    .getByRole('button', { name: 'Включить', exact: true })
+    .click()
+  await expect(detail.getByText('Активна', { exact: true })).toBeVisible()
+  await detail.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await expect(row).toContainText('работает')
+
+  // Ошибки запроса различаются; повтор восстанавливает карточку.
+  const apiDetail = detailUrl.replace(
+    /.*\/accounts\//,
+    '**/api/admin/companies/',
+  )
+  await page.route(
+    apiDetail,
+    (route) => route.fulfill({ status: 503, body: '{}' }),
+    { times: 1 },
+  )
+  await companyLink.click()
+  const failedDetail = page.getByRole('dialog')
+  await expect(failedDetail.getByRole('alert')).toContainText(
+    'Не удалось загрузить карточку',
+  )
+  await failedDetail.getByRole('button', { name: 'Повторить' }).click()
+  await expect(detail).toBeVisible()
+  await page.keyboard.press('Escape')
+  await page.goto('/accounts/00000000-0000-7000-8000-000000000000')
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText(
+    'Компания не найдена',
+  )
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Закрыть', exact: true })
+    .click()
 
   // Ссылки доступны обеим административным ролям. В одном сценарии
   // проверяем полный рабочий цикл: создать, выбрать статистику,
