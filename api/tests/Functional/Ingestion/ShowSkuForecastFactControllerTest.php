@@ -7,9 +7,11 @@ namespace App\Tests\Functional\Ingestion;
 use App\Identity\Domain\CompanyRepository;
 use App\Identity\Infrastructure\Repository\DoctrineCompanyMemberRepository;
 use App\Identity\Infrastructure\Repository\DoctrineUserRepository;
+use App\Ingestion\Domain\MarketplaceListingRepository;
 use App\Ingestion\Domain\SalesFactRepository;
 use App\Shared\Domain\ValueObject\Money;
 use App\Tests\Support\Builder\CompanyMemberBuilder;
+use App\Tests\Support\Builder\MarketplaceListingBuilder;
 use App\Tests\Support\Builder\SalesFactBuilder;
 use App\Tests\Support\Builder\UserBuilder;
 use App\Tests\Support\SessionWebTestCase as WebTestCase;
@@ -52,6 +54,38 @@ final class ShowSkuForecastFactControllerTest extends WebTestCase
             self::assertSame(0, $payload['days'][0]['orderedQuantity']);
             self::assertNull($payload['days'][0]['plannedBuyoutRateBps']);
         }
+    }
+
+    public function testProductMetadataIsScopedToCompanyAndExactSku(): void
+    {
+        $client = self::createClient();
+        $companyId = $this->login($client);
+        $otherCompanyId = Uuid::v7();
+        /** @var MarketplaceListingRepository $listings */
+        $listings = self::getContainer()->get(MarketplaceListingRepository::class);
+        foreach ([$companyId, $otherCompanyId] as $owner) {
+            $accountId = Uuid::v7();
+            $listings->replaceForAccount($owner->toRfc4122(), $accountId, [
+                MarketplaceListingBuilder::aMarketplaceListing()->withCompanyId($owner)
+                    ->withMarketplaceAccountId($accountId)->withMarketplaceSku('SKU-1')
+                    ->withName($owner->equals($companyId) ? 'Наш товар' : 'Чужой товар')
+                    ->withOfferId('OFFER')->withPhotoUrl('https://example.test/photo.jpg')->build(),
+            ]);
+        }
+        $path = '/api/companies/'.$companyId->toRfc4122().'/sku-forecast-fact?month=2024-02&sku=';
+        $client->request('GET', $path.'SKU-1');
+        self::assertResponseIsSuccessful();
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($payload);
+        self::assertSame('Наш товар', $payload['name']);
+        self::assertSame('OFFER', $payload['offerId']);
+        self::assertSame('https://example.test/photo.jpg', $payload['photoUrl']);
+        $client->request('GET', $path.'SKU');
+        self::assertResponseIsSuccessful();
+        $payload = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($payload);
+        self::assertNull($payload['name']);
+        self::assertNull($payload['photoUrl']);
     }
 
     public function testInvalidParametersAndCompanyAccess(): void

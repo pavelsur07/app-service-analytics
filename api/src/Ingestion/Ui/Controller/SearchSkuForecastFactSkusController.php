@@ -70,7 +70,7 @@ final class SearchSkuForecastFactSkusController
         $last = [] === $rows ? null : $rows[\count($rows) - 1];
 
         return new JsonResponse(new SkuForecastFactSkuSearchResponse(
-            items: array_map(static fn (SkuForecastFactSkuRow $row): SkuForecastFactSkuResponse => new SkuForecastFactSkuResponse($row->marketplaceSku, $row->name, $row->offerId), $rows),
+            items: array_map(static fn (SkuForecastFactSkuRow $row): SkuForecastFactSkuResponse => new SkuForecastFactSkuResponse($row->marketplaceSku, $row->name, $row->offerId, $row->photoUrl), $rows),
             nextCursor: $hasMore && null !== $last ? self::encodeCursor($query, $last->marketplaceSku) : null,
         ));
     }

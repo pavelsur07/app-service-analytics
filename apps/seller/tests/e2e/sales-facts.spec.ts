@@ -144,6 +144,19 @@ test.describe('sales facts', () => {
       .getByRole('navigation', { name: 'Разделы компании' })
       .getByRole('link', { name: 'Прогноз и факт по SKU' })
       .click()
+    await page
+      .getByRole('button', { name: 'Выбрать товар', exact: true })
+      .click()
+    const picker = page.getByRole('dialog', { name: 'Выбрать товар' })
+    await expect(picker).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(picker).not.toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Выбрать товар', exact: true }),
+    ).toBeFocused()
+    await page
+      .getByRole('button', { name: 'Выбрать товар', exact: true })
+      .click()
     await page.getByRole('textbox', { name: 'Найти SKU' }).fill('100002')
     await page.getByRole('button', { name: 'Найти' }).click()
     await page.getByRole('button', { name: /SKU 100002/ }).click()
@@ -165,6 +178,11 @@ test.describe('sales facts', () => {
     ).toBeVisible()
 
     const currentUrl = page.url()
+    await page.getByRole('button', { name: 'Сменить товар' }).click()
+    await expect(picker).toBeVisible()
+    await page.getByRole('button', { name: 'Закрыть выбор товара' }).click()
+    await expect(picker).not.toBeVisible()
+    await expect(page).toHaveURL(currentUrl)
     await page.getByRole('button', { name: 'Предыдущий месяц' }).click()
     await expect(page).not.toHaveURL(currentUrl)
     await expect(forecastTable).toBeVisible()

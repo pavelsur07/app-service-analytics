@@ -6,7 +6,7 @@ namespace App\Ingestion\Ui\Response;
 
 use OpenApi\Attributes as OA;
 
-#[OA\Schema(required: ['marketplaceSku', 'month', 'currency', 'days'])]
+#[OA\Schema(required: ['marketplaceSku', 'month', 'currency', 'days', 'name', 'offerId', 'photoUrl'])]
 final readonly class SkuForecastFactResponse
 {
     /** @param list<SkuForecastFactDayResponse> $days */
@@ -16,6 +16,9 @@ final readonly class SkuForecastFactResponse
         #[OA\Property(enum: ['RUB'])]
         public string $currency,
         public array $days,
+        public ?string $name,
+        public ?string $offerId,
+        public ?string $photoUrl,
     ) {
     }
 }

@@ -44,10 +44,10 @@ final readonly class SkuForecastFactSkuSearchQuery
             SQL;
 
         $qb = $this->connection->createQueryBuilder()
-            ->select('matched.marketplace_sku', 'catalog.name', 'catalog.offer_id')
+            ->select('matched.marketplace_sku', 'catalog.name', 'catalog.offer_id', 'catalog.photo_url')
             ->from($matched, 'matched')
             ->leftJoin('matched', 'LATERAL (
-                SELECT name, offer_id FROM marketplace_listing
+                SELECT name, offer_id, photo_url FROM marketplace_listing
                 WHERE company_id = :companyId AND marketplace_sku = matched.marketplace_sku
                 ORDER BY marketplace_account_id LIMIT 1
             )', 'catalog', 'TRUE')
@@ -69,16 +69,29 @@ final readonly class SkuForecastFactSkuSearchQuery
         return $qb;
     }
 
+    public function findMetadata(string $companyId, string $sku): ?SkuForecastFactSkuRow
+    {
+        $row = $this->connection->fetchAssociative(
+            'SELECT marketplace_sku, name, offer_id, photo_url FROM marketplace_listing
+             WHERE company_id = :companyId AND marketplace_sku = :sku
+             ORDER BY marketplace_account_id LIMIT 1',
+            ['companyId' => $companyId, 'sku' => $sku],
+        );
+
+        return false === $row ? null : self::mapRow($row);
+    }
+
     /** @param array<string, mixed> $row */
     public static function mapRow(array $row): SkuForecastFactSkuRow
     {
         $sku = $row['marketplace_sku'];
         $name = $row['name'];
         $offerId = $row['offer_id'];
-        if ((!\is_string($sku) && !\is_int($sku)) || (null !== $name && !\is_string($name)) || (null !== $offerId && !\is_string($offerId))) {
+        $photoUrl = $row['photo_url'];
+        if ((null !== $photoUrl && !\is_string($photoUrl)) || (!\is_string($sku) && !\is_int($sku)) || (null !== $name && !\is_string($name)) || (null !== $offerId && !\is_string($offerId))) {
             throw new \UnexpectedValueException('Invalid SKU search row.');
         }
 
-        return new SkuForecastFactSkuRow((string) $sku, $name, $offerId);
+        return new SkuForecastFactSkuRow((string) $sku, $name, $offerId, $photoUrl);
     }
 }

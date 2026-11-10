@@ -1201,3 +1201,6 @@ catalog_not_ready. Integration ResearchRunsTest проверяет отклон�
 одинакового raw не восстанавливаются по времени; bootstrap не заменяет существующую
 проекцию. Ошибки разбора передаются через порт `Shared/Domain/ExceptionTracker`,
 его Sentry-адаптер расположен в `Shared/Infrastructure/Observability`.
+Миниатюра товара seller: `shared/ui/ProductThumbnail.tsx` и преобразование
+адреса Ozon `shared/lib/photo.ts` используются в «Экономике» и «Прогнозе
+и факте по SKU». Поиск товара в последнем открывается в модальном окне.

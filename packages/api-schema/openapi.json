@@ -10124,7 +10124,8 @@
                 "required": [
                     "marketplaceSku",
                     "name",
-                    "offerId"
+                    "offerId",
+                    "photoUrl"
                 ],
                 "properties": {
                     "marketplaceSku": {
@@ -10135,6 +10136,10 @@
                         "nullable": true
                     },
                     "offerId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "photoUrl": {
                         "type": "string",
                         "nullable": true
                     }
@@ -11504,7 +11509,10 @@
                     "marketplaceSku",
                     "month",
                     "currency",
-                    "days"
+                    "days",
+                    "name",
+                    "offerId",
+                    "photoUrl"
                 ],
                 "properties": {
                     "marketplaceSku": {
@@ -11524,6 +11532,18 @@
                         "items": {
                             "$ref": "#/components/schemas/SkuForecastFactDayResponse"
                         }
+                    },
+                    "name": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "offerId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "photoUrl": {
+                        "type": "string",
+                        "nullable": true
                     }
                 },
                 "type": "object"
