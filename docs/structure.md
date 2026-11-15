@@ -51,7 +51,11 @@ app-service-analytics/
 ├── traefik/
 │   ├── dynamic.yml       dev: app/admin/lin.conwix.localhost (file provider)
 │   └── dynamic.prod.yml  prod: app/admin/lin.conwix.com, TLS, редирект с http
-├── temp/                 временные файлы
+├── temp/                 входные материалы исследований (CSV/ZIP), не скрипты задач
+├── var/                  локальные артефакты, исключённые из Git
+│   ├── tasks/<задача>/    разовые скрипты, логи, снимки и черновики задачи
+│   ├── worktrees/<задача>/ дополнительные рабочие копии Git внутри проекта
+│   └── review/            штатные пакеты и результаты независимого ревью
 ├── .dockerignore         контекст сборки — корень репозитория
 ├── docker/
 │   ├── nginx/
